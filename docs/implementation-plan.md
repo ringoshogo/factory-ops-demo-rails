@@ -204,7 +204,7 @@ bundle exec rspec spec/db spec/platform
 
 - `users.password_digest` と bcrypt（`has_secure_password`）。`data-model.md` の `users` に足す。
 - 認証専用の関数：メールアドレスから、ユーザー ID・所有テナント・`password_digest` だけを返す。所有ロールの `SECURITY DEFINER` にする。
-- `SessionsController`（ログイン・ログアウト）：関数でユーザーを引いてパスワードを照合し、ユーザー ID と所有テナント ID をセッションに保存する。
+- `SessionsController`（ログイン・ログアウト）：関数でユーザーを引いてパスワードを照合し、ユーザー ID と所有テナント ID をセッションに保存する。関数の呼び出しと照合は `partnerships` の公開 API `Partnerships::Authentication` に置き、操作者は `Partnerships::Actor`（ユーザー ID・所有テナント・名前・メールアドレス・役割の値）で渡す。M8 は、この `Actor` を広げる。
 - API モードに Cookie とセッションのミドルウェアを足し、Cookie を `SameSite=Lax` にする。
 - graphql-ruby を入れ、`viewer` だけを持つスキーマを置く。
 - `GraphqlController`：POST の `application/json` だけを受け付ける。`Tenancy.with_tenant` でスキーマの実行全体を包み、RLS の下でユーザーを引いて `Current.actor` に設定する。引けなければ実行せずに 401 を返す。例外ならロールバックし、それ以外はユーザーエラーを返した場合も含めてコミットする。
@@ -327,7 +327,7 @@ M8〜M19 の担当者は、各マイルストーンで次を作る。マイル�
 **作るもの**
 
 - `partnerships`・`partnership_grants`、`partnership_active` 関数、経路 2 の `partner_read` ポリシー
-- `Partnerships::Actor`・`Access`・`Directory`・`Management`・`PartnershipPolicy`
+- `Partnerships::Access`・`Directory`・`Management`・`PartnershipPolicy`。`Partnerships::Actor` は M4 で作ったものに、判定に要る値を足す
 - `viewer`（`partnerCode` を含む）、`supplier.partnerships`、`buyer.suppliers`（`catalog` は M9）
 - `establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission`
 - 行列テストのペルソナを 5 つに増やす

@@ -19,6 +19,16 @@ CREATE FUNCTION public.current_tenant_id() RETURNS uuid
     AS $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 
 
+--
+-- Name: find_login_user(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.find_login_user(login_email text) RETURNS TABLE(id uuid, owner_tenant_id uuid, password_digest character varying)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$ SELECT u.id, u.owner_tenant_id, u.password_digest FROM public.users u WHERE u.email = login_email $$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -70,6 +80,7 @@ CREATE TABLE public.users (
     role character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    password_digest character varying NOT NULL,
     CONSTRAINT users_role_check CHECK (((role)::text = ANY (ARRAY['admin'::text, 'member'::text])))
 );
 
@@ -164,6 +175,8 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000100'),
+('20261008000000'),
 ('20261007220100'),
 ('20261007220000'),
 ('20261007203750');

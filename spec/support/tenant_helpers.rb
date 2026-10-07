@@ -12,10 +12,11 @@ module TenantHelpers
     SQL
   end
 
-  def insert_user(owner_tenant_id, email)
+  def insert_user(owner_tenant_id, email, password: "password")
+    digest = BCrypt::Password.create(password, cost: BCrypt::Engine::MIN_COST)
     connection.select_value(<<~SQL)
-      INSERT INTO users (owner_tenant_id, email, name, role, created_at, updated_at)
-      VALUES (#{connection.quote(owner_tenant_id)}, #{connection.quote(email)}, 'name', 'member', now(), now())
+      INSERT INTO users (owner_tenant_id, email, name, role, password_digest, created_at, updated_at)
+      VALUES (#{connection.quote(owner_tenant_id)}, #{connection.quote(email)}, 'name', 'member', #{connection.quote(digest)}, now(), now())
       RETURNING id
     SQL
   end
