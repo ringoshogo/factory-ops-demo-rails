@@ -7,6 +7,12 @@ module MatrixExpectations
   # 所有者以外に見せるのは読む 3 経路の表だけ（docs/architecture/context-map.md「テナントと所有」）
   TABLES = {
     "users" => OWNER_ONLY,
+    # 経路 1。有効な取引関係の発注側に公開品目だけが見え、失効すると閉じる。
+    # view_catalog の付与はアプリの policy scope が判定するので、付与の無い発注側にも RLS は見せる
+    "items" => {
+      granted_buyer: { supplier: 1 },
+      ungranted_buyer: { supplier: 1 }
+    },
     # 経路 2。有効な取引関係の発注側にだけ見え、失効すると権限付与ごと閉じる
     "partnerships" => {
       granted_buyer: { supplier: 1 },

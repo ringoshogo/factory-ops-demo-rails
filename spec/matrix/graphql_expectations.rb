@@ -13,6 +13,7 @@ module MatrixExpectations
   ONLY_SUPPLIER = MatrixWorld::PERSONAS.index_with(:not_found).merge(supplier: :value).freeze
 
   PARTNERSHIP_MUTATION = "{ partnership { id } errors { code } }".freeze
+  ITEM_MUTATION = "{ item { id } errors { code } }".freeze
 
   GRAPHQL = {
     "Query.viewer" => {
@@ -27,6 +28,15 @@ module MatrixExpectations
     "BuyerView.suppliers" => {
       query: "{ buyer { suppliers { supplier { name } } } }",
       expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :value, revoked_buyer: :empty, stranger: :empty }
+    },
+    "SupplierView.items" => {
+      query: "{ supplier { items { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    # 経路 1。有効な取引関係と view_catalog の付与がある発注側にだけ開き、付与があっても失効で閉じる
+    "SupplierPartnership.catalog" => {
+      query: "{ buyer { suppliers { catalog { nodes { code } } } } }",
+      expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :empty, revoked_buyer: :empty, stranger: :empty }
     },
     "Mutation.establishPartnership" => {
       query: "mutation($input: EstablishPartnershipInput!) { establishPartnership(input: $input) #{PARTNERSHIP_MUTATION} }",
@@ -47,6 +57,16 @@ module MatrixExpectations
     "Mutation.withdrawPermission" => {
       query: "mutation($input: WithdrawPermissionInput!) { withdrawPermission(input: $input) #{PARTNERSHIP_MUTATION} }",
       variables: ->(world) { { input: { partnershipId: world.partnership(:granted_buyer).id, permission: "VIEW_CATALOG" } } },
+      expect: ONLY_SUPPLIER
+    },
+    "Mutation.saveItem" => {
+      query: "mutation($input: SaveItemInput!) { saveItem(input: $input) #{ITEM_MUTATION} }",
+      variables: ->(_world) { { input: { code: "NEW-1", name: "新しい品目", unit: "個", unitPrice: 100 } } },
+      expect: EVERYONE
+    },
+    "Mutation.setItemPublished" => {
+      query: "mutation($input: SetItemPublishedInput!) { setItemPublished(input: $input) #{ITEM_MUTATION} }",
+      variables: ->(world) { { input: { itemId: world.row("items", :supplier).id, published: true } } },
       expect: ONLY_SUPPLIER
     }
   }.freeze

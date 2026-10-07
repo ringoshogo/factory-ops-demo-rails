@@ -69,6 +69,28 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.items (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    code character varying NOT NULL,
+    name character varying NOT NULL,
+    unit character varying NOT NULL,
+    unit_price bigint NOT NULL,
+    tax_rate_percent integer DEFAULT 10 NOT NULL,
+    published boolean DEFAULT false NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT items_tax_rate_percent_check CHECK ((tax_rate_percent = ANY (ARRAY[8, 10]))),
+    CONSTRAINT items_unit_price_non_negative CHECK ((unit_price >= 0))
+);
+
+ALTER TABLE ONLY public.items FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: partnership_grants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -690,6 +712,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: items items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.items
+    ADD CONSTRAINT items_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: partnership_grants partnership_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -831,6 +861,20 @@ ALTER TABLE ONLY public.tenants
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: index_items_on_owner_tenant_id_and_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_items_on_owner_tenant_id_and_code ON public.items USING btree (owner_tenant_id, code);
+
+
+--
+-- Name: index_items_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_items_on_owner_tenant_id_and_id ON public.items USING btree (owner_tenant_id, id);
 
 
 --
@@ -1135,6 +1179,14 @@ CREATE TRIGGER users_bump_session_version BEFORE UPDATE OF password_digest ON pu
 
 
 --
+-- Name: items fk_rails_1795f753e1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.items
+    ADD CONSTRAINT fk_rails_1795f753e1 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: solid_queue_recurring_executions fk_rails_318a5533ed; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1231,6 +1283,19 @@ ALTER TABLE ONLY public.partnership_grants
 
 
 --
+-- Name: items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: items owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.items USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
 -- Name: partnership_grants owner_write; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1249,6 +1314,13 @@ CREATE POLICY owner_write ON public.partnerships USING ((owner_tenant_id = publi
 --
 
 CREATE POLICY owner_write ON public.users USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: items partner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY partner_read ON public.items FOR SELECT USING ((published AND public.partnership_active(owner_tenant_id, public.current_tenant_id())));
 
 
 --
@@ -1292,6 +1364,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000400'),
 ('20261008000300'),
 ('20261008000210'),
 ('20261008000200'),

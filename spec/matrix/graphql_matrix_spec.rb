@@ -7,14 +7,40 @@ require_relative "graphql_expectations"
 RSpec.describe "入口の行列", type: :request do
   let(:world) { MatrixWorld.new }
 
-  # 型ごとの、応答の data からフィールドの親までの道
-  def parent_paths = { "BuyerView" => %w[buyer], "SupplierView" => %w[supplier], "Query" => [], "Mutation" => [] }
+  ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
 
+  # 型ごとの、応答の data からフィールドの親までの道。相手側の型の中の読む経路は、経路 2 の一覧の要素を親にする
+  def parent_paths = { "BuyerView" => %w[buyer], "SupplierView" => %w[supplier], "Query" => [], "Mutation" => [],
+    "SupplierPartnership" => %w[buyer suppliers] }
+
+  # 相手テナントのデータを返す型。コネクションは中身の型で判定する
+  def cross_tenant?(type)
+    type = type.node_type if type.respond_to?(:node_type)
+    type.try(:cross_tenant_read).present?
+  end
+
+  # 視点の入口と Mutation のフィールド、入口の下で相手側の型を返すフィールド（読む経路）。
   # 視点の入口そのもの（Query.buyer・Query.supplier）は、データを持たないので除く
   def schema_entries
-    parent_paths.keys.filter_map { |name| FactoryOpsSchema.get_type(name) }.flat_map do |type|
+    root_fields = ROOTS.filter_map { |name| FactoryOpsSchema.get_type(name) }.flat_map do |type|
       type.fields.values.reject { |field| field.type.unwrap.graphql_name.in?(%w[BuyerView SupplierView]) }
-        .map { |field| "#{type.graphql_name}.#{field.graphql_name}" }
+    end
+    nested_fields = FactoryOpsSchema.types.values
+      .select { |type| type.kind.object? && type < Types::BaseObject && !type.graphql_name.in?(ROOTS) }
+      .reject { |type| type < Types::BaseConnection || type < Types::BaseEdge }
+      .flat_map { |type| type.fields.values.select { |field| cross_tenant?(field.type.unwrap) } }
+
+    (root_fields + nested_fields).map(&:path)
+  end
+
+  # 道の途中の一覧は要素ごとにたどり、たどり着いた値をすべて集める
+  def dig_all(value, path)
+    return [ value ] if path.empty?
+
+    case value
+    when Array then value.flat_map { dig_all(_1, path) }
+    when Hash then dig_all(value[path.first], path.drop(1))
+    else []
     end
   end
 
@@ -22,12 +48,14 @@ RSpec.describe "入口の行列", type: :request do
     return :forbidden if body["errors"]&.any? { |error| error.dig("extensions", "code") == "FORBIDDEN" }
     raise "想定外のエラー: #{body['errors']}" if body["errors"].present?
 
-    value = body.dig("data", *path)
-    return :null if value.nil?
-    return value["errors"].first["code"].downcase.to_sym if value.is_a?(Hash) && value["errors"].present?
+    values = dig_all(body["data"], path)
+    return :null if values == [ nil ]
 
-    list = value.is_a?(Hash) ? value["nodes"] || value["edges"] : value
-    list.is_a?(Array) && list.empty? ? :empty : :value
+    value = values.first
+    return value["errors"].first["code"].downcase.to_sym if values.one? && value.is_a?(Hash) && value["errors"].present?
+
+    lists = values.map { |each| each.is_a?(Hash) ? each["nodes"] || each["edges"] : each }
+    lists.all?(Array) && lists.all?(&:empty?) ? :empty : :value
   end
 
   it "入口のフィールドと mutation すべてに期待値があり、無いフィールドの期待値は無い" do

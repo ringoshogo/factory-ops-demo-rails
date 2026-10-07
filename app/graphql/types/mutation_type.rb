@@ -8,5 +8,7 @@ module Types
     field :revoke_partnership, mutation: Mutations::RevokePartnership
     field :grant_permission, mutation: Mutations::GrantPermission
     field :withdraw_permission, mutation: Mutations::WithdrawPermission
+    field :save_item, mutation: Mutations::SaveItem
+    field :set_item_published, mutation: Mutations::SetItemPublished
   end
 end
