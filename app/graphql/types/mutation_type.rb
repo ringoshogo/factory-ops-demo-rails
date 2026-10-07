@@ -10,5 +10,6 @@ module Types
     field :withdraw_permission, mutation: Mutations::WithdrawPermission
     field :save_item, mutation: Mutations::SaveItem
     field :set_item_published, mutation: Mutations::SetItemPublished
+    field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
   end
 end

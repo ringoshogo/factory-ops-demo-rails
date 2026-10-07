@@ -20,6 +20,14 @@ module MatrixExpectations
     },
     "partnership_grants" => {
       granted_buyer: { supplier: 3 }
-    }
+    },
+    # 発注と受注はイベントだけで連結し、相手から読む経路は無い。採番の表と対応表も同じ
+    "purchase_orders" => OWNER_ONLY,
+    "purchase_order_lines" => OWNER_ONLY,
+    "purchase_order_sequences" => OWNER_ONLY,
+    "sales_orders" => OWNER_ONLY,
+    "sales_order_lines" => OWNER_ONLY,
+    "sales_order_sequences" => OWNER_ONLY,
+    "customer_part_mappings" => OWNER_ONLY
   }.freeze
 end

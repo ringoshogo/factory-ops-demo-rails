@@ -421,7 +421,8 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | `supplier.partnerships` | `Partnerships::Directory.for_supplier` |
 | `supplier.items`・`Item` | `Sales::Catalog` |
 | `supplier.partMappings` | `Sales::PartMappings` |
-| `supplier.salesOrders`・`supplier.salesOrder` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
+| `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
+| `SalesOrder.customer` | `Partnerships::Directory.tenants` |
 | `SalesOrder.shipmentRequest` | `Fulfillment::ShipmentRequests.for_sales_orders` |
 | `supplier.stocks`・`Item.stock`・`supplier.stockMovements` | `Inventory::Stocks` |
 | `supplier.shipmentRequests`・`ShipmentRequest.instruction`・`shipment` | `Fulfillment::ShipmentRequests` |
@@ -549,7 +550,7 @@ enum UserErrorCode {
 
 明細・権限付与・取引関係・請求条件のように、親ごとの件数が小さい集まりは、コネクションにせずリストで返す。
 
-別のコンテキストの値や子の値を引くフィールドは、`GraphQL::Dataloader` のソースを通して公開 API を呼ぶ。公開 API は、そのために ID の配列を受け取る一括取得のメソッドを持つ（例：`Sales::SalesOrders.lines_for(order_ids)`）。1 件ずつ引くメソッドを、入れ子のフィールドから呼ばない。ソースは操作者を引数に取り、公開 API にそのまま渡す。
+別のコンテキストの値や子の値を引くフィールドは、`GraphQL::Dataloader` のソースを通して公開 API を呼ぶ。公開 API は、そのために操作者と ID の配列を受け取り、ID ごとの値のハッシュを返す一括取得のメソッドを持つ（例：`Sales::SalesOrders.lines_for(actor, order_ids)`）。1 件ずつ引くメソッドを、入れ子のフィールドから呼ばない。ソースは `Sources::PublicApiSource` の 1 つで、公開 API のモジュール・メソッド名・操作者を引数に取り、操作者を公開 API にそのまま渡す。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 

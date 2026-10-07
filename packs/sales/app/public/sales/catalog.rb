@@ -11,6 +11,11 @@ module Sales
       item && to_value(item)
     end
 
+    # 品目 ID ごとの自社の品目。見えない ID は含まない
+    def self.items_for(actor, ids)
+      Scope.call(actor, :own).where(id: ids).to_h { [ _1.id, to_value(_1) ] }
+    end
+
     # 品目コードで自社の品目を引き、無ければ作り、あれば更新する。公開の状態は set_published だけが変える。
     # 同じコードの同時の作成は一意索引が拒否する。セーブポイントまで戻してから失敗を返す
     def self.save(actor, code:, name:, unit:, unit_price:, tax_rate_percent:)

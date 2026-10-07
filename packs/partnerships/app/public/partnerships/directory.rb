@@ -16,6 +16,13 @@ module Partnerships
       to_values(Scope.call(actor, :as_supplier).where(id:)).first
     end
 
+    # 伝票が指す相手テナント（発注の受注側・受注の発注側）の ID ごとの名前。取引関係が失効しても引ける
+    def self.tenants(actor, ids)
+      raise ArgumentError, "actor is required" unless actor.is_a?(Actor)
+
+      Tenant.where(id: ids).to_h { [ _1.id, TenantSummary.new(id: _1.id, name: _1.name) ] }
+    end
+
     def self.to_values(relation)
       partnerships = relation.to_a
       permissions = PartnershipGrant.where(partnership_id: partnerships.map(&:id))

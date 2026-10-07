@@ -15,6 +15,9 @@ module MatrixExpectations
   PARTNERSHIP_MUTATION = "{ partnership { id } errors { code } }".freeze
   ITEM_MUTATION = "{ item { id } errors { code } }".freeze
 
+  # ID で 1 件を引く入口。持ち主のペルソナにだけ値が返り、他のペルソナには存在しない ID と同じ null になる
+  def self.only(persona) = MatrixWorld::PERSONAS.index_with(:null).merge(persona => :value).freeze
+
   GRAPHQL = {
     "Query.viewer" => {
       query: "{ viewer { id } }",
@@ -68,6 +71,31 @@ module MatrixExpectations
       query: "mutation($input: SetItemPublishedInput!) { setItemPublished(input: $input) #{ITEM_MUTATION} }",
       variables: ->(world) { { input: { itemId: world.row("items", :supplier).id, published: true } } },
       expect: ONLY_SUPPLIER
+    },
+    "BuyerView.purchaseOrders" => {
+      query: "{ buyer { purchaseOrders { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "BuyerView.purchaseOrder" => {
+      query: "query($id: ID!) { buyer { purchaseOrder(id: $id) { id } } }",
+      variables: ->(world) { { id: world.row("purchase_orders", :granted_buyer).id } },
+      expect: only(:granted_buyer)
+    },
+    "SupplierView.salesOrders" => {
+      query: "{ supplier { salesOrders { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.salesOrder" => {
+      query: "query($id: ID!) { supplier { salesOrder(id: $id) { id } } }",
+      variables: ->(world) { { id: world.row("sales_orders", :supplier).id } },
+      expect: only(:supplier)
+    },
+    # supplier への発注。place_orders の付与がある有効な取引関係の発注側だけが登録でき、
+    # 付与の無い・失効した・関係の無い相手と自分自身への発注は、どれも同じ NOT_PERMITTED になる
+    "Mutation.placePurchaseOrder" => {
+      query: "mutation($input: PlacePurchaseOrderInput!) { placePurchaseOrder(input: $input) { purchaseOrder { id } errors { code } } }",
+      variables: ->(world) { { input: { supplierTenantId: world.tenants[:supplier], lines: [ { partNumber: "P-1", quantity: 1 } ] } } },
+      expect: MatrixWorld::PERSONAS.index_with(:not_permitted).merge(granted_buyer: :value)
     }
   }.freeze
 end
