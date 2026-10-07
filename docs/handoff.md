@@ -70,7 +70,7 @@
 ## リポジトリの状態
 
 - **このリポジトリ**：ブランチ `main`。リモートは GitHub の `ringo-shg/factory-ops-demo-rails`（private）。
-- **実装**：M5 まで終えた。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **実装**：M6 まで終えた。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの
