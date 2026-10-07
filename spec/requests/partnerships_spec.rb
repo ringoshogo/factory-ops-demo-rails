@@ -30,7 +30,7 @@ RSpec.describe "取引関係の GraphQL", type: :request do
   end
 
   def partnerships_of_supplier
-    actor = Tenancy.with_tenant(supplier.id) { Partnerships::Authentication.actor(supplier_admin.id) }
+    actor = Tenancy.with_tenant(supplier.id) { Partnerships::Authentication.actor(supplier_admin.id, session_version: supplier_admin.reload.session_version) }
     Tenancy.with_tenant(supplier.id) { Partnerships::Directory.for_supplier(actor) }
   end
 
@@ -92,7 +92,7 @@ RSpec.describe "取引関係の GraphQL", type: :request do
 
       login_as(buyer_admin)
       expect(graphql("{ buyer { suppliers { supplier { name } } } }").dig("data", "buyer", "suppliers")).to eq([])
-      buyer_actor = Tenancy.with_tenant(buyer.id) { Partnerships::Authentication.actor(buyer_admin.id) }
+      buyer_actor = Tenancy.with_tenant(buyer.id) { Partnerships::Authentication.actor(buyer_admin.id, session_version: buyer_admin.reload.session_version) }
       expect(Tenancy.with_tenant(buyer.id) do
         Partnerships::Access.permitted?(buyer_actor, supplier_tenant_id: supplier.id, permission: "view_catalog")
       end).to be(false)
