@@ -192,11 +192,18 @@ DB ロールは 2 つに分ける。どちらも `docker/initdb/01_roles.sql` �
 | `factory_owner`（所有ロール） | テーブルの所有者。DB の作成、マイグレーション、`structure.sql` の読み込みを行う | `CREATEDB`・`BYPASSRLS`。`BYPASSRLS` は、ログインの前のユーザー検索の関数（下記）が `FORCE` の表を引くのに要る |
 | `factory_app`（アプリのロール） | アプリ・テスト・ワーカーはすべてこのロールで接続する | テーブルの所有者でも `BYPASSRLS` でもスーパーユーザーでもない一般ロール。所有者とスーパーユーザーは RLS を迂回するので、このロールで動かないテストは RLS を検証しない |
 
-`config/database.yml` は、同じ DB に 2 つの設定を置く。アプリが使う `primary` はアプリのロールで接続し、`database_tasks: false` にする。DB のタスクは所有ロールの `owner` だけが行う。`db:rollback` と `db:migrate:up`・`down`・`redo` は設定ごとに回らず `primary` の接続でマイグレーションを流すので、`lib/tasks/db_roles.rake` が所有ロールの接続に切り替える。
+`config/database.yml` は、同じ DB に 2 つの設定を置く。アプリが使う `primary` はアプリのロールで接続し、`database_tasks: false` にする。DB のタスクは所有ロールの `owner` だけが行う。`db:rollback` と `db:migrate:up`・`down`・`redo` は設定ごとに回らず `primary` の接続でマイグレーションを流すので、`lib/tasks/db_roles.rake` が所有ロールの接続に切り替える。本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。デプロイの担当者は、所有ロールの資格情報（`DB_OWNER_USER`・`DB_OWNER_PASSWORD`）をマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。`BYPASSRLS` の資格情報を持つプロセスは、RLS の外で全テナントを読み書きできるからである。そのため、コンテナの起動（`bin/docker-entrypoint`）は `db:prepare` を流さない。資格情報の無いプロセスで DB のタスクを流すと、rake タスクが止まる。
 
-アプリのロールへの権限は、表を作るタスク（`db:migrate`・`db:schema:load`・`db:test:load_schema`・`db:prepare` など）の後に、同じ rake ファイルの `db:grant_app_role` が付与する。Rails の pg_dump は権限を落とす（`--no-privileges`）ので、権限を `structure.sql` に載せても、テスト DB には再現されない。付与するのは全テーブルの `SELECT`・`INSERT`・`UPDATE`・`DELETE` と連番の `USAGE`・`SELECT` で、`schema_migrations`・`ar_internal_metadata` は `SELECT` だけにする。
+アプリのロールへの権限は、表を作るタスク（`db:migrate`・`db:schema:load`・`db:test:load_schema`・`db:prepare` など）の後に、同じ rake ファイルの `db:grant_app_role` が付与する。Rails の pg_dump は権限を落とす（`--no-privileges`）ので、権限を `structure.sql` に載せても、テスト DB には再現されない。付与するのは全テーブルの `SELECT`・`INSERT`・`UPDATE`・`DELETE` と連番の `USAGE`・`SELECT` で、`schema_migrations`・`ar_internal_metadata` は `SELECT` だけ、`tenants` は `SELECT`・`INSERT` だけにする。`tenants` は RLS を付けない表なので、`UPDATE`・`DELETE` を許すと、他社の名前や取引用コードを書き換えられる。テナントの名前の変更と削除は、所有ロールで行う。
 
-テナントは、トランザクションの中で `SET LOCAL app.tenant_id` で渡す。アプリでは `Tenancy.with_tenant(tenant_id) { ... }`（`packs/platform`）だけがこれを行う。トランザクション（外側にあればセーブポイント）を開き、`app.tenant_id` と `Current.tenant_id` を設定してブロックを実行し、抜けるときに `app.tenant_id` を空に戻す。外側のトランザクションの中で呼ぶと（テストなど）、`SET LOCAL` がその終わりまで残り、後の操作に前のテナントが漏れるからである。
+テナントは、トランザクションの中で `SET LOCAL app.tenant_id` で渡す。アプリでは `Tenancy.with_tenant(tenant_id) { ... }`（`packs/platform`）だけがこれを行う。トランザクション（外側にあればセーブポイント）を開き、`app.tenant_id` と `Current.tenant_id` を設定してブロックを実行する。
+
+接続はプールで使い回すので、前の利用者のテナントが残った接続を、テナントを設定しない次の利用者が受け取ることがある。残り方は 2 つある。外側のトランザクションの中で呼ぶと（テストなど）、`SET LOCAL` がその終わりまで残る。誰かがセッションの `SET` で設定すると、トランザクションを抜けた後にその値が現れる。どちらも防ぐため、`app.tenant_id` のセッションの値を 2 か所で空にする。
+
+- **`with_tenant` を抜けるとき**：例外で抜けた場合も含め、いちばん外側の `with_tenant` が空にする。
+- **接続を貸し出すとき**：接続プールの貸し出しのコールバック（`config/initializers/tenancy.rb`）が空にする。`with_tenant` を通らずに残った値も、次の利用者には届かない。
+
+`with_tenant` の入れ子は、外側と同じテナントのときだけ許す。内側はセーブポイントを開いてブロックを実行し、テナントの設定に触れない。別のテナントを渡すと `Tenancy::TenantMismatch` になる。1 つのリクエストは 1 つのテナントで動く（`graphql-schema.md`「1 回のリクエストがたどる道」）ので、途中で切り替える処理は誤りである。
 
 ```sql
 CREATE FUNCTION current_tenant_id() RETURNS uuid LANGUAGE sql STABLE AS

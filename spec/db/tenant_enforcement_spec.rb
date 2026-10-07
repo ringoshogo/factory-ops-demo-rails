@@ -29,6 +29,16 @@ RSpec.describe "テナントの強制" do
       expect(role).to eq("rolsuper" => false, "rolbypassrls" => false)
     end
 
+    # tenants は RLS を付けない表なので、書き換えを許すと他社の名前や取引用コードを変えられる
+    it "tenants を読み、追加できるが、書き換えも削除もできない" do
+      privileges = %w[SELECT INSERT UPDATE DELETE].index_with do |privilege|
+        connection.select_value("SELECT has_table_privilege(current_user, 'tenants', #{connection.quote(privilege)})")
+      end
+
+      expect(privileges).to eq("SELECT" => true, "INSERT" => true, "UPDATE" => false, "DELETE" => false)
+      expect { connection.update("UPDATE tenants SET name = 'x'") }.to raise_error(ActiveRecord::StatementInvalid, /permission denied/)
+    end
+
     it "どの表の所有者でもない" do
       owned = connection.select_values(<<~SQL)
         SELECT relname FROM pg_class

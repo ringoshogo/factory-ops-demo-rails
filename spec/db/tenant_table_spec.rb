@@ -48,7 +48,8 @@ RSpec.describe TenantTable do
 
   after do
     migrate(:down) if migrated?
-    connection.execute("DELETE FROM tenants WHERE code LIKE 'tenant_table_spec_%'")
+    # アプリのロールは tenants を消せないので、所有ロールで消す
+    OwnerConnection.lease_connection.execute("DELETE FROM tenants WHERE code LIKE 'tenant_table_spec_%'")
   end
 
   it "作った表に RLS とポリシーが付き、巻き戻すと表ごと消える" do

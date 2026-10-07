@@ -23,7 +23,7 @@ bin/setup --skip-server
 bundle exec rspec
 ```
 
-DB には 2 つのロールで接続する。アプリとテストは RLS が掛かる `factory_app`、DB のタスクは表の所有者の `factory_owner` を使い、どちらも `bin/setup` が作る（`docs/architecture/data-model.md`「RLS」）。M3 より前に作った DB は `postgres` の持ち物なので、`bin/rails db:drop` が通らない。その場合は `docker compose down -v` でボリュームごと作り直す。
+DB には 2 つのロールで接続する。アプリとテストは RLS が掛かる `factory_app`、DB のタスクは表の所有者の `factory_owner` を使い、どちらも `bin/setup` が作る（`docs/architecture/data-model.md`「RLS」）。本番では、`factory_owner` の資格情報（`DB_OWNER_USER`・`DB_OWNER_PASSWORD`）をマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。M3 より前に作った DB は `postgres` の持ち物なので、`bin/rails db:drop` が通らない。その場合は `docker compose down -v` でボリュームごと作り直す。
 
 pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対して動かず、`db/structure.sql` を書けないため、`bin/setup` は 18 未満なら止まる。Ruby は `.ruby-version` の版を rbenv で入れる。
 

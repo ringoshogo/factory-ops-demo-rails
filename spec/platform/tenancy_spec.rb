@@ -71,6 +71,28 @@ RSpec.describe Tenancy do
     end
   end
 
+  describe "入れ子の .with_tenant" do
+    it "同じテナントなら、内側を抜けても外側のテナントが残る" do
+      described_class.with_tenant(tenant_a) do
+        described_class.with_tenant(tenant_a) { expect(user_class.pluck(:id)).to eq([ user_a ]) }
+
+        expect(Current.tenant_id).to eq(tenant_a)
+        expect(tenant_setting).to eq(tenant_a)
+        expect(connection.select_values("SELECT id FROM users")).to eq([ user_a ])
+      end
+      expect(tenant_setting).to eq("")
+    end
+
+    it "別のテナントへの切り替えは例外になり、外側のテナントは変わらない" do
+      described_class.with_tenant(tenant_a) do
+        expect { described_class.with_tenant(tenant_b) { } }.to raise_error(Tenancy::TenantMismatch)
+
+        expect(tenant_setting).to eq(tenant_a)
+        expect(connection.select_values("SELECT id FROM users")).to eq([ user_a ])
+      end
+    end
+  end
+
   describe "相手テナントの名義" do
     it "相手名義の INSERT は WITH CHECK に拒否される" do
       expect { described_class.with_tenant(tenant_a) { insert_user(tenant_b, "x@example.com") } }

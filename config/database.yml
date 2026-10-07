@@ -44,14 +44,18 @@ test:
     <<: *local_owner
     database: factory_ops_demo_rails_test
 
+# 本番の owner は、DB_OWNER_USER を渡したプロセスにだけ置く。所有ロールは BYPASSRLS を持つので、
+# 資格情報はマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。
 production:
   primary:
     <<: [*default, *app]
     database: factory_ops_demo_rails_production
     username: <%= ENV["DB_APP_USER"] %>
     password: <%= ENV["DB_APP_PASSWORD"] %>
+<% if ENV["DB_OWNER_USER"].present? %>
   owner:
     <<: [*default, *owner]
     database: factory_ops_demo_rails_production
     username: <%= ENV["DB_OWNER_USER"] %>
     password: <%= ENV["DB_OWNER_PASSWORD"] %>
+<% end %>

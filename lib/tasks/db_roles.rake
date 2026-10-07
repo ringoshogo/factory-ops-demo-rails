@@ -11,7 +11,7 @@ namespace :db do
 
     environments.each do |env|
       app = ActiveRecord::Base.configurations.configs_for(env_name: env, name: "primary", include_hidden: true)
-      owner = ActiveRecord::Base.configurations.configs_for(env_name: env, name: "owner")
+      owner = owner_config!(env)
 
       ActiveRecord::Tasks::DatabaseTasks.with_temporary_connection(owner) do |connection|
         # 開発環境で db:migrate を流したとき、テスト DB はまだ空のことがある。db:test:prepare の後に付与する
@@ -22,6 +22,8 @@ namespace :db do
         connection.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO #{role}")
         # マイグレーションの記録はアプリから書き換えさせない
         connection.execute("REVOKE INSERT, UPDATE, DELETE ON schema_migrations, ar_internal_metadata FROM #{role}")
+        # tenants は RLS を付けない表なので、書き換えを許すと他社の名前や取引用コードを変えられる
+        connection.execute("REVOKE UPDATE, DELETE ON tenants FROM #{role}")
       end
     rescue ActiveRecord::NoDatabaseError
       next
@@ -31,9 +33,13 @@ namespace :db do
   # db:rollback などは、設定ごとに回さず ActiveRecord::Base の接続でマイグレーションを流す。
   # そのままではアプリのロールで流れて権限で落ちるので、所有ロールに切り替える
   task connect_as_owner: :load_config do
-    ActiveRecord::Base.establish_connection(
-      ActiveRecord::Base.configurations.configs_for(env_name: ActiveRecord::Tasks::DatabaseTasks.env, name: "owner")
-    )
+    ActiveRecord::Base.establish_connection(owner_config!(ActiveRecord::Tasks::DatabaseTasks.env))
+  end
+
+  # 本番の owner は、所有ロールの資格情報を渡したマイグレーションの工程にだけある（config/database.yml）
+  def owner_config!(env)
+    ActiveRecord::Base.configurations.configs_for(env_name: env, name: "owner") or
+      abort "#{env} に owner の DB 設定が無い。本番では DB_OWNER_USER と DB_OWNER_PASSWORD を渡して DB のタスクを流す"
   end
 end
 
