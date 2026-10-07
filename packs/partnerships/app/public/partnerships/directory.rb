@@ -16,6 +16,11 @@ module Partnerships
       to_values(Scope.call(actor, :as_supplier).where(id:)).first
     end
 
+    # 自社が受注側の取引関係（失効したものを含む）の相手か。存在しないテナントも偽になる
+    def self.customer?(actor, tenant_id)
+      Scope.call(actor, :as_supplier).exists?(buyer_tenant_id: tenant_id)
+    end
+
     # 伝票が指す相手テナント（発注の受注側・受注の発注側）の ID ごとの名前。取引関係が失効しても引ける
     def self.tenants(actor, ids)
       raise ArgumentError, "actor is required" unless actor.is_a?(Actor)
