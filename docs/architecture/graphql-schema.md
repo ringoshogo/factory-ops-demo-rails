@@ -58,7 +58,7 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 1. `Query` のフィールドは `viewer`（`Viewer`）・`buyer`（`BuyerView`）・`supplier`（`SupplierView`）の 3 つだけである。`Mutation` のフィールドは、どれも `buyer` か `supplier` を宣言した mutation である。2 以降の検査は視点の入口と mutation から型をたどるので、ルートに直接置いた型は検査を素通りする。
 2. `BuyerView` と、`buyer` を宣言した mutation の戻り値からたどれる型は、すべて `buyer` か `shared` である。`SupplierView` 側も同様に確かめる。
 3. `shared` の型のフィールドは、スカラー・enum・`shared` の型だけを返す。
-4. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つに限られる。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog`・`:partnerships`・`:shipments`）。
+4. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つに限られる。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog`・`:partnerships`・`:shipments`）。`SupplierShipment` の中にだけ現れる明細の型 `SupplierShipmentLine` は経路を宣言せず、`SupplierShipment` と同じ規則（`view_shipments` の付与）で認可する。
 
 `Query` に受注側の型を返すフィールドを足すと、1 が落ちる。発注の型に受注へのフィールドを 1 本足すと、2 が落ちる。相手側の型を 4 つ目として足すと、4 が落ちる。
 
@@ -76,7 +76,7 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 経路 3 の出荷実績は、購買が持つ写しの入荷（`InboundShipment`）と同じ出荷を指す。業務の正本は写しの入荷で、検収はこれに対して行う。経路 3 は、受注側の出荷実績そのものを、権限付与がある間だけ見せる。
 
-相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。購買が持つ相手側の ID（`data-model.md`「購買」）も、GraphQL のフィールドには出さない。
+相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。`SupplierShipment` の明細の型 `SupplierShipmentLine` も、出荷明細 ID を返さず、自社の発注明細で識別する。到達可能性のテストが、これら 4 つの型に ID のフィールドが無いことを確かめる。購買が持つ相手側の ID（`data-model.md`「購買」）も、GraphQL のフィールドには出さない。
 
 ```graphql
 type BuyerView {

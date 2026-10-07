@@ -97,7 +97,17 @@ RSpec.describe "視点ごとの型の到達可能性" do
   it "相手テナントのデータを返す型は、決めた発注側の型だけで、対応する読む経路を宣言している" do
     declared = object_types.select { |type| type.try(:cross_tenant_read) }
 
-    expect(cross_tenant_types).to include(declared.to_h { |type| [ type.graphql_name, type.cross_tenant_read ] })
+    expect(declared.to_h { |type| [ type.graphql_name, type.cross_tenant_read ] }).to eq(cross_tenant_types)
     expect(declared.map(&:perspective)).to all(eq(:buyer))
+  end
+
+  # 相手の内部の ID を出さず、品目コード・受注側テナント・連結先の発注で識別する（docs/architecture/graphql-schema.md「発注側の視点」）
+  it "相手テナントのデータを返す型と、その明細の型は、ID のフィールドを持たない" do
+    types = cross_tenant_types.keys + %w[SupplierShipmentLine]
+    with_id = types.flat_map do |name|
+      schema.get_type(name).fields.values.select { |field| field.type.unwrap == GraphQL::Types::ID }.map { "#{name}.#{_1.name}" }
+    end
+
+    expect(with_id).to be_empty
   end
 end

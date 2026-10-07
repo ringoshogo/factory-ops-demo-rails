@@ -9,9 +9,9 @@ RSpec.describe "入口の行列", type: :request do
 
   ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
 
-  # 型ごとの、応答の data からフィールドの親までの道。相手側の型の中の読む経路は、経路 2 の一覧の要素を親にする
+  # 型ごとの、応答の data からフィールドの親までの道。型の中の読む経路は、経路 2 の取引関係の一覧か発注の一覧の要素を親にする
   def parent_paths = { "BuyerView" => %w[buyer], "SupplierView" => %w[supplier], "Query" => [], "Mutation" => [],
-    "SupplierPartnership" => %w[buyer suppliers] }
+    "SupplierPartnership" => %w[buyer suppliers], "PurchaseOrder" => %w[buyer purchaseOrders nodes] }
 
   # 相手テナントのデータを返す型。コネクションは中身の型で判定する
   def cross_tenant?(type)
