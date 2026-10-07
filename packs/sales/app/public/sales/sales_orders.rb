@@ -11,11 +11,23 @@ module Sales
       to_values(actor, Scope.sales_orders(actor, :own).where(id:)).first
     end
 
+    # 受注 ID ごとの受注。見えない ID は含まない
+    def self.by_ids(actor, ids)
+      to_values(actor, Scope.sales_orders(actor, :own).where(id: ids)).index_by(&:id)
+    end
+
     # 受注 ID ごとの明細。見えない受注の ID は空の配列になる
     def self.lines_for(actor, order_ids)
       lines = SalesOrderLine.where(sales_order_id: Scope.sales_orders(actor, :own).where(id: order_ids).select(:id)).order(:id).to_a
       allocated = Inventory::Allocation.quantities_for(actor, lines.map(&:id))
       order_ids.index_with { [] }.merge(lines.map { to_line_value(_1, allocated) }.group_by(&:sales_order_id))
+    end
+
+    # 受注明細 ID ごとの明細。見えない ID は含まない
+    def self.lines_by_ids(actor, line_ids)
+      lines = SalesOrderLine.where(id: line_ids, sales_order_id: Scope.sales_orders(actor, :own).select(:id)).to_a
+      allocated = Inventory::Allocation.quantities_for(actor, lines.map(&:id))
+      lines.to_h { [ _1.id, to_line_value(_1, allocated) ] }
     end
 
     def self.to_values(actor, orders)

@@ -13,6 +13,9 @@ module Types
     field :register_part_mapping, mutation: Mutations::RegisterPartMapping
     field :allocate_sales_order, mutation: Mutations::AllocateSalesOrder
     field :adjust_stock, mutation: Mutations::AdjustStock
+    field :create_shipping_instruction, mutation: Mutations::CreateShippingInstruction
+    field :cancel_shipping_instruction, mutation: Mutations::CancelShippingInstruction
+    field :post_shipment, mutation: Mutations::PostShipment
     field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
   end
 end

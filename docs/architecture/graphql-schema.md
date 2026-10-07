@@ -195,7 +195,7 @@ type ReceivedInvoiceLine {
 
 受注側の型は、自社が所有するデータだけを返す。発注側の発注・検収・受領請求書へのフィールドは無い。受注の連結元の発注 ID（`sales_orders.source_purchase_order_id`）など、相手側を指す ID 列もフィールドに出さない。
 
-以下の SDL は抜粋である。省いた型（`ShipmentRequestLine`・`ShippingInstruction`・`BillableItem`・`InvoiceTaxSummary` など）は、`data-model.md` の表の列のうち、相手側を指す ID 列を除いたものをフィールドにする。
+以下の SDL は抜粋である。省いた型（`ShipmentRequestLine`・`ShippingInstruction`・`BillableItem`・`InvoiceTaxSummary` など）は、`data-model.md` の表の列のうち、相手側を指す ID 列を除いたものをフィールドにする。ただし `ShipmentRequest.instruction` は有効な出荷指示だけを返すので、`ShippingInstruction` は `status` をフィールドにしない。
 
 同じテナントの中で複数のコンテキストを束ねるフィールド（受注 → 出荷依頼、出荷依頼明細 → 受注明細）は、ルートパッケージで両方の公開 API を呼んで解決する。コンテキスト同士は依存しない（`context-map.md`「疎結合を守る規則」5）。
 
@@ -466,8 +466,8 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する） | 受注取消・出荷取消 |
 | `approveCancellationReview` | `Sales::CancellationReviews.approve`（引当を解除する） | 取消承認・出荷取消 |
 | `rejectCancellationReview` | `Sales::CancellationReviews.reject` | 取消却下・出荷停止解除 |
-| `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions` | なし |
-| `postShipment` | `Fulfillment::Shipping.post`（`Inventory::Allocation` で引当を消費する） | 出荷計上 |
+| `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions`（どちらも出荷依頼 ID で指定する。取消は有効な指示を取り消す。取消済・出荷済の出荷依頼と、有効な指示の重複・不在は `CONFLICT`） | なし |
+| `postShipment` | `Fulfillment::Shipping.post`（出荷依頼 ID と出荷日で指定し、有効な指示のある出荷依頼を全量で計上する。`Inventory::Allocation` で引当を消費し、`active` でない引当があれば `CONFLICT`） | 出荷計上 |
 | `adjustStock` | `Inventory::Adjustment.adjust`（入庫・出庫。出庫は有効在庫までに限り、超えれば `INVALID_INPUT`。品目は在庫が受注に依存しないので、mutation が `Sales::Catalog` で自社の品目かを確かめ、見えなければ `NOT_FOUND`） | なし |
 | `setBillingTerm` | `Billing::Terms.set` | なし |
 | `closeBillingPeriod` | `Billing::Closing.close`（下書きの請求書を作る） | なし |

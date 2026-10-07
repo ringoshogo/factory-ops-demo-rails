@@ -14,6 +14,7 @@ module MatrixExpectations
 
   PARTNERSHIP_MUTATION = "{ partnership { id } errors { code } }".freeze
   ITEM_MUTATION = "{ item { id } errors { code } }".freeze
+  SHIPMENT_REQUEST_MUTATION = "{ shipmentRequest { id } errors { code } }".freeze
 
   # ID で 1 件を引く入口。持ち主のペルソナにだけ値が返り、他のペルソナには存在しない ID と同じ null になる
   def self.only(persona) = MatrixWorld::PERSONAS.index_with(:null).merge(persona => :value).freeze
@@ -124,6 +125,38 @@ module MatrixExpectations
     "Mutation.allocateSalesOrder" => {
       query: "mutation($input: AllocateSalesOrderInput!) { allocateSalesOrder(input: $input) { salesOrder { id } errors { code } } }",
       variables: ->(world) { { input: { salesOrderId: world.linked_order(:sales_order).id } } },
+      expect: ONLY_SUPPLIER
+    },
+    # 出荷は受注側だけが所有する。どのペルソナにも自社の行だけが返る
+    "SupplierView.shipmentRequests" => {
+      query: "{ supplier { shipmentRequests { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    # 出荷指示の無い出荷依頼に指示を作る
+    "Mutation.createShippingInstruction" => {
+      query: "mutation($input: CreateShippingInstructionInput!) { createShippingInstruction(input: $input) #{SHIPMENT_REQUEST_MUTATION} }",
+      variables: lambda { |world|
+        { input: { shipmentRequestId: world.row("shipment_requests", :supplier).id, plannedDate: Date.current.iso8601 } }
+      },
+      expect: ONLY_SUPPLIER
+    },
+    "Mutation.cancelShippingInstruction" => {
+      query: "mutation($input: CancelShippingInstructionInput!) { cancelShippingInstruction(input: $input) #{SHIPMENT_REQUEST_MUTATION} }",
+      variables: ->(world) { { input: { shipmentRequestId: world.row("shipping_instructions", :supplier).shipment_request_id } } },
+      expect: ONLY_SUPPLIER
+    },
+    # 有効な指示のある出荷依頼に、active の引当を持つ明細を 1 つ足して計上する
+    "Mutation.postShipment" => {
+      query: "mutation($input: PostShipmentInput!) { postShipment(input: $input) #{SHIPMENT_REQUEST_MUTATION} }",
+      variables: lambda { |world|
+        request = world.row("shipping_instructions", :supplier).shipment_request
+        world.as(:supplier) do
+          allocation = FactoryBot.create(:allocation)
+          FactoryBot.create(:shipment_request_line, shipment_request: request, sales_order_line_id: allocation.sales_order_line_id,
+            item_id: allocation.item_id, quantity: allocation.quantity)
+        end
+        { input: { shipmentRequestId: request.id, shippedOn: Date.current.iso8601 } }
+      },
       expect: ONLY_SUPPLIER
     },
     # supplier への発注。place_orders の付与がある有効な取引関係の発注側だけが登録でき、

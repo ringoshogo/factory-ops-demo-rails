@@ -12,5 +12,6 @@ module Types
     field :sales_order, resolver: Resolvers::Supplier::SalesOrderResolver
     field :stocks, resolver: Resolvers::Supplier::StocksResolver
     field :stock_movements, resolver: Resolvers::Supplier::StockMovementsResolver
+    field :shipment_requests, resolver: Resolvers::Supplier::ShipmentRequestsResolver
   end
 end

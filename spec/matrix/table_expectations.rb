@@ -32,6 +32,12 @@ module MatrixExpectations
     # 在庫は受注側だけが所有し、相手から読む経路は無い
     "stocks" => OWNER_ONLY,
     "allocations" => OWNER_ONLY,
-    "stock_movements" => OWNER_ONLY
+    "stock_movements" => OWNER_ONLY,
+    # 出荷は受注側だけが所有する。発注側が自社の発注に連結した出荷を読む経路 3 は M14 で開く
+    "shipment_requests" => OWNER_ONLY,
+    "shipment_request_lines" => OWNER_ONLY,
+    "shipping_instructions" => OWNER_ONLY,
+    "shipments" => OWNER_ONLY,
+    "shipment_lines" => OWNER_ONLY
   }.freeze
 end
