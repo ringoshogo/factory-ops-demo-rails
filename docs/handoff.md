@@ -43,7 +43,7 @@
 | データモデル | 全テーブルに `owner_tenant_id`、親子は複合外部キー、状態は時刻列から導出、引当は在庫だけが持つ。RLS の `WITH CHECK` は全表で所有テナントに限り、読む 3 経路にだけ SELECT のポリシーを足す | `architecture/data-model.md` |
 | DB ロール | 所有ロール `factory_owner`（表の所有者、`BYPASSRLS`）とアプリのロール `factory_app`（一般ロール）に分ける。アプリ・テスト・ワーカーは `factory_app` で接続し、権限は DB のタスクの後に rake タスクで付与する。`tenants` への書き込みは追加だけを許す。本番では所有ロールの資格情報をマイグレーションの工程にだけ渡し、Web とワーカーには渡さない | `implementation-plan.md` M3、`architecture/data-model.md`「RLS」 |
 | 境界の強制 | 初日から `packs/` 構成。packwerk の依存チェックとプライバシーチェックを CI で強制する | ユーザー判断、`adr/002` |
-| イベントの配送 | Solid Queue を業務 DB と同じ接続に置き、イベントのジョブは業務のトランザクションの中で登録する（`EventJob` は `enqueue_after_transaction_commit = false`、それ以外の `ApplicationJob` は `true`）。outbox は置かない。キューの接続が同じであることをテストで固定する | `adr/005` |
+| イベントの配送 | Solid Queue を業務 DB と同じ接続に置き、イベントのジョブは業務のトランザクションの中で登録する（`Contracts::EventJob` は `enqueue_after_transaction_commit = false`、それ以外の `ApplicationJob` は `true`）。outbox は置かない。登録は `Contracts.publish` が配送表 `Contracts::Subscriptions` の受け手ごとに行い、受け手は宛先テナントの名義で冪等に処理する。キューの接続が同じであることをテストで固定する | `adr/005` |
 | テスト | RSpec＋FactoryBot。設計文書がガードテストを `spec/` のパスで定めているため | `implementation-plan.md`「環境」 |
 | 基盤パッケージ | `packs/platform` を足し、`ApplicationRecord`・`ApplicationJob`・`Current`・`Tenancy` を置く。基底クラスをルートパッケージに置くと、パッケージからルートへの依存が循環になるため | `implementation-plan.md` M2 |
 | GraphQL | graphql-ruby と Action Policy。1 つのスキーマで `buyer`・`supplier` の入口を分け、型に視点を宣言させて到達可能性をテストで固定する。汎用の `node` は置かない。基底の型・リゾルバ・mutation は宣言が無ければ拒否する | `architecture/graphql-schema.md`、`adr/004` |
@@ -51,14 +51,6 @@
 ## 決まっていないこと
 
 - **GitHub リポジトリの公開範囲（public / private）**：いまは private で作ってある
-
-## 未確認の事項
-
-どれも、確かめるマイルストーンが決まっている。確かめたら、該当する ADR の未確認の事項を結果で置き換える。
-
-- RLS を付けない Solid Queue の表を、アプリと同じ DB ロールのワーカーが読めること（`adr/005`）。M7 で確かめる
-
-`adr/005` の残り 2 つは、`implementation-plan.md` M7 で決めた。`EventJob` は `packs/contracts` の `Contracts::EventJob` にし、テストでも `:test` アダプタに差し替えず `:solid_queue` のまま使う。M7 で ADR に反映する。
 
 ## 次にやること
 
@@ -70,7 +62,7 @@
 ## リポジトリの状態
 
 - **このリポジトリ**：ブランチ `main`。リモートは GitHub の `ringo-shg/factory-ops-demo-rails`（private）。
-- **実装**：M6 まで終えた。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **実装**：M7 まで終えた。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの

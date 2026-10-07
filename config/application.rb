@@ -26,7 +26,8 @@ module FactoryOpsDemoRails
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks])
+    # lib/rubocop はカスタム Cop で、rubocop の gem が無いアプリの起動では読めない
+    config.autoload_lib(ignore: %w[assets tasks rubocop])
 
     # Configuration for the application, engines, and railties goes here.
     #
@@ -50,5 +51,8 @@ module FactoryOpsDemoRails
 
     # RLS のポリシーと複合外部キーを残すため（adr/001）
     config.active_record.schema_format = :sql
+
+    # Solid Queue を業務 DB と同じ接続に置く。connects_to を設定せず、全環境で同じアダプタにする（docs/adr/005 決定 1）
+    config.active_job.queue_adapter = :solid_queue
   end
 end

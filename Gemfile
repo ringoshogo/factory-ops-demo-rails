@@ -20,6 +20,9 @@ gem "graphql", "~> 2.6"
 # 認可の policy と、その GraphQL との連携 [https://actionpolicy.evilmartians.io]
 gem "action_policy-graphql", "~> 0.6"
 
+# ジョブ基盤。業務 DB と同じ接続に置き、イベントのジョブを業務のトランザクションの中で登録する（docs/adr/005）
+gem "solid_queue", "~> 1.2"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 gem "bcrypt", "~> 3.1.7"
 
