@@ -9,7 +9,8 @@ class GraphqlController < ApplicationController
       next unless actor
 
       Current.set(actor: actor) do
-        FactoryOpsSchema.execute(params[:query], variables: variables, operation_name: params[:operationName])
+        FactoryOpsSchema.execute(params[:query], variables: variables, operation_name: params[:operationName],
+          context: { current_user: actor })
       end
     end
     return head :unauthorized unless result

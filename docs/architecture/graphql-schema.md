@@ -42,6 +42,9 @@ type Query {
 | `buyer` | 発注側の視点の型。購買が所有するデータと、相手テナントを読む 3 経路の型 | `PurchaseOrder`・`InboundShipment`・`ReceivedInvoice`・`SupplierShipment` |
 | `supplier` | 受注側の視点の型。受注・在庫・出荷・請求・取引関係が所有するデータの型 | `SalesOrder`・`Item`・`PartMapping`・`Stock`・`Shipment`・`Invoice`・`Partnership` |
 | `shared` | 視点を問わない葉の型。スカラーと enum と他の `shared` の型だけをフィールドに持つ | `Tenant`（ID と名前だけ）・`UserError`・`PageInfo` |
+| `root` | ルートの型。視点の入口と `viewer`、または mutation を束ねる | `Query`・`Mutation` |
+
+mutation の戻り値・コネクション・エッジの型は視点を宣言しない。mutation の戻り値の型は mutation の視点を、コネクションとエッジの型は中身の型の視点を、基底クラス（`Types::BasePayload`・`Types::BaseConnection`・`Types::BaseEdge`）が返す。
 
 型の名前は、所有するコンテキストの言葉で付ける。同じ出荷実績でも、受注側の型は `Shipment`、発注側が経路 3 で見る型は `SupplierShipment`、購買が持つ写しの型は `InboundShipment` になる。
 
@@ -53,7 +56,7 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 1. `BuyerView` と、`buyer` を宣言した mutation の戻り値からたどれる型は、すべて `buyer` か `shared` である。`SupplierView` 側も同様に確かめる。
 2. `shared` の型のフィールドは、スカラー・enum・`shared` の型だけを返す。
-3. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つちょうどである。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog` など）。
+3. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つに限られる。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog`・`:partnerships`・`:shipments`）。
 
 発注の型に受注へのフィールドを 1 本足すと、1 が落ちる。相手側の型を 4 つ目として足すと、3 が落ちる。
 
@@ -356,6 +359,10 @@ policy は、コンテキストの公開 API として `packs/<パッケージ>/
 | `Resolvers::BaseResolver` | `perspective` と `authorize_with <Policy>, :<規則>` | 解決の前に規則を評価する。`buyer`・`supplier` の入口の下のフィールドは、すべてリゾルバで書く |
 | `Mutations::BaseMutation` | `perspective` と `authorize_with <Policy>, :<規則>` | 対象の値を公開 API で引いた後、公開 API の操作を呼ぶ前に規則を評価する。対象が無い作成系は、操作者に対して評価する |
 
+policy は `ApplicationPolicy`（`packs/platform`）を継承し、規則の `user` で操作者（`Partnerships::Actor`）を受け取る。`GraphqlController` は、操作者を GraphQL の `context[:current_user]` に入れて渡す。
+
+mutation の実装者は、公開 API の操作を呼ぶ `perform` を書く。対象を引く mutation は、公開 API で対象を引く `find_target` も書く。基底 mutation は、`find_target` が `nil` を返せば `NOT_FOUND` のユーザーエラーを返し、引けた対象に規則を評価してから `perform` を呼ぶ。`find_target` の無い mutation は、操作者に規則を評価してから `perform` を呼ぶ。成功したときの値を返すフィールドは `result_field` で宣言する。
+
 宣言の無いクラスは、開発環境とテストでは例外で落ちる。本番では拒否したうえで、エラー通知に送る。
 
 scope を通った値が型の `show?` で拒否されることは、通常は起きない。起きた場合は、scope と規則の食い違いか、リゾルバが別の値を混ぜた不具合である。そのフィールドは `null` にし、トップレベルのエラー `FORBIDDEN` を返し、エラー通知に送る。
@@ -371,7 +378,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 | 例外の型 | 理由 |
 |---|---|
-| `Query`・`Mutation` | ルートの型。フィールドはすべてリゾルバか mutation で、各自が宣言する |
+| `Query`・`Mutation` | ルートの型。`Query` は `viewer` と視点の入口だけを、`Mutation` は mutation だけを持ち、各 mutation が宣言する |
 | `Viewer` | ログイン中のユーザーと自社テナントだけを返す |
 | `BuyerView`・`SupplierView` | データを持たない入口。フィールドはすべてリゾルバで、各自が宣言する |
 | `Tenant` | ID と名前だけの葉。認可済みの型のフィールドとしてだけ現れる |
@@ -380,6 +387,8 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 各コネクションとエッジの型 | 中身の型が、それぞれ宣言を持つ |
 
 例外を足すときは、この表と列挙テストの期待値を同じ変更で足す。
+
+列挙テストは、スキーマの型が object・スカラー・enum・input だけであることも確かめる。interface と union は、異なる視点の型を 1 つのフィールドにまとめられるので、到達可能性のテストと列挙テストに検査を足すまで使わない。
 
 ### 役割による制限
 
@@ -526,7 +535,7 @@ enum UserErrorCode {
 }
 ```
 
-公開 API の操作は、成功なら値、失敗ならエラーコードと対象の入力項目を持つ結果の値を返す。基底 mutation が、それを `UserError` に写す。公開 API の操作は、業務の不変条件の違反で例外を投げない。失敗を返す操作は、書き込みを `transaction(requires_new: true)` の中で行い、失敗を返す前にそのセーブポイントまで戻す。操作はリクエスト全体のトランザクションの中で動くので、入れ子の `transaction` で `ActiveRecord::Rollback` を投げても書き込みは戻らず、リクエストの終わりにコミットされる。セーブポイントまで戻すと、その中で登録したイベントのジョブも一緒に戻る。
+公開 API の操作は、成功なら値、失敗ならエラーコードと対象の入力項目を持つ結果の値（`OperationResult`、`packs/platform`）を返す。基底 mutation が、それを `UserError` に写す。入力項目は `[:lines, 0, :unit_price]` のように公開 API の名前で返し、基底 mutation が `path` の GraphQL の名前（`["lines", "0", "unitPrice"]`）に直す。公開 API の操作は、業務の不変条件の違反で例外を投げない。失敗を返す操作は、書き込みを `transaction(requires_new: true)` の中で行い、失敗を返す前にそのセーブポイントまで戻す。操作はリクエスト全体のトランザクションの中で動くので、入れ子の `transaction` で `ActiveRecord::Rollback` を投げても書き込みは戻らず、リクエストの終わりにコミットされる。セーブポイントまで戻すと、その中で登録したイベントのジョブも一緒に戻る。
 
 ## ページングと N+1
 
