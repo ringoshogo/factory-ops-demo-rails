@@ -12,5 +12,10 @@ module Types
     field :unit_price, GraphQL::Types::BigInt, null: false
     field :tax_rate_percent, Int, null: false
     field :published, Boolean, null: false
+    field :stock, StockType, description: "入出庫も引当もしていない品目は空"
+
+    def stock
+      dataloader.with(Sources::PublicApiSource, Inventory::Stocks, :for_items, context[:current_user]).load(object.id)
+    end
   end
 end

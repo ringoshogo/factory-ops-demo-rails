@@ -28,6 +28,10 @@ module MatrixExpectations
     "sales_orders" => OWNER_ONLY,
     "sales_order_lines" => OWNER_ONLY,
     "sales_order_sequences" => OWNER_ONLY,
-    "customer_part_mappings" => OWNER_ONLY
+    "customer_part_mappings" => OWNER_ONLY,
+    # 在庫は受注側だけが所有し、相手から読む経路は無い
+    "stocks" => OWNER_ONLY,
+    "allocations" => OWNER_ONLY,
+    "stock_movements" => OWNER_ONLY
   }.freeze
 end

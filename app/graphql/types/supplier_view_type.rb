@@ -10,5 +10,7 @@ module Types
     field :part_mappings, resolver: Resolvers::Supplier::PartMappingsResolver
     field :sales_orders, resolver: Resolvers::Supplier::SalesOrdersResolver
     field :sales_order, resolver: Resolvers::Supplier::SalesOrderResolver
+    field :stocks, resolver: Resolvers::Supplier::StocksResolver
+    field :stock_movements, resolver: Resolvers::Supplier::StockMovementsResolver
   end
 end

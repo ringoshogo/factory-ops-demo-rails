@@ -8,7 +8,9 @@ module Contracts
     TABLE = {
       "Contracts::PurchaseOrderPlaced" => [ Route.new(receiver: "Sales::PurchaseOrderTranslator", tenant_key: "supplier_tenant_id") ],
       "Contracts::SalesOrderConfirmed" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
-      "Contracts::PartMatchPending" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ]
+      "Contracts::PartMatchPending" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
+      # 受け手の出荷は M13 で足す（docs/implementation-plan.md）
+      "Contracts::SalesOrderReadyForShipment" => []
     }.freeze
 
     def self.routes(event_name)

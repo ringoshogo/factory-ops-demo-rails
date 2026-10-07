@@ -7,5 +7,8 @@ module Sales
 
     # 受注と受注明細の値のどちらにも使う
     def show? = record.owner_tenant_id == user.tenant_id
+
+    # 引当は、自社のユーザーなら役割を問わない
+    def allocate? = show?
   end
 end

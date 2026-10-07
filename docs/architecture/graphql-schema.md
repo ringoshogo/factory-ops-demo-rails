@@ -260,6 +260,7 @@ type Item {
   unitPrice: BigInt!
   taxRatePercent: Int!
   published: Boolean!
+  "入出庫も引当もしていない品目は空"
   stock: Stock
 }
 
@@ -284,6 +285,15 @@ type Stock {
   available: Int!
   safetyStock: Int!
   belowSafetyStock: Boolean!
+}
+
+type StockMovement {
+  id: ID!
+  item: Item!
+  type: StockMovementType!
+  quantity: Int!
+  reason: String
+  createdAt: ISO8601DateTime!
 }
 
 type ShipmentRequest {
@@ -452,13 +462,13 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 |---|---|---|
 | `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
-| `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ） | 全量引当になったら出荷可能 |
+| `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する） | 受注取消・出荷取消 |
 | `approveCancellationReview` | `Sales::CancellationReviews.approve`（引当を解除する） | 取消承認・出荷取消 |
 | `rejectCancellationReview` | `Sales::CancellationReviews.reject` | 取消却下・出荷停止解除 |
 | `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions` | なし |
 | `postShipment` | `Fulfillment::Shipping.post`（`Inventory::Allocation` で引当を消費する） | 出荷計上 |
-| `adjustStock` | `Inventory::Adjustment`（入庫・出庫） | なし |
+| `adjustStock` | `Inventory::Adjustment.adjust`（入庫・出庫。出庫は有効在庫までに限り、超えれば `INVALID_INPUT`。品目は在庫が受注に依存しないので、mutation が `Sales::Catalog` で自社の品目かを確かめ、見えなければ `NOT_FOUND`） | なし |
 | `setBillingTerm` | `Billing::Terms.set` | なし |
 | `closeBillingPeriod` | `Billing::Closing.close`（下書きの請求書を作る） | なし |
 | `discardDraftInvoice` | `Billing::Closing.discard` | なし |
@@ -501,6 +511,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 |---|---|---|
 | `placePurchaseOrder` の `lines` の件数 | 100（1 ページの件数の上限と同じ） | `["lines"]` |
 | `PurchaseOrderLineInput.partNumber` の長さ | 64 文字 | `["lines", 添字, "partNumber"]` |
+| `adjustStock` の `reason` の長さ | 200 文字 | `["reason"]` |
 
 ## 状況の enum
 
@@ -521,6 +532,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `CancellationOutcome` | `APPROVED`・`REJECTED`（空は回答待ち・審査中） | `cancellation_requests.outcome`・`cancellation_reviews.decision` |
 | `InvoiceState` | `DRAFT`・`ISSUED` | `invoices.issued_at` の有無 |
 | `StockMovementType` | `INBOUND`・`OUTBOUND`・`ALLOCATE`・`DEALLOCATE`・`SHIP` | `stock_movements.type` |
+| `StockAdjustmentType` | `INBOUND`・`OUTBOUND`（`adjustStock` の入力。引当と出荷による移動は、引当と出荷計上の操作だけが起こす） | `stock_movements.type` |
 
 ## エラー
 

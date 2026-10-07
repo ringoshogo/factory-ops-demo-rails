@@ -94,11 +94,13 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `stocks` | `item_id`→・`on_hand`・`allocated`・`safety_stock` | `(owner, item_id)` 一意。`on_hand >= allocated >= 0`（有効在庫が負にならない） |
-| `allocations`（引当） | `sales_order_line_id`→・`item_id`・`quantity`・`status`（`active` / `released` / `consumed`） | `sales_order_line_id` 一意 |
-| `stock_movements`（在庫移動履歴） | `item_id`・`type`（`inbound` / `outbound` / `allocate` / `deallocate` / `ship`）・`quantity`（正の数）・`reason`・`allocation_id` | 追記だけ。増減の向きは `type` が決める |
+| `stocks` | `item_id`→・`on_hand`・`allocated`・`safety_stock` | `(owner, item_id)` 一意。`on_hand >= allocated >= 0`（有効在庫が負にならない）を CHECK 制約で守る |
+| `allocations`（引当） | `sales_order_line_id`→・`item_id`・`quantity`・`status`（`active` / `released` / `consumed`） | `sales_order_line_id` 一意。`(owner, item_id)` で `stocks` を参照する |
+| `stock_movements`（在庫移動履歴） | `item_id`・`type`（`inbound` / `outbound` / `allocate` / `deallocate` / `ship`）・`quantity`（正の数）・`reason`・`allocation_id` | 追記だけ。増減の向きは `type` が決める。`allocation_id` は引当を動かす移動（`allocate` / `deallocate` / `ship`）にだけ入る |
 
-在庫を変える処理は、すべて 1 つの内部メソッドを通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。
+在庫を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。行の無い品目の在庫は空として返す。
+
+引当は、受注明細ごとに 1 行を持ち、未引当の量を有効在庫の範囲で足していく。有効在庫が足りなければ、引き当てられた分だけ引き当て、残りは次の引当で埋める。解除（`released`）と消費（`consumed`）は終わりの状態で、その明細は引き当て直さない。受注明細 ID ごとの引当数量は、解除した引当を数えない。安全在庫を下回るとは、有効在庫が `safety_stock` より小さいことをいう。
 
 ### 出荷（`fulfillment`）
 
@@ -175,7 +177,7 @@
 | 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
 | 受注取消 | 受注 → 購買 | 発注 ID | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
 | 出荷取消 | 受注 → 出荷 | 受注 ID | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
-| 出荷可能 | 受注 → 出荷 | 受注 ID、発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
+| 出荷可能 | 受注 → 出荷 | 受注 ID、受注側・発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
 | 出荷停止 | 受注 → 出荷 | 審査 ID、受注 ID | `shipping_holds` | `source_cancellation_review_id` 一意 |
 | 出荷停止解除 | 受注 → 出荷 | 審査 ID | `shipping_holds.released_at` | 空のときだけ書く |
 | 出荷計上 | 出荷 → 受注・購買 | 出荷実績 ID、受注 ID、発注 ID、出荷日、明細（受注明細 ID・発注明細 ID・数量） | 受注：`shipped_at`／購買：`inbound_shipments`・明細 | 受注：空のときだけ書く／購買：`shipment_id` 一意 |

@@ -106,6 +106,26 @@ module MatrixExpectations
       variables: ->(world) { { id: world.linked_order(:sales_order).id } },
       expect: only(:supplier)
     },
+    # 在庫は受注側だけが所有する。どのペルソナにも自社の行だけが返る
+    "SupplierView.stocks" => {
+      query: "{ supplier { stocks { nodes { onHand } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.stockMovements" => {
+      query: "{ supplier { stockMovements { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "Mutation.adjustStock" => {
+      query: "mutation($input: AdjustStockInput!) { adjustStock(input: $input) { stock { onHand } errors { code } } }",
+      variables: ->(world) { { input: { itemId: world.row("items", :supplier).id, type: "INBOUND", quantity: 1 } } },
+      expect: ONLY_SUPPLIER
+    },
+    # 発注に連結した受注。有効在庫が無くても、引当の操作そのものは成功する
+    "Mutation.allocateSalesOrder" => {
+      query: "mutation($input: AllocateSalesOrderInput!) { allocateSalesOrder(input: $input) { salesOrder { id } errors { code } } }",
+      variables: ->(world) { { input: { salesOrderId: world.linked_order(:sales_order).id } } },
+      expect: ONLY_SUPPLIER
+    },
     # supplier への発注。place_orders の付与がある有効な取引関係の発注側だけが登録でき、
     # 付与の無い・失効した・関係の無い相手と自分自身への発注は、どれも同じ NOT_PERMITTED になる
     "Mutation.placePurchaseOrder" => {

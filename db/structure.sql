@@ -57,6 +57,26 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: allocations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.allocations (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    sales_order_line_id uuid NOT NULL,
+    item_id uuid NOT NULL,
+    quantity integer NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT allocations_quantity_positive CHECK ((quantity > 0)),
+    CONSTRAINT allocations_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'released'::character varying, 'consumed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.allocations FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -719,6 +739,47 @@ ALTER SEQUENCE public.solid_queue_semaphores_id_seq OWNED BY public.solid_queue_
 
 
 --
+-- Name: stock_movements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stock_movements (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    item_id uuid NOT NULL,
+    type character varying NOT NULL,
+    quantity integer NOT NULL,
+    reason character varying,
+    allocation_id uuid,
+    created_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT stock_movements_allocation_by_type CHECK ((((type)::text = ANY ((ARRAY['allocate'::character varying, 'deallocate'::character varying, 'ship'::character varying])::text[])) = (allocation_id IS NOT NULL))),
+    CONSTRAINT stock_movements_quantity_positive CHECK ((quantity > 0)),
+    CONSTRAINT stock_movements_type_check CHECK (((type)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying, 'allocate'::character varying, 'deallocate'::character varying, 'ship'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.stock_movements FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: stocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.stocks (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    item_id uuid NOT NULL,
+    on_hand integer DEFAULT 0 NOT NULL,
+    allocated integer DEFAULT 0 NOT NULL,
+    safety_stock integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT stocks_available_non_negative CHECK (((allocated >= 0) AND (on_hand >= allocated))),
+    CONSTRAINT stocks_safety_stock_non_negative CHECK ((safety_stock >= 0))
+);
+
+ALTER TABLE ONLY public.stocks FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: tenants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -841,6 +902,14 @@ ALTER TABLE ONLY public.solid_queue_scheduled_executions ALTER COLUMN id SET DEF
 --
 
 ALTER TABLE ONLY public.solid_queue_semaphores ALTER COLUMN id SET DEFAULT nextval('public.solid_queue_semaphores_id_seq'::regclass);
+
+
+--
+-- Name: allocations allocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocations
+    ADD CONSTRAINT allocations_pkey PRIMARY KEY (id);
 
 
 --
@@ -1044,6 +1113,22 @@ ALTER TABLE ONLY public.solid_queue_semaphores
 
 
 --
+-- Name: stock_movements stock_movements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT stock_movements_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: stocks stocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stocks
+    ADD CONSTRAINT stocks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: tenants tenants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1071,6 +1156,27 @@ CREATE INDEX idx_on_owner_tenant_id_purchase_order_id_bb29b0b793 ON public.purch
 --
 
 CREATE UNIQUE INDEX idx_on_purchase_order_id_part_number_bda45e1f84 ON public.purchase_order_lines USING btree (purchase_order_id, part_number);
+
+
+--
+-- Name: index_allocations_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_allocations_on_owner_tenant_id_and_id ON public.allocations USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_allocations_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_allocations_on_owner_tenant_id_and_item_id ON public.allocations USING btree (owner_tenant_id, item_id);
+
+
+--
+-- Name: index_allocations_on_sales_order_line_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_allocations_on_sales_order_line_id ON public.allocations USING btree (sales_order_line_id);
 
 
 --
@@ -1487,6 +1593,41 @@ CREATE INDEX index_solid_queue_semaphores_on_key_and_value ON public.solid_queue
 
 
 --
+-- Name: index_stock_movements_on_owner_tenant_id_and_allocation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_stock_movements_on_owner_tenant_id_and_allocation_id ON public.stock_movements USING btree (owner_tenant_id, allocation_id);
+
+
+--
+-- Name: index_stock_movements_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_stock_movements_on_owner_tenant_id_and_id ON public.stock_movements USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_stock_movements_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_stock_movements_on_owner_tenant_id_and_item_id ON public.stock_movements USING btree (owner_tenant_id, item_id);
+
+
+--
+-- Name: index_stocks_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_stocks_on_owner_tenant_id_and_id ON public.stocks USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_stocks_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_stocks_on_owner_tenant_id_and_item_id ON public.stocks USING btree (owner_tenant_id, item_id);
+
+
+--
 -- Name: index_tenants_on_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1522,6 +1663,14 @@ CREATE TRIGGER users_bump_session_version BEFORE UPDATE OF password_digest ON pu
 
 
 --
+-- Name: stocks fk_rails_08def19f32; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stocks
+    ADD CONSTRAINT fk_rails_08def19f32 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: sales_order_lines fk_rails_151983be39; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1535,6 +1684,14 @@ ALTER TABLE ONLY public.sales_order_lines
 
 ALTER TABLE ONLY public.items
     ADD CONSTRAINT fk_rails_1795f753e1 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: allocations fk_rails_24278b0998; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocations
+    ADD CONSTRAINT fk_rails_24278b0998 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -1658,6 +1815,22 @@ ALTER TABLE ONLY public.solid_queue_claimed_executions
 
 
 --
+-- Name: stock_movements fk_rails_a7f7ea137e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT fk_rails_a7f7ea137e FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: stock_movements fk_rails_b61766ec6b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT fk_rails_b61766ec6b FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.stocks(owner_tenant_id, item_id);
+
+
+--
 -- Name: purchase_order_sequences fk_rails_b667ad88d0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1682,6 +1855,14 @@ ALTER TABLE ONLY public.solid_queue_scheduled_executions
 
 
 --
+-- Name: stock_movements fk_rails_cca864944b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.stock_movements
+    ADD CONSTRAINT fk_rails_cca864944b FOREIGN KEY (owner_tenant_id, allocation_id) REFERENCES public.allocations(owner_tenant_id, id);
+
+
+--
 -- Name: sales_order_lines fk_rails_cfa1b9b0af; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1695,6 +1876,14 @@ ALTER TABLE ONLY public.sales_order_lines
 
 ALTER TABLE ONLY public.customer_part_mappings
     ADD CONSTRAINT fk_rails_d76de7871e FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.items(owner_tenant_id, id);
+
+
+--
+-- Name: allocations fk_rails_e0d854f9c6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.allocations
+    ADD CONSTRAINT fk_rails_e0d854f9c6 FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.stocks(owner_tenant_id, item_id);
 
 
 --
@@ -1714,6 +1903,12 @@ ALTER TABLE ONLY public.partnership_grants
 
 
 --
+-- Name: allocations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: customer_part_mappings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1724,6 +1919,13 @@ ALTER TABLE public.customer_part_mappings ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: allocations owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.allocations USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
 
 --
 -- Name: customer_part_mappings owner_write; Type: POLICY; Schema: public; Owner: -
@@ -1793,6 +1995,20 @@ CREATE POLICY owner_write ON public.sales_order_sequences USING ((owner_tenant_i
 --
 
 CREATE POLICY owner_write ON public.sales_orders USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: stock_movements owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.stock_movements USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: stocks owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.stocks USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -1874,6 +2090,18 @@ ALTER TABLE public.sales_order_sequences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: stock_movements; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: stocks; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.stocks ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1886,6 +2114,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000700'),
 ('20261008000600'),
 ('20261008000500'),
 ('20261008000400'),
