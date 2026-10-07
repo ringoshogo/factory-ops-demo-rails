@@ -33,3 +33,6 @@
 
 
 /tasks/
+
+# Claude Code のサブエージェント用 worktree
+/.claude/
