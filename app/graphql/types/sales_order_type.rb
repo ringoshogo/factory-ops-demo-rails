@@ -12,6 +12,7 @@ module Types
     field :due_date, GraphQL::Types::ISO8601Date
     field :status, SalesOrderStatusType, null: false
     field :lines, [ SalesOrderLineType ], null: false
+    field :shipment_request, ShipmentRequestType, description: "全量引当で出荷可能になった後に現れる"
 
     def customer
       dataloader.with(Sources::PublicApiSource, Partnerships::Directory, :tenants, context[:current_user])
@@ -20,6 +21,12 @@ module Types
 
     def lines
       dataloader.with(Sources::PublicApiSource, Sales::SalesOrders, :lines_for, context[:current_user]).load(object.id)
+    end
+
+    # 受注は出荷に依存しないので、ルートパッケージで出荷の公開 API を呼ぶ
+    def shipment_request
+      dataloader.with(Sources::PublicApiSource, Fulfillment::ShipmentRequests, :for_sales_orders, context[:current_user])
+        .load(object.id)
     end
   end
 end
