@@ -40,12 +40,15 @@ pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対�
 | `docs/guides/bin.md` | `bin/` の各スクリプトの役割。誰がいつ流すか、Rails の生成物から何を変えたか |
 | `docs/guides/config.md` | `config/` の各ファイルの役割。生成のままか変えたかと、変えた理由 |
 | `docs/guides/packs-and-packwerk.md` | `packs/` 構成と packwerk の入門。2 つの検査、CI で落ちる場所、パッケージ・依存・公開 API を足す手順 |
+| `docs/guides/comments.md` | コードのコメントの規約。いまの振る舞いと理由だけを書き、経緯・マイルストーンの番号・予定を書かない。良い例と悪い例 |
 | `docs/adr/001-スキーマ管理にridgepoleを採用しない.md` | スキーマ管理に Rails マイグレーション＋`structure.sql` を選ぶ理由 |
 | `docs/adr/002-packwerkを初日からCIで強制する.md` | `packs/` 構成と packwerk の依存・プライバシーチェックを初日から CI で強制する理由 |
 | `docs/adr/003-主キーにUUIDv7を使う.md` | 主キーを UUIDv7 にし、DB で生成する理由 |
 | `docs/adr/004-GraphQLの型を視点ごとに分けnodeを置かない.md` | 1 つのスキーマで型を視点ごとに分け、汎用の `node` を置かない理由 |
 | `docs/adr/005-イベントのジョブをトランザクション内で登録する.md` | Solid Queue を業務 DB と同じ接続に置き、イベントのジョブを業務のトランザクションの中で登録する理由 |
+| `docs/adr/006-販売単価を有効期間と記録期間の2軸で持つ.md` | 販売単価を有効期間と記録期間のバイテンポラルな行で持ち、行を書き換えない理由 |
+| `docs/adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md` | 非同期処理を 5 つの型に分け、登録の時機・再試行・冪等・失敗の扱いを型ごとに決める理由。外部サービス（SendGrid）の呼び出しと Webhook の受信を含む |
 
 ## 状態
 
-`docs/implementation-plan.md` の M3（テナントの強制（DB 側））まで実装した。現在地は `docs/handoff.md` を見る。
+`docs/implementation-plan.md` の M14（出荷計上の還流と経路 3）まで実装した。現在地は `docs/handoff.md` を見る。
