@@ -36,9 +36,12 @@ RSpec.describe "セッション", type: :request do
       expect(session[:user_id]).to be_nil
     end
 
-    it "存在しないメールアドレスなら 401" do
+    it "存在しないメールアドレスでも、パスワード違いと同じ応答を返す" do
+      login(email: "a@example.com", password: "wrong")
+      wrong_password = [ response.status, response.body ]
       login(email: "nobody@example.com", password: "secret")
 
+      expect([ response.status, response.body ]).to eq(wrong_password)
       expect(response).to have_http_status(:unauthorized)
     end
 
