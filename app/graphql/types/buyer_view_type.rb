@@ -5,7 +5,6 @@ module Types
     perspective :buyer
     authorization_exempt reason: "データを持たない入口。フィールドはすべてリゾルバで、各自が宣言する"
 
-    # フィールドは M8 以降の業務機能が足す
-    has_no_fields true
+    field :suppliers, resolver: Resolvers::Buyer::SuppliersResolver
   end
 end

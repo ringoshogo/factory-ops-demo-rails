@@ -1,12 +1,21 @@
 require_relative "tenant_helpers"
 
 # 行列テストの世界（docs/implementation-plan.md M6）。ペルソナごとにテナントと admin のユーザーを作り、
-# テナントの表ごとに、どのペルソナも自社の行を factory で 1 件以上持つようにする
+# テナントの表ごとに、どのペルソナも自社の行を factory で 1 件以上持つようにする。
+# そのうえで、supplier が受注側になる取引関係を 3 つ結ぶ
 class MatrixWorld
   include TenantHelpers
 
-  # M8 で granted_buyer・ungranted_buyer・revoked_buyer を足す
-  PERSONAS = %i[supplier stranger].freeze
+  PERSONAS = %i[supplier granted_buyer ungranted_buyer revoked_buyer stranger].freeze
+
+  ALL_PERMISSIONS = %w[view_catalog place_orders view_shipments].freeze
+
+  # supplier との取引関係。revoked_buyer は全権限の付与を持ったまま失効させ、付与があっても失効で閉じることを確かめる
+  PARTNERSHIPS = {
+    granted_buyer: { permissions: ALL_PERMISSIONS },
+    ungranted_buyer: { permissions: [] },
+    revoked_buyer: { permissions: ALL_PERMISSIONS, traits: [ :revoked ] }
+  }.freeze
 
   attr_reader :tenants, :users
 
@@ -27,7 +36,16 @@ class MatrixWorld
     @rows = self.class.tenant_tables.index_with do |table|
       PERSONAS.index_with { |persona| as(persona) { FactoryBot.create(self.class.factory_name(table)) } }
     end
+    @partnerships = PARTNERSHIPS.to_h do |buyer, spec|
+      partnership = as(:supplier) do
+        FactoryBot.create(:partnership, *spec.fetch(:traits, []), buyer_tenant_id: tenants[buyer], permissions: spec[:permissions])
+      end
+      [ buyer, partnership ]
+    end
   end
+
+  # supplier と buyer の取引関係
+  def partnership(buyer) = @partnerships.fetch(buyer)
 
   def as(persona, &)
     Tenancy.with_tenant(tenants.fetch(persona), &)

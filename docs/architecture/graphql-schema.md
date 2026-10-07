@@ -357,7 +357,7 @@ policy は、コンテキストの公開 API として `packs/<パッケージ>/
 
 | 基底クラス | 必須の宣言 | 実行時の動き |
 |---|---|---|
-| `Types::BaseObject` | `perspective`（視点）と、`authorize_with <Policy>` か `authorization_exempt reason:` のどちらか | graphql-ruby の `authorized?` で、返すオブジェクトごとに policy の `show?` を評価する。宣言が無ければ拒否する |
+| `Types::BaseObject` | `perspective`（視点）と、`authorize_with <Policy>` か `authorization_exempt reason:` のどちらか | graphql-ruby の `authorized?` で、返すオブジェクトごとに policy の `show?` を評価する。同じ値を別の視点の型でも見せる型は、その視点の規則を `authorize_with <Policy>, :<規則>` で渡す（`SupplierPartnership` の `show_to_buyer?`）。宣言が無ければ拒否する |
 | `Resolvers::BaseResolver` | `perspective` と `authorize_with <Policy>, :<規則>` | 解決の前に規則を評価する。`buyer`・`supplier` の入口の下のフィールドは、すべてリゾルバで書く |
 | `Mutations::BaseMutation` | `perspective` と `authorize_with <Policy>, :<規則>` | 対象の値を公開 API で引いた後、公開 API の操作を呼ぶ前に規則を評価する。対象が無い作成系は、操作者に対して評価する |
 
@@ -394,7 +394,9 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 ### 役割による制限
 
-取引関係と権限付与を変える mutation は、`admin` のユーザーに限る。policy の規則（`Partnerships::PartnershipPolicy#manage?`）で判定し、拒否は `FORBIDDEN` で返す。それ以外の操作は、自社のユーザーなら役割を問わない。
+取引関係と権限付与を変える mutation は、`admin` のユーザーに限る。policy の規則（`Partnerships::PartnershipPolicy#manage?`。対象の無い `establishPartnership` は操作者に対して評価する `establish?`）で判定し、拒否は `FORBIDDEN` で返す。それ以外の操作は、自社のユーザーなら役割を問わない。
+
+自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
 
 ## 読み取りの一覧
 
