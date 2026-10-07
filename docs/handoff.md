@@ -54,6 +54,7 @@
 | GraphQL のスキーマの変更 | `schema.graphql` を commit し、非推奨を経ない破壊的変更を CI で落とす | `architecture/graphql-schema.md`「スキーマの変更と非推奨」 |
 | メトリクス | Yabeda と Prometheus。値は `Rails.event` から作り、ラベルにテナントとユーザーを入れない | `implementation-plan.md` M30 |
 | コードのコメント | いまの振る舞いと理由だけを書き、経緯・マイルストーンの番号・予定を書かない。Cop で止める | `guides/comments.md` |
+| 拡張の進め方 | 横断の仕組み（M15〜M20）を業務の残り（M21〜M26）より先に入れる。監査ログの保存期間（7 年）と SLO の値は仮置きのまま進め、値より決め方と測り方を示す。発注側に単価の改定予定は見せない。取り込みは失敗した行だけを報告し、正常な行は反映する | ユーザー判断、`implementation-plan.md` |
 
 ## 決まっていないこと
 
