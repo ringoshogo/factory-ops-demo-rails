@@ -33,7 +33,7 @@ class CreateFulfillment < ActiveRecord::Migration[8.1]
       t.string :status, null: false, default: "active"
       t.timestamps
 
-      t.check_constraint "status IN ('active', 'cancelled')", name: "shipping_instructions_status_check"
+      t.check_constraint "status::text IN ('active', 'cancelled')", name: "shipping_instructions_status_check"
     end
     add_tenant_reference :shipping_instructions, :shipment_requests
     # 有効な出荷指示は出荷依頼ごとに 1 件

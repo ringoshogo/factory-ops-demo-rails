@@ -70,7 +70,7 @@ CREATE TABLE public.allocations (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT allocations_quantity_positive CHECK ((quantity > 0)),
-    CONSTRAINT allocations_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'released'::character varying, 'consumed'::character varying])::text[])))
+    CONSTRAINT allocations_status_check CHECK (((status)::text = ANY (ARRAY['active'::text, 'released'::text, 'consumed'::text])))
 );
 
 ALTER TABLE ONLY public.allocations FORCE ROW LEVEL SECURITY;
@@ -384,7 +384,7 @@ CREATE TABLE public.shipping_instructions (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     shipment_request_id uuid NOT NULL,
-    CONSTRAINT shipping_instructions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT shipping_instructions_status_check CHECK (((status)::text = ANY (ARRAY['active'::text, 'cancelled'::text])))
 );
 
 ALTER TABLE ONLY public.shipping_instructions FORCE ROW LEVEL SECURITY;
@@ -846,9 +846,9 @@ CREATE TABLE public.stock_movements (
     reason character varying,
     allocation_id uuid,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT stock_movements_allocation_by_type CHECK ((((type)::text = ANY ((ARRAY['allocate'::character varying, 'deallocate'::character varying, 'ship'::character varying])::text[])) = (allocation_id IS NOT NULL))),
+    CONSTRAINT stock_movements_allocation_by_type CHECK ((((type)::text = ANY (ARRAY['allocate'::text, 'deallocate'::text, 'ship'::text])) = (allocation_id IS NOT NULL))),
     CONSTRAINT stock_movements_quantity_positive CHECK ((quantity > 0)),
-    CONSTRAINT stock_movements_type_check CHECK (((type)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying, 'allocate'::character varying, 'deallocate'::character varying, 'ship'::character varying])::text[])))
+    CONSTRAINT stock_movements_type_check CHECK (((type)::text = ANY (ARRAY['inbound'::text, 'outbound'::text, 'allocate'::text, 'deallocate'::text, 'ship'::text])))
 );
 
 ALTER TABLE ONLY public.stock_movements FORCE ROW LEVEL SECURITY;

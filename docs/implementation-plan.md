@@ -21,8 +21,10 @@ M2 以降のすべてのマイルストーンで、次のコマンドが成功�
 bin/rubocop
 bin/packwerk validate && bin/packwerk check   # M2 から
 bundle exec rspec
-bin/rails db:migrate && git diff --exit-code db/structure.sql
+bin/check-structure                           # structure.sql の往復の検査
 ```
+
+`bin/check-structure` は、開発の DB にマイグレーションを流した結果と、`structure.sql` を読み込み直して書き出した結果が、どちらも `structure.sql` と一致することを確かめる。空の DB への `db:migrate` は `structure.sql` を読み込むだけでマイグレーションを流さないので、`structure.sql` を退避してから流す。文字列の列の CHECK 制約は `status::text IN (...)` と書く。`status IN (...)` と書くと、マイグレーションの結果と読み込み直した結果で式の表記が変わり、この検査が落ちる。
 
 packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（`adr/002`）。
 
