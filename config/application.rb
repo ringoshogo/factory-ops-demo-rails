@@ -41,6 +41,13 @@ module FactoryOpsDemoRails
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
 
+    # ログインを Cookie のセッションで保つ（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）。
+    # API モードは CSRF 対策を持たないので、SameSite=Lax で他サイトからの POST に Cookie を付けさせず、
+    # 受け付ける本文を application/json に限る（ApplicationController）
+    config.session_store :cookie_store, key: "_factory_ops_session", same_site: :lax, secure: Rails.env.production?
+    config.middleware.use ActionDispatch::Cookies
+    config.middleware.use config.session_store, config.session_options
+
     # RLS のポリシーと複合外部キーを残すため（adr/001）
     config.active_record.schema_format = :sql
   end

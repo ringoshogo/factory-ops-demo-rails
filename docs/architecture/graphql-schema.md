@@ -12,8 +12,8 @@
 フロントエンドから届いたクエリは、次の順に処理される。
 
 1. **認証とテナントの設定**：ログインとログアウトは、GraphQL の外の `SessionsController` が受け持つ。GraphQL に認証の mutation は置かない。`SessionsController` は、認証専用の関数（`data-model.md`「RLS」）でユーザーと所有テナントを引き、両方の ID をセッションに保存する。`GraphqlController` は、リクエストごとにスキーマの実行全体を 1 つのトランザクションで包み、その先頭で `SET LOCAL app.tenant_id` にセッションのテナントを設定する。そのうえで RLS の下でユーザーを引き、`Current` に設定する。ユーザーが引けなければ、スキーマを実行せずに 401 を返す。`SET LOCAL` はトランザクションの中でしか効かないので、このトランザクションの外で発行したクエリは 0 行になる。トランザクションは、ユーザーエラーを返した場合も含め、実行が例外なく終わればコミットし、例外ならロールバックする。
-   - API モードの Rails は Cookie・セッションのミドルウェアと CSRF 対策を持たない。ミドルウェアを明示的に足し、セッションの Cookie を `SameSite=Lax` にし、`GraphqlController` は POST の `application/json` だけを受け付ける。
-   - 仕組みの実装は、実装計画の「テナントの強制」で作る。
+   - API モードの Rails は Cookie・セッションのミドルウェアと CSRF 対策を持たない。ミドルウェアを明示的に足し、セッションの Cookie を `SameSite=Lax`・`HttpOnly` にする。`GraphqlController` と `SessionsController` は、`application/json` の本文だけを受け付ける（`ApplicationController`）。他サイトのフォームは `application/json` を送れず、`fetch` で送るには CORS のプリフライトが要るからである。`GraphqlController` は POST だけを受け付ける。
+   - ログインは、成功したときにセッションを作り直してから ID を保存する。ログインの前のセッションを引き継がせないためである。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
 3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
