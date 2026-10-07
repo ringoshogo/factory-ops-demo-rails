@@ -421,7 +421,8 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | `supplier.partnerships` | `Partnerships::Directory.for_supplier` |
 | `supplier.items`・`Item` | `Sales::Catalog` |
 | `supplier.partMappings` | `Sales::PartMappings` |
-| `supplier.salesOrders`・`supplier.salesOrder` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
+| `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
+| `SalesOrder.customer` | `Partnerships::Directory.tenants` |
 | `SalesOrder.shipmentRequest` | `Fulfillment::ShipmentRequests.for_sales_orders` |
 | `supplier.stocks`・`Item.stock`・`supplier.stockMovements` | `Inventory::Stocks` |
 | `supplier.shipmentRequests`・`ShipmentRequest.instruction`・`shipment` | `Fulfillment::ShipmentRequests` |
@@ -494,6 +495,13 @@ type PlacePurchaseOrderPayload {
 }
 ```
 
+mutation が受け取る入力の件数と長さには上限を置く。公開 API が上限を定数で持ち、超えた入力は何も書かずに `INVALID_INPUT` のユーザーエラーで返す。GraphQL の型では上限を表さない。
+
+| 入力 | 上限 | 違反の `path` |
+|---|---|---|
+| `placePurchaseOrder` の `lines` の件数 | 100（1 ページの件数の上限と同じ） | `["lines"]` |
+| `PurchaseOrderLineInput.partNumber` の長さ | 64 文字 | `["lines", 添字, "partNumber"]` |
+
 ## 状況の enum
 
 発注と受注の状況は、`data-model.md`「状態は保存せず、時刻列から導出する」の表と同じ優先順で、公開 API が導出して返す。GraphQL 層は導出しない。取消の依頼中・審査中は状況に重ねて示すので、enum の値にせず、別の真偽値のフィールドにする。
@@ -549,7 +557,9 @@ enum UserErrorCode {
 
 明細・権限付与・取引関係・請求条件のように、親ごとの件数が小さい集まりは、コネクションにせずリストで返す。
 
-別のコンテキストの値や子の値を引くフィールドは、`GraphQL::Dataloader` のソースを通して公開 API を呼ぶ。公開 API は、そのために ID の配列を受け取る一括取得のメソッドを持つ（例：`Sales::SalesOrders.lines_for(order_ids)`）。1 件ずつ引くメソッドを、入れ子のフィールドから呼ばない。ソースは操作者を引数に取り、公開 API にそのまま渡す。
+返すオブジェクトごとに評価する型の規則（「基底クラス」）も、オブジェクトの数だけクエリを出してはならない。規則がオブジェクトによらない問い合わせ（`Sales::ItemPolicy#show_to_buyer?` の、受注側ごとの `view_catalog` の問い合わせ）をするときは、`ApplicationPolicy#remember` に包む。`Types::BaseObject` は、1 回の実行の間だけ使うハッシュを `request_memo` として policy に渡し、`remember` はそこに答えを覚える。覚えた答えは同じ実行の中でしか使わないので、次のリクエストは失効や撤回を必ず見る。書き込みの前の判定（発注の登録の `place_orders`）は、覚えた答えを使わず、公開 API の中で毎回問い合わせる。
+
+別のコンテキストの値や子の値を引くフィールドは、`GraphQL::Dataloader` のソースを通して公開 API を呼ぶ。公開 API は、そのために操作者と ID の配列を受け取り、ID ごとの値のハッシュを返す一括取得のメソッドを持つ（例：`Sales::SalesOrders.lines_for(actor, order_ids)`）。1 件ずつ引くメソッドを、入れ子のフィールドから呼ばない。ソースは `Sources::PublicApiSource` の 1 つで、公開 API のモジュール・メソッド名・操作者を引数に取り、操作者を公開 API にそのまま渡す。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 

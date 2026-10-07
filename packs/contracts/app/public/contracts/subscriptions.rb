@@ -5,8 +5,11 @@ module Contracts
   module Subscriptions
     Route = Data.define(:receiver, :tenant_key)
 
-    # 例："Contracts::OrderPlaced" => [ Route.new(receiver: "Sales::OrderPlacedReceiver", tenant_key: "supplier_tenant_id") ]
-    TABLE = {}.freeze
+    TABLE = {
+      "Contracts::PurchaseOrderPlaced" => [ Route.new(receiver: "Sales::PurchaseOrderTranslator", tenant_key: "supplier_tenant_id") ],
+      "Contracts::SalesOrderConfirmed" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
+      "Contracts::PartMatchPending" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ]
+    }.freeze
 
     def self.routes(event_name)
       TABLE.fetch(event_name) { raise KeyError, "配送表に無いイベント: #{event_name}" }

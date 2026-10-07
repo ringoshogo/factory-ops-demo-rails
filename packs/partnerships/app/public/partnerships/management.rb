@@ -37,10 +37,14 @@ module Partnerships
       end
     end
 
-    # 自社が受注側の関係を行ロックして引き、有効なときだけブロックを実行する
+    # 自社が受注側の関係を引き、組のロックと行ロックを取ってから、有効なときだけブロックを実行する。
+    # 組のロックは、権限を確かめてから書く操作（発注の登録）と失効・撤回を直列にする（Access.lock_pair!）
     def self.with_active_partnership(actor, partnership_id)
-      partnership = Scope.call(actor, :as_supplier).lock.find_by(id: partnership_id)
+      partnership = Scope.call(actor, :as_supplier).find_by(id: partnership_id)
       return OperationResult.failure(:not_found, path: [ :partnership_id ]) unless partnership
+
+      Access.lock_pair!(supplier_tenant_id: partnership.owner_tenant_id, buyer_tenant_id: partnership.buyer_tenant_id)
+      partnership.lock!
       return OperationResult.failure(:conflict, message: "Partnership is revoked") unless partnership.active?
 
       yield partnership

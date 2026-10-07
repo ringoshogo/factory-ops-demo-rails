@@ -6,5 +6,7 @@ module Types
     authorization_exempt reason: "データを持たない入口。フィールドはすべてリゾルバで、各自が宣言する"
 
     field :suppliers, resolver: Resolvers::Buyer::SuppliersResolver
+    field :purchase_orders, resolver: Resolvers::Buyer::PurchaseOrdersResolver
+    field :purchase_order, resolver: Resolvers::Buyer::PurchaseOrderResolver
   end
 end

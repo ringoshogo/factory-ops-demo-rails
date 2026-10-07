@@ -69,6 +69,23 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: customer_part_mappings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_part_mappings (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    customer_tenant_id uuid NOT NULL,
+    customer_part_number character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    item_id uuid NOT NULL
+);
+
+ALTER TABLE ONLY public.customer_part_mappings FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -124,6 +141,129 @@ CREATE TABLE public.partnerships (
 );
 
 ALTER TABLE ONLY public.partnerships FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: purchase_order_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.purchase_order_lines (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    part_number character varying NOT NULL,
+    quantity integer NOT NULL,
+    confirmed_item_name character varying,
+    confirmed_unit_price bigint,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    purchase_order_id uuid NOT NULL,
+    CONSTRAINT purchase_order_lines_confirmed_together CHECK (((confirmed_item_name IS NULL) = (confirmed_unit_price IS NULL))),
+    CONSTRAINT purchase_order_lines_quantity_positive CHECK ((quantity > 0))
+);
+
+ALTER TABLE ONLY public.purchase_order_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: purchase_order_sequences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.purchase_order_sequences (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    last_number integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.purchase_order_sequences FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: purchase_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.purchase_orders (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    order_no character varying NOT NULL,
+    supplier_tenant_id uuid NOT NULL,
+    order_date date NOT NULL,
+    desired_delivery_on date,
+    awaiting_match_at timestamp(6) without time zone,
+    accepted_at timestamp(6) without time zone,
+    cancelled_at timestamp(6) without time zone,
+    supplier_cancelled_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT purchase_orders_single_cancellation CHECK (((cancelled_at IS NULL) OR (supplier_cancelled_at IS NULL)))
+);
+
+ALTER TABLE ONLY public.purchase_orders FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: sales_order_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sales_order_lines (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    source_purchase_order_line_id uuid NOT NULL,
+    customer_part_number character varying NOT NULL,
+    item_id uuid,
+    item_name character varying,
+    unit_price bigint,
+    tax_rate_percent integer,
+    quantity integer NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    sales_order_id uuid NOT NULL,
+    CONSTRAINT sales_order_lines_matched_together CHECK ((((item_id IS NULL) AND (item_name IS NULL) AND (unit_price IS NULL) AND (tax_rate_percent IS NULL)) OR ((item_id IS NOT NULL) AND (item_name IS NOT NULL) AND (unit_price IS NOT NULL) AND (tax_rate_percent IS NOT NULL)))),
+    CONSTRAINT sales_order_lines_quantity_positive CHECK ((quantity > 0))
+);
+
+ALTER TABLE ONLY public.sales_order_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: sales_order_sequences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sales_order_sequences (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    last_number integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.sales_order_sequences FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: sales_orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sales_orders (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    order_no character varying NOT NULL,
+    customer_tenant_id uuid NOT NULL,
+    source_purchase_order_id uuid NOT NULL,
+    order_date date NOT NULL,
+    due_date date,
+    confirmed_at timestamp(6) without time zone,
+    shipped_at timestamp(6) without time zone,
+    inspected_at timestamp(6) without time zone,
+    cancelled_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT sales_orders_cancelled_or_shipped CHECK (((cancelled_at IS NULL) OR (shipped_at IS NULL))),
+    CONSTRAINT sales_orders_inspected_after_shipped CHECK (((inspected_at IS NULL) OR (shipped_at IS NOT NULL)))
+);
+
+ALTER TABLE ONLY public.sales_orders FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -712,6 +852,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: customer_part_mappings customer_part_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_part_mappings
+    ADD CONSTRAINT customer_part_mappings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: items items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -733,6 +881,54 @@ ALTER TABLE ONLY public.partnership_grants
 
 ALTER TABLE ONLY public.partnerships
     ADD CONSTRAINT partnerships_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: purchase_order_lines purchase_order_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_order_lines
+    ADD CONSTRAINT purchase_order_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: purchase_order_sequences purchase_order_sequences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_order_sequences
+    ADD CONSTRAINT purchase_order_sequences_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: purchase_orders purchase_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_orders
+    ADD CONSTRAINT purchase_orders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sales_order_lines sales_order_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_order_lines
+    ADD CONSTRAINT sales_order_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sales_order_sequences sales_order_sequences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_order_sequences
+    ADD CONSTRAINT sales_order_sequences_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sales_orders sales_orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT sales_orders_pkey PRIMARY KEY (id);
 
 
 --
@@ -864,6 +1060,41 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: idx_on_owner_tenant_id_purchase_order_id_bb29b0b793; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_purchase_order_id_bb29b0b793 ON public.purchase_order_lines USING btree (owner_tenant_id, purchase_order_id);
+
+
+--
+-- Name: idx_on_purchase_order_id_part_number_bda45e1f84; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_purchase_order_id_part_number_bda45e1f84 ON public.purchase_order_lines USING btree (purchase_order_id, part_number);
+
+
+--
+-- Name: index_customer_part_mappings_on_customer_part; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_customer_part_mappings_on_customer_part ON public.customer_part_mappings USING btree (owner_tenant_id, customer_tenant_id, customer_part_number);
+
+
+--
+-- Name: index_customer_part_mappings_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_customer_part_mappings_on_owner_tenant_id_and_id ON public.customer_part_mappings USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_customer_part_mappings_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_customer_part_mappings_on_owner_tenant_id_and_item_id ON public.customer_part_mappings USING btree (owner_tenant_id, item_id);
+
+
+--
 -- Name: index_items_on_owner_tenant_id_and_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -917,6 +1148,118 @@ CREATE INDEX index_partnerships_on_buyer_tenant_id ON public.partnerships USING 
 --
 
 CREATE UNIQUE INDEX index_partnerships_on_owner_tenant_id_and_id ON public.partnerships USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_purchase_order_lines_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_purchase_order_lines_on_owner_tenant_id_and_id ON public.purchase_order_lines USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_purchase_order_sequences_on_owner_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_purchase_order_sequences_on_owner_tenant_id ON public.purchase_order_sequences USING btree (owner_tenant_id);
+
+
+--
+-- Name: index_purchase_order_sequences_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_purchase_order_sequences_on_owner_tenant_id_and_id ON public.purchase_order_sequences USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_purchase_orders_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_purchase_orders_on_owner_tenant_id_and_id ON public.purchase_orders USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_purchase_orders_on_owner_tenant_id_and_order_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_purchase_orders_on_owner_tenant_id_and_order_no ON public.purchase_orders USING btree (owner_tenant_id, order_no);
+
+
+--
+-- Name: index_purchase_orders_on_supplier_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_purchase_orders_on_supplier_tenant_id ON public.purchase_orders USING btree (supplier_tenant_id);
+
+
+--
+-- Name: index_sales_order_lines_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_order_lines_on_owner_tenant_id_and_id ON public.sales_order_lines USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_sales_order_lines_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sales_order_lines_on_owner_tenant_id_and_item_id ON public.sales_order_lines USING btree (owner_tenant_id, item_id);
+
+
+--
+-- Name: index_sales_order_lines_on_owner_tenant_id_and_sales_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sales_order_lines_on_owner_tenant_id_and_sales_order_id ON public.sales_order_lines USING btree (owner_tenant_id, sales_order_id);
+
+
+--
+-- Name: index_sales_order_lines_on_source_purchase_order_line_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_order_lines_on_source_purchase_order_line_id ON public.sales_order_lines USING btree (source_purchase_order_line_id);
+
+
+--
+-- Name: index_sales_order_sequences_on_owner_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_order_sequences_on_owner_tenant_id ON public.sales_order_sequences USING btree (owner_tenant_id);
+
+
+--
+-- Name: index_sales_order_sequences_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_order_sequences_on_owner_tenant_id_and_id ON public.sales_order_sequences USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_sales_orders_on_customer_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_sales_orders_on_customer_tenant_id ON public.sales_orders USING btree (customer_tenant_id);
+
+
+--
+-- Name: index_sales_orders_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_orders_on_owner_tenant_id_and_id ON public.sales_orders USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_sales_orders_on_owner_tenant_id_and_order_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_orders_on_owner_tenant_id_and_order_no ON public.sales_orders USING btree (owner_tenant_id, order_no);
+
+
+--
+-- Name: index_sales_orders_on_source_purchase_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_sales_orders_on_source_purchase_order_id ON public.sales_orders USING btree (source_purchase_order_id);
 
 
 --
@@ -1179,6 +1522,14 @@ CREATE TRIGGER users_bump_session_version BEFORE UPDATE OF password_digest ON pu
 
 
 --
+-- Name: sales_order_lines fk_rails_151983be39; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_order_lines
+    ADD CONSTRAINT fk_rails_151983be39 FOREIGN KEY (owner_tenant_id, sales_order_id) REFERENCES public.sales_orders(owner_tenant_id, id);
+
+
+--
 -- Name: items fk_rails_1795f753e1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1187,11 +1538,35 @@ ALTER TABLE ONLY public.items
 
 
 --
+-- Name: sales_orders fk_rails_27f737e6dc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_orders
+    ADD CONSTRAINT fk_rails_27f737e6dc FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: sales_order_sequences fk_rails_2a441d70a1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_order_sequences
+    ADD CONSTRAINT fk_rails_2a441d70a1 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: solid_queue_recurring_executions fk_rails_318a5533ed; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.solid_queue_recurring_executions
     ADD CONSTRAINT fk_rails_318a5533ed FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: purchase_orders fk_rails_341ad3ae86; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_orders
+    ADD CONSTRAINT fk_rails_341ad3ae86 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -1219,11 +1594,35 @@ ALTER TABLE ONLY public.solid_queue_blocked_executions
 
 
 --
+-- Name: purchase_order_lines fk_rails_4f03626e15; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_order_lines
+    ADD CONSTRAINT fk_rails_4f03626e15 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: customer_part_mappings fk_rails_68fd608b68; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_part_mappings
+    ADD CONSTRAINT fk_rails_68fd608b68 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: partnerships fk_rails_6be6936b70; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.partnerships
     ADD CONSTRAINT fk_rails_6be6936b70 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: sales_order_lines fk_rails_6ea4e05c77; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_order_lines
+    ADD CONSTRAINT fk_rails_6ea4e05c77 FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.items(owner_tenant_id, id);
 
 
 --
@@ -1243,11 +1642,27 @@ ALTER TABLE ONLY public.solid_queue_ready_executions
 
 
 --
+-- Name: purchase_order_lines fk_rails_845c3726cf; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_order_lines
+    ADD CONSTRAINT fk_rails_845c3726cf FOREIGN KEY (owner_tenant_id, purchase_order_id) REFERENCES public.purchase_orders(owner_tenant_id, id);
+
+
+--
 -- Name: solid_queue_claimed_executions fk_rails_9cfe4d4944; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.solid_queue_claimed_executions
     ADD CONSTRAINT fk_rails_9cfe4d4944 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: purchase_order_sequences fk_rails_b667ad88d0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.purchase_order_sequences
+    ADD CONSTRAINT fk_rails_b667ad88d0 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -1267,6 +1682,22 @@ ALTER TABLE ONLY public.solid_queue_scheduled_executions
 
 
 --
+-- Name: sales_order_lines fk_rails_cfa1b9b0af; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sales_order_lines
+    ADD CONSTRAINT fk_rails_cfa1b9b0af FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: customer_part_mappings fk_rails_d76de7871e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_part_mappings
+    ADD CONSTRAINT fk_rails_d76de7871e FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.items(owner_tenant_id, id);
+
+
+--
 -- Name: users fk_rails_e665ff9db8; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1283,10 +1714,23 @@ ALTER TABLE ONLY public.partnership_grants
 
 
 --
+-- Name: customer_part_mappings; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.customer_part_mappings ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: customer_part_mappings owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.customer_part_mappings USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
 
 --
 -- Name: items owner_write; Type: POLICY; Schema: public; Owner: -
@@ -1307,6 +1751,48 @@ CREATE POLICY owner_write ON public.partnership_grants USING ((owner_tenant_id =
 --
 
 CREATE POLICY owner_write ON public.partnerships USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: purchase_order_lines owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.purchase_order_lines USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: purchase_order_sequences owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.purchase_order_sequences USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: purchase_orders owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.purchase_orders USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: sales_order_lines owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.sales_order_lines USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: sales_order_sequences owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.sales_order_sequences USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: sales_orders owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.sales_orders USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -1352,6 +1838,42 @@ ALTER TABLE public.partnership_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.partnerships ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: purchase_order_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.purchase_order_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: purchase_order_sequences; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.purchase_order_sequences ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: purchase_orders; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sales_order_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sales_order_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sales_order_sequences; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sales_order_sequences ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: sales_orders; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1364,6 +1886,8 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000600'),
+('20261008000500'),
 ('20261008000400'),
 ('20261008000300'),
 ('20261008000210'),

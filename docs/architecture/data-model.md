@@ -11,7 +11,7 @@
 - **同じコンテキストの親子は複合外部キーでつなぐ**：親に `UNIQUE (owner_tenant_id, id)` を持たせ、子は `FOREIGN KEY (owner_tenant_id, 親_id) REFERENCES 親 (owner_tenant_id, id)` で参照する。親と子の所有テナントが食い違う行は、DB が拒否する。
 - **コンテキストをまたぐ参照は ID 列だけにする**：外部キー制約を張らず、AR の関連も張らない（`context-map.md`「疎結合を守る規則」1）。相手テナントへの参照（`buyer_tenant_id`・`supplier_tenant_id`・`customer_tenant_id`）と、連結元の伝票への参照（`source_purchase_order_id` など）も同じ扱いにする。
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
-- **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。
+- **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
 - **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。以下の表では省略する。
 
 ## 状態は保存せず、時刻列から導出する
@@ -73,6 +73,8 @@
 
 `place_orders` は相手のデータを読む権限ではない。購買が発注を登録するときに問い合わせる権限である。
 
+答えを使って書き込む操作は、問い合わせの前に、受注側と発注側の組のアドバイザリロック（`Partnerships::Access.lock_pair!`。`permitted?` に `lock: true` を渡すと取る）をトランザクションの終わりまで取る。取引関係の失効と権限の付与・撤回も、変える前に同じロックを取る（`context-map.md`「取引関係の失効」）。ロックのキーは組を表す文字列のハッシュにする。別の組とキーが衝突しても、互いを待たせるだけで、判定は誤らない。
+
 ## 各コンテキストのテーブル
 
 以下の表は、`id`・`owner_tenant_id`・時刻列と、親子の複合外部キーを省略する。「→」は、外部キーを張らない ID 参照を表す。
@@ -84,7 +86,7 @@
 | `items`（品目カタログ） | `code`・`name`・`unit`・`unit_price`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意。単価は 0 以上 |
 | `customer_part_mappings`（得意先品番の対応表） | `customer_tenant_id`→・`customer_part_number`・`item_id` | `(owner, customer_tenant_id, customer_part_number)` 一意 |
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
-| `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。照合前は `item_id` と写しの 3 列がすべて空、照合後はすべて埋まる |
+| `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。数量は正。照合前は `item_id` と写しの 3 列がすべて空、照合後はすべて埋まる |
 | `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引） |
 | `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意 |
 
@@ -118,7 +120,7 @@
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
 | `purchase_orders` | `order_no`・`supplier_tenant_id`→・`order_date`・`desired_delivery_on`・`awaiting_match_at`・`accepted_at`・`cancelled_at`・`supplier_cancelled_at` | 発注側の取消と受注側の取消は両立しない |
-| `purchase_order_lines` | `part_number`（自社品番）・`quantity`・`confirmed_item_name`・`confirmed_unit_price` | `(purchase_order_id, part_number)` 一意 |
+| `purchase_order_lines` | `part_number`（自社品番）・`quantity`・`confirmed_item_name`・`confirmed_unit_price` | `(purchase_order_id, part_number)` 一意。数量は正。確定の写しの 2 列は、揃って空か揃って埋まる |
 | `cancellation_requests`（取消依頼） | `purchase_order_id`・`reason`・`outcome`（`approved` / `rejected`、空は回答待ち）・`decided_at` | 回答待ちは発注ごとに 1 件（部分一意索引） |
 | `inbound_shipments`（「出荷計上」の写し） | `purchase_order_id`・`shipment_id`→・`shipped_on` | `shipment_id` 一意 |
 | `inbound_shipment_lines` | `purchase_order_line_id`・`shipped_quantity` | `(inbound_shipment_id, purchase_order_line_id)` 一意 |
@@ -167,8 +169,8 @@
 | イベント | 発行元 → 受け手 | 運ぶ値 | 受け手が書く表 | 冪等キー |
 |---|---|---|---|---|
 | 発注登録 | 購買 → 受注 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・自社品番・数量）、希望納期 | `sales_orders`・`sales_order_lines` | `source_purchase_order_id` 一意 |
-| 品番照合待ち | 受注 → 購買 | 発注 ID | `purchase_orders.awaiting_match_at` | 空のときだけ書く |
-| 受注確定 | 受注 → 購買 | 発注 ID、明細（発注明細 ID・品目名・単価） | `purchase_orders.accepted_at`・明細の写し | 空のときだけ書く |
+| 品番照合待ち | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.awaiting_match_at` | 空のときだけ書く |
+| 受注確定 | 受注 → 購買 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・品目名・単価） | `purchase_orders.accepted_at`・明細の写し | 空のときだけ書く |
 | 取消依頼 | 購買 → 受注 | 取消依頼 ID、発注 ID、依頼の登録時刻 | `cancellation_reviews` | `source_cancellation_request_id` 一意 |
 | 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
 | 受注取消 | 受注 → 購買 | 発注 ID | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
@@ -182,6 +184,8 @@
 | 請求書発行 | 請求 → 購買 | 請求書 ID、受注側・発注側テナント、請求番号、締め期間、発行日、金額、明細（発注明細 ID・品目名・単価・数量・税率・金額） | `received_invoices`・明細 | `invoice_id` 一意 |
 
 「出荷計上」は受注と購買の両方へ同じ値を運ぶ。購買は、受注 ID と受注明細 ID を保存しない。
+
+受注側から購買へ返すイベントは、宛先を決める発注側テナントと、発注を引く条件に足す受注側テナントを運ぶ。購買の受け手は、発注 ID と受注側テナントの両方が一致する自社の発注だけを更新する。
 
 ## RLS
 
