@@ -17,6 +17,8 @@ gem "puma", ">= 5.0"
 
 # GraphQL の API [https://graphql-ruby.org]
 gem "graphql", "~> 2.6"
+# 認可の policy と、その GraphQL との連携 [https://actionpolicy.evilmartians.io]
+gem "action_policy-graphql", "~> 0.6"
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 gem "bcrypt", "~> 3.1.7"
