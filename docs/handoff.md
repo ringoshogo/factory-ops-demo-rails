@@ -50,19 +50,35 @@
 
 ## 決まっていないこと
 
-- **GitHub リポジトリの公開範囲（public / private）**：いまは private で作ってある
+- **GitHub リポジトリを public にする時期**：いまは private。仕上がってから切り替える
 
 ## 次にやること
 
-順に進める。各段階で決めたことは、`adr/`・`context-map.md`・`data-model.md`・`graphql-schema.md` のいずれかに残す。
+再開する人は、次の順に進める。
 
-1. **`implementation-plan.md` の M1 から順に実装する**：1 つのマイルストーンの完了条件をすべて通してから、次へ進む。
-2. **CI の確認**：M1 で作った CI が、M1 の commit を最初に push したときに通ることを確かめる。
+1. **M11〜M14 をレビューする**：M3・M4〜M7・M8〜M10 は、読み取り専用のレビューを通して指摘を直した。M11〜M14 はレビューを途中で止めたので、まだ通していない。見る観点は、在庫の不変条件、ロック順とデッドロック、引当の消費と解除の競合、出荷停止中の計上、受け手の同時重複配送、新しいフィールドからの漏れである。
+2. **M14 の残り**：受注の scope にある自社テナントの条件は RLS と重なっており、単独で効いていることをテストで示せていない。
+3. **M15 から M21 まで、`implementation-plan.md` の順に実装する**：M22（フロントエンド）は範囲外のまま。
+
+各段階で決めたことは、`adr/`・`context-map.md`・`data-model.md`・`graphql-schema.md` のいずれかに残す。
+
+### 1 つのマイルストーンの回し方
+
+- **ブランチと PR**：マイルストーンごとに、前のマイルストーンのブランチから `mNN-...` を切り、前のブランチを base にした PR を作る（PR を積み重ねる）。main への直接 push はフックが拒否し、PR のマージは作者が行う。
+- **完了の判定**：`implementation-plan.md` の完了条件に加え、rspec・rubocop・`bin/packwerk check`・brakeman・`bin/check-structure`（migrate と load の両経路で `structure.sql` が一致すること）を通す。守りの検査は、外すとテストが落ちることを確かめてから戻す。
+- **レビュー**：3 マイルストーン前後ごとに、読み取り専用のレビューを別の worktree で行う。Critical・High・Medium は、そのマイルストーンのブランチに修正の commit を積み、後ろのブランチを rebase する。
+
+### 開発環境
+
+- `export PATH="$HOME/.rbenv/shims:/opt/homebrew/opt/libpq/bin:$PATH"`（Ruby 3.3.3、pg_dump 18）
+- DB は `docker compose up -d --wait`（PostgreSQL 18、ポート 5433）
+- rspec の全件は 2 分を超える。テストを並行して流すときは、別名の一時 DB を使う
 
 ## リポジトリの状態
 
-- **このリポジトリ**：ブランチ `main`。リモートは GitHub の `ringo-shg/factory-ops-demo-rails`（private）。
-- **実装**：M14 まで終えた。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
+- **ブランチ**：main は設計文書だけ。M1〜M14 は `m1-skeleton` から `m14-shipment-read-path` まで 1 本ずつ積み重なっており、それぞれ未マージの PR がある。
+- **実装**：M14 まで終えた。rspec は 840 examples, 0 failures。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの
