@@ -182,6 +182,20 @@ RSpec.describe "発注登録と受注の連結", type: :request do
     expect(enqueued_event_jobs).to be_empty
   end
 
+  it "明細の数と品番の長さの上限を超えると INVALID_INPUT を返し、上限ちょうどは通る" do
+    login_as(buyer_member)
+    lines = ->(count) { Array.new(count) { { partNumber: "P-#{_1}", quantity: 1 } } }
+
+    expect(place(lines: lines.(101))["errors"])
+      .to match([ include("code" => "INVALID_INPUT", "path" => [ "lines" ], "message" => "Lines must be at most 100") ])
+    expect(place(lines: [ { partNumber: "A" * 65, quantity: 1 } ])["errors"])
+      .to match([ include("code" => "INVALID_INPUT", "path" => [ "lines", "0", "partNumber" ]) ])
+    expect(purchase_order_count).to eq(0)
+
+    expect(place(lines: lines.(100))["errors"]).to eq([])
+    expect(place(lines: [ { partNumber: "A" * 64, quantity: 1 } ])["errors"]).to eq([])
+  end
+
   it "伝票番号はテナントごとに続き番号になる" do
     login_as(buyer_member)
 

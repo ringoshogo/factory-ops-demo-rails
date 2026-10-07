@@ -37,7 +37,8 @@ module Types
         return false unless super
         return true if authorization_exempt_reason
 
-        authorization_policy.new(object, user: context[:current_user]).apply(authorization_rule)
+        authorization_policy.new(object, user: context[:current_user], request_memo: context[:request_memo] ||= {})
+          .apply(authorization_rule)
       end
     end
 

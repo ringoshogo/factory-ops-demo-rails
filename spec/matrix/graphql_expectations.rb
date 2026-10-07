@@ -76,18 +76,20 @@ module MatrixExpectations
       query: "{ buyer { purchaseOrders { nodes { id } } } }",
       expect: EVERYONE
     },
+    # 連結した受注を持つ発注。受注側の supplier にも見えない
     "BuyerView.purchaseOrder" => {
       query: "query($id: ID!) { buyer { purchaseOrder(id: $id) { id } } }",
-      variables: ->(world) { { id: world.row("purchase_orders", :granted_buyer).id } },
+      variables: ->(world) { { id: world.linked_order(:purchase_order).id } },
       expect: only(:granted_buyer)
     },
     "SupplierView.salesOrders" => {
       query: "{ supplier { salesOrders { nodes { id } } } }",
       expect: EVERYONE
     },
+    # 発注に連結した受注。発注側の granted_buyer にも見えない
     "SupplierView.salesOrder" => {
       query: "query($id: ID!) { supplier { salesOrder(id: $id) { id } } }",
-      variables: ->(world) { { id: world.row("sales_orders", :supplier).id } },
+      variables: ->(world) { { id: world.linked_order(:sales_order).id } },
       expect: only(:supplier)
     },
     # supplier への発注。place_orders の付与がある有効な取引関係の発注側だけが登録でき、

@@ -56,6 +56,22 @@ RSpec.describe "カタログの GraphQL", type: :request do
       expect(Types::PublishedCatalogItemType.fields.keys).not_to include("id")
     end
 
+    it "品目の数によらず、1 ページを読むクエリの数は変わらない" do
+      query_count = lambda do
+        count = 0
+        callback = ->(*, payload) { count += 1 unless payload[:name] == "SCHEMA" }
+        ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { catalog_codes }
+        count
+      end
+
+      one_item = query_count.call
+      Tenancy.with_tenant(supplier.id) { 4.times { FactoryBot.create(:item, :published, code: "C-#{_1}") } }
+      five_items = query_count.call
+
+      expect(catalog_codes.size).to eq(5)
+      expect(five_items).to eq(one_item)
+    end
+
     it "view_catalog を撤回すると空になり、付与し直すと開く" do
       change_grant(:withdraw)
       expect(catalog_codes).to eq([])

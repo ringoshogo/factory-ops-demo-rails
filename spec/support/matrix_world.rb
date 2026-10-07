@@ -3,7 +3,9 @@ require_relative "tenant_helpers"
 # 行列テストの世界（docs/implementation-plan.md M6）。ペルソナごとにテナントと admin のユーザーを作り、
 # テナントの表ごとに、どのペルソナも自社の行を factory で 1 件以上持つようにする。
 # そのうえで、supplier が受注側になる取引関係を 3 つ結び、supplier の公開品目を 1 件足す
-# （表ごとの行は factory の既定のままなので、品目は公開しない）
+# （表ごとの行は factory の既定のままなので、品目は公開しない）。
+# さらに granted_buyer の supplier への発注と、それに連結した supplier の受注を 1 組足す。
+# 連結元の ID を持ち合う行でも、相手からは見えないことを確かめるためである
 class MatrixWorld
   include TenantHelpers
 
@@ -44,10 +46,14 @@ class MatrixWorld
       [ buyer, partnership ]
     end
     as(:supplier) { FactoryBot.create(:item, :published) }
+    @linked_orders = link_orders(:granted_buyer)
   end
 
   # supplier と buyer の取引関係
   def partnership(buyer) = @partnerships.fetch(buyer)
+
+  # granted_buyer の発注と、それに連結した supplier の受注（:purchase_order・:sales_order）
+  def linked_order(side) = @linked_orders.fetch(side)
 
   def as(persona, &)
     Tenancy.with_tenant(tenants.fetch(persona), &)
@@ -57,4 +63,19 @@ class MatrixWorld
   def row(table, persona) = @rows.fetch(table).fetch(persona)
 
   def persona_of(tenant_id) = tenants.key(tenant_id) || tenant_id
+
+  private
+
+  # 受注側の ACL が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結する
+  def link_orders(buyer)
+    purchase_order = as(buyer) { FactoryBot.create(:purchase_order, supplier_tenant_id: tenants[:supplier]) }
+    purchase_order_line = as(buyer) { FactoryBot.create(:purchase_order_line, purchase_order:) }
+    sales_order = as(:supplier) do
+      FactoryBot.create(:sales_order, customer_tenant_id: tenants[buyer], source_purchase_order_id: purchase_order.id).tap do |order|
+        FactoryBot.create(:sales_order_line, :matched, sales_order: order, source_purchase_order_line_id: purchase_order_line.id,
+          customer_part_number: purchase_order_line.part_number)
+      end
+    end
+    { purchase_order:, sales_order: }
+  end
 end

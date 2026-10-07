@@ -25,8 +25,11 @@ module Sales
 
     private
 
+    # 一覧の品目ごとに show_to_buyer? を評価しても、問い合わせは受注側ごとに 1 回で済ませる
     def view_catalog?(supplier_tenant_id)
-      Partnerships::Access.permitted?(user, supplier_tenant_id:, permission: :view_catalog)
+      remember([ :view_catalog, supplier_tenant_id ]) do
+        Partnerships::Access.permitted?(user, supplier_tenant_id:, permission: :view_catalog)
+      end
     end
   end
 end
