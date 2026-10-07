@@ -72,6 +72,20 @@ module MatrixExpectations
       variables: ->(world) { { input: { itemId: world.row("items", :supplier).id, published: true } } },
       expect: ONLY_SUPPLIER
     },
+    # 対応表は受注側だけが所有する。どのペルソナにも自社の行だけが返る
+    "SupplierView.partMappings" => {
+      query: "{ supplier { partMappings { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    # supplier の品目を、supplier の取引先（granted_buyer）の品番に対応させる
+    "Mutation.registerPartMapping" => {
+      query: "mutation($input: RegisterPartMappingInput!) { registerPartMapping(input: $input) { partMapping { id } errors { code } } }",
+      variables: lambda { |world|
+        { input: { customerTenantId: world.tenants[:granted_buyer], customerPartNumber: "NEW-PART",
+          itemId: world.row("items", :supplier).id } }
+      },
+      expect: ONLY_SUPPLIER
+    },
     "BuyerView.purchaseOrders" => {
       query: "{ buyer { purchaseOrders { nodes { id } } } }",
       expect: EVERYONE

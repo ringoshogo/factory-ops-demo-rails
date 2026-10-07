@@ -451,7 +451,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | mutation | 呼ぶ公開 API | 出すイベント |
 |---|---|---|
 | `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える） | なし |
-| `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す） | 全明細が照合できた受注ごとに受注確定 |
+| `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ） | 全量引当になったら出荷可能 |
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する） | 受注取消・出荷取消 |
 | `approveCancellationReview` | `Sales::CancellationReviews.approve`（引当を解除する） | 取消承認・出荷取消 |

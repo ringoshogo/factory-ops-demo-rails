@@ -1,5 +1,5 @@
 module Sales
-  # 公開 API が品目と受注を引くときに必ず通す、policy の relation_scope
+  # 公開 API が品目・受注・対応表を引くときに必ず通す、policy の relation_scope
   module Scope
     def self.call(actor, name, **options)
       apply(ItemPolicy, Item.all, actor, name, options)
@@ -7,6 +7,10 @@ module Sales
 
     def self.sales_orders(actor, name)
       apply(SalesOrderPolicy, SalesOrder.all, actor, name, {})
+    end
+
+    def self.part_mappings(actor, name)
+      apply(PartMappingPolicy, CustomerPartMapping.all, actor, name, {})
     end
 
     def self.apply(policy, relation, actor, name, options)
