@@ -1,0 +1,5 @@
+# See: https://github.com/Shopify/packwerk/blob/main/USAGE.md#configuring-packwerk
+
+# 公開 API 以外への参照を落とす（adr/002 決定 3）
+require:
+  - packwerk/privacy/checker

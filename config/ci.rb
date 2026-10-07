@@ -4,6 +4,7 @@ CI.run do
   step "Setup", "bin/setup --skip-server"
 
   step "Style: Ruby", "bin/rubocop"
+  step "Packages: packwerk", "bin/packwerk validate && bin/packwerk check"
 
   step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec"
   step "Schema: structure.sql is up to date", "bin/rails db:migrate && git diff --exit-code db/structure.sql"

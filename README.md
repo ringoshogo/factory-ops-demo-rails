@@ -11,6 +11,7 @@ Rails で B2B SaaS を 0 から作るときの設計判断を、実際に動く�
 - **バックエンド**：Rails（API モード）＋ PostgreSQL
 - **API**：GraphQL
 - **フロントエンド**：factory-ops-demo の Next.js を流用する。画面部品はそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を追加する
+- **コードの置き場**：業務のコードは、コンテキストごとに `packs/<パッケージ>/app/` に置く。他のパッケージから呼べるのは `app/public/` の下だけで、依存してよい先は各 `package.yml` に書く。どちらも `bin/packwerk check` が CI で検査する。Rails の基底クラスは `packs/platform` にある
 
 ## 開発環境
 
@@ -42,4 +43,4 @@ pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対�
 
 ## 状態
 
-`docs/implementation-plan.md` の M1（骨組みと CI）まで実装した。現在地は `docs/handoff.md` を見る。
+`docs/implementation-plan.md` の M2（パッケージ構成と packwerk）まで実装した。現在地は `docs/handoff.md` を見る。

@@ -43,7 +43,7 @@ Shopify は、このチェックを packwerk 本体から外した経緯を振�
 
 ## 決定
 
-1. 初日から `packs/` 構成で始める。対象は、6 つのコンテキスト（`partnerships`・`purchasing`・`sales`・`inventory`・`fulfillment`・`billing`）と `contracts` である。GraphQL などコンテキストに属さないコードは、ルートパッケージに置く。
+1. 初日から `packs/` 構成で始める。対象は、6 つのコンテキスト（`partnerships`・`purchasing`・`sales`・`inventory`・`fulfillment`・`billing`）と `contracts` である。GraphQL などコンテキストに属さないコードは、ルートパッケージに置く。ただし Rails の基底クラスとテナントの仕組みは `packs/platform` に置く。各パッケージが参照する基底クラスをルートパッケージに置くと、パッケージからルートへの依存が循環になる。
 2. 各パッケージは `enforce_dependencies: strict` にする。許可する依存は、コンテキストマップの「許可する依存の向き」の表に限る。
 3. packwerk-extensions のプライバシーチェックを有効にし、各パッケージの公開 API を `app/public/` に限る。
 4. 公開 API に置くのは、他パッケージから呼ばれるサービスと読み取り用の型だけにする。AR モデルは公開しない。他パッケージは、公開 API が返す値を通してだけデータに触れる。
@@ -82,6 +82,9 @@ Shopify は、このチェックを packwerk 本体から外した経緯を振�
 
 不採用。依存チェックはできるが、公開 API の置き場（`app/public/`）を Rails の自動読み込みと両立させられない。
 
-## 未確認の事項
+## 確認した事項
 
-- packs-rails が Rails 8 系に対応しているか（README に対応バージョンの記載が無い）
+- packs-rails は Rails 8.1 で動く。`packs/*/app/*` を自動読み込みと eager load の対象に加え、`.rspec` の `--require packs/rails/rspec` で `packs/*/spec` のテストも走らせる。
+- 依存チェックとプライバシーチェックが違反を実際に落とすことは、`spec/packwerk/enforcement_spec.rb` が一時ファイルで違反を作って確かめる。
+
+> packs-rails 0.1.0・packwerk 3.3.1・packwerk-extensions 0.4.0・Rails 8.1.4 で、`bin/rails runner 'Rails.autoloaders.main.eager_load'` が `packs/platform` の基底クラスを読み込むことを確かめた。

@@ -1,0 +1,8 @@
+# sales の公開 API のうち Sales::PublishedCatalog だけを使う（spec/packwerk/purchasing_uses_only_published_catalog_spec.rb が検査する）
+enforce_dependencies: strict
+enforce_privacy: strict
+dependencies:
+  - packs/platform
+  - packs/partnerships
+  - packs/contracts
+  - packs/sales

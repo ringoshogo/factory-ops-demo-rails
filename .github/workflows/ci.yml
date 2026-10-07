@@ -50,6 +50,10 @@ jobs:
       - name: Lint code for consistent style
         run: bin/rubocop -f github
 
+      # 依存の向きと公開 API の限定を強制する（adr/002）
+      - name: Check package boundaries
+        run: bin/packwerk validate && bin/packwerk check
+
   test:
     runs-on: ubuntu-latest
 
