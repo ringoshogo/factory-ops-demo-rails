@@ -6,3 +6,12 @@ inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 # # Use `[a, [b, c]]` not `[ a, [ b, c ] ]`
 # Layout/SpaceInsideArrayLiteralBrackets:
 #   Enabled: false
+
+# イベントのジョブの登録を Contracts.publish の 1 か所に限る（docs/adr/005）
+require:
+  - ./lib/rubocop/cop/factory_ops/event_job_enqueue.rb
+
+FactoryOps/EventJobEnqueue:
+  Enabled: true
+  Exclude:
+    - packs/contracts/app/public/contracts.rb

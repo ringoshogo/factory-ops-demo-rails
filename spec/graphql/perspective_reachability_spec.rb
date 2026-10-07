@@ -9,6 +9,9 @@ RSpec.describe "視点ごとの型の到達可能性" do
     "SupplierShipment" => :shipments
   }
 
+  # Query のフィールドと、その返す型（docs/architecture/graphql-schema.md「視点ごとに型を分ける」）
+  let(:root_entries) { { "viewer" => "Viewer", "buyer" => "BuyerView", "supplier" => "SupplierView" } }
+
   let(:schema) { FactoryOpsSchema }
   # extra_types は schema.types に現れないので足す
   let(:object_types) { (schema.types.values + schema.extra_types).uniq.select { |type| type.kind.object? && !type.introspection? } }
@@ -34,6 +37,41 @@ RSpec.describe "視点ごとの型の到達可能性" do
     view = schema.get_type(perspective == :buyer ? "BuyerView" : "SupplierView")
     mutations = schema.mutation&.fields&.values.to_a.select { |field| field.resolver.try(:perspective) == perspective }
     [ view, *mutations.map { |field| field.type.unwrap } ]
+  end
+
+  # ルートに視点の入口を通らないフィールドを足すと、上の到達可能性の検査を素通りする
+  def root_violations(schema)
+    entries = schema.query.fields.transform_values { |field| field.type.unwrap.graphql_name }
+    extra_entries = entries.reject { |name, type| root_entries[name] == type }.map { |name, type| "Query.#{name}: #{type}" }
+    missing_entries = (root_entries.keys - entries.keys).map { |name| "Query.#{name} が無い" }
+    undeclared_mutations = schema.mutation&.fields&.values.to_a
+      .reject { |field| %i[buyer supplier].include?(field.resolver.try(:perspective)) }
+      .map { |field| "Mutation.#{field.name}" }
+
+    extra_entries + missing_entries + undeclared_mutations
+  end
+
+  it "Query は viewer と視点の入口だけを持ち、Mutation の各フィールドは buyer か supplier を宣言した mutation である" do
+    expect(root_violations(schema)).to be_empty
+  end
+
+  it "ルートの検査は、Query に足した受注側の型と、視点を宣言しない Mutation のフィールドを見つける" do
+    query_type = Class.new(Types::QueryType) do
+      graphql_name "Query"
+      field :supplier_view, Types::SupplierViewType, null: false
+    end
+    mutation_type = Class.new(Types::BaseObject) do
+      graphql_name "Mutation"
+      perspective :root
+      authorization_exempt reason: "テスト用"
+      field :undeclared, String
+    end
+    bad_schema = Class.new(GraphQL::Schema) do
+      query query_type
+      mutation mutation_type
+    end
+
+    expect(root_violations(bad_schema)).to contain_exactly("Query.supplierView: SupplierView", "Mutation.undeclared")
   end
 
   %i[buyer supplier].each do |perspective|

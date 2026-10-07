@@ -26,7 +26,8 @@ module FactoryOpsDemoRails
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w[assets tasks])
+    # lib/rubocop はカスタム Cop で、rubocop の gem が無いアプリの起動では読めない
+    config.autoload_lib(ignore: %w[assets tasks rubocop])
 
     # Configuration for the application, engines, and railties goes here.
     #
@@ -44,11 +45,16 @@ module FactoryOpsDemoRails
     # ログインを Cookie のセッションで保つ（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）。
     # API モードは CSRF 対策を持たないので、SameSite=Lax で他サイトからの POST に Cookie を付けさせず、
     # 受け付ける本文を application/json に限る（ApplicationController）
-    config.session_store :cookie_store, key: "_factory_ops_session", same_site: :lax, secure: Rails.env.production?
+    # 期限は最後のリクエストから数える。ログアウトとパスワードの変更の後の Cookie は、ユーザーのセッションの世代で拒む
+    config.session_store :cookie_store, key: "_factory_ops_session", same_site: :lax, secure: Rails.env.production?,
+      expire_after: 12.hours
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store, config.session_options
 
     # RLS のポリシーと複合外部キーを残すため（adr/001）
     config.active_record.schema_format = :sql
+
+    # Solid Queue を業務 DB と同じ接続に置く。connects_to を設定せず、全環境で同じアダプタにする（docs/adr/005 決定 1）
+    config.active_job.queue_adapter = :solid_queue
   end
 end

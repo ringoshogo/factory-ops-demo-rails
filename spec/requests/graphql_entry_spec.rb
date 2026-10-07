@@ -4,6 +4,9 @@ require_relative "../support/tenant_helpers"
 # GraphQL の入口（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）
 RSpec.describe "GraphQL の入口", type: :request do
   include TenantHelpers
+  include ActiveSupport::Testing::TimeHelpers
+
+  let(:session_cookie) { "_factory_ops_session" }
 
   let!(:tenant_a) { create_tenant("a") }
   let!(:tenant_b) { create_tenant("b") }
@@ -44,7 +47,7 @@ RSpec.describe "GraphQL の入口", type: :request do
 
     it "セッションのテナントでユーザーが引けなければ（別テナントのセッション）実行せずに 401" do
       allow(Partnerships::Authentication).to receive(:authenticate)
-        .and_return(Partnerships::Authentication::Login.new(user_id: user_a, tenant_id: tenant_b))
+        .and_return(Partnerships::Authentication::Login.new(user_id: user_a, tenant_id: tenant_b, session_version: 0))
       login_as("a@example.com")
 
       expect(FactoryOpsSchema).not_to receive(:execute)
@@ -56,6 +59,57 @@ RSpec.describe "GraphQL の入口", type: :request do
     it "ログアウトの後は 401" do
       login_as("a@example.com")
       delete "/session", as: :json
+      execute_graphql
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    # Cookie のセッションはサーバーに残らないので、ログアウトの前に写した Cookie はそのままでは使えてしまう
+    it "ログアウトの前の Cookie を送り直しても 401" do
+      login_as("a@example.com")
+      stolen = cookies[session_cookie]
+      delete "/session", as: :json
+      cookies[session_cookie] = stolen
+      execute_graphql
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "無効になった Cookie でログアウトしても、新しいセッションは切れない" do
+      login_as("a@example.com")
+      stolen = cookies[session_cookie]
+      delete "/session", as: :json
+      login_as("a@example.com")
+      current = cookies[session_cookie]
+      cookies[session_cookie] = stolen
+      delete "/session", as: :json
+      cookies[session_cookie] = current
+      execute_graphql
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "パスワードを変えると、変える前のセッションは 401" do
+      login_as("a@example.com")
+      # 世代は DB のトリガーが進めるので、パスワードを書き換える経路を問わない
+      digest = BCrypt::Password.create("changed-password", cost: BCrypt::Engine::MIN_COST)
+      Tenancy.with_tenant(tenant_a) { connection.update("UPDATE users SET password_digest = #{connection.quote(digest)}") }
+      execute_graphql
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "パスワード以外を変えても、セッションは続く" do
+      login_as("a@example.com")
+      Tenancy.with_tenant(tenant_a) { connection.update("UPDATE users SET name = 'renamed', password_digest = password_digest") }
+      execute_graphql
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "最後のリクエストから 12 時間を過ぎたセッションは 401" do
+      login_as("a@example.com")
+      travel 12.hours + 1.minute
       execute_graphql
 
       expect(response).to have_http_status(:unauthorized)
@@ -114,12 +168,31 @@ RSpec.describe "GraphQL の入口", type: :request do
       expect(Tenancy.with_tenant(tenant_a) { connection.select_value("SELECT name FROM users") }).to eq("name")
     end
 
-    it "ユーザーエラーを返した場合はコミットする" do
+    it "トップレベルのエラーが無ければコミットする" do
+      during_execution { connection.update("UPDATE users SET name = 'changed'") }
+      execute_graphql
+
+      expect(response.parsed_body).not_to have_key("errors")
+      expect(Tenancy.with_tenant(tenant_a) { connection.select_value("SELECT name FROM users") }).to eq("changed")
+    end
+
+    # graphql-ruby は GraphQL::ExecutionError を拾って errors に載せるので、例外としてはコントローラに届かない
+    it "書き込みの後に FORBIDDEN を返すとロールバックする" do
+      during_execution { connection.update("UPDATE users SET name = 'changed'") }
+      allow(Types::ViewerType).to receive(:authorized?).and_return(false)
+      execute_graphql
+
+      expect(response.parsed_body["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
+      expect(tenant_setting).to eq("")
+      expect(Tenancy.with_tenant(tenant_a) { connection.select_value("SELECT name FROM users") }).to eq("name")
+    end
+
+    it "クエリの検証で落ちたときもロールバックする" do
       during_execution { connection.update("UPDATE users SET name = 'changed'") }
       execute_graphql("{ viewer { unknownField } }")
 
       expect(response.parsed_body["errors"]).to be_present
-      expect(Tenancy.with_tenant(tenant_a) { connection.select_value("SELECT name FROM users") }).to eq("changed")
+      expect(Tenancy.with_tenant(tenant_a) { connection.select_value("SELECT name FROM users") }).to eq("name")
     end
   end
 end

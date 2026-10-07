@@ -65,7 +65,7 @@
 | テーブル | 主な列 | 制約 |
 |---|---|---|
 | `tenants` | `code`・`name`・`partner_code`（取引用コード） | `code`・`partner_code` 一意。`partner_code` は推測できない無作為の値で、受注側が取引関係を結ぶ相手の指定に使う。テナント列を持たない（取引先の名前の表示に使う） |
-| `users` | `owner_tenant_id`・`email`・`name`・`role`（`admin` / `member`）・`password_digest`（bcrypt） | `email` 一意。小文字に揃えて保存する |
+| `users` | `owner_tenant_id`・`email`・`name`・`role`（`admin` / `member`）・`password_digest`（bcrypt）・`session_version`（セッションの世代） | `email` 一意。小文字に揃えて保存する。`session_version` はログアウトで進み、`password_digest` を書き換えるとトリガーが進める。世代の違うセッションは拒まれる（`graphql-schema.md`「1 回のリクエストがたどる道」1） |
 | `partnerships` | `owner_tenant_id`（受注側）・`buyer_tenant_id`（発注側）・`status`（`active` / `revoked`）・`revoked_at` | `(owner_tenant_id, buyer_tenant_id)` 一意。自分自身との関係は不可。`status` と `revoked_at` は一致する |
 | `partnership_grants` | `partnership_id`・`permission`（`view_catalog` / `place_orders` / `view_shipments`） | `(partnership_id, permission)` 一意。取引関係と同じ所有テナント |
 
@@ -162,7 +162,7 @@
 
 発行元は、業務データを書くのと同じトランザクションの中で、イベントをジョブとして登録する。キューの表（`solid_queue_*`）は業務データと同じ DB にあり、テナントの表ではない（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
 
-イベントの受け手は、ペイロードが示す宛先テナントを `Current` に設定して処理する。受け手が書くのは自社のテーブルだけである。重複して届いても結果が変わらないように、受け手ごとに冪等キーを決める。
+イベントの受け手は、ペイロードが示す宛先テナントを `Current` に設定して処理する。宛先テナントを示す項目は、配送表 `Contracts::Subscriptions` に受け手ごとに書く。受け手が書くのは自社のテーブルだけである。重複して届いても結果が変わらないように、受け手ごとに冪等キーを決める。
 
 | イベント | 発行元 → 受け手 | 運ぶ値 | 受け手が書く表 | 冪等キー |
 |---|---|---|---|---|
@@ -250,6 +250,6 @@ CREATE POLICY partner_read ON shipment_lines FOR SELECT
 
 - **関数と子テーブルは、RLS を通して読む**：`partnership_active` と子テーブルのポリシーは、呼び出し元の権限で `partnerships`・`shipments` を読む。そのため、親が見えるときだけ子が見え、失効した関係は判定でも見えない。関数を `SECURITY DEFINER` にしない。
 - **RLS は粗い判定にとどめる**：RLS が判定するのは「所有テナントか、有効な関係があるか」までである。どの権限付与（`view_catalog`・`view_shipments`）があるかは、アプリの policy scope が判定する（`decisions.md` 2 章「RLS の役割」）。
-- **ログインの前のユーザー検索**：ログインの時点ではテナントが決まっていないので、`users` を RLS の下では引けない。メールアドレスからユーザー ID・所有テナント・`password_digest` だけを返す認証専用の関数 `find_login_user(email)` を 1 つ置き、この関数だけを RLS の外で動かす。関数は所有ロールの `SECURITY DEFINER` にし、`search_path` を固定する。固定しないと、呼び出し元が同名の表や関数を先に見つかる場所へ置いて差し替えられる。パスワードの照合はアプリ（`Partnerships::Authentication`）が行う。
+- **ログインの前のユーザー検索**：ログインの時点ではテナントが決まっていないので、`users` を RLS の下では引けない。メールアドレスからユーザー ID・所有テナント・`password_digest`・`session_version` だけを返す認証専用の関数 `find_login_user(email)` を 1 つ置き、この関数だけを RLS の外で動かす。関数は所有ロールの `SECURITY DEFINER` にし、`search_path` を固定する。固定しないと、呼び出し元が同名の表や関数を先に見つかる場所へ置いて差し替えられる。パスワードの照合はアプリ（`Partnerships::Authentication`）が行う。
 
 > 上の DDL とポリシーは、PostgreSQL 16 で試作して確かめた（UUIDv7 の代わりに `gen_random_uuid()`）。受注側・発注側・無関係の 3 テナントで次を確認した。未設定では 0 行になる。発注側に見えるのは、公開品目 1 件・取引関係・出荷の 3 経路だけである。相手名義の INSERT は RLS が拒否し、相手の行への UPDATE は 0 行になる。他テナントの親を指す子は、複合外部キーが拒否する。失効すると 3 経路がすべて閉じる。
