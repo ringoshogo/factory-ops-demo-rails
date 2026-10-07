@@ -25,7 +25,8 @@ module Partnerships
       user = User.find_by(id: user_id)
       return unless user && user.session_version == session_version
 
-      Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role)
+      Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role,
+        partner_code: Tenant.find(user.owner_tenant_id).partner_code)
     end
 
     # Tenancy.with_tenant の中で呼ぶ。ユーザーの世代を進め、発行済みのすべてのセッションを使えなくする。

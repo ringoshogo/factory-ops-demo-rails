@@ -66,10 +66,10 @@
 |---|---|---|
 | `tenants` | `code`・`name`・`partner_code`（取引用コード） | `code`・`partner_code` 一意。`partner_code` は推測できない無作為の値で、受注側が取引関係を結ぶ相手の指定に使う。テナント列を持たない（取引先の名前の表示に使う） |
 | `users` | `owner_tenant_id`・`email`・`name`・`role`（`admin` / `member`）・`password_digest`（bcrypt）・`session_version`（セッションの世代） | `email` 一意。小文字に揃えて保存する。`session_version` はログアウトで進み、`password_digest` を書き換えるとトリガーが進める。世代の違うセッションは拒まれる（`graphql-schema.md`「1 回のリクエストがたどる道」1） |
-| `partnerships` | `owner_tenant_id`（受注側）・`buyer_tenant_id`（発注側）・`status`（`active` / `revoked`）・`revoked_at` | `(owner_tenant_id, buyer_tenant_id)` 一意。自分自身との関係は不可。`status` と `revoked_at` は一致する |
+| `partnerships` | `owner_tenant_id`（受注側）・`buyer_tenant_id`（発注側）・`status`（`active` / `revoked`）・`revoked_at` | 有効な関係（`status = 'active'`）の中で `(owner_tenant_id, buyer_tenant_id)` 一意。自分自身との関係は不可。`status` と `revoked_at` は一致する |
 | `partnership_grants` | `partnership_id`・`permission`（`view_catalog` / `place_orders` / `view_shipments`） | `(partnership_id, permission)` 一意。取引関係と同じ所有テナント |
 
-取引関係は受注側が結び、受注側が失効させる。失効させた取引関係は再び有効にしない。取引を再開するときは、受注側が新しい取引関係を結ぶ。
+取引関係は受注側が結び、受注側が失効させる。失効させた取引関係は再び有効にしない。取引を再開するときは、受注側が新しい取引関係を結ぶ。そのため、同じ相手との関係は失効したものを含めて複数の行になりうる。一意にするのは有効な関係だけで、部分一意索引で強制する。
 
 `place_orders` は相手のデータを読む権限ではない。購買が発注を登録するときに問い合わせる権限である。
 

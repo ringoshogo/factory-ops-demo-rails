@@ -42,6 +42,16 @@ CREATE FUNCTION public.find_login_user(login_email text) RETURNS TABLE(id uuid, 
     AS $$ SELECT u.id, u.owner_tenant_id, u.password_digest, u.session_version FROM public.users u WHERE u.email = login_email $$;
 
 
+--
+-- Name: partnership_active(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.partnership_active(supplier uuid, buyer uuid) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$ SELECT EXISTS (SELECT 1 FROM partnerships p
+                  WHERE p.owner_tenant_id = supplier AND p.buyer_tenant_id = buyer AND p.status = 'active') $$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -56,6 +66,42 @@ CREATE TABLE public.ar_internal_metadata (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: partnership_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.partnership_grants (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    permission character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    partnership_id uuid NOT NULL,
+    CONSTRAINT partnership_grants_permission_check CHECK (((permission)::text = ANY (ARRAY['view_catalog'::text, 'place_orders'::text, 'view_shipments'::text])))
+);
+
+ALTER TABLE ONLY public.partnership_grants FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: partnerships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.partnerships (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    buyer_tenant_id uuid NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    revoked_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT partnerships_not_self CHECK ((owner_tenant_id <> buyer_tenant_id)),
+    CONSTRAINT partnerships_status_revoked_at CHECK (((((status)::text = 'active'::text) AND (revoked_at IS NULL)) OR (((status)::text = 'revoked'::text) AND (revoked_at IS NOT NULL))))
+);
+
+ALTER TABLE ONLY public.partnerships FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -644,6 +690,22 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: partnership_grants partnership_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.partnership_grants
+    ADD CONSTRAINT partnership_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: partnerships partnerships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.partnerships
+    ADD CONSTRAINT partnerships_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -769,6 +831,48 @@ ALTER TABLE ONLY public.tenants
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: index_partnership_grants_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_partnership_grants_on_owner_tenant_id_and_id ON public.partnership_grants USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_partnership_grants_on_owner_tenant_id_and_partnership_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_partnership_grants_on_owner_tenant_id_and_partnership_id ON public.partnership_grants USING btree (owner_tenant_id, partnership_id);
+
+
+--
+-- Name: index_partnership_grants_on_partnership_id_and_permission; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_partnership_grants_on_partnership_id_and_permission ON public.partnership_grants USING btree (partnership_id, permission);
+
+
+--
+-- Name: index_partnerships_active_pair; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_partnerships_active_pair ON public.partnerships USING btree (owner_tenant_id, buyer_tenant_id) WHERE ((status)::text = 'active'::text);
+
+
+--
+-- Name: index_partnerships_on_buyer_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_partnerships_on_buyer_tenant_id ON public.partnerships USING btree (buyer_tenant_id);
+
+
+--
+-- Name: index_partnerships_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_partnerships_on_owner_tenant_id_and_id ON public.partnerships USING btree (owner_tenant_id, id);
 
 
 --
@@ -1047,11 +1151,27 @@ ALTER TABLE ONLY public.solid_queue_failed_executions
 
 
 --
+-- Name: partnership_grants fk_rails_3faf5a3355; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.partnership_grants
+    ADD CONSTRAINT fk_rails_3faf5a3355 FOREIGN KEY (owner_tenant_id, partnership_id) REFERENCES public.partnerships(owner_tenant_id, id);
+
+
+--
 -- Name: solid_queue_blocked_executions fk_rails_4cd34e2228; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.solid_queue_blocked_executions
     ADD CONSTRAINT fk_rails_4cd34e2228 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: partnerships fk_rails_6be6936b70; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.partnerships
+    ADD CONSTRAINT fk_rails_6be6936b70 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -1103,11 +1223,61 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: partnership_grants fk_rails_e6ea4224b6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.partnership_grants
+    ADD CONSTRAINT fk_rails_e6ea4224b6 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: partnership_grants owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.partnership_grants USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: partnerships owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.partnerships USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
 -- Name: users owner_write; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY owner_write ON public.users USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
+
+--
+-- Name: partnership_grants partner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY partner_read ON public.partnership_grants FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.partnerships p
+  WHERE (p.id = partnership_grants.partnership_id))));
+
+
+--
+-- Name: partnerships partner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY partner_read ON public.partnerships FOR SELECT USING (((buyer_tenant_id = public.current_tenant_id()) AND ((status)::text = 'active'::text)));
+
+
+--
+-- Name: partnership_grants; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.partnership_grants ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: partnerships; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.partnerships ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1122,6 +1292,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000300'),
 ('20261008000210'),
 ('20261008000200'),
 ('20261008000100'),

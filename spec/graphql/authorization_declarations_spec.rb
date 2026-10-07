@@ -4,8 +4,7 @@ require "rails_helper"
 # （docs/architecture/graphql-schema.md「明示的な例外と列挙テスト」）
 RSpec.describe "GraphQL の認可の宣言" do
   # 認可の例外にしてよい型。mutation の戻り値・コネクション・エッジの型は、基底クラスが例外にする。
-  # Mutation は最初の mutation と一緒に足す
-  exempt_types = %w[Query Viewer BuyerView SupplierView Tenant UserError PageInfo]
+  exempt_types = %w[Query Mutation Viewer BuyerView SupplierView Tenant UserError PageInfo]
 
   let(:schema) { FactoryOpsSchema }
   # extra_types は schema.types に現れないので足す

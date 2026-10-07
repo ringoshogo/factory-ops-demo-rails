@@ -9,8 +9,9 @@ module Types
     field_class BaseField
 
     class << self
-      def authorize_with(policy)
-        super(policy, :show?)
+      # 規則の既定は show?。同じ policy の値を別の視点の型で見せるときは、その視点の規則を渡す
+      def authorize_with(policy, rule = :show?)
+        super
       end
 
       def authorization_exempt(reason:)
@@ -30,13 +31,13 @@ module Types
         @cross_tenant_read = route
       end
 
-      # 返すオブジェクトごとに policy の show? を評価する。偽はスキーマの unauthorized_object で FORBIDDEN になる
+      # 返すオブジェクトごとに policy の規則を評価する。偽はスキーマの unauthorized_object で FORBIDDEN になる
       def authorized?(object, context)
         check_declarations!
         return false unless super
         return true if authorization_exempt_reason
 
-        authorization_policy.new(object, user: context[:current_user]).apply(:show?)
+        authorization_policy.new(object, user: context[:current_user]).apply(authorization_rule)
       end
     end
 
