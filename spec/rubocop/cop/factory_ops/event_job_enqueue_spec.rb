@@ -9,6 +9,10 @@ RSpec.describe RuboCop::Cop::FactoryOps::EventJobEnqueue, :config do
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Contracts::EventJob は Contracts.publish から登録する。
       ::Contracts::EventJob.set(wait: 1).perform_later
       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Contracts::EventJob は Contracts.publish から登録する。
+      Contracts::EventJob.new(name, payload, receiver, tenant_id).enqueue
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Contracts::EventJob は Contracts.publish から登録する。
+      Contracts::EventJob.publishing { job.enqueue }
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Contracts::EventJob は Contracts.publish から登録する。
     RUBY
   end
 

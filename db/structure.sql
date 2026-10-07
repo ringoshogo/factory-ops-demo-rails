@@ -11,6 +11,19 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: bump_session_version(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bump_session_version() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$ BEGIN
+  NEW.session_version := OLD.session_version + 1;
+  RETURN NEW;
+END $$;
+
+
+--
 -- Name: current_tenant_id(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -23,10 +36,10 @@ CREATE FUNCTION public.current_tenant_id() RETURNS uuid
 -- Name: find_login_user(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.find_login_user(login_email text) RETURNS TABLE(id uuid, owner_tenant_id uuid, password_digest character varying)
+CREATE FUNCTION public.find_login_user(login_email text) RETURNS TABLE(id uuid, owner_tenant_id uuid, password_digest character varying, session_version integer)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'pg_temp'
-    AS $$ SELECT u.id, u.owner_tenant_id, u.password_digest FROM public.users u WHERE u.email = login_email $$;
+    AS $$ SELECT u.id, u.owner_tenant_id, u.password_digest, u.session_version FROM public.users u WHERE u.email = login_email $$;
 
 
 SET default_tablespace = '';
@@ -524,6 +537,7 @@ CREATE TABLE public.users (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     password_digest character varying NOT NULL,
+    session_version integer DEFAULT 0 NOT NULL,
     CONSTRAINT users_role_check CHECK (((role)::text = ANY (ARRAY['admin'::text, 'member'::text])))
 );
 
@@ -1010,6 +1024,13 @@ CREATE UNIQUE INDEX index_users_on_owner_tenant_id_and_id ON public.users USING 
 
 
 --
+-- Name: users users_bump_session_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER users_bump_session_version BEFORE UPDATE OF password_digest ON public.users FOR EACH ROW WHEN (((old.password_digest)::text IS DISTINCT FROM (new.password_digest)::text)) EXECUTE FUNCTION public.bump_session_version();
+
+
+--
 -- Name: solid_queue_recurring_executions fk_rails_318a5533ed; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1101,6 +1122,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000210'),
 ('20261008000200'),
 ('20261008000100'),
 ('20261008000000'),

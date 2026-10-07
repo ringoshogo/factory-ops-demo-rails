@@ -45,6 +45,15 @@ RSpec.describe "セッション", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
+    it "保存されたダイジェストが bcrypt の形式でなくても、パスワード違いと同じ 401 を返す" do
+      login(email: "a@example.com", password: "wrong")
+      wrong_password = [ response.status, response.body ]
+      Tenancy.with_tenant(tenant) { connection.update("UPDATE users SET password_digest = 'not-a-bcrypt-digest'") }
+      login(email: "a@example.com", password: "secret")
+
+      expect([ response.status, response.body ]).to eq(wrong_password)
+    end
+
     it "application/json 以外は受け付けない" do
       login(email: "a@example.com", password: "secret", as: nil)
 

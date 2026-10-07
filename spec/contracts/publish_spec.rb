@@ -81,9 +81,55 @@ RSpec.describe Contracts do
   end
 
   it "配送表に無い受け手を指すジョブは実行しない" do
-    job = Contracts::EventJob.new("Contracts::SpecPinged", event.to_payload, "Kernel", supplier)
+    job = Contracts::EventJob.new("Contracts::SpecPinged", event.to_payload, "Kernel", supplier) # rubocop:disable FactoryOps/EventJobEnqueue
 
     expect { job.perform_now }.to raise_error(KeyError, /配送表に無い受け手/)
+  end
+
+  # 引数の宛先テナントを信じると、ペイロードと別のテナントの名義で受け手が書く
+  it "引数の宛先テナントが、配送表の項目が指すペイロードの値と違うジョブは実行しない" do
+    job = Contracts::EventJob.new("Contracts::SpecPinged", event.to_payload, "SpecSupplierReceiver", buyer) # rubocop:disable FactoryOps/EventJobEnqueue
+    expect(SpecSupplierReceiver).not_to receive(:handle)
+
+    expect { job.perform_now }.to raise_error(Contracts::EventJob::TenantMismatch)
+  end
+
+  describe "Contracts.publish を通らない登録" do
+    let(:arguments) { [ "Contracts::SpecPinged", event.to_payload, "SpecSupplierReceiver", supplier ] }
+
+    def expect_rejected(&enqueue)
+      expect { Tenancy.with_tenant(buyer, &enqueue) }.to raise_error(Contracts::EventJob::OutsidePublish)
+      expect(enqueued_event_jobs).to be_empty
+    end
+
+    # rubocop:disable FactoryOps/EventJobEnqueue
+    it "perform_later を拒む" do
+      expect_rejected { Contracts::EventJob.perform_later(*arguments) }
+    end
+
+    it "set を挟んだ perform_later を拒む" do
+      expect_rejected { Contracts::EventJob.set(wait: 1).perform_later(*arguments) }
+    end
+
+    it "ジョブを作ってからの enqueue を拒む" do
+      expect_rejected { Contracts::EventJob.new(*arguments).enqueue }
+    end
+
+    it "enqueue のコールバックを通らない ActiveJob.perform_all_later を拒む" do
+      expect_rejected { ActiveJob.perform_all_later(Contracts::EventJob.new(*arguments)) }
+    end
+    # rubocop:enable FactoryOps/EventJobEnqueue
+
+    it "サブクラスを作れない" do
+      expect { Class.new(Contracts::EventJob) }.to raise_error(TypeError)
+    end
+
+    it "Contracts.publish を抜けた後の登録も拒む" do
+      Tenancy.with_tenant(buyer) { described_class.publish(event) }
+
+      expect { Tenancy.with_tenant(buyer) { Contracts::EventJob.perform_later(*arguments) } } # rubocop:disable FactoryOps/EventJobEnqueue
+        .to raise_error(Contracts::EventJob::OutsidePublish)
+    end
   end
 
   it_behaves_like "冪等な受け手" do

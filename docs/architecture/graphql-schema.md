@@ -11,9 +11,10 @@
 
 フロントエンドから届いたクエリは、次の順に処理される。
 
-1. **認証とテナントの設定**：ログインとログアウトは、GraphQL の外の `SessionsController` が受け持つ。GraphQL に認証の mutation は置かない。`SessionsController` は、認証専用の関数（`data-model.md`「RLS」）でユーザーと所有テナントを引き、両方の ID をセッションに保存する。`GraphqlController` は、リクエストごとにスキーマの実行全体を 1 つのトランザクションで包み、その先頭で `SET LOCAL app.tenant_id` にセッションのテナントを設定する。そのうえで RLS の下でユーザーを引き、`Current` に設定する。ユーザーが引けなければ、スキーマを実行せずに 401 を返す。`SET LOCAL` はトランザクションの中でしか効かないので、このトランザクションの外で発行したクエリは 0 行になる。トランザクションは、ユーザーエラーを返した場合も含め、実行が例外なく終わればコミットし、例外ならロールバックする。
+1. **認証とテナントの設定**：ログインとログアウトは、GraphQL の外の `SessionsController` が受け持つ。GraphQL に認証の mutation は置かない。`SessionsController` は、認証専用の関数（`data-model.md`「RLS」）でユーザーと所有テナントを引き、両方の ID とユーザーのセッションの世代をセッションに保存する。`GraphqlController` は、リクエストごとにスキーマの実行全体を 1 つのトランザクションで包み、その先頭で `SET LOCAL app.tenant_id` にセッションのテナントを設定する。そのうえで RLS の下でユーザーを引き、`Current` に設定する。ユーザーが引けないか、セッションの世代がユーザーの今の世代と違えば、スキーマを実行せずに 401 を返す。`SET LOCAL` はトランザクションの中でしか効かないので、このトランザクションの外で発行したクエリは 0 行になる。トランザクションは、実行が例外なく終わり、結果にトップレベルのエラーが無ければコミットする。ユーザーエラーだけを返した場合もコミットする。例外か、トップレベルのエラー（`FORBIDDEN`、クエリの検証や上限の違反など）ならロールバックする。graphql-ruby は `GraphQL::ExecutionError` を拾って `errors` に載せるので、例外だけを見ると、書き込みの後に `FORBIDDEN` になった操作がコミットされる。
    - API モードの Rails は Cookie・セッションのミドルウェアと CSRF 対策を持たない。ミドルウェアを明示的に足し、セッションの Cookie を `SameSite=Lax`・`HttpOnly` にする。`GraphqlController` と `SessionsController` は、`application/json` の本文だけを受け付ける（`ApplicationController`）。他サイトのフォームは `application/json` を送れず、`fetch` で送るには CORS のプリフライトが要るからである。`GraphqlController` は POST だけを受け付ける。
    - ログインは、成功したときにセッションを作り直してから ID を保存する。ログインの前のセッションを引き継がせないためである。
+   - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「テーブル」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
 3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
@@ -52,13 +53,14 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 ### 相手側の型へたどれないことの保証
 
-到達可能性のテスト（`spec/graphql/perspective_reachability_spec.rb`）が、CI で次の 3 つを確かめる。
+到達可能性のテスト（`spec/graphql/perspective_reachability_spec.rb`）が、CI で次の 4 つを確かめる。
 
-1. `BuyerView` と、`buyer` を宣言した mutation の戻り値からたどれる型は、すべて `buyer` か `shared` である。`SupplierView` 側も同様に確かめる。
-2. `shared` の型のフィールドは、スカラー・enum・`shared` の型だけを返す。
-3. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つに限られる。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog`・`:partnerships`・`:shipments`）。
+1. `Query` のフィールドは `viewer`（`Viewer`）・`buyer`（`BuyerView`）・`supplier`（`SupplierView`）の 3 つだけである。`Mutation` のフィールドは、どれも `buyer` か `supplier` を宣言した mutation である。2 以降の検査は視点の入口と mutation から型をたどるので、ルートに直接置いた型は検査を素通りする。
+2. `BuyerView` と、`buyer` を宣言した mutation の戻り値からたどれる型は、すべて `buyer` か `shared` である。`SupplierView` 側も同様に確かめる。
+3. `shared` の型のフィールドは、スカラー・enum・`shared` の型だけを返す。
+4. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つに限られる。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog`・`:partnerships`・`:shipments`）。
 
-発注の型に受注へのフィールドを 1 本足すと、1 が落ちる。相手側の型を 4 つ目として足すと、3 が落ちる。
+`Query` に受注側の型を返すフィールドを足すと、1 が落ちる。発注の型に受注へのフィールドを 1 本足すと、2 が落ちる。相手側の型を 4 つ目として足すと、4 が落ちる。
 
 ## 発注側の視点
 
@@ -516,8 +518,8 @@ type PlacePurchaseOrderPayload {
 
 | 種類 | 返し方 | 例 |
 |---|---|---|
-| ユーザーエラー | mutation の戻り値の `errors`。HTTP は 200 | 入力の誤り、業務の不変条件の違反、見えない ID、取引関係の無い相手 |
-| トップレベルのエラー | GraphQL の `errors`。`extensions.code` に種別を入れる | 認証切れ、規則による拒否・宣言漏れ・scope と規則の食い違い（`FORBIDDEN`）、クエリの上限超過、想定外の例外 |
+| ユーザーエラー | mutation の戻り値の `errors`。HTTP は 200。リクエストのトランザクションはコミットする | 入力の誤り、業務の不変条件の違反、見えない ID、取引関係の無い相手 |
+| トップレベルのエラー | GraphQL の `errors`。`extensions.code` に種別を入れる。リクエストの書き込みはすべて戻る | 認証切れ、規則による拒否・宣言漏れ・scope と規則の食い違い（`FORBIDDEN`）、クエリの上限超過、想定外の例外 |
 
 ```graphql
 type UserError {

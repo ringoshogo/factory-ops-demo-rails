@@ -31,7 +31,7 @@ GraphQL は、型のフィールドをたどって別のデータへ届く。発
 2. ルートの `Query` に、視点ごとの入口 `buyer: BuyerView!` と `supplier: SupplierView!` を置く。各視点の読み取りはこの下にだけ置く。
 3. 型は視点ごとに分け、各型に視点（`buyer`・`supplier`・`shared`）を宣言させる。相手テナントのデータを返す型は、受注側の型を流用せず、発注側の視点の型として別に作る（`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment`）。
 4. `shared` の型は、スカラーと enum と他の `shared` の型だけをフィールドに持つ。
-5. 型の到達可能性をテストで固定する。`BuyerView` と発注側の mutation の戻り値からたどれる型は、`buyer` か `shared` に限る。`SupplierView` 側も同様にする。
+5. 型の到達可能性をテストで固定する。`Query` のフィールドは `viewer` と 2 つの視点の入口に限り、`Mutation` のフィールドは視点を宣言した mutation に限る。`BuyerView` と発注側の mutation の戻り値からたどれる型は、`buyer` か `shared` に限る。`SupplierView` 側も同様にする。
 6. `node` と `nodes` のフィールドを置かない。スキーマの `object_from_id` を実装せず、呼ばれたら例外にする。ID でレコードを引くフィールドは、各視点の下に型ごとに置き（`buyer.purchaseOrder(id:)` など）、公開 API の policy scope を通す。
 
 ## 結果

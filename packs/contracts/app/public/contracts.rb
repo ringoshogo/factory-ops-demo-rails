@@ -12,7 +12,7 @@ module Contracts
     payload = event.to_payload
     Subscriptions.routes(event.class.name).each do |route|
       tenant_id = payload.fetch(route.tenant_key).presence or raise ArgumentError, "宛先テナントが空: #{route.tenant_key}"
-      job = EventJob.perform_later(event.class.name, payload, route.receiver, tenant_id)
+      job = EventJob.publishing { EventJob.perform_later(event.class.name, payload, route.receiver, tenant_id) }
       raise ActiveJob::EnqueueError, "#{event.class.name} を #{route.receiver} へ登録できなかった" unless job.successfully_enqueued?
     end
   end

@@ -45,7 +45,9 @@ module FactoryOpsDemoRails
     # ログインを Cookie のセッションで保つ（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）。
     # API モードは CSRF 対策を持たないので、SameSite=Lax で他サイトからの POST に Cookie を付けさせず、
     # 受け付ける本文を application/json に限る（ApplicationController）
-    config.session_store :cookie_store, key: "_factory_ops_session", same_site: :lax, secure: Rails.env.production?
+    # 期限は最後のリクエストから数える。ログアウトとパスワードの変更の後の Cookie は、ユーザーのセッションの世代で拒む
+    config.session_store :cookie_store, key: "_factory_ops_session", same_site: :lax, secure: Rails.env.production?,
+      expire_after: 12.hours
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use config.session_store, config.session_options
 

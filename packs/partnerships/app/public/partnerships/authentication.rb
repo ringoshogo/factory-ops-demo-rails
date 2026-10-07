@@ -1,7 +1,8 @@
 module Partnerships
   # ログインと、セッションからの操作者の復元（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）
   module Authentication
-    Login = Data.define(:user_id, :tenant_id)
+    # session_version はセッションの世代。ログアウトとパスワードの変更で進み、前の世代のセッションを拒む
+    Login = Data.define(:user_id, :tenant_id, :session_version)
 
     # ユーザーが見つからないときも同じだけ時間を掛け、メールアドレスの有無を応答時間から推測させない
     DUMMY_DIGEST = BCrypt::Password.create("dummy").to_s.freeze
@@ -13,15 +14,33 @@ module Partnerships
         c.select_one("SELECT * FROM find_login_user($1)", "Authentication", [ email ])
       end
       digest = row ? row["password_digest"] : DUMMY_DIGEST
-      return unless BCrypt::Password.new(digest).is_password?(password.to_s) && row
+      return unless password_matches?(digest, password) && row
 
-      Login.new(user_id: row["id"], tenant_id: row["owner_tenant_id"])
+      Login.new(user_id: row["id"], tenant_id: row["owner_tenant_id"], session_version: row["session_version"])
     end
 
-    # Tenancy.with_tenant の中で呼ぶ。RLS の下で引くので、別テナントのユーザーは見つからない
-    def self.actor(user_id)
+    # Tenancy.with_tenant の中で呼ぶ。RLS の下で引くので、別テナントのユーザーは見つからない。
+    # セッションの世代がユーザーの今の世代と違えば、ログアウトかパスワードの変更より前のセッションなので拒む
+    def self.actor(user_id, session_version:)
       user = User.find_by(id: user_id)
-      user && Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role)
+      return unless user && user.session_version == session_version
+
+      Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role)
     end
+
+    # Tenancy.with_tenant の中で呼ぶ。ユーザーの世代を進め、発行済みのすべてのセッションを使えなくする。
+    # 世代が今のものと違うセッションでは進めない。無効になった Cookie で、他の端末のログインを切らせない
+    def self.revoke_sessions(user_id, session_version:)
+      User.where(id: user_id, session_version: session_version).update_all("session_version = session_version + 1")
+    end
+
+    # 壊れたダイジェストもパスワード違いと同じに扱い、同じだけ時間を掛ける
+    def self.password_matches?(digest, password)
+      BCrypt::Password.new(digest).is_password?(password.to_s)
+    rescue BCrypt::Errors::InvalidHash
+      BCrypt::Password.new(DUMMY_DIGEST).is_password?(password.to_s)
+      false
+    end
+    private_class_method :password_matches?
   end
 end
