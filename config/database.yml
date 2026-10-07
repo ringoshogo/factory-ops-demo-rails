@@ -3,24 +3,59 @@ default: &default
   encoding: unicode
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
+# 同じ DB に 2 つの設定を置く（docs/architecture/data-model.md「RLS」）。
+# primary はアプリのロールで接続し、RLS の下で動く。DB のタスク（作成・マイグレーション・スキーマの読み込み）は
+# 所有ロールの owner だけが行う。アプリのロールへの権限は lib/tasks/db_roles.rake がタスクの後に付与する。
+app: &app
+  database_tasks: false
+
+owner: &owner
+  migrations_paths: db/migrate
+  schema_dump: structure.sql
+
 # 開発とテストは compose.yaml の PostgreSQL 18 を使う。uuidv7() が 18 にしか無いため。
-local: &local
-  <<: *default
+# ロールは docker/initdb/01_roles.sql が作る。
+local_app: &local_app
+  <<: [*default, *app]
   host: <%= ENV.fetch("DB_HOST") { "localhost" } %>
   port: <%= ENV.fetch("DB_PORT") { 5433 } %>
-  username: <%= ENV.fetch("DB_USER") { "postgres" } %>
-  password: <%= ENV.fetch("DB_PASSWORD") { "postgres" } %>
+  username: factory_app
+  password: factory_app
+
+local_owner: &local_owner
+  <<: [*local_app, *owner]
+  database_tasks: true
+  username: factory_owner
+  password: factory_owner
 
 development:
-  <<: *local
-  database: factory_ops_demo_rails_development
+  primary:
+    <<: *local_app
+    database: factory_ops_demo_rails_development
+  owner:
+    <<: *local_owner
+    database: factory_ops_demo_rails_development
 
 test:
-  <<: *local
-  database: factory_ops_demo_rails_test
+  primary:
+    <<: *local_app
+    database: factory_ops_demo_rails_test
+  owner:
+    <<: *local_owner
+    database: factory_ops_demo_rails_test
 
+# 本番の owner は、DB_OWNER_USER を渡したプロセスにだけ置く。所有ロールは BYPASSRLS を持つので、
+# 資格情報はマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。
 production:
-  <<: *default
-  database: factory_ops_demo_rails_production
-  username: factory_ops_demo_rails
-  password: <%= ENV["FACTORY_OPS_DEMO_RAILS_DATABASE_PASSWORD"] %>
+  primary:
+    <<: [*default, *app]
+    database: factory_ops_demo_rails_production
+    username: <%= ENV["DB_APP_USER"] %>
+    password: <%= ENV["DB_APP_PASSWORD"] %>
+<% if ENV["DB_OWNER_USER"].present? %>
+  owner:
+    <<: [*default, *owner]
+    database: factory_ops_demo_rails_production
+    username: <%= ENV["DB_OWNER_USER"] %>
+    password: <%= ENV["DB_OWNER_PASSWORD"] %>
+<% end %>

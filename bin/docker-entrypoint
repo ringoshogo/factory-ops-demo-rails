@@ -1,8 +1,5 @@
 #!/bin/bash -e
 
-# If running the rails server then create or migrate existing database
-if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
-  ./bin/rails db:prepare
-fi
-
+# サーバーの起動では DB を準備しない。DB のタスクは所有ロール（BYPASSRLS）の資格情報が要り、
+# それを Web のプロセスに渡さないため、マイグレーションは別の工程で bin/rails db:prepare を流す（config/database.yml）。
 exec "${@}"
