@@ -11,6 +11,8 @@ module Types
     field :save_item, mutation: Mutations::SaveItem
     field :set_item_published, mutation: Mutations::SetItemPublished
     field :register_part_mapping, mutation: Mutations::RegisterPartMapping
+    field :allocate_sales_order, mutation: Mutations::AllocateSalesOrder
+    field :adjust_stock, mutation: Mutations::AdjustStock
     field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
   end
 end
