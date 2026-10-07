@@ -10,6 +10,8 @@ services:
     volumes:
       # 18 のイメージはデータを /var/lib/postgresql/18/docker に置く
       - db-data:/var/lib/postgresql
+      # 所有ロールとアプリのロールを作る。ボリュームの初回作成時だけ流れる
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 2s

@@ -185,14 +185,25 @@
 
 ## RLS
 
-アプリの DB ロールは、テーブルの所有者でも、RLS を迂回できるロール（`BYPASSRLS`）でもない一般ロールにする。テナントは、トランザクションの中で `SET LOCAL app.tenant_id` で渡す。
+DB ロールは 2 つに分ける。どちらも `docker/initdb/01_roles.sql` が作る（compose はボリュームの初回作成時に、`bin/setup` と CI は psql で流す）。
+
+| ロール | 役割 | 属性 |
+|---|---|---|
+| `factory_owner`（所有ロール） | テーブルの所有者。DB の作成、マイグレーション、`structure.sql` の読み込みを行う | `CREATEDB`・`BYPASSRLS`。`BYPASSRLS` は、ログインの前のユーザー検索の関数（下記）が `FORCE` の表を引くのに要る |
+| `factory_app`（アプリのロール） | アプリ・テスト・ワーカーはすべてこのロールで接続する | テーブルの所有者でも `BYPASSRLS` でもスーパーユーザーでもない一般ロール。所有者とスーパーユーザーは RLS を迂回するので、このロールで動かないテストは RLS を検証しない |
+
+`config/database.yml` は、同じ DB に 2 つの設定を置く。アプリが使う `primary` はアプリのロールで接続し、`database_tasks: false` にする。DB のタスクは所有ロールの `owner` だけが行う。`db:rollback` と `db:migrate:up`・`down`・`redo` は設定ごとに回らず `primary` の接続でマイグレーションを流すので、`lib/tasks/db_roles.rake` が所有ロールの接続に切り替える。
+
+アプリのロールへの権限は、表を作るタスク（`db:migrate`・`db:schema:load`・`db:test:load_schema`・`db:prepare` など）の後に、同じ rake ファイルの `db:grant_app_role` が付与する。Rails の pg_dump は権限を落とす（`--no-privileges`）ので、権限を `structure.sql` に載せても、テスト DB には再現されない。付与するのは全テーブルの `SELECT`・`INSERT`・`UPDATE`・`DELETE` と連番の `USAGE`・`SELECT` で、`schema_migrations`・`ar_internal_metadata` は `SELECT` だけにする。
+
+テナントは、トランザクションの中で `SET LOCAL app.tenant_id` で渡す。アプリでは `Tenancy.with_tenant(tenant_id) { ... }`（`packs/platform`）だけがこれを行う。トランザクション（外側にあればセーブポイント）を開き、`app.tenant_id` と `Current.tenant_id` を設定してブロックを実行し、抜けるときに `app.tenant_id` を空に戻す。外側のトランザクションの中で呼ぶと（テストなど）、`SET LOCAL` がその終わりまで残り、後の操作に前のテナントが漏れるからである。
 
 ```sql
 CREATE FUNCTION current_tenant_id() RETURNS uuid LANGUAGE sql STABLE AS
 $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 ```
 
-`app.tenant_id` が未設定なら、この関数は空を返し、どの行にも一致しない。テナントの設定を忘れたクエリは、例外ではなく 0 行になる。例外にする役目はアプリ側の基底クラスが受け持つ（`decisions.md` 2 章）。
+`app.tenant_id` が未設定なら、この関数は空を返し、どの行にも一致しない。テナントの設定を忘れたクエリは、例外ではなく 0 行になる。例外にする役目はアプリ側の基底クラス `TenantRecord`（`packs/platform`）が受け持つ（`decisions.md` 2 章）。テナントの表のモデルはすべてこれを継承し、`Current.tenant_id` が空のままリレーションを作るか保存すると `Tenancy::MissingTenant` になる。`TenantRecord` は既定スコープをメソッドで定義して設定を確かめるが、条件は足さない。所有テナントの条件を既定で付けると、相手の行を読むたびに `unscoped` が要るからである。
 
 `tenants` と Solid Queue の表を除く全テーブルに、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
 
@@ -205,6 +216,8 @@ CREATE POLICY owner_write ON items FOR ALL
 ```
 
 `WITH CHECK` が全テーブルで同じなので、どのテーブルにも相手テナントの名義では書けない。イベントの受け手も自社の名義で書くだけなので、この規則に例外は無い。
+
+マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作る。主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。
 
 相手テナントのデータを読む 3 つの経路にだけ、読み取り専用のポリシーを足す。PostgreSQL は、同じ操作に対する複数の許可ポリシーを OR で結ぶ。そのため、足したポリシーは `SELECT` だけを広げ、書き込みは `owner_write` のまま変わらない。
 

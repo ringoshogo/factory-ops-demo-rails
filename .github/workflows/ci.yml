@@ -89,6 +89,12 @@ jobs:
         with:
           bundler-cache: true
 
+      # 所有ロールとアプリのロールを作る。サービスのコンテナには初期化スクリプトを渡せないので、psql で流す
+      - name: Create database roles
+        run: psql -h localhost -p 5433 -U postgres -v ON_ERROR_STOP=1 -f docker/initdb/01_roles.sql
+        env:
+          PGPASSWORD: postgres
+
       - name: Prepare database
         run: bin/rails db:test:prepare
 

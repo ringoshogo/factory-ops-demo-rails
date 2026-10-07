@@ -10,6 +10,15 @@ SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
 
+--
+-- Name: current_tenant_id(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.current_tenant_id() RETURNS uuid
+    LANGUAGE sql STABLE
+    AS $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -50,6 +59,24 @@ CREATE TABLE public.tenants (
 
 
 --
+-- Name: users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.users (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    email character varying NOT NULL,
+    name character varying NOT NULL,
+    role character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT users_role_check CHECK (((role)::text = ANY (ARRAY['admin'::text, 'member'::text])))
+);
+
+ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -74,6 +101,14 @@ ALTER TABLE ONLY public.tenants
 
 
 --
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: index_tenants_on_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -88,11 +123,48 @@ CREATE UNIQUE INDEX index_tenants_on_partner_code ON public.tenants USING btree 
 
 
 --
+-- Name: index_users_on_email; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_users_on_email ON public.users USING btree (email);
+
+
+--
+-- Name: index_users_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_users_on_owner_tenant_id_and_id ON public.users USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: users fk_rails_e665ff9db8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT fk_rails_e665ff9db8 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: users owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.users USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: users; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261007220100'),
+('20261007220000'),
 ('20261007203750');
 
