@@ -1,0 +1,26 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+# 開発とテストは compose.yaml の PostgreSQL 18 を使う。uuidv7() が 18 にしか無いため。
+local: &local
+  <<: *default
+  host: <%= ENV.fetch("DB_HOST") { "localhost" } %>
+  port: <%= ENV.fetch("DB_PORT") { 5433 } %>
+  username: <%= ENV.fetch("DB_USER") { "postgres" } %>
+  password: <%= ENV.fetch("DB_PASSWORD") { "postgres" } %>
+
+development:
+  <<: *local
+  database: factory_ops_demo_rails_development
+
+test:
+  <<: *local
+  database: factory_ops_demo_rails_test
+
+production:
+  <<: *default
+  database: factory_ops_demo_rails_production
+  username: factory_ops_demo_rails
+  password: <%= ENV["FACTORY_OPS_DEMO_RAILS_DATABASE_PASSWORD"] %>

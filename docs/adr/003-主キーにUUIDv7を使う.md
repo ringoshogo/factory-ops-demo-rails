@@ -66,6 +66,8 @@ ID から取引量は漏れない。しかし値が無作為で、索引の挿�
 
 PostgreSQL のバージョンに依存しない。しかし、生 SQL やコンソールで行を足すときに ID を自分で作る必要がある。DB の既定値なら、どの経路でも同じ値の形になる。「見直す条件」に当たったときの退路として残す。
 
-## 未確認の事項
+## 確認した事項
 
-- Rails 8 の `structure.sql` のダンプと読み込みで、`DEFAULT uuidv7()` がそのまま保たれるか。最初のマイグレーションで確かめる。
+- Rails 8.1 の `structure.sql` は、ダンプと読み込みを経ても `DEFAULT uuidv7()` をそのまま保つ。`spec/db/uuidv7_default_spec.rb` が、テスト DB の列の既定値と、作った行の UUID のバージョンを確かめる。
+
+> PostgreSQL 18.6・pg_dump 18.6・Rails 8.1.4 で、`db:schema:load` の後の `db:schema:dump` が `structure.sql` に差分を出さないことを確かめた。

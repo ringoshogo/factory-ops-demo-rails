@@ -49,14 +49,13 @@
 
 ## 決まっていないこと
 
-- **GitHub リポジトリの公開範囲（public / private）**：リポジトリはまだ作っていない
+- **GitHub リポジトリの公開範囲（public / private）**：いまは private で作ってある
 
 ## 未確認の事項
 
 どれも、確かめるマイルストーンが決まっている。確かめたら、該当する ADR の未確認の事項を結果で置き換える。
 
 - packs-rails が Rails 8 系に対応しているか（`adr/002`）。M2 で確かめる。動かなければ、自動読み込みの設定を手で書く
-- Rails 8 の `structure.sql` で `DEFAULT uuidv7()` が保たれるか（`adr/003`）。M1 で、コンテナの PostgreSQL 18 で確かめる
 - RLS を付けない Solid Queue の表を、アプリと同じ DB ロールのワーカーが読めること（`adr/005`）。M7 で確かめる
 
 `adr/005` の残り 2 つは、`implementation-plan.md` M7 で決めた。`EventJob` は `packs/contracts` の `Contracts::EventJob` にし、テストでも `:test` アダプタに差し替えず `:solid_queue` のまま使う。M7 で ADR に反映する。
@@ -66,12 +65,12 @@
 順に進める。各段階で決めたことは、`adr/`・`context-map.md`・`data-model.md`・`graphql-schema.md` のいずれかに残す。
 
 1. **`implementation-plan.md` の M1 から順に実装する**：1 つのマイルストーンの完了条件をすべて通してから、次へ進む。
-2. **リポジトリの準備**：GitHub リポジトリを作り、最初の commit をする。M1 で作る CI は、最初の push で通ることを確かめる。
+2. **CI の確認**：M1 で作った CI が、M1 の commit を最初に push したときに通ることを確かめる。
 
 ## リポジトリの状態
 
-- **このリポジトリ**：`git init` 済み（ブランチ `main`）。commit はまだ無い。
-- **実装**：未着手。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **このリポジトリ**：ブランチ `main`。リモートは GitHub の `ringo-shg/factory-ops-demo-rails`（private）。
+- **実装**：M1 まで終えた。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの
