@@ -12,6 +12,18 @@ Rails で B2B SaaS を 0 から作るときの設計判断を、実際に動く�
 - **API**：GraphQL
 - **フロントエンド**：factory-ops-demo の Next.js を流用する。画面部品はそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を追加する
 
+## 開発環境
+
+開発者は、手元で最初に次を実行する。DB は `compose.yaml` の PostgreSQL 18 をポート 5433 で立てる。
+
+```sh
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"   # pg_dump 18（brew install libpq）
+bin/setup --skip-server
+bundle exec rspec
+```
+
+pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対して動かず、`db/structure.sql` を書けないため、`bin/setup` は 18 未満なら止まる。Ruby は `.ruby-version` の版を rbenv で入れる。
+
 ## ドキュメント
 
 | ファイル | 内容 |
@@ -30,4 +42,4 @@ Rails で B2B SaaS を 0 から作るときの設計判断を、実際に動く�
 
 ## 状態
 
-設計文書と実装計画のみ。次は `docs/implementation-plan.md` の M1 から実装する。現在地は `docs/handoff.md` を見る。
+`docs/implementation-plan.md` の M1（骨組みと CI）まで実装した。現在地は `docs/handoff.md` を見る。

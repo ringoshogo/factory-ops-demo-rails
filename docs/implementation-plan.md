@@ -32,10 +32,10 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 | 項目 | 値 |
 |---|---|
-| Ruby | 3.3.0（rbenv。`~/.rbenv/versions/3.3.0` に入っている） |
+| Ruby | 3.3.3（rbenv）。3.3.0 は構文解析の不具合（Ruby bug #20090）で Rails 8.1 の Action View を読み込めない |
 | Rails | 8.1 系、API モード |
 | DB | PostgreSQL 18（`docker compose` の `postgres:18`）。開発とテストの両方で使う |
-| pg_dump | 18 系。手元と CI で揃える |
+| pg_dump | 18 系。手元は Homebrew の `libpq`（keg-only）を PATH の先頭に足して使い、CI は PGDG の `postgresql-client-18` を入れる |
 | GraphQL | graphql-ruby、Action Policy（`action_policy-graphql`） |
 | ジョブ | Solid Queue を業務 DB と同じ DB・同じ接続に置く（`adr/005`） |
 | パッケージ | packs-rails、packwerk、packwerk-extensions（`adr/002`） |
