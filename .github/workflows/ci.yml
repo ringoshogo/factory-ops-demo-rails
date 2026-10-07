@@ -101,7 +101,6 @@ jobs:
       - name: Run tests
         run: bundle exec rspec
 
-      - name: Check structure.sql is up to date
-        run: |
-          RAILS_ENV=development bin/rails db:create db:migrate
-          git diff --exit-code db/structure.sql
+      # マイグレーションの結果と、読み込み直して書き出した結果の両方が structure.sql と一致すること
+      - name: Check structure.sql round-trip
+        run: bin/check-structure

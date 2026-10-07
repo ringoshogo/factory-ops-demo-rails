@@ -12,6 +12,9 @@ module Types
     field :desired_delivery_on, GraphQL::Types::ISO8601Date
     field :status, PurchaseOrderStatusType, null: false
     field :lines, [ PurchaseOrderLineType ], null: false
+    field :inbound_shipments, [ InboundShipmentType ], null: false
+    field :supplier_shipments, resolver: Resolvers::Buyer::SupplierShipmentsResolver,
+      description: "経路 3。view_shipments が無ければ空"
 
     def supplier
       dataloader.with(Sources::PublicApiSource, Partnerships::Directory, :tenants, context[:current_user])
@@ -20,6 +23,11 @@ module Types
 
     def lines
       dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :lines_for, context[:current_user]).load(object.id)
+    end
+
+    def inbound_shipments
+      dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :inbound_shipments_for, context[:current_user])
+        .load(object.id)
     end
   end
 end

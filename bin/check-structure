@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# structure.sql が、マイグレーションを流した結果とも、structure.sql を読み込み直して書き出した結果とも一致することを確かめる（adr/001）。
+# 開発の DB を作り直す。SKIP_TEST_DATABASE を付けないと、development の db:drop がテストの DB も消す。
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export RAILS_ENV=development SKIP_TEST_DATABASE=true
+
+# 空の DB への db:migrate は、structure.sql があるとマイグレーションを流さずに読み込むだけになる。
+# マイグレーションを実際に流すため、structure.sql を退避してから流す
+mkdir -p tmp
+mv db/structure.sql tmp/structure.sql.orig
+trap '[ -f db/structure.sql ] || mv tmp/structure.sql.orig db/structure.sql' EXIT
+bin/rails db:drop db:create db:migrate
+git diff --exit-code db/structure.sql
+
+bin/rails db:drop db:create db:schema:load db:schema:dump
+git diff --exit-code db/structure.sql

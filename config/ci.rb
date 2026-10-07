@@ -7,7 +7,7 @@ CI.run do
   step "Packages: packwerk", "bin/packwerk validate && bin/packwerk check"
 
   step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec"
-  step "Schema: structure.sql is up to date", "bin/rails db:migrate && git diff --exit-code db/structure.sql"
+  step "Schema: structure.sql round-trip", "bin/check-structure"
 
   step "Security: Gem audit", "bin/bundler-audit"
   step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"

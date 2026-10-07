@@ -70,7 +70,7 @@ CREATE TABLE public.allocations (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     CONSTRAINT allocations_quantity_positive CHECK ((quantity > 0)),
-    CONSTRAINT allocations_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'released'::character varying, 'consumed'::character varying])::text[])))
+    CONSTRAINT allocations_status_check CHECK (((status)::text = ANY (ARRAY['active'::text, 'released'::text, 'consumed'::text])))
 );
 
 ALTER TABLE ONLY public.allocations FORCE ROW LEVEL SECURITY;
@@ -103,6 +103,41 @@ CREATE TABLE public.customer_part_mappings (
 );
 
 ALTER TABLE ONLY public.customer_part_mappings FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: inbound_shipment_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inbound_shipment_lines (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    shipped_quantity integer NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    inbound_shipment_id uuid NOT NULL,
+    purchase_order_line_id uuid NOT NULL,
+    CONSTRAINT inbound_shipment_lines_shipped_quantity_positive CHECK ((shipped_quantity > 0))
+);
+
+ALTER TABLE ONLY public.inbound_shipment_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: inbound_shipments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inbound_shipments (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    shipment_id uuid NOT NULL,
+    shipped_on date NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    purchase_order_id uuid NOT NULL
+);
+
+ALTER TABLE ONLY public.inbound_shipments FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -384,7 +419,7 @@ CREATE TABLE public.shipping_instructions (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     shipment_request_id uuid NOT NULL,
-    CONSTRAINT shipping_instructions_status_check CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'cancelled'::character varying])::text[])))
+    CONSTRAINT shipping_instructions_status_check CHECK (((status)::text = ANY (ARRAY['active'::text, 'cancelled'::text])))
 );
 
 ALTER TABLE ONLY public.shipping_instructions FORCE ROW LEVEL SECURITY;
@@ -846,9 +881,9 @@ CREATE TABLE public.stock_movements (
     reason character varying,
     allocation_id uuid,
     created_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT stock_movements_allocation_by_type CHECK ((((type)::text = ANY ((ARRAY['allocate'::character varying, 'deallocate'::character varying, 'ship'::character varying])::text[])) = (allocation_id IS NOT NULL))),
+    CONSTRAINT stock_movements_allocation_by_type CHECK ((((type)::text = ANY (ARRAY['allocate'::text, 'deallocate'::text, 'ship'::text])) = (allocation_id IS NOT NULL))),
     CONSTRAINT stock_movements_quantity_positive CHECK ((quantity > 0)),
-    CONSTRAINT stock_movements_type_check CHECK (((type)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying, 'allocate'::character varying, 'deallocate'::character varying, 'ship'::character varying])::text[])))
+    CONSTRAINT stock_movements_type_check CHECK (((type)::text = ANY (ARRAY['inbound'::text, 'outbound'::text, 'allocate'::text, 'deallocate'::text, 'ship'::text])))
 );
 
 ALTER TABLE ONLY public.stock_movements FORCE ROW LEVEL SECURITY;
@@ -1021,6 +1056,22 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 ALTER TABLE ONLY public.customer_part_mappings
     ADD CONSTRAINT customer_part_mappings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inbound_shipment_lines inbound_shipment_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipment_lines
+    ADD CONSTRAINT inbound_shipment_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inbound_shipments inbound_shipments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipments
+    ADD CONSTRAINT inbound_shipments_pkey PRIMARY KEY (id);
 
 
 --
@@ -1280,10 +1331,38 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: idx_on_inbound_shipment_id_purchase_order_line_id_3e46b99bab; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_inbound_shipment_id_purchase_order_line_id_3e46b99bab ON public.inbound_shipment_lines USING btree (inbound_shipment_id, purchase_order_line_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_inbound_shipment_id_c08904320e; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_inbound_shipment_id_c08904320e ON public.inbound_shipment_lines USING btree (owner_tenant_id, inbound_shipment_id);
+
+
+--
 -- Name: idx_on_owner_tenant_id_purchase_order_id_bb29b0b793; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_on_owner_tenant_id_purchase_order_id_bb29b0b793 ON public.purchase_order_lines USING btree (owner_tenant_id, purchase_order_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_purchase_order_id_f190365cb3; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_purchase_order_id_f190365cb3 ON public.inbound_shipments USING btree (owner_tenant_id, purchase_order_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_purchase_order_line_id_b4d8e1aa74; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_purchase_order_line_id_b4d8e1aa74 ON public.inbound_shipment_lines USING btree (owner_tenant_id, purchase_order_line_id);
 
 
 --
@@ -1354,6 +1433,27 @@ CREATE UNIQUE INDEX index_customer_part_mappings_on_owner_tenant_id_and_id ON pu
 --
 
 CREATE INDEX index_customer_part_mappings_on_owner_tenant_id_and_item_id ON public.customer_part_mappings USING btree (owner_tenant_id, item_id);
+
+
+--
+-- Name: index_inbound_shipment_lines_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_inbound_shipment_lines_on_owner_tenant_id_and_id ON public.inbound_shipment_lines USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_inbound_shipments_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_inbound_shipments_on_owner_tenant_id_and_id ON public.inbound_shipments USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_inbound_shipments_on_shipment_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_inbound_shipments_on_shipment_id ON public.inbound_shipments USING btree (shipment_id);
 
 
 --
@@ -1918,6 +2018,14 @@ ALTER TABLE ONLY public.stocks
 
 
 --
+-- Name: inbound_shipment_lines fk_rails_0d7637b148; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipment_lines
+    ADD CONSTRAINT fk_rails_0d7637b148 FOREIGN KEY (owner_tenant_id, purchase_order_line_id) REFERENCES public.purchase_order_lines(owner_tenant_id, id);
+
+
+--
 -- Name: sales_order_lines fk_rails_151983be39; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1950,6 +2058,14 @@ ALTER TABLE ONLY public.shipments
 
 
 --
+-- Name: inbound_shipments fk_rails_2414e5e331; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipments
+    ADD CONSTRAINT fk_rails_2414e5e331 FOREIGN KEY (owner_tenant_id, purchase_order_id) REFERENCES public.purchase_orders(owner_tenant_id, id);
+
+
+--
 -- Name: allocations fk_rails_24278b0998; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1971,6 +2087,14 @@ ALTER TABLE ONLY public.sales_orders
 
 ALTER TABLE ONLY public.sales_order_sequences
     ADD CONSTRAINT fk_rails_2a441d70a1 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: inbound_shipment_lines fk_rails_305b73d616; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipment_lines
+    ADD CONSTRAINT fk_rails_305b73d616 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -2051,6 +2175,14 @@ ALTER TABLE ONLY public.customer_part_mappings
 
 ALTER TABLE ONLY public.partnerships
     ADD CONSTRAINT fk_rails_6be6936b70 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: inbound_shipments fk_rails_6c71ad6bd1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipments
+    ADD CONSTRAINT fk_rails_6c71ad6bd1 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -2190,6 +2322,14 @@ ALTER TABLE ONLY public.sales_order_lines
 
 
 --
+-- Name: inbound_shipment_lines fk_rails_d0d168c0d6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inbound_shipment_lines
+    ADD CONSTRAINT fk_rails_d0d168c0d6 FOREIGN KEY (owner_tenant_id, inbound_shipment_id) REFERENCES public.inbound_shipments(owner_tenant_id, id);
+
+
+--
 -- Name: customer_part_mappings fk_rails_d76de7871e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2250,6 +2390,18 @@ ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_part_mappings ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: inbound_shipment_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inbound_shipment_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: inbound_shipments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inbound_shipments ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2267,6 +2419,20 @@ CREATE POLICY owner_write ON public.allocations USING ((owner_tenant_id = public
 --
 
 CREATE POLICY owner_write ON public.customer_part_mappings USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: inbound_shipment_lines owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.inbound_shipment_lines USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: inbound_shipments owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.inbound_shipments USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -2412,6 +2578,22 @@ CREATE POLICY partner_read ON public.partnerships FOR SELECT USING (((buyer_tena
 
 
 --
+-- Name: shipment_lines partner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY partner_read ON public.shipment_lines FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.shipments s
+  WHERE (s.id = shipment_lines.shipment_id))));
+
+
+--
+-- Name: shipments partner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY partner_read ON public.shipments FOR SELECT USING (((buyer_tenant_id = public.current_tenant_id()) AND public.partnership_active(owner_tenant_id, buyer_tenant_id)));
+
+
+--
 -- Name: partnership_grants; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2514,6 +2696,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261008000900'),
 ('20261008000800'),
 ('20261008000700'),
 ('20261008000600'),

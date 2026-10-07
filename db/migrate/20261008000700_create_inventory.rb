@@ -27,7 +27,7 @@ class CreateInventory < ActiveRecord::Migration[8.1]
       t.index :sales_order_line_id, unique: true
       t.index [ :owner_tenant_id, :item_id ]
       t.check_constraint "quantity > 0", name: "allocations_quantity_positive"
-      t.check_constraint "status IN ('active', 'released', 'consumed')", name: "allocations_status_check"
+      t.check_constraint "status::text IN ('active', 'released', 'consumed')", name: "allocations_status_check"
     end
 
     create_tenant_table :stock_movements do |t|
@@ -42,9 +42,9 @@ class CreateInventory < ActiveRecord::Migration[8.1]
       t.index [ :owner_tenant_id, :item_id ]
       t.index [ :owner_tenant_id, :allocation_id ]
       t.check_constraint "quantity > 0", name: "stock_movements_quantity_positive"
-      t.check_constraint "type IN ('inbound', 'outbound', 'allocate', 'deallocate', 'ship')", name: "stock_movements_type_check"
+      t.check_constraint "type::text IN ('inbound', 'outbound', 'allocate', 'deallocate', 'ship')", name: "stock_movements_type_check"
       # 引当を動かす移動だけが引当を指す
-      t.check_constraint "(type IN ('allocate', 'deallocate', 'ship')) = (allocation_id IS NOT NULL)",
+      t.check_constraint "(type::text IN ('allocate', 'deallocate', 'ship')) = (allocation_id IS NOT NULL)",
         name: "stock_movements_allocation_by_type"
     end
 

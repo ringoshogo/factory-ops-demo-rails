@@ -91,6 +91,12 @@ module MatrixExpectations
       query: "{ buyer { purchaseOrders { nodes { id } } } }",
       expect: EVERYONE
     },
+    # 経路 3。自社の発注に連結した出荷が、有効な取引関係と view_shipments の付与がある発注側にだけ見え、
+    # 付与があっても失効で閉じる。受注側の supplier の発注には連結した出荷が無い
+    "PurchaseOrder.supplierShipments" => {
+      query: "{ buyer { purchaseOrders { nodes { supplierShipments { shippedOn } } } } }",
+      expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :empty, revoked_buyer: :empty, stranger: :empty }
+    },
     # 連結した受注を持つ発注。受注側の supplier にも見えない
     "BuyerView.purchaseOrder" => {
       query: "query($id: ID!) { buyer { purchaseOrder(id: $id) { id } } }",

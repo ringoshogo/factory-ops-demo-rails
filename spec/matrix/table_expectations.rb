@@ -33,11 +33,22 @@ module MatrixExpectations
     "stocks" => OWNER_ONLY,
     "allocations" => OWNER_ONLY,
     "stock_movements" => OWNER_ONLY,
-    # 出荷は受注側だけが所有する。発注側が自社の発注に連結した出荷を読む経路 3 は M14 で開く
+    # 出荷は受注側だけが所有する。出荷依頼と出荷指示は相手から読めない
     "shipment_requests" => OWNER_ONLY,
     "shipment_request_lines" => OWNER_ONLY,
     "shipping_instructions" => OWNER_ONLY,
-    "shipments" => OWNER_ONLY,
-    "shipment_lines" => OWNER_ONLY
+    # 経路 3。有効な取引関係の発注側に、自社の発注に連結した出荷だけが見え、付与があっても失効で閉じる。
+    # view_shipments の付与はアプリの policy scope が判定するので、付与の無い発注側にも RLS は見せる
+    "shipments" => {
+      granted_buyer: { supplier: 1 },
+      ungranted_buyer: { supplier: 1 }
+    },
+    "shipment_lines" => {
+      granted_buyer: { supplier: 1 },
+      ungranted_buyer: { supplier: 1 }
+    },
+    # 入荷は発注側だけが所有する「出荷計上」の写しで、受注側から読む経路は無い
+    "inbound_shipments" => OWNER_ONLY,
+    "inbound_shipment_lines" => OWNER_ONLY
   }.freeze
 end

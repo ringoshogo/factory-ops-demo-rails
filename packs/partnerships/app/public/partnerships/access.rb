@@ -5,6 +5,13 @@ module Partnerships
   module Access
     PERMISSIONS = PartnershipGrant::PERMISSIONS
 
+    # 発注側の操作者に permission を与えている受注側テナントの ID。他の relation の条件に埋め込む副問い合わせとして返す
+    def self.permitting_suppliers(actor, permission:)
+      raise ArgumentError, "unknown permission: #{permission}" unless PERMISSIONS.include?(permission.to_s)
+
+      Scope.call(actor, :as_buyer).joins(:grants).where(partnership_grants: { permission: permission.to_s }).select(:owner_tenant_id)
+    end
+
     # 答えを使って書き込む操作は lock: true を渡す。問い合わせの前に組のロックを取り、
     # 失効と権限の撤回がトランザクションの終わりまで割り込まないようにする（context-map.md「取引関係の失効」）
     def self.permitted?(actor, supplier_tenant_id:, permission:, lock: false)

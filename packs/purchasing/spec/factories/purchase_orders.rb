@@ -17,4 +17,19 @@ FactoryBot.define do
   factory :purchase_order_sequence, class: "Purchasing::PurchaseOrderSequence" do
     owner_tenant_id { Current.tenant_id }
   end
+
+  # 受注側の出荷実績は ID で参照するだけなので、作らない
+  factory :inbound_shipment, class: "Purchasing::InboundShipment" do
+    owner_tenant_id { Current.tenant_id }
+    purchase_order { association :purchase_order, owner_tenant_id: }
+    shipment_id { SecureRandom.uuid }
+    shipped_on { Date.current }
+  end
+
+  factory :inbound_shipment_line, class: "Purchasing::InboundShipmentLine" do
+    owner_tenant_id { Current.tenant_id }
+    inbound_shipment { association :inbound_shipment, owner_tenant_id: }
+    purchase_order_line { association :purchase_order_line, owner_tenant_id:, purchase_order: inbound_shipment.purchase_order }
+    shipped_quantity { purchase_order_line.quantity }
+  end
 end
