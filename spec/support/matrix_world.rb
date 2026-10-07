@@ -2,7 +2,8 @@ require_relative "tenant_helpers"
 
 # 行列テストの世界（docs/implementation-plan.md M6）。ペルソナごとにテナントと admin のユーザーを作り、
 # テナントの表ごとに、どのペルソナも自社の行を factory で 1 件以上持つようにする。
-# そのうえで、supplier が受注側になる取引関係を 3 つ結ぶ
+# そのうえで、supplier が受注側になる取引関係を 3 つ結び、supplier の公開品目を 1 件足す
+# （表ごとの行は factory の既定のままなので、品目は公開しない）
 class MatrixWorld
   include TenantHelpers
 
@@ -42,6 +43,7 @@ class MatrixWorld
       end
       [ buyer, partnership ]
     end
+    as(:supplier) { FactoryBot.create(:item, :published) }
   end
 
   # supplier と buyer の取引関係

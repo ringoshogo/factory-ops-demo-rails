@@ -8,5 +8,6 @@ module Types
 
     field :supplier, TenantType, null: false
     field :permissions, [ PartnershipPermissionType ], null: false
+    field :catalog, resolver: Resolvers::Buyer::CatalogResolver, description: "経路 1。view_catalog が無ければ空"
   end
 end

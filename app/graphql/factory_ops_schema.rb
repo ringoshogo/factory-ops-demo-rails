@@ -9,6 +9,9 @@ class FactoryOpsSchema < GraphQL::Schema
   # （docs/architecture/graphql-schema.md「ページングと N+1」）
   use GraphQL::Dataloader
 
+  # 一覧のリゾルバは公開 API を呼ぶ PagedQuery を返し、公開 API が返す Page をコネクションに包む
+  connections.add(Connections::PagedQuery, Connections::PagedConnection)
+
   max_depth 10
   max_complexity 2_500
   default_page_size 20

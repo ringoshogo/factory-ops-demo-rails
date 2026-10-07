@@ -81,7 +81,7 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `items`（品目カタログ） | `code`・`name`・`unit`・`unit_price`・`tax_rate_percent`（8 / 10、既定 10）・`published` | `(owner, code)` 一意 |
+| `items`（品目カタログ） | `code`・`name`・`unit`・`unit_price`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意。単価は 0 以上 |
 | `customer_part_mappings`（得意先品番の対応表） | `customer_tenant_id`→・`customer_part_number`・`item_id` | `(owner, customer_tenant_id, customer_part_number)` 一意 |
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
 | `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。照合前は `item_id` と写しの 3 列がすべて空、照合後はすべて埋まる |

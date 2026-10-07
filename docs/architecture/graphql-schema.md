@@ -76,7 +76,7 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 経路 3 の出荷実績は、購買が持つ写しの入荷（`InboundShipment`）と同じ出荷を指す。業務の正本は写しの入荷で、検収はこれに対して行う。経路 3 は、受注側の出荷実績そのものを、権限付与がある間だけ見せる。
 
-相手側の型は、相手テナントの内部の ID を持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。購買が持つ相手側の ID（`data-model.md`「購買」）も、GraphQL のフィールドには出さない。
+相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。購買が持つ相手側の ID（`data-model.md`「購買」）も、GraphQL のフィールドには出さない。
 
 ```graphql
 type BuyerView {
@@ -449,7 +449,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 | mutation | 呼ぶ公開 API | 出すイベント |
 |---|---|---|
-| `saveItem`・`setItemPublished` | `Sales::Catalog` | なし |
+| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ） | 全量引当になったら出荷可能 |
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する） | 受注取消・出荷取消 |
@@ -543,7 +543,9 @@ enum UserErrorCode {
 
 ## ページングと N+1
 
-一覧は Relay のコネクション（`first`・`after`）で返す。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。公開 API は、操作者・件数・カーソルを受け取り、1 ページ分の値と次のカーソルを返す。GraphQL 層は、それをコネクションに包む。件数の総数（`totalCount`）は返さない。
+一覧は Relay のコネクションで返し、引数は `first`・`after` だけにする（前へは辿らない）。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。件数の総数（`totalCount`）は返さない。
+
+公開 API は、操作者・件数・カーソルを受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無を `Page`（`packs/platform`）で返す。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
 
 明細・権限付与・取引関係・請求条件のように、親ごとの件数が小さい集まりは、コネクションにせずリストで返す。
 
