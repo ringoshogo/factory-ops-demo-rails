@@ -1,0 +1,2 @@
+# Rails の基底クラスとテナントの仕組みを置く。どのコンテキストにも属さず、公開 API を限定しない
+enforce_dependencies: strict

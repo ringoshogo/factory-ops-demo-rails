@@ -1,0 +1,11 @@
+# ルートパッケージ。GraphQL などコンテキストに属さないコードを置き、すべてのパッケージに依存してよい
+enforce_dependencies: strict
+dependencies:
+  - packs/platform
+  - packs/contracts
+  - packs/partnerships
+  - packs/inventory
+  - packs/billing
+  - packs/fulfillment
+  - packs/sales
+  - packs/purchasing

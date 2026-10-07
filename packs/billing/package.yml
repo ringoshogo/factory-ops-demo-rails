@@ -1,0 +1,6 @@
+enforce_dependencies: strict
+enforce_privacy: strict
+dependencies:
+  - packs/platform
+  - packs/partnerships
+  - packs/contracts

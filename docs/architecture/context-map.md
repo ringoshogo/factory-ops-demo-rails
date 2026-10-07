@@ -41,11 +41,12 @@
 | 出荷 | `packs/fulfillment`（`Fulfillment::`） | 出荷指示、出荷実績 | 受注側 |
 | 請求 | `packs/billing`（`Billing::`） | 請求条件（取引先ごとの締め日）、請求対象明細、請求書、請求明細 | 受注側 |
 
-コンテキストに属さないパッケージが 2 つある。
+コンテキストに属さないパッケージが 3 つある。
 
 | パッケージ | 役割 |
 |---|---|
-| `packs/contracts`（`Contracts::`） | コンテキスト間のイベント（公表された言語）。どのコンテキストにも依存しない |
+| `packs/platform` | Rails の基底クラス（`ApplicationRecord`・`ApplicationJob`）とテナントの仕組み（`Current`・`Tenancy`）。どのパッケージにも依存せず、公開 API を限定しない。基底クラスをルートパッケージに置くと、パッケージからルートへの依存が循環になるため、ここに置く |
+| `packs/contracts`（`Contracts::`） | コンテキスト間のイベント（公表された言語）。`platform` だけに依存する |
 | ルートパッケージ（`app/graphql/` ほか） | GraphQL の API。各コンテキストの公開 API だけを使う |
 
 factory-ops-demo の画面は次のように移る。
@@ -183,19 +184,20 @@ flowchart LR
 4. **イベントは、発行元の業務データと同じトランザクションでジョブとして登録する。** Solid Queue を業務 DB と同じ接続に置き、イベントのジョブはコミットの後に回さず、トランザクションの中で投入する。操作が戻ればイベントも消え、確定すればイベントも必ず残るので、outbox は要らない。受け手は冪等に処理する（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
 5. **GraphQL 層はルートパッケージに置き、各コンテキストの公開 API だけを使う。** コンテキスト同士の依存を、GraphQL 層が代わりに作らない。
 
-許可する依存の向きは次のとおり。どのコンテキストも `partnerships` と `contracts` に依存してよい。
+許可する依存の向きは次のとおり。各パッケージの `package.yml` の `dependencies` は、この表と一致させる。
 
 | パッケージ | 依存してよい先 |
 |---|---|
-| `purchasing` | `partnerships`、`contracts`、`sales`（`PublishedCatalog` だけ） |
-| `sales` | `partnerships`、`contracts`、`inventory` |
-| `fulfillment` | `partnerships`、`contracts`、`inventory` |
-| `billing` | `partnerships`、`contracts` |
-| `inventory` | `partnerships` |
-| `partnerships`・`contracts` | なし |
+| `purchasing` | `platform`、`partnerships`、`contracts`、`sales`（`PublishedCatalog` だけ） |
+| `sales` | `platform`、`partnerships`、`contracts`、`inventory` |
+| `fulfillment` | `platform`、`partnerships`、`contracts`、`inventory` |
+| `billing` | `platform`、`partnerships`、`contracts` |
+| `inventory` | `platform`、`partnerships` |
+| `partnerships`・`contracts` | `platform` だけ |
+| `platform` | なし |
 | ルートパッケージ | すべて |
 
-購買と受注は互いに直接依存しない。発注と受注の連結はイベントだけで行う。例外は、購買から受注の `PublishedCatalog` を読むことだけである。
+購買と受注は互いに直接依存しない。発注と受注の連結はイベントだけで行う。例外は、購買から受注の `PublishedCatalog` を読むことだけである。packwerk は公開 API の中のクラスを区別しないので、この例外の範囲は `spec/packwerk/purchasing_uses_only_published_catalog_spec.rb` が守る。
 
 ## テナントと所有
 

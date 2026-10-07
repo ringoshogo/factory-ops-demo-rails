@@ -6,6 +6,8 @@ gem "rails", "~> 8.1.4"
 gem "pg", "~> 1.1"
 # Flag unsafe schema changes before they run [https://github.com/ankane/strong_migrations]
 gem "strong_migrations"
+# Autoload packs/*/app/* [https://github.com/rubyatscale/packs-rails]
+gem "packs-rails", "~> 0.1.0"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
@@ -49,4 +51,8 @@ group :development, :test do
 
   gem "rspec-rails"
   gem "factory_bot_rails"
+
+  # Enforce package dependencies and privacy [https://github.com/Shopify/packwerk]
+  gem "packwerk", "~> 3.3", require: false
+  gem "packwerk-extensions", "~> 0.4.0", require: false
 end
