@@ -37,6 +37,9 @@ pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対�
 | `docs/architecture/data-model.md` | データモデル。テナントの持ち方、各コンテキストのテーブル、イベントの冪等キー、RLS ポリシー |
 | `docs/architecture/graphql-schema.md` | GraphQL スキーマ。発注側と受注側の視点の型、相手側へたどれないことの保証、認可の基底クラス、クエリと mutation が呼ぶ公開 API |
 | `docs/implementation-plan.md` | 実装計画。骨組みから業務機能までのマイルストーンと、各マイルストーンが機械で守るようにする規則・完了条件 |
+| `docs/guides/bin.md` | `bin/` の各スクリプトの役割。誰がいつ流すか、Rails の生成物から何を変えたか |
+| `docs/guides/config.md` | `config/` の各ファイルの役割。生成のままか変えたかと、変えた理由 |
+| `docs/guides/packs-and-packwerk.md` | `packs/` 構成と packwerk の入門。2 つの検査、CI で落ちる場所、パッケージ・依存・公開 API を足す手順 |
 | `docs/adr/001-スキーマ管理にridgepoleを採用しない.md` | スキーマ管理に Rails マイグレーション＋`structure.sql` を選ぶ理由 |
 | `docs/adr/002-packwerkを初日からCIで強制する.md` | `packs/` 構成と packwerk の依存・プライバシーチェックを初日から CI で強制する理由 |
 | `docs/adr/003-主キーにUUIDv7を使う.md` | 主キーを UUIDv7 にし、DB で生成する理由 |

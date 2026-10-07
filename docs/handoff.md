@@ -23,6 +23,7 @@
 5. `architecture/decisions.md`：設計判断の一般原則。各論点の既定の推奨と裏返る条件
 6. `adr/`：本デモで下した個別の判断
 7. `implementation-plan.md`：実装の順番。マイルストーンの一覧と、各マイルストーンの完了条件。実装を始める人は、着手するマイルストーンの節と、そこが挙げる設計文書の節を読む
+8. `guides/`（必要なときに）：`bin/`・`config/`・`packs/` と packwerk の解説。Rails の生成物から何を変えたか、packwerk の違反をどう読んで直すかを知りたいときに読む背景
 
 `decisions.md` は一般論で、完全分離型のマルチテナントも扱う。本デモに当てはめた結果は `context-map.md`・`data-model.md`・`graphql-schema.md`・`adr/` にある。両者が食い違う場合は `adr/` が優先する。
 
