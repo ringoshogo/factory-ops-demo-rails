@@ -1,21 +1,37 @@
 # 見せどころ
 
-このリポジトリが示したいことの一覧である。採用の担当者や面接官は、最初の「3 分の案内」だけを読めば足りる。主張を確かめたいエンジニアは、続くテーマごとの節で、設計判断の文書・守っているコード・確かめるコマンドを辿る。
+このリポジトリは、設計判断がコードのどこで、どの仕組みで守られているかを、読み手が自分で確かめられるように作ったポートフォリオである。この文書は、最初に全体の流れ（題材と、そこで壊れやすい 4 つの点、その守り方と証拠）を示し、続く節でテーマごとに設計判断・コード・テストの置き場を示す。全体の流れだけを読めば、何を示したいかは分かる。
 
-示したいのは、動く機能の多さではない。設計判断が、コードのどこで、どの仕組みで守られているかを、読み手が自分で辿れることである。題材は、取引関係にある 2 社が同じシステムで発注と受注をつなぐ、相互アクセス型のマルチテナントの B2B SaaS である（`../README.md`）。
+## 全体の流れ
 
-各節の「状態」は、実装済みか、`implementation-plan.md` のどのマイルストーンで作る計画かを示す。どこまで実装したかは `handoff.md`「リポジトリの状態」にある。計画のものは、置き場のパスに「（計画：Mxx）」を付け、実装済みとは書かない。
+### 題材
 
-## 3 分の案内
+架空の機械部品メーカー「青嵐精機工業」と、その取引先が、同じシステムで受発注を行う。部品を買う会社を**発注側**、売る会社を**受注側**と呼ぶ。発注側が発注すると、それが受注側の受注になり、受注側が在庫を引き当てて出荷し、発注側が検収し、受注側が月ごとに請求する。
 
-次の 4 つを、この順に開く。どれも実装済みである。
+システムを使う会社 1 社を**テナント**と呼ぶ。発注側と受注側は別のテナントで、1 つの DB を共有する。2 社は、受注側が結んだ**取引関係**の範囲でだけ、相手のデータの一部を読める。受注側は取引関係を**失効**させて、取引を止められる。
 
-1. **テナントの境界を、表と入口の行列で確かめるテスト**：[`spec/matrix/table_matrix_spec.rb`](../spec/matrix/table_matrix_spec.rb) は、テナントの全表を 5 つのペルソナ（受注側・権限のある発注側・権限の無い発注側・失効した発注側・無関係）で生 SQL から読み書きし、読める行と相手の名義で書けないことを確かめる。[`spec/matrix/graphql_matrix_spec.rb`](../spec/matrix/graphql_matrix_spec.rb) は同じことを GraphQL の全入口で行う。期待値は [`spec/matrix/table_expectations.rb`](../spec/matrix/table_expectations.rb) に表の形で並ぶ。
-2. **GraphQL で相手側の型へたどれないことのテスト**：[`spec/graphql/perspective_reachability_spec.rb`](../spec/graphql/perspective_reachability_spec.rb) は、スキーマの型を発注側・受注側の入口からたどり、発注側の視点から受注側の型（受注・在庫・対応表）に届かないことを確かめる。
-3. **コンテキストの境界を CI で落とす仕組み**：各パッケージの `package.yml`（例：[`packs/purchasing/package.yml`](../packs/purchasing/package.yml)）が依存してよい先を宣言し、`bin/packwerk check` が CI で依存と非公開のクラスへの参照を落とす。[`spec/packwerk/enforcement_spec.rb`](../spec/packwerk/enforcement_spec.rb) は、違反を一時的に作って検査が実際に落ちることを確かめる。
-4. **1 つの操作に整合性の判断が集まる場所**：[`packs/purchasing/app/public/purchasing/ordering.rb`](../packs/purchasing/app/public/purchasing/ordering.rb) の発注の登録は、取引関係の組のロックを取って権限を問い合わせ、発注と「発注登録」のイベントのジョブを同じトランザクションで書く。失効と同時に発注しても、どちらか一方の順にしかならないことを、[`packs/purchasing/spec/public/purchasing/ordering_lock_spec.rb`](../packs/purchasing/spec/public/purchasing/ordering_lock_spec.rb) が 2 つの接続で確かめる。
+### 壊れやすい 4 つの点と、その守り方
 
-時間があれば、[`architecture/context-map.md`](architecture/context-map.md) の図と「テナントと所有」の表で業務の全体を、[`adr/`](adr/) で判断の理由を読む。
+この形のシステムでは、次の 4 つが壊れやすい。4 つとも、守る仕組みと、それが効いていることを示すテストを実装済みである。
+
+1. **他社のデータが漏れないか。** 1 つの DB を共有するので、検索条件を 1 つ書き忘れるだけで他社のデータが見える。
+   - 守り方：DB の行単位のアクセス制御（RLS）が、全表で自社の行だけを返す。発注側が受注側のデータを読めるのは、カタログ・取引関係・自社の発注に対する出荷の 3 つの経路に限る。取引関係を失効させると、この 3 つの経路も閉じる。
+   - 証拠：[`spec/matrix/table_matrix_spec.rb`](../spec/matrix/table_matrix_spec.rb)。全表を 5 つの立場（受注側・権限のある発注側・権限の無い発注側・取引関係を失効させられた発注側・取引の無い会社）から読み書きし、読める行と、他社の名義で書けないことを確かめる。期待値は [`spec/matrix/table_expectations.rb`](../spec/matrix/table_expectations.rb) に表の形で並ぶ。同じことを GraphQL の全入口で確かめるのが [`spec/matrix/graphql_matrix_spec.rb`](../spec/matrix/graphql_matrix_spec.rb) である。詳細はテーマ 1。
+2. **API から、相手の内部データにたどり着けないか。** GraphQL は型の関連をたどってデータを取れる。発注から受注、受注から在庫へと型がつながっていれば、発注側が受注側の在庫を取れてしまう。
+   - 守り方：GraphQL の型を発注側用と受注側用に分け、発注側用の型から受注側用の型へ関連を置かない。
+   - 証拠：[`spec/graphql/perspective_reachability_spec.rb`](../spec/graphql/perspective_reachability_spec.rb)。発注側の入口から全ての型をたどり、受注・在庫・品番の対応表の型に届かないことを確かめる。詳細はテーマ 6。
+3. **業務ごとのコードが絡み合わないか。** 受注・在庫・出荷などの業務の区切りを**コンテキスト**と呼ぶ。コンテキストのコードが互いを自由に参照すると、1 つの変更が全体に波及する。
+   - 守り方：コンテキストごとにパッケージを分け、参照してよい相手を宣言し、他のパッケージから呼べるクラスを公開 API（`app/public/`）に限る。宣言に反する参照は、packwerk が CI で落とす。
+   - 証拠：宣言は [`packs/purchasing/package.yml`](../packs/purchasing/package.yml) など。[`spec/packwerk/enforcement_spec.rb`](../spec/packwerk/enforcement_spec.rb) は、違反をわざと作り、packwerk が実際に落とすことを確かめる。詳細はテーマ 2。
+4. **同時の操作で、整合性が崩れないか。** 受注側が取引関係を失効させるのと同時に発注側が発注すると、失効させたはずの相手から発注が届きうる。
+   - 守り方：発注の登録は、2 社の組に対するロックを取ってから権限を確かめる（[`packs/purchasing/app/public/purchasing/ordering.rb`](../packs/purchasing/app/public/purchasing/ordering.rb)）。失効も同じロックを取るので、2 つの操作は必ずどちらか一方が先に終わる。
+   - 証拠：[`packs/purchasing/spec/public/purchasing/ordering_lock_spec.rb`](../packs/purchasing/spec/public/purchasing/ordering_lock_spec.rb)。2 つの DB 接続から同時に操作し、結果がどちらかの順になることを確かめる。詳細はテーマ 4。
+
+### その先
+
+4 つの点のほかに、責務と関心の分離（テーマ 3）・非同期処理の型の使い分け（テーマ 5）・販売単価の履歴（テーマ 7）・機械で守る規約（テーマ 8）・テスト戦略（テーマ 9）・運用性（テーマ 10）・チーム開発（テーマ 11）を扱う。こちらには計画段階のものを含む。業務の全体像は [`architecture/context-map.md`](architecture/context-map.md) の図に、判断の理由は [`adr/`](adr/) にある。
+
+各テーマの節は「何を示すか → 設計判断 → どこで守っているか → どう確かめられるか → 状態」の順に並ぶ。「状態」は、実装済みか、[`implementation-plan.md`](implementation-plan.md) のどのマイルストーンで作る計画かを示す。計画のものは、置き場のパスに「（計画：Mxx）」を付ける。どこまで実装したかは [`handoff.md`](handoff.md)「リポジトリの状態」にある。
 
 ## テーマごとの詳細
 
