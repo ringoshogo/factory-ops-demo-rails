@@ -811,12 +811,12 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
 
 ## M28 外部サービスの呼び出しと非同期の型
 
-**目的**：`adr/007` の非同期処理の型のうち、確実な外部送信・撃ちっぱなし・inbox を、SendGrid のメールの送信と配信結果の受信で実装する。外部への作用は 1 つの登録口からだけ登録され、429 の待ち時間に従って再試行し、失敗を運用者に知らせる。テストと開発では、本物の SendGrid を呼べない。
+**目的**：`adr/007` の非同期処理の型のうち、確実な外部送信（A-2）・撃ちっぱなし（B-1）・inbox（A-3）を、SendGrid のメールの送信と配信結果の受信で実装する。外部への作用は 1 つの登録口からだけ登録され、429 の待ち時間に従って再試行し、失敗を運用者に知らせる。テストと開発では、本物の SendGrid を呼べない。
 
 **作るもの**
 
 - パッケージ `packs/notifications`（`Notifications::`）。依存先は `platform`・`partnerships`（宛先のメールアドレスを自社の `users` から引く）。`sales`・`purchasing` の依存先に `notifications` を足す（`context-map.md`「疎結合を守る規則」）。表は `email_deliveries` と `webhook_inbox_events`（`data-model.md`「通知（`notifications`）」）。
-- `ExternalEffectJob`（`packs/platform`）と、`Notifications::CriticalDeliveryJob`・`BestEffortMailJob`・`ProcessInboxJob`（`adr/007` 決定 3〜6）。
+- `ExternalEffectJob`（`packs/platform`）と、`Notifications::CriticalDeliveryJob`・`BestEffortMailJob`・`ProcessInboxJob`（`adr/007` 決定 4〜6）。
 - 公開 API `Notifications::Email.deliver_critical`・`deliver_best_effort` と、通知の種類の登録 `Notifications::Catalog`。種類は 2 つにする。
   - `received_invoice`（確実）：購買の「請求書発行」の受け手が、受領請求書を書くのと同じトランザクションで、自社の `admin` へ送る。
   - `new_sales_order`（撃ちっぱなし）：受注側の ACL が受注を確定したときに、自社の担当者へ送る。
@@ -826,13 +826,13 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
   - `FileSystem`（開発）：`tmp/mails/` に 1 通 1 ファイルで書く。
   - `Fake`（テスト）：メモリに積み、テストから読める。
 - WebMock を test のグループに入れ、`spec/spec_helper.rb` で全テストに `WebMock.disable_net_connect!(allow_localhost: true)` を掛ける。
-- Webhook：`Webhooks::SendgridEventsController`（ルートパッケージ）と `POST /webhooks/sendgrid/events`。セッションを使わず、署名で認証する（`adr/007` 決定 6）。
-- キューの設定：`config/queue.yml` を `adr/007` 決定 8 の 4 つのワーカーに分け、`Contracts::EventJob` を `events` に載せる。定期のジョブ（`config/recurring.yml`）に、inbox の未処理を拾う（毎分）と処理済みを消す（毎日）を足す。
-- カスタム Cop `FactoryOps/ExternalEffectEnqueue` と、`spec/notifications/call_sites_spec.rb`（`adr/007` 決定 3）。
+- Webhook：`Webhooks::SendgridEventsController`（ルートパッケージ）と `POST /webhooks/sendgrid/events`。セッションを使わず、署名で認証する（`adr/007` 決定 5 の A-3）。
+- キューの設定：`config/queue.yml` を `adr/007` 決定 7 の 4 つのワーカーに分け、`Contracts::EventJob` を `events` に載せる。定期のジョブ（`config/recurring.yml`）に、inbox の未処理を拾う（毎分）と処理済みを消す（毎日）を足す。
+- カスタム Cop `FactoryOps/ExternalEffectEnqueue` と、`spec/notifications/call_sites_spec.rb`（`adr/007` 決定 4）。
 - 再送の操作 `Notifications::Email.redeliver_failed(since:)`：再試行を使い切った確実な送信の `failed_at` を空に戻し、同じ送信記録のジョブを登録し直す。新しい送信記録は作らない。運用者は rake タスク `notifications:redeliver` から呼び、タスクはテナントを明示して 1 つずつ回る（`decisions.md` 2 章）。
 - ガードテスト：`spec/jobs/event_job_atomicity_spec.rb` を広げ、`enqueue_after_transaction_commit` が `false` のクラスが `Contracts::EventJob` と `Notifications::CriticalDeliveryJob` の 2 つだけであることと、`ExternalEffectJob` のどのサブクラスもその値と保証を自分のクラスで宣言していることを確かめる。
 - テスト：
-  - `Sendgrid` のアダプタ：WebMock のスタブで 202・429（待ち時間のヘッダ付き）・500・400・401・タイムアウトを返し、`adr/007` 決定 4 の表のとおりに分類される。
+  - `Sendgrid` のアダプタ：WebMock のスタブで 202・429（待ち時間のヘッダ付き）・500・400・401・タイムアウトを返し、`adr/007` 決定 5 の A-2 の表のとおりに分類される。
   - 確実な送信：同じ「請求書発行」を 2 回流しても送信記録は 1 件。`issueInvoice` が戻れば、送信記録もジョブも残らない。受け付けの後にジョブをもう一度流しても、送らない。400 と、再試行を使い切ったときに `failed_at` が入り、`notification.delivery_failed` が出る。
   - inbox：同じ `sg_event_id` の 2 回の受信で行が 1 件。署名の誤りで 401。保存した行にメールアドレスが無い。処理を 2 回流しても、送信記録の時刻列が 1 回だけ書かれる。
 
@@ -860,7 +860,7 @@ bin/rubocop
 - パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
 - ファイルの受け取り：`POST /imports/files`（`ImportFilesController`、ルートパッケージ）が `multipart/form-data` の CSV を受け取り、`import_files` に書いて ID を返す。ファイルを置くだけで、業務の表には何も起きない。10 MB を超えるファイルは受け付けない。セッションで認証し、`Origin` ヘッダが許可した origin と一致しなければ拒む。`GraphqlController` の `application/json` の制限に代わる CSRF 対策である。
 - 取り込みの開始：mutation `startImport(fileId, kind)` が `imports` の行を書き、ジョブを登録する。業務の表に効果が及ぶのはここからなので、監査はこの mutation の宣言で行う。
-- ジョブ `Imports::RunJob`（`adr/007` 決定 7）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }`、`tenant_transaction :per_chunk`。
+- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }`、`tenant_transaction :per_chunk`。
   1. `step :stage`：`import_files.content` を `CSV.new` で 1 行ずつ読み、1,000 行ごとに `import_rows` へ `insert_all` で書く。カーソルは書き終えた行番号である。見出しの行の誤りと、50,000 行を超えるファイルは、取り込み全体の失敗（`failed_at`）にする。
   2. `step :apply`：`import_rows` を行番号の順に 500 行ずつ取り、チャンクごとに `Tenancy.with_tenant` を開いて反映する。行ごとに `applied_at` か `error` を書き、`imports` の件数を足す。`applied_at` のある行は飛ばす。カーソルは反映したチャンクの最後の行番号である。
   3. `step :finalize`：`finished_at` を書き、`import_files` の中身を消す。
@@ -900,7 +900,7 @@ bundle exec rspec packs/imports/spec spec/requests/imports_spec.rb spec/jobs
 
 **範囲外**：取り込みの取消、失敗した行だけのやり直し（利用者は失敗した行を直したファイルを送り直す）、Excel の形式、受注・発注の取り込み。
 
-**実装する文書の節**：`adr/007` 決定 7・8、`adr/006` 決定 3、`data-model.md`「取り込み（`imports`）」「在庫（`inventory`）」
+**実装する文書の節**：`adr/007` 決定 5 の A-4・決定 7、`adr/006` 決定 3、`data-model.md`「取り込み（`imports`）」「在庫（`inventory`）」
 
 ## M30 メトリクス
 
@@ -947,7 +947,7 @@ bundle exec rspec spec/platform/metrics_subscriber_spec.rb
 
 **範囲外**：分散トレース、ダッシュボードの定義、ログの集約基盤。
 
-**実装する文書の節**：M18 の構造化イベント、`adr/007` 決定 8（キュー）
+**実装する文書の節**：M18 の構造化イベント、`adr/007` 決定 7（キュー）
 
 **文書に残すこと**：exporter のポートとネットワークの制限を `guides/config.md` に書く。
 

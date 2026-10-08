@@ -135,17 +135,17 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 
 ### 5. 非同期処理の型の使い分け
 
-**何を示すか**：非同期処理を「ジョブを失ったときに誰が気づけるか」で 5 つの型（トランザクション内のイベント・確実な外部送信・撃ちっぱなし・inbox・再開できる長時間のジョブ）に分け、型ごとに登録の時機・再試行・冪等・失敗の扱いを決める。
+**何を示すか**：非同期処理を、ジョブを失ったときの影響で型に分ける。処理すべきことを DB の行として先に確定させる型（A。A-1 トランザクション内のイベント・A-2 確実な外部送信・A-3 inbox・A-4 再開できる長時間のジョブ）は共通の土台を持ち、記録を書くトランザクション・作用先・重複を判定する ID の持ち主・進み具合の 4 つの軸で分かれる。失っても業務が進む処理は記録しない型（B-1 撃ちっぱなし）にする。外部への作用の重複は、相手の冪等キーの有無と重複の代償で扱いを選ぶ（C-1 冪等キーを渡す・C-2 重複を受け入れる・C-3 照会してから呼び直す）。
 
 **設計判断**
 - [`adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md`](adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md)
 - [`architecture/decisions.md`](architecture/decisions.md) 5 章
 
 **どこで守っているか**
-- トランザクション内のイベント：テーマ 4 のとおり実装済み
+- A-1 トランザクション内のイベント：テーマ 4 のとおり実装済み
 - 外部への作用の登録口を 1 つにする基底クラス `ExternalEffectJob` と、カスタム Cop `FactoryOps/ExternalEffectEnqueue`（計画：M28）
-- SendGrid のメール：確実な外部送信（送信記録 `email_deliveries` で重複を避ける）と撃ちっぱなし、配信結果の Webhook を受ける inbox（`webhook_inbox_events`）を `packs/notifications` に置く（計画：M28）
-- CSV の取り込み：Active Job Continuations で中断から再開し、専用のキューで他の処理を待たせない（計画：M29、`packs/imports`）
+- SendGrid のメール：A-2 確実な外部送信（送信記録 `email_deliveries` で重複を避け、C-2 で SendGrid の重複の隙間を受け入れる）と B-1 撃ちっぱなし、配信結果の Webhook を受ける A-3 inbox（`webhook_inbox_events`）を `packs/notifications` に置く（計画：M28）
+- CSV の取り込み（A-4）：Active Job Continuations で中断から再開し、専用のキューで他の処理を待たせない（計画：M29、`packs/imports`）
 
 **どう確かめられるか**：`spec/notifications/call_sites_spec.rb`（通知の種類ごとに呼び出し元が 1 か所）と、`event_job_atomicity_spec.rb` を広げた登録の時機の検査（どちらも計画：M28）。テストと開発では WebMock で本物の SendGrid を呼べなくする。
 
