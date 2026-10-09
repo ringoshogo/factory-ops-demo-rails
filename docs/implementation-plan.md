@@ -469,7 +469,7 @@ M15〜M20 は、業務の表を足さず、すでにある mutation・イベン�
 
 **作るもの**
 
-- カスタム Cop `FactoryOps/NoHistoryComment`（`lib/rubocop/cop/factory_ops/no_history_comment.rb`）：`processed_source.comments` を走査し、`guides/comments.md`「機械で止めるもの」の語を含むコメントを落とす。マイルストーンの番号は `(?<![A-Za-z0-9_])M\d+(?![A-Za-z0-9_])` で判定する。`\b` は和文の文字を語の一部とみなすので、「停止中はM15で足す」のように和文に挟まった番号を見逃す。`.rubocop.yml` で全 Ruby ファイルに有効にする。
+- カスタム Cop `FactoryOps/NoHistoryComment`（`lib/rubocop/cop/factory_ops/no_history_comment.rb`）：`processed_source.comments` を走査し、`guides/comments.md`「機械で止めるもの」の語を含むコメントを落とす。マイルストーンの番号は `(?<![A-Za-z0-9_])M\d+(?![A-Za-z0-9_])` で判定する。`\b` は和文の文字を語の一部とみなすので、「停止中はM15で足す」のように和文に挟まった番号を見逃す。`.rubocop.yml` で全 Ruby ファイルに有効にする。Cop が守るのは Ruby のコメントだけで、YAML・SQL・ERB などのコメントは `guides/comments.md`「機械で止めるもの」の `git grep` とレビューで確かめる。
 - `spec/rubocop/cop/factory_ops/no_history_comment_spec.rb`：`guides/comments.md` の良い例が通り、悪い例が落ちることを確かめる。
 - 既存のコメントの掃除：Cop が落とす箇所をすべて書き直す。spec の冒頭のコメントは、`implementation-plan.md` のマイルストーンではなく、その spec が守る規則と設計文書の節を指す形にする。コードに残っている `M15`・`M17` などの番号は、本書の番号を付け直す前のもので、いまの M15・M17 とは別物である。番号で指していた先は、設計文書の節に置き換える。
 
@@ -481,13 +481,14 @@ M15〜M20 は、業務の表を足さず、すでにある mutation・イベン�
 
 **完了条件**
 
+合否は次の 2 つで決める。どちらも、違反が残れば終了コードで落ちる。
+
 ```sh
-bin/rubocop
-bundle exec rspec spec/rubocop
-git grep -nP "#.*(?<![A-Za-z0-9_])M\d+(?![A-Za-z0-9_])" -- '*.rb' '*.rake' | wc -l   # 0
+bin/rubocop                      # Ruby のコメントに語が残っていない
+bundle exec rspec spec/rubocop   # Cop が悪い例を落とし、良い例を通す
 ```
 
-番号の検索は `-P` で流し、番号の前後は ASCII の英数字で区切る。macOS の git は `-E` の `\b` を解さないことがあり、番号が残っていても 0 を返す。`\b` は和文の文字も語の一部とみなすので、和文に挟まった番号を見逃す。
+担当者は、Ruby 以外のファイルのコメントを `guides/comments.md`「機械で止めるもの」の `git grep` で確かめ、当たった行を直すか報告する。この検索は文字列の中の語も拾い、当たっても終了コードで落ちないので、合否には使わない。検索は `-P` で流し、番号の前後は ASCII の英数字で区切る。macOS の git は `-E` の `\b` を解さないことがあり、番号が残っていても何も返さない。`\b` は和文の文字も語の一部とみなすので、和文に挟まった番号を見逃す。
 
 **実装する文書の節**：`guides/comments.md`、`decisions.md` 7 章
 
