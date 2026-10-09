@@ -14,6 +14,7 @@
 1. **認証とテナントの設定**：ログインとログアウトは、GraphQL の外の `SessionsController` が受け持つ。GraphQL に認証の mutation は置かない。`SessionsController` は、認証専用の関数（`data-model.md`「RLS」）でユーザーと所有テナントを引き、両方の ID とユーザーのセッションの世代をセッションに保存する。`GraphqlController` は、リクエストごとにスキーマの実行全体を 1 つのトランザクションで包み、その先頭で `SET LOCAL app.tenant_id` にセッションのテナントを設定する。そのうえで RLS の下でユーザーを引き、`Current` に設定する。ユーザーが引けないか、セッションの世代がユーザーの今の世代と違えば、スキーマを実行せずに 401 を返す。`SET LOCAL` はトランザクションの中でしか効かないので、このトランザクションの外で発行したクエリは 0 行になる。トランザクションは、実行が例外なく終わり、結果にトップレベルのエラーが無ければコミットする。ユーザーエラーだけを返した場合もコミットする。例外か、トップレベルのエラー（`FORBIDDEN`、クエリの検証や上限の違反など）ならロールバックする。graphql-ruby は `GraphQL::ExecutionError` を拾って `errors` に載せるので、例外だけを見ると、書き込みの後に `FORBIDDEN` になった操作がコミットされる。
    - API モードの Rails は Cookie・セッションのミドルウェアと CSRF 対策を持たない。ミドルウェアを明示的に足し、セッションの Cookie を `SameSite=Lax`・`HttpOnly` にする。`GraphqlController` と `SessionsController` は、`application/json` の本文だけを受け付ける（`ApplicationController`）。他サイトのフォームは `application/json` を送れず、`fetch` で送るには CORS のプリフライトが要るからである。`GraphqlController` は POST だけを受け付ける。
    - ログインは、成功したときにセッションを作り直してから ID を保存する。ログインの前のセッションを引き継がせないためである。
+   - `GraphqlController` は、スキーマを実行する前に、ログの文脈（リクエスト ID・テナント・ユーザー・操作名・相関 ID）を `Rails.event.set_context` で設定する。文脈は Fiber のストレージにあり、Dataloader の Fiber は作られた時点の値を写して持つので、実行の途中で設定した値はフィールドの解決に届かない（`../implementation-plan.md` M18）。
    - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「テーブル」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
 3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。
@@ -53,14 +54,15 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 ### 相手側の型へたどれないことの保証
 
-到達可能性のテスト（`spec/graphql/perspective_reachability_spec.rb`）が、CI で次の 4 つを確かめる。
+到達可能性のテスト（`spec/graphql/perspective_reachability_spec.rb`）が、CI で次の 5 つを確かめる。
 
 1. `Query` のフィールドは `viewer`（`Viewer`）・`buyer`（`BuyerView`）・`supplier`（`SupplierView`）の 3 つだけである。`Mutation` のフィールドは、どれも `buyer` か `supplier` を宣言した mutation である。2 以降の検査は視点の入口と mutation から型をたどるので、ルートに直接置いた型は検査を素通りする。
 2. `BuyerView` と、`buyer` を宣言した mutation の戻り値からたどれる型は、すべて `buyer` か `shared` である。`SupplierView` 側も同様に確かめる。
 3. `shared` の型のフィールドは、スカラー・enum・`shared` の型だけを返す。
 4. `buyer` の型のうち、相手テナントのデータを返す型は、`PublishedCatalogItem`・`SupplierPartnership`・`SupplierShipment` の 3 つに限られる。各型は、対応する読む経路を宣言する（`cross_tenant_read :catalog`・`:partnerships`・`:shipments`）。`SupplierShipment` の中にだけ現れる明細の型 `SupplierShipmentLine` は経路を宣言せず、`SupplierShipment` と同じ規則（`view_shipments` の付与）で認可する。
+5. `Viewer` からたどれる型は、すべて `shared` である。`Viewer` は視点の入口の外にあるので、2 の検査が届かない。
 
-`Query` に受注側の型を返すフィールドを足すと、1 が落ちる。発注の型に受注へのフィールドを 1 本足すと、2 が落ちる。相手側の型を 4 つ目として足すと、4 が落ちる。
+`Query` に受注側の型を返すフィールドを足すと、1 が落ちる。発注の型に受注へのフィールドを 1 本足すと、2 が落ちる。相手側の型を 4 つ目として足すと、4 が落ちる。`Viewer` に受注側の型を返すフィールドを足すと、5 が落ちる。
 
 ## 発注側の視点
 
@@ -215,6 +217,8 @@ type SupplierView {
   invoices(first: Int, after: String, filter: InvoiceFilter): InvoiceConnection!
   invoice(id: ID!): Invoice
   dashboard: SupplierDashboard!
+  imports(first: Int, after: String): ImportConnection!
+  import(id: ID!): Import
 }
 
 type Partnership {
@@ -257,7 +261,10 @@ type Item {
   code: String!
   name: String!
   unit: String!
+  "今日の販売単価"
   unitPrice: BigInt!
+  "単価の履歴。asOf の時点で正しいと信じていた行を、有効期間の順に返す。省けばいま"
+  prices(asOf: ISO8601DateTime): [ItemPrice!]!
   taxRatePercent: Int!
   published: Boolean!
   "入出庫も引当もしていない品目は空"
@@ -328,6 +335,51 @@ type Invoice {
   items(first: Int, after: String): BillableItemConnection!
 }
 
+"販売単価の 1 行（adr/006）。validTo と recordedTo の空は、上限なしを表す"
+type ItemPrice {
+  id: ID!
+  unitPrice: BigInt!
+  validFrom: ISO8601Date
+  validTo: ISO8601Date
+  recordedFrom: ISO8601DateTime!
+  recordedTo: ISO8601DateTime
+  reason: String
+}
+
+type BillableItem {
+  # data-model.md の列（相手側を指す ID 列を除く）に加えて
+  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空"
+  priceExplanation: PriceExplanation!
+}
+
+type PriceExplanation {
+  "受注明細に写した単価と、そのときの有効日"
+  orderedUnitPrice: BigInt!
+  pricedOn: ISO8601Date!
+  "請求書の発行の時点で、pricedOn の単価として信じていた値"
+  unitPriceAsOfIssue: BigInt
+  "いま分かっている、pricedOn の単価"
+  unitPriceNow: BigInt!
+}
+
+type Import {
+  id: ID!
+  kind: ImportKind!
+  status: ImportStatus!
+  totalRows: Int
+  appliedRows: Int!
+  failedRows: Int!
+  startedAt: ISO8601DateTime
+  finishedAt: ISO8601DateTime
+  "失敗した行。行番号の順"
+  rowErrors(first: Int, after: String): ImportRowErrorConnection!
+}
+
+type ImportRowError {
+  rowNumber: Int!
+  message: String!
+}
+
 "葉の型。どちらの視点からも、ID と名前だけを見せる"
 type Tenant {
   id: ID!
@@ -391,10 +443,11 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 例外の型 | 理由 |
 |---|---|
 | `Query`・`Mutation` | ルートの型。`Query` は `viewer` と視点の入口だけを、`Mutation` は mutation だけを持ち、各 mutation が宣言する |
-| `Viewer` | ログイン中のユーザーと自社テナントだけを返す |
+| `Viewer` | ログイン中のユーザーと自社テナントを返す。`auditLogs` はリゾルバで、自ら宣言する |
 | `BuyerView`・`SupplierView` | データを持たない入口。フィールドはすべてリゾルバで、各自が宣言する |
 | `Tenant` | ID と名前だけの葉。認可済みの型のフィールドとしてだけ現れる |
 | `UserError`・`PageInfo` | データを持たない |
+| `PriceExplanation`・`ImportRowError` | 認可済みの型（`BillableItem`・`Import`）のフィールドとしてだけ現れる |
 | 各 mutation の戻り値の型 | 中身の型が、それぞれ宣言を持つ |
 | 各コネクションとエッジの型 | 中身の型が、それぞれ宣言を持つ |
 
@@ -407,6 +460,48 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 取引関係と権限付与を変える mutation は、`admin` のユーザーに限る。policy の規則（`Partnerships::PartnershipPolicy#manage?`。対象の無い `establishPartnership` は操作者に対して評価する `establish?`）で判定し、拒否は `FORBIDDEN` で返す。それ以外の操作は、自社のユーザーなら役割を問わない。
 
 自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
+
+### 監査ログ
+
+mutation の実装者は、認可の宣言と並べて、監査の宣言を必ず書く。`audit "<操作>"` か `audit_exempt reason:` のどちらかで、宣言が無ければ認可の宣言と同じく拒否する。基底 mutation は、操作が成功したときだけ、同じトランザクションで監査ログに 1 行を書く（`data-model.md`「監査ログ（`platform`）」）。イベントの受信は、`Contracts::EventJob` が `event.received` として書く。
+
+`audit` にするのは、相手テナントに効果が及ぶ mutation である。相手テナントへのイベントを出すもの、相手から見えるデータ（カタログ・取引関係）を変えるものがこれに当たる。
+
+| 宣言 | mutation |
+|---|---|
+| `audit` | `establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission`・`saveItem`・`setItemPublished`・`scheduleItemPrice`・`correctItemPrice`・`startImport`・`registerPartMapping`・`placePurchaseOrder`・`requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`・`cancelSalesOrder`・`postShipment`・`inspectInboundShipment`・`issueInvoice` |
+| `audit_exempt` | `allocateSalesOrder`・`adjustStock`・`createShippingInstruction`・`cancelShippingInstruction`・`setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`（理由はどれも「効果が自社の中で閉じる」） |
+
+`registerPartMapping` は、照合待ちの受注を確定させて「受注確定」を出すので `audit` にする。`allocateSalesOrder` が出す「出荷可能」は、同じテナントの出荷へのイベントなので `audit_exempt` にする。列挙テストが、この表と宣言の一致を確かめる。
+
+監査ログは、自社の `admin` が `viewer.auditLogs` で読む。`member` には `FORBIDDEN` を返す。型 `AuditLog` は `shared` で、伝票の型へのフィールドを持たず、対象を型の名前と ID の文字列で示す。
+
+```graphql
+type Viewer {
+  # 既存のフィールドに加えて
+  "admin だけ。新しいものから"
+  auditLogs(first: Int, after: String, filter: AuditLogFilter): AuditLogConnection!
+}
+
+input AuditLogFilter {
+  action: String
+  correlationId: String
+  occurredFrom: ISO8601DateTime
+  occurredTo: ISO8601DateTime
+}
+
+type AuditLog {
+  occurredAt: ISO8601DateTime!
+  action: String!
+  "ユーザーの名前。イベントの受信は空"
+  actorName: String
+  targetType: String!
+  targetId: ID!
+  counterparty: Tenant
+  "運用者に問い合わせるときに伝える値"
+  correlationId: String!
+}
+```
 
 ## 読み取りの一覧
 
@@ -441,6 +536,10 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | `supplier.billableItems`・`Invoice.items` | `Billing::BillableItems` |
 | `supplier.invoices`・`supplier.invoice` | `Billing::Invoices` |
 | `supplier.dashboard` | `Sales::SalesOrders.count_by_status`・`Inventory::Stocks.below_safety_stock`・`Fulfillment::ShipmentRequests.due_within`・`Billing::BillableItems.unbilled_total` |
+| `Item.unitPrice`・`Item.prices` | `Sales::ItemPrices.price_at`・`history` |
+| `BillableItem.priceExplanation` | `Sales::ItemPrices.explain`（ルートパッケージが、請求対象明細の受注明細 ID と請求書の発行時刻を渡す） |
+| `supplier.imports`・`supplier.import`・`Import.rowErrors` | `Imports::Runs` |
+| `viewer.auditLogs` | `Platform::AuditLogs`（「監査ログ」） |
 
 ダッシュボードは、factory-ops-demo の画面と同じく、複数のコンテキストの集計を 1 つの型に束ねる読み取り専用のクエリである。
 
@@ -460,7 +559,10 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 | mutation | 呼ぶ公開 API | 出すイベント |
 |---|---|---|
-| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える） | なし |
+| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える。`unitPrice` は、作るときは期限の無い単価に、既存の品目で値が変わるときは今日からの改定の予約になる） | なし |
+| `scheduleItemPrice` | `Sales::ItemPrices.schedule`（品目 ID・単価・改定日。改定日は今日以降） | なし |
+| `correctItemPrice` | `Sales::ItemPrices.correct`（単価の行 ID・正しい単価・理由。現在の行でなければ `CONFLICT`） | なし |
+| `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類。同じファイルの 2 回目は `CONFLICT`） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する） | 受注取消・出荷取消 |
@@ -522,6 +624,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `PurchaseOrderStatus` | `SUPPLIER_CANCELLED`（受注側により取消）・`CANCELLED`（取消済み）・`INSPECTED`（検収済）・`INBOUND`（入荷予定）・`ACCEPTED`（受注済）・`AWAITING_SUPPLIER_CONFIRMATION`（受注側で確認中）・`SENT`（送信済み） | `PurchaseOrder.cancellationPending`（取消依頼中） |
 | `SalesOrderStatus` | `CANCELLED`（取消済）・`INSPECTED`（検収済）・`SHIPPED`（出荷済）・`AWAITING_PART_MATCH`（品番照合待ち）・`ALLOCATED`（引当済）・`PARTIALLY_ALLOCATED`（一部引当）・`RECEIVED`（受注済） | `SalesOrder.cancellationReviewPending`（取消審査中） |
 | `ShipmentRequestStatus` | `CANCELLED`（取消済）・`SHIPPED`（出荷済）・`ON_HOLD`（出荷停止中）・`INSTRUCTED`（出荷指示済）・`READY`（出荷待ち） | — |
+| `ImportStatus` | `FAILED`（失敗）・`PARTIALLY_FAILED`（一部失敗）・`SUCCEEDED`（完了）・`APPLYING`（反映中）・`STAGING`（置き場へ写し中）・`QUEUED`（待機中） | — |
 
 その他の enum は、保存された列の値をそのまま写す。
 
@@ -533,6 +636,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `InvoiceState` | `DRAFT`・`ISSUED` | `invoices.issued_at` の有無 |
 | `StockMovementType` | `INBOUND`・`OUTBOUND`・`ALLOCATE`・`DEALLOCATE`・`SHIP` | `stock_movements.type` |
 | `StockAdjustmentType` | `INBOUND`・`OUTBOUND`（`adjustStock` の入力。引当と出荷による移動は、引当と出荷計上の操作だけが起こす） | `stock_movements.type` |
+| `ImportKind` | `ITEMS`・`STOCKS` | `imports.kind` |
 
 ## エラー
 
@@ -573,6 +677,11 @@ enum UserErrorCode {
 
 別のコンテキストの値や子の値を引くフィールドは、`GraphQL::Dataloader` のソースを通して公開 API を呼ぶ。公開 API は、そのために操作者と ID の配列を受け取り、ID ごとの値のハッシュを返す一括取得のメソッドを持つ（例：`Sales::SalesOrders.lines_for(actor, order_ids)`）。1 件ずつ引くメソッドを、入れ子のフィールドから呼ばない。ソースは `Sources::PublicApiSource` の 1 つで、公開 API のモジュール・メソッド名・操作者を引数に取り、操作者を公開 API にそのまま渡す。
 
+N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
+
+- **公開 API の中の N+1**：Bullet をテストで有効にし、関連を 1 件ずつ読むと例外にする。Bullet は検出の状態をスレッド変数に置くので、Dataloader のソースの Fiber の中の読み込みも見える。
+- **フィールドの N+1**：GraphQL の型は AR のレコードではなく公開 API の値を受け取るので、親ごとに公開 API を呼ぶ N+1 は Bullet に見えない。画面の問い合わせごとに、親が 1 件と 20 件のときの SQL の件数が同じであることを、クエリ数の予算のテストで確かめる。
+
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 
 クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの中のフィールドの複雑度を、1 ページの最大件数倍で数える。リストで返す明細は掛け算にならない。
@@ -585,3 +694,14 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 | 複雑度（`max_complexity`） | 2,500 | 100 件の一覧で各行が 20 前後のフィールドを取ると 2,000 前後になり、通る。100 件の一覧の中に 100 件のコネクションを入れ子にすると 10,000 を超え、通らない |
 
 実装者は、画面の問い合わせを足すたびに、その複雑度を graphql-ruby の複雑度の解析で計るテストを書き、上限に収まることを確かめる。
+
+## スキーマの変更と非推奨
+
+スキーマの形は、リポジトリの根の `schema.graphql` に書き出して commit する。型を変えた実装者は、`bin/rails graphql:schema:idl` で書き直し、同じ commit に入れる。書き直しを忘れると `spec/graphql/schema_dump_spec.rb` が落ちる。
+
+クライアントを壊す変更（フィールド・引数・enum の値の削除、型の変更、必須の引数の追加）は、次の順で行う。
+
+1. 消すものに `deprecation_reason:` を付け、代わりのフィールドを同じ変更で足す。この変更を main にマージする。
+2. 消す変更は、別の PR で行う。フロントエンド（`../implementation-plan.md` M33）の公開の後は、非推奨を main に入れてから 30 日以上たってから消す。公開まではクライアントが無いので、日数の条件を置かない。
+
+`bin/check-schema-compat` が、main の `schema.graphql` と比べて、非推奨を経ない破壊的変更を CI で落とす。非推奨を経られない変更（秘密を漏らすフィールドを即座に消す、など）だけは、`docs/graphql/breaking-changes.yml` に変更と理由を書いて通す。
