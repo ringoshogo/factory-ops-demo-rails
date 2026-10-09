@@ -12,10 +12,11 @@ module Inventory
     }.freeze
 
     # 品目ごとの在庫の行を、無ければ数量 0 で作り、item_id の昇順に行ロックして返す
-    # （docs/architecture/data-model.md「取消と出荷の競合を止める場所」のロックの順）
+    # （docs/architecture/data-model.md「取消と出荷の競合を止める場所」のロックの順）。
+    # 挿入も一意索引の上で相手の未コミットの行を待つので、ロックと同じ item_id の昇順で行う
     def self.lock_for(owner_tenant_id, item_ids)
       stocks = where(owner_tenant_id:, item_id: item_ids.uniq)
-      missing = item_ids.uniq - stocks.pluck(:item_id)
+      missing = (item_ids.uniq - stocks.pluck(:item_id)).sort
       insert_all(missing.map { { owner_tenant_id:, item_id: _1 } }, unique_by: %i[owner_tenant_id item_id]) if missing.any?
       stocks.order(:item_id).lock.index_by(&:item_id)
     end
