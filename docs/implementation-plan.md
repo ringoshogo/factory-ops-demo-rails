@@ -104,7 +104,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M16 | M14 | シナリオ S1・S3 が、M14 までの発注・連結・出荷の流れを使う |
 | M17 | M14・M16 | クエリ数の予算の対象の問い合わせが M14 までの入口を使い、Bullet の対象外を M16 の競合テストの置き場で決める |
 | M18 | M4・M7 | 文脈を `GraphqlController` と `ApplicationJob`・`Contracts::EventJob` で設定する |
-| M19 | M18 | 監査ログの相関 ID を、M18 の文脈から取る |
+| M19 | M16・M18 | 監査ログの相関 ID を、M18 の文脈から取る。競合テストの後始末を、M16 の `concurrency` の置き場のテストに対して決める |
 | M20 | M5 | スキーマを書き出す |
 | M21〜M26 | M15〜M20 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる |
 | M27 | M19・M20・M25 | 単価の変更を監査する。請求書の説明が発行済みの請求書を使う |
@@ -516,7 +516,7 @@ git grep -nE "#.*\bM[0-9]+\b" -- '*.rb' '*.rake' | wc -l   # 0
   - トランザクションの単位：ユーザーエラーだけの応答はコミットし、トップレベルのエラーと例外はロールバックする（`graphql-schema.md`「1 回のリクエストがたどる道」）
 - `bin/test-layers`：rspec の JSON の出力を読み、層ごとの件数・割合・時間を表にして、標準出力と `$GITHUB_STEP_SUMMARY` に書く。example の層は、JSON の `id`（`./packs/sales/spec/public/sales/part_mappings_spec.rb[1:2:1]` の形）のファイルの部分で決める。`file_path` は、共有の example（`it_behaves_like`）では共有の example を定義したファイルを指すので使わない。どの層の置き場にも当たらないファイルがあれば失敗する。割合が目安を外れたら、GitHub の警告の注釈（`::warning::`）を出す。
 - CI：`.github/workflows/ci.yml` と `config/ci.rb` の rspec のステップを、`bundle exec rspec --format progress --format json --out tmp/rspec.json` にし、続けて `bin/test-layers tmp/rspec.json` を流す。
-- 重要シナリオ。シナリオは 2 社のユーザーとして GraphQL を通して操作し、`:solid_queue` のまま `deliver_enqueued_events` でイベントを流す。`concurrency` の置き場のテストは、トランザクションで包まない設定で 2 つの接続から同時に操作し、作った行を後で所有ロールで消す（監査ログができた後の消し方は M19）。シナリオには `:scenario` のタグを付け、`bundle exec rspec --tag scenario` で単独で流せるようにする。
+- 重要シナリオ。シナリオは 2 社のユーザーとして GraphQL を通して操作し、`:solid_queue` のまま `deliver_enqueued_events` でイベントを流す。`concurrency` の置き場のテストは、トランザクションで包まない設定で 2 つの接続から同時に操作し、作った行を後で所有ロールで消す（監査ログができた後の消し方は M19）。`spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、`concurrency` と同じく置き場から付ける。担当者が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
 
   | | シナリオ | 確かめること | 置き場 | 作るマイルストーン |
   |---|---|---|---|---|
@@ -542,11 +542,12 @@ git grep -nE "#.*\bM[0-9]+\b" -- '*.rb' '*.rake' | wc -l   # 0
 ```sh
 bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json   # 層ごとの表が出て、未分類のファイルが無い
-bundle exec rspec --tag scenario
-bundle exec rspec --tag concurrency
+bundle exec rspec spec/scenarios/tenant_boundary_spec.rb spec/scenarios/order_linking_spec.rb   # S1・S3 のファイルがあり、example が集まる
+bundle exec rspec --tag scenario      # 0 件なら失敗する（fail_if_no_examples）
+bundle exec rspec --tag concurrency   # 同上
 ```
 
-担当者は、S1 が防壁を検査していることを、次の 2 つの壊し方で手で確かめ、落ちた example の名前を PR に書く。確かめた後は戻す。落ちなければ S1 がその防壁を検査していないので、example を足してから完了にする。
+上の自動の条件に加えて、担当者は、S1 が防壁を検査していることを、次の 2 つの壊し方で手で確かめ、落ちた example の名前を PR に書く。手の確認は自動の条件の代わりにならない。確かめた後は戻す。落ちなければ S1 がその防壁を検査していないので、example を足してから完了にする。
 
 1. アプリの防壁：`Purchasing::Ordering.place` の `Partnerships::Access` の確かめを外す → 取引関係の無い相手のテナント ID で `placePurchaseOrder` を呼ぶ example が落ちる。
 2. 2 枚の防壁：`Sales::SalesOrderPolicy` の scope の自社テナントの条件を外し、所有ロールで `ALTER TABLE sales_orders DISABLE ROW LEVEL SECURITY` を流す → 受注側の受注 ID を、発注側のユーザーが `supplier.salesOrder(id:)` と `allocateSalesOrder` に渡す example が落ちる。scope と RLS はそれぞれ単独で他社の受注を除くので、片方だけを外しても落ちない。
@@ -561,17 +562,18 @@ bundle exec rspec --tag concurrency
 
 **作るもの**
 
-- Bullet（`~> 8.2`）を test と development のグループに入れる。`config/environments/test.rb` は `Bullet.enable`・`Bullet.raise`・`Bullet.n_plus_one_query_enable` を真に、`Bullet.unused_eager_loading_enable`・`Bullet.counter_cache_enable` を偽にする。development は `Bullet.bullet_logger` で記録だけにする。
+- Bullet（`~> 8.2`）を test と development のグループに入れる。`config/environments/test.rb` は `Bullet.enable`・`Bullet.raise`・`Bullet.n_plus_one_query_enable` を真に、`Bullet.unused_eager_loading_enable`・`Bullet.counter_cache_enable` を偽にする。development は `Bullet.bullet_logger` で記録だけにする。どちらも `config.after_initialize` のブロックの中で設定する。`Bullet.enable = true` は、その場で `ActiveRecord::Base` を拡張するので、設定のブロックに直接書くと、Active Record が初期化の途中で読み込まれる。
   - 使わない先読みの検出を外す理由：`Bullet.raise` は検出の種類を問わず例外にする。公開 API は、値の組み立てに要る関連を GraphQL の選択によらずまとめて先読みするので、使わない先読みの報告は直す対象にならない。
   - カウンタキャッシュの検出を外す理由：状況と件数は時刻列と公開 API で導出し（`data-model.md`「状態は保存せず、時刻列から導出する」）、カウンタキャッシュの列を持たない。
-- `spec/support/bullet.rb`：各 example を `around` で `Bullet.profile { example.run }` に包む。`Bullet.profile` は、`start_request` で検出を始め、example の後に検出があれば `perform_out_of_channel_notifications` で通知し（`Bullet.raise` なので例外になる）、`ensure` で `end_request` を呼ぶ。`start_request` と `end_request` だけで包むと、検出しても通知されず、`end_request` が検出の状態を消すので、example は通る。次の example は包まない。
-  - `spec/requests` の example：Bullet は、HTTP の要求を自分のミドルウェア（`Bullet::Rack`）で同じ手順で包む。外でも包むと、ミドルウェアの `start_request` と `end_request` が外の検出の状態を上書きして消すので、二重に管理しない。
+- `spec/support/bullet.rb`：各 example を `around` で `Bullet.profile { example.run }` に包む。`Bullet.profile` は、`start_request` で検出を始め、example の後に検出があれば `perform_out_of_channel_notifications` で通知し（`Bullet.raise` なので例外になる）、`ensure` で `end_request` を呼ぶ。`start_request` と `end_request` だけで包むと、検出しても通知されず、`end_request` が検出の状態を消すので、example は通る。`bullet: false` か `:concurrency` のメタデータを持つ example は包まない。
+  - `spec/requests` の example：`spec/rails_helper.rb` が置き場から `bullet: false` を付ける。Bullet は、HTTP の要求を自分のミドルウェア（`Bullet::Rack`）で同じ手順で包む。外でも包むと、ミドルウェアの `start_request` と `end_request` が外の検出の状態を上書きして消すので、二重に管理しない。
   - `:concurrency` のメタデータを持つ example（M16）：別のスレッドで操作する。Bullet は検出の状態をスレッドごとに持つので、別のスレッドの読み込みは見えない。
+  - 包みが出す例外は、example が終わった後の `around` の中で起きる。example の中の `expect { }.to raise_error` では捕まえられないので、例外を確かめる example は `bullet: false` を付け、自分で `Bullet.profile` を呼ぶ。
 - 一覧のテストの規則：Bullet は、1 回の読み込みで 1 件しか返らなかったレコードを N+1 の候補にしない。担当者は、一覧を返す公開 API のテストで、親を 2 件以上作り、それぞれの関連を読む値を確かめる。
-- `spec/platform/bullet_spec.rb`：検出が例外まで届くことを、意図的な N+1 で確かめる。親を 2 件作り、先読みせずに関連を 1 件ずつ読む処理を、次の 3 つの経路で動かし、どれも `Bullet::Notification::UnoptimizedQueryError` になることを確かめる。
-  1. 公開 API を直接呼ぶ example の中（`spec/support/bullet.rb` の経路）
-  2. Dataloader のソースの中（`FactoryOpsSchema.execute` で、その処理をソースから呼ぶフィールドを解決する）
-  3. `/graphql` への要求の中（ミドルウェアの経路）
+- `spec/platform/bullet_spec.rb`：検出が例外まで届くことを、意図的な N+1 で確かめる。親を 2 件作り、先読みせずに関連を 1 件ずつ読む処理を、次の 3 つの経路で動かし、どれも `Bullet::Notification::UnoptimizedQueryError` になることを確かめる。ファイル全体に `bullet: false` を付け、自動の包みから外す。
+  1. 公開 API を直接呼ぶ：`expect { Bullet.profile { 呼び出し } }.to raise_error(...)` で、`spec/support/bullet.rb` と同じ包み方を確かめる
+  2. Dataloader のソースの中：同じく `Bullet.profile` の中で、`FactoryOpsSchema.execute` を呼び、その処理をソースから呼ぶフィールドを解決する
+  3. `/graphql` への要求：`expect { post "/graphql", ... }.to raise_error(...)`。`Bullet::Rack` は `ActionDispatch::ShowExceptions` の内側にあり、テストの `show_exceptions = :rescuable` は対応表に無い例外を応答に変えずに投げ直すので、`post` 自身が例外を出す
 - 許可リスト：`spec/support/bullet_safelist.rb` に `{ type:, class_name:, association:, reason: }` の配列で書き、`Bullet.add_safelist` に渡す。`reason` の無い行は、読み込みの時点で例外にする。許可してよいのは、件数が 1 に決まっている誤検知（1 件のレコードを引いてから関連をたどる、など）だけである。本当の N+1 を許可リストで黙らせない。
 - 画面の問い合わせの一覧（`spec/fixtures/graphql/screens/*.graphql`）：画面が送る問い合わせを、操作名を付けて 1 ファイル 1 つで置く。M17 では、M33 の画面の一覧のうち M14 までの入口で動く画面について、次の表の問い合わせを作る。後のマイルストーンは、入口を足すたびに、それを使う画面の問い合わせをここへ足す。M26 の複雑度のテストと M30 の操作名の登録も、この一覧を使う。
 
@@ -591,9 +593,11 @@ bundle exec rspec --tag concurrency
   一覧の中にコネクションを入れ子にした問い合わせは、親ごとにページングの問い合わせが出るので、画面の問い合わせに置かない。カタログは、取引先を 1 つ選んでから引く（`BuyerSupplierCatalog`）。
 - `spec/graphql/query_budget_spec.rb`：画面の問い合わせの一覧の問い合わせごとに、一覧の親が 1 件のときと 20 件のときの SQL の件数が同じであることを確かめる。spec は、問い合わせごとに次を決めて流す。
   - **操作者と変数**：上の表の操作者でログインした状態の `context` を作り、変数の `first` に 20 を明示する。1 ページの件数の既定に頼らない。
-  - **親と子の作り方**：親を 1 件と 20 件作る。リストの入れ子は各親に 2 件、単数の入れ子は各親に 1 件作る。
-  - **応答の確かめ**：件数を比べる前に、応答に `errors` が無いこと、一覧の件数が 1 件と 20 件であること、表の入れ子が各親で空でないことを確かめる。認可の失敗や空の一覧で件数がそろう場合を、通さないためである。
+  - **親と子の作り方**：親を 1 件と 20 件作り、入れ子の件数を問い合わせごとに表で持つ。リストの入れ子は、業務の制約が許す範囲で各親に 2 件作る。`BuyerPurchaseOrders` の `inboundShipments`・`supplierShipments` は、分納しない（`data-model.md` の `shipments.shipment_request_id` 一意）ので発注ごとに 1 件にする。単数の入れ子は各親に 1 件作る。
+  - **関連先を親ごとに変える**：関連先の ID で引く入れ子（`customer`・`supplier`・`buyer`・`item`・`salesOrder` など）は、親ごとに別の関連先を作る。20 件の親が同じ関連先を指すと、ソースの中ではキーが 1 つにまとまり、ソースを外しても同じ SQL が `cached: true` になって数えられないので、N+1 が件数に出ない。親の ID で引く入れ子（`lines` など）は、もともと親ごとに違う。
+  - **応答の確かめ**：件数を比べる前に、応答に `errors` が無いこと、一覧の件数が 1 件と 20 件であること、表の入れ子の件数が各親で作った件数と一致することを確かめる。認可の失敗や空の一覧で件数がそろう場合を、通さないためである。
   - **数える区間と除くもの**：数えるのは `FactoryOpsSchema.execute` の呼び出しの間の `sql.active_record` だけで、データの準備の SQL を含めない。名前が `SCHEMA`・`TRANSACTION`・`Tenancy`（`Tenancy.with_tenant` が流す `set_config`）のものと、`cached: true` のものを除く。
+  - **負例**：入れ子ごとに、その入れ子を引く `Sources::PublicApiSource`（公開 API とメソッドの組）の `fetch` を、キーを 1 つずつ渡して公開 API を呼ぶ形に包み、1 件と 20 件で件数が違うことを確かめる。違わなければ、準備のデータが N+1 を件数に出せていないので、関連先の作り方を直す。
 
 **GraphQL の Dataloader との共存**
 
@@ -613,7 +617,7 @@ bundle exec rspec
 bundle exec rspec spec/platform/bullet_spec.rb spec/graphql/query_budget_spec.rb
 ```
 
-リゾルバの 1 つで Dataloader を外し、親ごとに公開 API を呼ぶ形にすると、クエリ数の予算が落ちることを、手で確かめる。
+Dataloader を外したときにクエリ数の予算が落ちることは、`query_budget_spec.rb` の負例が毎回確かめる。
 
 **実装する文書の節**：`graphql-schema.md`「ページングと N+1」、`decisions.md` 6 章（N+1 対策）
 
@@ -637,21 +641,31 @@ bundle exec rspec spec/platform/bullet_spec.rb spec/graphql/query_budget_spec.rb
   | アプリのイベント（下の「アプリが出すイベント」） | 定義した項目 | — |
   | 上の表に無いイベント | 無し（`name`・`context`・`timestamp` だけを書く） | `payload` 全体 |
 
-- フレームワークの文字列のログ：本番では、構造化イベントと同じ内容を書くフレームワークのログの購読（`ActionController::LogSubscriber` など）を外す。外す購読の一覧は、着手時に Rails 8.1.4 のソースで確かめる。残る `Rails.logger` の行は、JSON の書式（`Platform::JsonLogFormatter`）で書き、同じ文脈を JSON の `context` に入れる。
-  - ロガーの構成：`Platform::Logging.build(io)` が、`Platform::JsonLogFormatter` を付けた `ActiveSupport::Logger` を作り、`config/environments/production.rb` は `config.logger = Platform::Logging.build(STDOUT)` にして `config.log_tags` を外す。`ActiveSupport::TaggedLogging` で包まない。TaggedLogging は、タグを文字列としてメッセージの前に付けてから書式に渡すので、行が JSON で始まらない。Rails は `config.logger` を TaggedLogging で包まず、要求のログ（`Rails::Rack::Logger`）とジョブのログは、ロガーが `tagged` を持たなければタグを付けない。リクエスト ID などは、タグではなく文脈から JSON に入る。
+- フレームワークの文字列のログ：JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4 で止める経路は次の 3 つである。担当者は着手時に、Solid Queue を含めて、ほかに `Rails.logger` へ直接書く経路が無いかをソースで確かめる。
+  - **ログの購読**：`ActionController::LogSubscriber`・`ActionDispatch::LogSubscriber`・`ActiveJob::LogSubscriber` を外す。構造化イベントと同じ内容を、params・ジョブの引数・例外のメッセージ込みの文字列で書く。
+  - **要求の開始の行**：`Rails::Rack::Logger` は、購読ではなく自分で `Rails.logger.info` を呼び、`request.filtered_path` を書く。`filtered_path` は `filter_parameters` の名前で隠すだけなので、URL の `query`・`variables` の値が残る。このミドルウェアを `Platform::RequestContext`（下の「文脈」）に差し替える（`config.middleware.swap`）。差し替えで失う `request.action_dispatch` の計装は、Rails 8.1.4 の中に購読者が無く、M30 も使わない。
+  - **例外の行**：`ActionDispatch::DebugExceptions` は、捕まえた例外のメッセージとバックトレースを `fatal` で書く。本番ではこれが唯一の役目なので、ミドルウェアから外す。例外は `ActionDispatch::Executor` がエラー通知に送り、ログには `action_controller.request_completed` の状態コードが残る。
+
+  残る `Rails.logger` の行は、JSON の書式（`Platform::JsonLogFormatter`）で書き、同じ文脈を JSON の `context` に入れる。
+  - ロガーの構成：`Platform::Logging.build(io)` が、`Platform::JsonLogFormatter` を付けた `ActiveSupport::Logger` を作る。`ActiveSupport::TaggedLogging` で包まない。TaggedLogging は、タグを文字列としてメッセージの前に付けてから書式に渡すので、行が JSON で始まらない。Rails は `config.logger` を TaggedLogging で包まず、ジョブのログは、ロガーが `tagged` を持たなければタグを付けない。リクエスト ID などは、タグではなく文脈から JSON に入る。
+  - 構成の入口：`Platform::Logging.configure!(config, io)` が、`config.logger` の設定・`config.log_tags` の消去・上の 2 つのミドルウェアの差し替えと削除・`config.after_initialize` での購読の解除をまとめて行う。`config/environments/production.rb`（`STDOUT`）と `config/environments/test.rb`（`log/test.log`）がこれを呼ぶ。ミドルウェアの構成は起動の時点で決まり、spec の中から変えられないので、衛生の spec が本番と同じ構成を通るには、テストの環境も同じ入口を通す必要がある。開発の環境は、読みやすさのため Rails の文字列のログのままにする。設定の時点では自動読み込みが効かないので、`Platform::Logging` と書式は `packs/platform/lib/platform/` に置き、環境のファイルから `require_relative` で読む。
 - 文脈：`Rails.event.set_context` で次の項目を設定する。同じ場所で、エラー通知の文脈（`Rails.error.set_context`）にも `request_id`・`tenant_id`・`user_id`・`correlation_id` を設定する。エラー通知にテナント ID を付けるためである（`decisions.md` 2 章「テナント文脈のログへの伝播」）。
 
   | 項目 | 設定する場所 |
   |---|---|
-  | `request_id` | `GraphqlController`・`SessionsController`（`request.request_id`） |
-  | `tenant_id`・`user_id` | `GraphqlController`（認証の後）、`ApplicationJob`（テナントを復元した後）。`Contracts::EventJob` は宛先テナント |
+  | `request_id`（要求） | `Platform::RequestContext`（`env["action_dispatch.request_id"]`） |
+  | `tenant_id`・`user_id` | 要求は `GraphqlController`（認証の後）。ジョブは `ApplicationJob#perform_now`（付帯情報のテナント。`Contracts::EventJob` は宛先テナント） |
   | `graphql_operation` | `GraphqlController`（`operationName`。無ければ `anonymous`） |
-  | `job_id`・`job_class`・`queue` | `ApplicationJob` の `around_perform` |
-  | `event_id`・`event_name` | `Contracts::EventJob` |
-  | `correlation_id`・`causation_id` | 下の「相関 ID と因果 ID」 |
+  | `job_id`・`job_class`・`queue` | `ApplicationJob#perform_now` |
+  | `event_id`・`event_name` | `Contracts::EventJob`（`perform_now` が読む `log_context` を上書きする） |
+  | `correlation_id`・`causation_id` | 要求は `Platform::RequestContext`、ジョブは `ApplicationJob#perform_now`（下の「相関 ID と因果 ID」） |
+
+  文脈を設定する区間は、Rails がイベントを出す区間を含めなければならない。Rails 8.1.4 は、`action_controller.request_started` を `before_action` より前の `process_action` の入口で出す。`active_job.started` は perform のコールバックより前の `_perform_job` で、`active_job.completed`・`retry_scheduled`・`discarded` は `perform_now` の計装の中で出す。コントローラの中で設定した文脈は `request_started` に付かず、`around_perform` で設定した文脈はジョブのこれらのイベントに付かない。
+  - **要求**：`Platform::RequestContext` は、`Rails::Rack::Logger` があった位置（`ActionDispatch::RequestId` の後、`ActionDispatch::Executor` の内側）で、`request_id` と相関 ID を設定する。セッションはこの位置より内側で読まれるので、`request_started` に付くのは `request_id` と相関 ID だけで、`tenant_id`・`user_id`・`graphql_operation` は `request_completed` から付く。
+  - **ジョブ**：`ApplicationJob` は `perform_now` を上書きし、`super` の前に文脈を設定する。ワーカー（`ActiveJob::Base.execute` から `perform_now`）と、直接の `perform_now` の両方がここを通り、Active Job の計装の外側にあたる。ワーカーの経路では引数がまだ直列化されているので、先に `deserialize_arguments_if_needed` で引数を戻してから付帯情報を読む。この private のメソッドは、Rails 8.1.4 の `Execution#perform_now` も呼び、2 回目は何もしない。版を上げる担当者は、名前と挙動が変わっていないかを確かめる。
 
   `GraphqlController` は、スキーマを実行する前に文脈を設定する。`Rails.event` の文脈は Fiber のストレージにあり、Dataloader が作る Fiber は、作られた時点の値を写して持つ。Fiber の中で設定した値は、親に戻らない。
-- 文脈の後始末：Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、両方の文脈を空に戻す。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで、`ApplicationJob` の `around_perform` は、実行の前の文脈を退避してからジョブの文脈を設定し、`ensure` で退避した文脈に戻す。`spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
+- 文脈の後始末：Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、`Rails.event` の文脈を空にし、エラー通知の文脈（`ActiveSupport::ExecutionContext`）を始まりの push と対で pop する（入れ子を許さない既定では、push も pop も空にする）。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで、`ApplicationJob#perform_now` は、実行の前の `Rails.event.context` を退避して `ensure` で戻し、エラー通知の文脈は `Rails.error.set_context(...) { super }` のブロックの形で設定する（ブロックを抜けると前の値に戻る）。`spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
 - 相関 ID と因果 ID：
   - **相関 ID**（`correlation_id`）：一連の処理の始まりで 1 つ決め、最後まで同じ値を運ぶ。利用者のリクエストでは、`request_id` を相関 ID にする。
   - **因果 ID**（`causation_id`）：いまの処理を直接引き起こしたものの ID。リクエストでは空、イベントの受け手では届いたイベントの `event_id` である。
@@ -666,9 +680,9 @@ bundle exec rspec spec/platform/bullet_spec.rb spec/graphql/query_budget_spec.rb
   - **ジョブの引数と例外のメッセージ**：上の表のとおり書かない。
   - **SQL**：`active_record.sql` はデバッグのイベントで、開発でだけ出る。本番は出さない。
   - **ハッシュでないペイロード**：`Rails.event` は、ハッシュのペイロードにだけ `filter_parameters` を掛ける。ハッシュでないペイロードが購読者に届くのは、イベントのオブジェクトを `notify` に渡したときである。購読者は、それを例外にする。Rails は `Rails.event.raise_on_error` を `consider_all_requests_local` から決める（開発とテストで真、本番で偽）ので、購読者の例外は、開発とテストでは呼び出し元まで上がり、本番ではエラー通知に送られて行が書かれない。この 2 つの設定を変えない。`filter_parameters` に `name` を足すと `item_name`・`operation_name` まで消えるので、氏名は「ペイロードに入れない」規則で守る。
-- `spec/contracts/correlation_spec.rb`：発注 → イベントを流す → 受注確定 → 購買の受け手、の全ログ行が同じ相関 ID を持ち、受け手の行の因果 ID が届いたイベントの `event_id` であることを確かめる。ログは、テストの中で購読者を足して集める。
-- `spec/jobs/log_context_spec.rb`：ジョブを `perform_now` で動かすと、実行の間は付帯情報とテナントから文脈が設定され、エラー通知の文脈にテナント ID が入り、実行の後は実行の前の文脈に戻ることを確かめる。
-- `spec/requests/log_hygiene_spec.rb`：本番と同じ構成で 2 つの出口（`Platform::Logging.build` のロガーと、購読者）を `StringIO` に向けて集める。ログイン、メールアドレス・パスワード・自由記述の理由を値に含む mutation、変数を伴う GraphQL の要求、例外のメッセージに禁止の値を含めて失敗するジョブ、イベントの配送を流す。集めた全行が JSON として読め、どの行にも禁止の値が現れないことを確かめる。イベントのオブジェクトを `Rails.event.notify` に渡すと例外になることも確かめる。
+- `spec/contracts/correlation_spec.rb`：発注 → イベントを流す → 受注確定 → 購買の受け手、の全ログ行が同じ相関 ID を持ち、受け手の行の因果 ID が届いたイベントの `event_id` であることを確かめる。全ログ行には、Rails の `action_controller.request_started`・`active_job.started`・`active_job.completed` を含める。ログは、テストの中で購読者を足して集める。
+- `spec/jobs/log_context_spec.rb`：ジョブを直接の `perform_now` と、ワーカーの経路（`ActiveJob::Base.execute(job.serialize)`）で動かし、どちらでも次を確かめる。`active_job.started`・`active_job.completed`（成功と失敗）・`active_job.retry_scheduled` のイベントと本体の中で、付帯情報とテナントから文脈が設定されている。エラー通知の文脈にテナント ID が入る。実行の後は実行の前の文脈に戻る。
+- `spec/requests/log_hygiene_spec.rb`：`Platform::Logging.configure!` を通したテストの環境で、2 つの出口を `StringIO` に向けて集める。文字列のログは、`Platform::Logging.build` のロガーを本番の既定と同じ `info` の水準で `Rails.logger.broadcast_to` に足して集め、終わりに `stop_broadcasting_to` で外す。イベントは購読者を足して集める。流すのは、ログイン、メールアドレス・パスワード・自由記述の理由を値に含む mutation、変数を伴う GraphQL の要求、URL の `query`・`variables` に禁止の値を入れた `/graphql` への要求、例外のメッセージに禁止の値を含めて失敗する要求とジョブ、イベントの配送である。集めた全行が JSON として読め、どの行にも禁止の値が現れないことを確かめる。イベントのオブジェクトを `Rails.event.notify` に渡すと例外になることも確かめる。
 
 **判断**：ログの出口に `Rails.event` を使うか、lograge のような gem で文字列のログを JSON にするか
 
@@ -688,7 +702,7 @@ bundle exec rspec spec/contracts/correlation_spec.rb spec/requests/log_hygiene_s
 
 **実装する文書の節**：`decisions.md` 2 章（テナント文脈のログへの伝播）、`adr/005` 決定 3、`data-model.md`「イベントの受け口と冪等キー」の付帯情報
 
-**文書に残すこと**：`adr/005` 決定 3 のジョブの引数の一覧に付帯情報を足す。外したフレームワークのログの購読、イベントごとに書く項目の表、ロガーの構成、ログの出力先を `guides/config.md` に書く。
+**文書に残すこと**：`adr/005` 決定 3 のジョブの引数の一覧に付帯情報を足す。止めたフレームワークの文字列のログの経路（購読・`Rails::Rack::Logger`・`ActionDispatch::DebugExceptions`）、イベントごとに書く項目の表、ロガーの構成と `Platform::Logging.configure!`、文脈を設定する位置、ログの出力先を `guides/config.md` に書く。
 
 ## M19 監査ログ
 
@@ -720,7 +734,9 @@ bundle exec rspec spec/contracts/correlation_spec.rb spec/requests/log_hygiene_s
 - 列挙テスト：`spec/graphql/authorization_declarations_spec.rb` を広げ、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類（`audit` か `audit_exempt`）が `graphql-schema.md`「監査ログ」の表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation（後のマイルストーンで作るもの）は比べない。
 - GraphQL：`viewer.auditLogs`（`admin` だけ。`graphql-schema.md`「監査ログ」）。到達可能性のテストに「`Viewer` からたどれる型は `shared` だけである」を足し、入口の行列に行を足す。
 - 保存期間を過ぎた行の削除：所有ロールの rake タスク `audit:purge`。所有ロールの資格情報を持つ運用の工程で、月に 1 回流す。Web とワーカーには資格情報が無いので流せない。
-- 競合テストの後始末：`concurrency` の置き場のテスト（M16）は、作った業務の行を所有ロールで消すが、監査の行と、監査の行が指すテナントは消さずに残す。監査の行は所有ロールでも消せず、監査の行が指すテナントは、所有テナントと相手テナントの外部キーで消せないからである。テナントは乱数のコードで作るので、残った行は他の example から見えない。担当者は、既存の競合テストの後始末からテナントの DELETE を外す。監査の行を所有ロールの `TRUNCATE` で消すことも、`TRUNCATE` を拒むトリガーがあるのでできない。
+- 競合テストの後始末：`concurrency` の置き場のテスト（M16）は、作った業務の行を所有ロールで消すが、監査の行と、監査の行が指すテナントとユーザー（`actor_user_id`）は消さずに残す。監査の行は所有ロールでも消せない（`TRUNCATE` も、それを拒むトリガーで消せない）。監査の行の所有テナントは、`audit_logs.owner_tenant_id` の外部キーで消せない。相手テナント（`counterparty_tenant_id`）は外部キーを張らない ID の参照なので消せるが、監査の行が無いテナントを指さないように、これも残す。担当者は、既存の競合テストの後始末からテナントの DELETE を外す。
+  - 残す行の一意の値（テナントの `code`・`partner_code`、ユーザーの `email`）は、すべて乱数で作る。factory の `sequence` はプロセスごとに 1 から数え直すので、同じ DB に 2 回目を流すと、残った行と一意の制約で衝突する。残った行は乱数の値で分かれるので、他の example から見えない。
+  - 監査の行を作る競合を 1 本含める：`spec/concurrency/post_shipment_audit_spec.rb` は、同じ出荷依頼の `postShipment` を 2 つの接続から GraphQL を通して同時に送り、成立した 1 件だけが監査の行を持つことを確かめる。公開 API を直接呼ぶ競合テストは監査の行を作らないので、これが無いと、下の完了条件の 2 回の実行が監査の制約を通らない。
 - `spec/db/audit_logs_spec.rb`：アプリのロールの UPDATE と DELETE が権限で拒まれる。所有ロールでも、UPDATE と、保存期間の中の行の DELETE と、`TRUNCATE` がトリガーで拒まれる。
 - `spec/requests/audit_spec.rb`：次の場合ごとに、業務の行・監査の行・イベントのジョブの残り方を確かめる。
   1. `placePurchaseOrder` の成功で監査の行が 1 行、`NOT_PERMITTED` で 0 行
@@ -743,12 +759,14 @@ bundle exec rspec spec/contracts/correlation_spec.rb spec/requests/log_hygiene_s
 
 ```sh
 bundle exec rspec spec/db/audit_logs_spec.rb spec/requests/audit_spec.rb spec/graphql spec/matrix
-bundle exec rspec --tag concurrency && bundle exec rspec --tag concurrency   # 監査の制約を有効にしたまま、同じテスト DB で続けて通る
+bundle exec rspec --tag concurrency && bundle exec rspec --tag concurrency   # 監査の制約を有効にしたまま、同じテスト DB で続けて通る（0 件なら失敗する）
 ```
+
+2 回の実行には `spec/concurrency/post_shipment_audit_spec.rb` が含まれ、1 回目で監査の行とテナントが残った DB に 2 回目を流す。
 
 **実装する文書の節**：`decisions.md` 2 章「監査」、`data-model.md`「監査ログ（`platform`）」、`graphql-schema.md`「監査ログ」
 
-**文書に残すこと**：mutation ごとの action・対象・相手の表と、同じテナントの中のイベントを記録しない規則を `graphql-schema.md`「監査ログ」に移す。監査の対象を変えたら、その表を同じ変更で直す。`TRUNCATE` を拒むトリガーを `data-model.md`「監査ログ（`platform`）」の追記だけにする仕組みに足す。競合テストの後始末の規則を `guides/testing.md` に書く。
+**文書に残すこと**：`decisions.md` 2 章「監査」の対象の定義を、目的の段落のとおり「相手テナントに効果が及ぶ書き込み」に直し、記録する場所を mutation の基底クラスとイベントのジョブの基底クラスにする。mutation ごとの action・対象・相手の表と、同じテナントの中のイベントを記録しない規則を `graphql-schema.md`「監査ログ」に移す。監査の対象を変えたら、その表を同じ変更で直す。`TRUNCATE` を拒むトリガーを `data-model.md`「監査ログ（`platform`）」の追記だけにする仕組みに足す。競合テストの後始末の規則を `guides/testing.md` に書く。
 
 ## M20 GraphQL スキーマの破壊的変更の検出
 
@@ -759,13 +777,16 @@ bundle exec rspec --tag concurrency && bundle exec rspec --tag concurrency   # �
 - `lib/tasks/graphql.rake`：`GraphQL::RakeTask.new(schema_name: "FactoryOpsSchema")`。`bin/rails graphql:schema:idl` が、リポジトリの根に `schema.graphql` を書く。
 - `spec/graphql/schema_dump_spec.rb`：`FactoryOpsSchema.to_definition` が `schema.graphql` と一致することを確かめる。型を変えて書き直しを忘れると落ちる。
 - graphql-schema_comparator（`~> 1.2`）を development と test のグループに入れる。
-- 互換の判定（`lib/schema_compat.rb`）：基準の SDL と作業中の SDL と例外の一覧を受け取り、`GraphQL::SchemaComparator.compare` の結果の変更ごとに、通すか落とすかを返す。変更は、比較器の変更のクラス名（`FieldRemoved` など）と、スキーマの座標（変更の `path`。`PurchaseOrder.lines` の形）で識別する。
-  - 非破壊の変更と、危険な変更（enum の値の追加など）は、一覧を出すだけにする。
-  - 削除の変更（`FieldRemoved`・`FieldArgumentRemoved`・`InputFieldRemoved`・`EnumValueRemoved`）は、消えた要素が基準のスキーマで `@deprecated` だったときに通す。`TypeRemoved` は、基準のスキーマで、その型を返すか受け取るフィールドと引数がすべて非推奨だったときに通す。
-  - 型の変更と必須の引数・入力項目の追加は、非推奨を経ても通さない。担当者は、新しい型や引数を持つフィールドを足し、古いフィールドを非推奨にしてから、別の PR で消す（`graphql-schema.md`「スキーマの変更と非推奨」）。非推奨のフィールドの型をその場で変えても通らない。
-  - 上のどれにも当たらない破壊的変更は、例外の一覧（`docs/graphql/breaking-changes.yml`）に、同じ変更のクラス名と座標の行があるときだけ通す。行は `change`・`path`・`reason` を持ち、`reason` が空の行があれば、一覧の読み込みで失敗する。クラス名か座標が違う行は、その変更を通さない。どの変更にも当たらない行は、警告として一覧に出す。
+- 互換の判定（`lib/schema_compat.rb`）：基準の SDL と作業中の SDL と例外の一覧を受け取り、`GraphQL::SchemaComparator.compare` の結果の変更ごとに、通すか落とすかを返す。変更は、比較器の変更のクラス名（`FieldRemoved` など）と、スキーマの座標（変更の `path`。`PurchaseOrder.lines` の形）で識別する。判定は次の順に当て、先に当たった規則で決める。
+  1. **削除の変更**（`FieldRemoved`・`FieldArgumentRemoved`・`InputFieldRemoved`・`EnumValueRemoved`・`TypeRemoved`）：比較器の重大度（`breaking?`・`non_breaking?`）を見ずに、次の規則で決める。消えた要素が基準のスキーマで `@deprecated` だったときに通す。`TypeRemoved` は、基準のスキーマで、その型を返すか受け取るフィールドと引数がすべて非推奨だったときに通す。比較器は、出力にだけ使う enum の値の削除を非破壊に分類するので、この規則を重大度より後に当てると、非推奨を経ない削除が通る。
+  2. **型の変更**（`FieldTypeChanged`・`FieldArgumentTypeChanged`・`InputFieldTypeChanged`）：比較器が非破壊に分類する変更（出力の型を null 可から非 null にする、入力の型を非 null から null 可にする）は、クライアントを壊さないので通す。それ以外の型の変更は、非推奨を経ても通さない。
+  3. **必須の引数・入力項目の追加**：非推奨を経ても通さない。
+  4. **上に当たらない変更**：非破壊の変更と危険な変更（enum の値の追加など）は、一覧を出すだけで通す。破壊的変更は落とす。
+
+  2 と 3 で落ちる変更は、担当者が、新しい型や引数を持つフィールドを足し、古いフィールドを非推奨にしてから、別の PR で消す（`graphql-schema.md`「スキーマの変更と非推奨」）。非推奨のフィールドの型をその場で変えても通らない。
+  - 例外の一覧（`docs/graphql/breaking-changes.yml`）：1〜4 で落とした変更は、例外の一覧に同じ変更のクラス名と座標の行があるときだけ通す。秘密を漏らすフィールドを非推奨を経ずに消すときは、1 で落ちた `FieldRemoved` をこの行で通す。行は `change`・`path`・`reason` を持ち、`reason` が空の行があれば、一覧の読み込みで失敗する。クラス名か座標が違う行は、その変更を通さない。どの変更にも当たらない行は、警告として一覧に出す。
 - `bin/check-schema-compat`：基準（環境変数 `BASE_REF`、既定は `origin/main`）の `schema.graphql` と、作業中の `schema.graphql` を互換の判定に渡し、落とす変更が 1 つでもあれば失敗する。基準に `schema.graphql` が無いときも失敗する。結果を標準出力と `$GITHUB_STEP_SUMMARY` に書く。
-- `spec/graphql/schema_compat_spec.rb`：小さな新旧の SDL（`spec/fixtures/graphql/schema_compat/`）を互換の判定に渡し、全分岐を確かめる。非推奨でないフィールドの削除・非推奨のフィールド・引数・enum の値の削除・型の削除・フィールドの型の変更（非推奨のフィールドを含む）・必須の引数の追加・必須の入力項目の追加・enum の値の追加・例外の行の一致・クラス名か座標の違う例外の行・`reason` の無い例外の行・どの変更にも当たらない例外の行・基準に `schema.graphql` が無い場合である。
+- `spec/graphql/schema_compat_spec.rb`：小さな新旧の SDL（`spec/fixtures/graphql/schema_compat/`）を互換の判定に渡し、全分岐を確かめる。非推奨でないフィールドの削除・非推奨でない enum の値の削除（出力にだけ使う enum と、入力に使う enum の両方）・非推奨のフィールド・引数・enum の値の削除・型の削除・フィールドの型の変更（非推奨のフィールドを含む）・比較器が非破壊とする型の変更（出力の非 null 化）・必須の引数の追加・必須の入力項目の追加・enum の値の追加・例外の行の一致・非推奨でないフィールドの削除を例外の行で通す場合・クラス名か座標の違う例外の行・`reason` の無い例外の行・どの変更にも当たらない例外の行・基準に `schema.graphql` が無い場合である。
 - CI：`.github/workflows/ci.yml` の lint のジョブで、`actions/checkout` を `fetch-depth: 0` にして基準を取れるようにし、`bin/check-schema-compat` を流す。`config/ci.rb` にも同じステップを足す。
 - 初回の導入：最初は基準に `schema.graphql` が無く、比べられない。担当者は M20 を 2 つの PR に分ける。1 つ目の PR は、`schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat` を入れ、CI のステップは足さない。2 つ目の PR は、1 つ目が main に入った後に、CI のステップを足す。
 
