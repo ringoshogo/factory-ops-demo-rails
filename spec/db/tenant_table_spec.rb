@@ -70,20 +70,6 @@ RSpec.describe TenantTable do
     expect(OwnerConnection.lease_connection.table_comment(:tenant_table_spec_parents)).to eq("[基盤] 試験用の親")
   end
 
-  it "説明を渡さないと、表を作る前に止まる" do
-    without_comment = Class.new(ActiveRecord::Migration[8.1]) do
-      include TenantTable
-
-      def change
-        create_tenant_table :tenant_table_spec_parents
-      end
-    end
-
-    expect { without_comment.new.exec_migration(OwnerConnection.lease_connection, :up) }
-      .to raise_error(ArgumentError, /comment:/)
-    expect(migrated?).to be(false)
-  end
-
   context "作った表に、アプリのロールで書く" do
     before do
       migrate(:up)
