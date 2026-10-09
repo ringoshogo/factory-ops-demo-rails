@@ -1,6 +1,6 @@
 # サイクル 01 の計画レビュー：M16〜M20 への反映
 
-`implementation-plan.md` の M16〜M20 を、2 系統の独立レビュー（Claude と Codex）に 2 回かけ、指摘を計画に反映した記録である。1 回目（初回）の指摘を反映した計画を、同じ 2 系統でもう一度レビューした（再レビュー）。M16〜M20 に着手する担当者と、計画のレビューをする人が読む。担当者は、計画の節が「なぜこう書いてあるか」をここで引ける。M15 の指摘は別の作業で扱うので、ここには含めない。
+`implementation-plan.md` の M16〜M20 を、2 系統の独立レビュー（Claude と Codex）にかけ、指摘を計画に反映した記録である。1 回目（初回）の指摘を反映した計画を、同じ 2 系統でもう一度レビューし（再レビュー）、その指摘を反映した計画を Codex だけで 3 回目にレビューした。M16〜M20 に着手する担当者と、計画のレビューをする人が読む。担当者は、計画の節が「なぜこう書いてあるか」をここで引ける。M15 の指摘は別の作業で扱うので、ここには含めない。
 
 読む順は、マイルストーンごとの判定 → 指摘ごとの対応 → 指摘の根拠を確かめた結果 → 直さなかった指摘（残件の候補）である。指摘の出典は次の形で示す。
 
@@ -8,27 +8,29 @@
 |---|---|---|
 | 初回 | `C<番号>`（Claude の判定の番号。番号の無い Low は `C-Low`） | `X-<マイルストーン>-<順>` |
 | 再レビュー | `C2-<記号>`（Claude の判定の `H1`・`M1`・`L1` など） | `X2-<マイルストーン>-<順>` |
+| 3 回目 | — | `X3-<マイルストーン>-<順>` |
 
 ## 判定
 
-| マイルストーン | 初回 Claude | 初回 Codex | 再レビュー Claude | 再レビュー Codex |
-|---|---|---|---|---|
-| M16 テストの層と重要シナリオ | Conditional Go | Conditional Go | Go | Conditional Go |
-| M17 N+1 の検出 | Conditional Go | No-Go | Conditional Go | No-Go |
-| M18 構造化ログと相関 ID | Conditional Go | No-Go | Conditional Go | No-Go |
-| M19 監査ログ | Conditional Go | No-Go | Conditional Go | Go |
-| M20 スキーマの破壊的変更の検出 | Go | No-Go | Go | No-Go |
+| マイルストーン | 初回 Claude | 初回 Codex | 再レビュー Claude | 再レビュー Codex | 3 回目 Codex |
+|---|---|---|---|---|---|
+| M16 テストの層と重要シナリオ | Conditional Go | Conditional Go | Go | Conditional Go | Go |
+| M17 N+1 の検出 | Conditional Go | No-Go | Conditional Go | No-Go | Go |
+| M18 構造化ログと相関 ID | Conditional Go | No-Go | Conditional Go | No-Go | No-Go |
+| M19 監査ログ | Conditional Go | No-Go | Conditional Go | Go | Conditional Go |
+| M20 スキーマの破壊的変更の検出 | Go | No-Go | Go | No-Go | Go |
 
 Codex が No-Go とした理由は次のとおりである。どれも採用した技術を否定するものではなく、検査が機能しない手順と、先に解消すべき依存が計画に残っていることによる。下の対応で、どれも計画の側を直した。
 
 - **初回**：M17 は Bullet の検出が例外まで届かず、クエリ数の予算が認可の失敗や空の一覧でも通る。M18 はフレームワークのイベントが params・ジョブの引数・例外のメッセージを書き、購読者の例外が捕捉されて検査にならない。M19 は M16 の競合テストの後始末が、追記だけの監査ログと両立しない。M20 は初回の PR で比べる基準が無く、通す手順が無い。
 - **再レビュー**：M17 は入れ子を一律「各親に 2 件」とする準備が分納の禁止と衝突する。M18 はジョブの開始・終了のイベントに文脈が付かず、`Rails::Rack::Logger` の文字列のログに値が漏れる。M20 は非破壊の変更を通す規則が、非推奨を経ない enum の値の削除を通す。
+- **3 回目**：M18 はジョブの文脈を設定するために引数を先に復元するので、復元の失敗が再試行・破棄の処理と完了のイベントを通らない。開発の環境では文脈のミドルウェアが登録されず、要求に相関 ID が付かない。M19 の Conditional Go は、相関 ID の前提を M18 に置くことによる。
 
-再レビューは、初回の Critical・High の対応を評価した上で新しい指摘を出した。初回の対応のうち、C4・X-M17-1（Bullet の包み）は C2-H1 で、C5・X-M18-1（ログの漏れ）は X2-M18-1 で、C6（文脈の後始末）は X2-M18-2 で、X-M19-1・C9（競合テストの後始末）は C2-M3 で、一部が未解消とされた。ほかの初回の High は解消と判定された。
+再レビューは、初回の Critical・High の対応を評価した上で新しい指摘を出した。初回の対応のうち、C4・X-M17-1（Bullet の包み）は C2-H1 で、C5・X-M18-1（ログの漏れ）は X2-M18-1 で、C6（文脈の後始末）は X2-M18-2 で、X-M19-1・C9（競合テストの後始末）は C2-M3 で、一部が未解消とされた。ほかの初回の High は解消と判定された。3 回目は、再レビューの指摘の対応を評価した。X2-M18-2（ジョブ・要求の文脈の区間）は、通常の開始・完了を包む位置は正しいが、X3-M18-1・X3-M18-2 が残るとして一部が未解消とされた。ほかの再レビューの High は解消と判定された。
 
 ## 指摘と対応
 
-重大度は、2 系統で違うときは高い方を採った。「直した節」は `implementation-plan.md` の節である。各表は、初回の指摘、再レビューの指摘の順に並べる。
+重大度は、2 系統で違うときは高い方を採った。「直した節」は `implementation-plan.md` の節である。各表は、初回の指摘、再レビューの指摘、3 回目の指摘の順に並べる。
 
 ### M16
 
@@ -71,6 +73,8 @@ Codex が No-Go とした理由は次のとおりである。どれも採用し�
 | X2-M18-2 | High | `around_perform` で文脈を設定すると、`active_job.started`（コールバックより前の `_perform_job` で通知）と `active_job.completed`（`perform_now` の計装で通知）に文脈が付かない。コントローラの開始のイベントも action より前に出る | 作るもの「文脈」。ジョブは `ApplicationJob` が上書きする `perform_now` で、要求は `Rails::Rack::Logger` の位置のミドルウェアで文脈を設定する。`request_started` に付くのは `request_id` と相関 ID だけと書いた。`log_context_spec` で、直接の実行とワーカーの経路の両方の開始・完了・失敗・再試行のイベントを確かめ、`correlation_spec` の対象に Rails のイベントを含めた |
 | C2-M2 | Medium | フレームワークのログの購読を外す処理が本番の設定にしかなく、`log_hygiene_spec` が本番と同じ構成を通らない | 作るもの「構成の入口」。`Platform::Logging.configure!` にまとめ、`production.rb` と `test.rb` が呼ぶ。ミドルウェアの構成は起動の時点で決まるので、spec からではなくテストの環境から呼ぶ形にした |
 | C2-L3 | Low | エラー通知の文脈は executor の push と pop で戻るので、「空に戻す」は不正確 | 作るもの「文脈の後始末」。`Rails.event` は空にし、エラー通知の文脈は push と pop（入れ子を許さない既定では空にする）と書き分け、ジョブではブロックの形の `Rails.error.set_context` で戻す |
+| X3-M18-1 | High | `ApplicationJob#perform_now` が `super` の前に `deserialize_arguments_if_needed` で引数を復元すると、復元の失敗が `retry_on`・`discard_on`・`after_discard` を通らず、`active_job.completed` も出ない | 作るもの「文脈」の「ジョブ」と「相関 ID と因果 ID」の「付帯情報の運び方」。付帯情報を引数から外し、`serialize`／`deserialize` のトップレベルの項目としてジョブに持たせ、`perform_now` は引数を復元せずに付帯情報から文脈を設定する。引数の復元は Rails に任せ、Active Job の private のメソッドを呼ばない。イベントの名前と宛先テナントも付帯情報に入れた。`log_context_spec` に、復元に失敗するジョブの破棄・再試行・例外の 3 通りを足した。`adr/005` と `data-model.md` の付帯情報の置き場の記述を、文書に残すことに足した |
+| X3-M18-2 | High | ミドルウェアを登録する `Platform::Logging.configure!` を本番とテストだけが呼ぶので、開発の環境で要求の `request_id`・相関 ID が設定されない | 作るもの「構成の入口」。文脈のミドルウェアの登録をログの書式の設定から分け、`config/application.rb` が全環境で `Rails::Rack::Logger` の直前に挿入する。`configure!` は `Rails::Rack::Logger` を消すだけにした。完了条件に、開発の環境のミドルウェアの並びと、要求の開始とイベントの配送が同じ相関 ID で並ぶことの確認を足した |
 
 指摘に無い追加：`ActionDispatch::DebugExceptions` は、捕まえた例外のメッセージを `fatal` で書く。X2-M18-1 と同じ種類の漏れなので、止める経路に入れ、本番とテストのミドルウェアから外す。
 
@@ -105,7 +109,7 @@ Codex が No-Go とした理由は次のとおりである。どれも採用し�
 
 ## 指摘の根拠を確かめた結果
 
-指摘の根拠は、インストール済みの gem（Rails 8.1.4・rspec-core 3.13.6）と、取得した gem の源（Bullet 8.2.0・graphql-schema_comparator 1.2.1）で確かめた。初回の根拠、再レビューの根拠の順に並べる。
+指摘の根拠は、インストール済みの gem（Rails 8.1.4・rspec-core 3.13.6）と、取得した gem の源（Bullet 8.2.0・graphql-schema_comparator 1.2.1）で確かめた。初回の根拠、再レビューの根拠、3 回目の根拠の順に並べる。
 
 | 根拠 | 結果 |
 |---|---|
@@ -130,6 +134,8 @@ Codex が No-Go とした理由は次のとおりである。どれも採用し�
 | 出力だけの enum の値の削除は `non_breaking` に分類される（X2-M20-1） | 正しい。`EnumValueRemoved` は、enum が入力に使われるときだけ破壊的にする |
 | 型の変更に、比較器が非破壊とするものがある（C2-L4） | 正しい。`FieldTypeChanged`・`FieldArgumentTypeChanged`・`InputFieldTypeChanged` は `SafeTypeChange` で、出力の非 null 化と入力の null 可化を非破壊に分類する |
 | 相手テナントへの参照に外部キーは無い（X2-M19-1） | 正しい。`data-model.md` は相手テナントへの参照を「→」（外部キーを張らない ID の参照）にし、`audit_logs.counterparty_tenant_id` も「→」である。`owner_tenant_id` は `create_tenant_table` が `tenants` への外部キーを付ける |
+| 引数を先に復元すると、復元の失敗が Active Job の例外の処理と計装を通らない（X3-M18-1） | 正しい。`Execution#perform_now` は、実行回数の加算と `deserialize_arguments_if_needed` を `rescue_with_handler` と `run_after_discard_procs` の内側で行い、`Instrumentation#perform_now` がその外側を `perform` の計装で包む。`ActiveJob::Base#deserialize` は引数を `serialized_arguments` に入れるだけで、復元は `perform_now` まで遅れる。`serialize` に `super.merge` で項目を足し、`deserialize` で `super` の後に読む上書きは、`ActiveJob::Core` の文書にある作法である。トップレベルの項目から文脈を設定する形を最小の再現で動かし、GlobalID の復元の失敗で `discard_on` と `after_discard`、`retry_on` と再登録した付帯情報、`active_job.discarded`・`retry_scheduled`・`completed` の文脈を確かめた |
+| 開発の環境には文脈のミドルウェアが無い（X3-M18-2） | 正しい。Rails の既定のスタックは `ActionDispatch::RequestId` と `Rails::Rack::Logger` を登録するが、`RequestId` は env に値を入れるだけで `Rails.event` の文脈に入れない。`config.middleware` の `insert_before` は `MiddlewareStack#insert`（`insert_before` はその別名）に渡り、`MiddlewareStackProxy#merge_into` は挿入と差し替えをすべて当ててから削除を当てるので、全環境で挿入した `Platform::RequestContext` は、本番とテストで `Rails::Rack::Logger` を消してもその位置に残る |
 
 ## 残件の候補
 

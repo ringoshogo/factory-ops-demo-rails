@@ -643,12 +643,15 @@ Dataloader を外したときにクエリ数の予算が落ちることは、`qu
 
 - フレームワークの文字列のログ：JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4 で止める経路は次の 3 つである。担当者は着手時に、Solid Queue を含めて、ほかに `Rails.logger` へ直接書く経路が無いかをソースで確かめる。
   - **ログの購読**：`ActionController::LogSubscriber`・`ActionDispatch::LogSubscriber`・`ActiveJob::LogSubscriber` を外す。構造化イベントと同じ内容を、params・ジョブの引数・例外のメッセージ込みの文字列で書く。
-  - **要求の開始の行**：`Rails::Rack::Logger` は、購読ではなく自分で `Rails.logger.info` を呼び、`request.filtered_path` を書く。`filtered_path` は `filter_parameters` の名前で隠すだけなので、URL の `query`・`variables` の値が残る。このミドルウェアを `Platform::RequestContext`（下の「文脈」）に差し替える（`config.middleware.swap`）。差し替えで失う `request.action_dispatch` の計装は、Rails 8.1.4 の中に購読者が無く、M30 も使わない。
+  - **要求の開始の行**：`Rails::Rack::Logger` は、購読ではなく自分で `Rails.logger.info` を呼び、`request.filtered_path` を書く。`filtered_path` は `filter_parameters` の名前で隠すだけなので、URL の `query`・`variables` の値が残る。本番とテストでは、このミドルウェアを外す。外して失う `request.action_dispatch` の計装は、Rails 8.1.4 の中に購読者が無く、M30 も使わない。
   - **例外の行**：`ActionDispatch::DebugExceptions` は、捕まえた例外のメッセージとバックトレースを `fatal` で書く。本番ではこれが唯一の役目なので、ミドルウェアから外す。例外は `ActionDispatch::Executor` がエラー通知に送り、ログには `action_controller.request_completed` の状態コードが残る。
 
   残る `Rails.logger` の行は、JSON の書式（`Platform::JsonLogFormatter`）で書き、同じ文脈を JSON の `context` に入れる。
   - ロガーの構成：`Platform::Logging.build(io)` が、`Platform::JsonLogFormatter` を付けた `ActiveSupport::Logger` を作る。`ActiveSupport::TaggedLogging` で包まない。TaggedLogging は、タグを文字列としてメッセージの前に付けてから書式に渡すので、行が JSON で始まらない。Rails は `config.logger` を TaggedLogging で包まず、ジョブのログは、ロガーが `tagged` を持たなければタグを付けない。リクエスト ID などは、タグではなく文脈から JSON に入る。
-  - 構成の入口：`Platform::Logging.configure!(config, io)` が、`config.logger` の設定・`config.log_tags` の消去・上の 2 つのミドルウェアの差し替えと削除・`config.after_initialize` での購読の解除をまとめて行う。`config/environments/production.rb`（`STDOUT`）と `config/environments/test.rb`（`log/test.log`）がこれを呼ぶ。ミドルウェアの構成は起動の時点で決まり、spec の中から変えられないので、衛生の spec が本番と同じ構成を通るには、テストの環境も同じ入口を通す必要がある。開発の環境は、読みやすさのため Rails の文字列のログのままにする。設定の時点では自動読み込みが効かないので、`Platform::Logging` と書式は `packs/platform/lib/platform/` に置き、環境のファイルから `require_relative` で読む。
+  - 構成の入口：要求の文脈を設定するミドルウェアの登録と、ログの書式の設定を分ける。文脈はどの環境でも要るが、JSON の書式は本番とテストだけに掛けるからである。
+    - **文脈のミドルウェア**：`config/application.rb` が、全環境で `config.middleware.insert_before Rails::Rack::Logger, Platform::RequestContext` を呼ぶ。開発では `Rails::Rack::Logger` が直後に残り、要求の開始の行を、文脈を設定した後に Rails の文字列のまま書く。
+    - **ログの書式**：`Platform::Logging.configure!(config, io)` が、`config.logger` の設定・`config.log_tags` の消去・`Rails::Rack::Logger` と `ActionDispatch::DebugExceptions` の削除・`config.after_initialize` での購読の解除をまとめて行う。`config/environments/production.rb`（`STDOUT`）と `config/environments/test.rb`（`log/test.log`）がこれを呼ぶ。Rails は `config.middleware` の挿入をすべて当ててから削除を当てるので、`Rails::Rack::Logger` を消しても、`Platform::RequestContext` はその位置に残る。ミドルウェアの構成は起動の時点で決まり、spec の中から変えられないので、衛生の spec が本番と同じ構成を通るには、テストの環境も同じ入口を通す必要がある。開発の環境は、読みやすさのため Rails の文字列のログのままにする。
+    - 設定の時点では自動読み込みが効かないので、`Platform::Logging`・書式・`Platform::RequestContext` は `packs/platform/lib/platform/` に置き、`config/application.rb` と環境のファイルから `require_relative` で読む。
 - 文脈：`Rails.event.set_context` で次の項目を設定する。同じ場所で、エラー通知の文脈（`Rails.error.set_context`）にも `request_id`・`tenant_id`・`user_id`・`correlation_id` を設定する。エラー通知にテナント ID を付けるためである（`decisions.md` 2 章「テナント文脈のログへの伝播」）。
 
   | 項目 | 設定する場所 |
@@ -657,20 +660,21 @@ Dataloader を外したときにクエリ数の予算が落ちることは、`qu
   | `tenant_id`・`user_id` | 要求は `GraphqlController`（認証の後）。ジョブは `ApplicationJob#perform_now`（付帯情報のテナント。`Contracts::EventJob` は宛先テナント） |
   | `graphql_operation` | `GraphqlController`（`operationName`。無ければ `anonymous`） |
   | `job_id`・`job_class`・`queue` | `ApplicationJob#perform_now` |
-  | `event_id`・`event_name` | `Contracts::EventJob`（`perform_now` が読む `log_context` を上書きする） |
+  | `event_id`・`event_name` | `ApplicationJob#perform_now`（`Contracts::EventJob` の付帯情報） |
   | `correlation_id`・`causation_id` | 要求は `Platform::RequestContext`、ジョブは `ApplicationJob#perform_now`（下の「相関 ID と因果 ID」） |
 
   文脈を設定する区間は、Rails がイベントを出す区間を含めなければならない。Rails 8.1.4 は、`action_controller.request_started` を `before_action` より前の `process_action` の入口で出す。`active_job.started` は perform のコールバックより前の `_perform_job` で、`active_job.completed`・`retry_scheduled`・`discarded` は `perform_now` の計装の中で出す。コントローラの中で設定した文脈は `request_started` に付かず、`around_perform` で設定した文脈はジョブのこれらのイベントに付かない。
-  - **要求**：`Platform::RequestContext` は、`Rails::Rack::Logger` があった位置（`ActionDispatch::RequestId` の後、`ActionDispatch::Executor` の内側）で、`request_id` と相関 ID を設定する。セッションはこの位置より内側で読まれるので、`request_started` に付くのは `request_id` と相関 ID だけで、`tenant_id`・`user_id`・`graphql_operation` は `request_completed` から付く。
-  - **ジョブ**：`ApplicationJob` は `perform_now` を上書きし、`super` の前に文脈を設定する。ワーカー（`ActiveJob::Base.execute` から `perform_now`）と、直接の `perform_now` の両方がここを通り、Active Job の計装の外側にあたる。ワーカーの経路では引数がまだ直列化されているので、先に `deserialize_arguments_if_needed` で引数を戻してから付帯情報を読む。この private のメソッドは、Rails 8.1.4 の `Execution#perform_now` も呼び、2 回目は何もしない。版を上げる担当者は、名前と挙動が変わっていないかを確かめる。
+  - **要求**：`Platform::RequestContext` は、`Rails::Rack::Logger` の直前（`ActionDispatch::RequestId` の後、`ActionDispatch::Executor` の内側）で、`request_id` と相関 ID を設定する。セッションはこの位置より内側で読まれるので、`request_started` に付くのは `request_id` と相関 ID だけで、`tenant_id`・`user_id`・`graphql_operation` は `request_completed` から付く。
+  - **ジョブ**：`ApplicationJob` は `perform_now` を上書きし、`super` の前に文脈を設定する。ワーカー（`ActiveJob::Base.execute` から `perform_now`）と、直接の `perform_now` の両方がここを通り、Active Job の計装と例外の処理の外側にあたる。文脈の値は、業務の引数ではなく、ジョブが引数とは別に持つ付帯情報（下の「付帯情報の運び方」）から読み、ここで引数を復元しない。Active Job の private のメソッドも呼ばない。Rails 8.1.4 は、引数の復元を `super` の中の、再試行・破棄の処理と計装の内側で行う。先に復元すると、復元の失敗（`ActiveJob::DeserializationError`）が `retry_on`・`discard_on`・`after_discard` を通らず、`active_job.completed` も出ない。
 
   `GraphqlController` は、スキーマを実行する前に文脈を設定する。`Rails.event` の文脈は Fiber のストレージにあり、Dataloader が作る Fiber は、作られた時点の値を写して持つ。Fiber の中で設定した値は、親に戻らない。
 - 文脈の後始末：Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、`Rails.event` の文脈を空にし、エラー通知の文脈（`ActiveSupport::ExecutionContext`）を始まりの push と対で pop する（入れ子を許さない既定では、push も pop も空にする）。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで、`ApplicationJob#perform_now` は、実行の前の `Rails.event.context` を退避して `ensure` で戻し、エラー通知の文脈は `Rails.error.set_context(...) { super }` のブロックの形で設定する（ブロックを抜けると前の値に戻る）。`spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
 - 相関 ID と因果 ID：
   - **相関 ID**（`correlation_id`）：一連の処理の始まりで 1 つ決め、最後まで同じ値を運ぶ。利用者のリクエストでは、`request_id` を相関 ID にする。
   - **因果 ID**（`causation_id`）：いまの処理を直接引き起こしたものの ID。リクエストでは空、イベントの受け手では届いたイベントの `event_id` である。
-  - **イベントの付帯情報**：`Contracts.publish` は、イベントごとに `event_id`（UUIDv7）を作る。それと、いまの文脈の相関 ID・因果 ID、発行元のテナント ID、発行時刻（`published_at`）を、付帯情報としてジョブの引数に載せる。ペイロードには入れない。受け手のジョブは付帯情報から文脈を設定する。受け手の中で発行するイベントは、同じ相関 ID と、因果 ID として受け手が受け取ったイベントの `event_id` を持つ。
-  - **イベント以外のジョブ**：`ApplicationJob` も、登録した時点の相関 ID を引数に載せ、実行時に文脈へ戻す。
+  - **イベントの付帯情報**：`Contracts.publish` は、イベントごとに `event_id`（UUIDv7）を作る。それと、イベントの名前、いまの文脈の相関 ID・因果 ID、発行元のテナント ID、宛先テナント ID、発行時刻（`published_at`）を、付帯情報としてジョブに持たせる。ペイロードにも引数にも入れない。受け手のジョブは付帯情報から文脈を設定する。受け手の中で発行するイベントは、同じ相関 ID と、因果 ID として受け手が受け取ったイベントの `event_id` を持つ。
+  - **イベント以外のジョブ**：`ApplicationJob` は、ジョブを作った時点（`initialize`）の相関 ID とテナント ID を付帯情報に入れ、実行時に文脈へ戻す。`Contracts.publish` は、ジョブを作った後、登録の前に、付帯情報をイベントのものに置き換える。
+  - **付帯情報の運び方**：`ApplicationJob` は付帯情報を属性に持ち、`serialize` が返すハッシュのトップレベルの項目（`"app_metadata"`）に入れ、`deserialize` で `super` の後に読み戻す。Rails の `deserialize` は、引数を `serialized_arguments` に直列化したまま持ち、`perform_now` の中まで復元しないので、`perform_now` の上書きは引数を復元せずに付帯情報を読める。再試行の登録は同じジョブを `serialize` し直すので、付帯情報も引き継がれる。項目の無いジョブ（M18 より前に登録されたもの）は、付帯情報の文脈を設定せずに動かす。付帯情報のテナントは、ログとエラー通知の文脈にだけ使う。ジョブが開くテナントは、これまでどおり引数とペイロードから決める（M4、`adr/005` 決定 3）。
 
   これで、発注側の `placePurchaseOrder` のリクエスト → 「発注登録」 → 受注側の ACL → 「受注確定」 → 購買の受け手、の全ログが同じ相関 ID を持つ。テナントは途中で変わるので、相関 ID でログを引けるのは運用者だけで、テナントの利用者には相手側のログを見せない。
 - アプリが出すイベント：GraphQL の操作の終わりに `graphql.operation_completed`（操作名・結果の種類・ユーザーエラーのコード・時間）、受け手の終わりに `contracts.event_handled`（イベント名・受け手・配送の遅れ = 受け手の始まりの時刻 − `published_at`）。
@@ -681,7 +685,7 @@ Dataloader を外したときにクエリ数の予算が落ちることは、`qu
   - **SQL**：`active_record.sql` はデバッグのイベントで、開発でだけ出る。本番は出さない。
   - **ハッシュでないペイロード**：`Rails.event` は、ハッシュのペイロードにだけ `filter_parameters` を掛ける。ハッシュでないペイロードが購読者に届くのは、イベントのオブジェクトを `notify` に渡したときである。購読者は、それを例外にする。Rails は `Rails.event.raise_on_error` を `consider_all_requests_local` から決める（開発とテストで真、本番で偽）ので、購読者の例外は、開発とテストでは呼び出し元まで上がり、本番ではエラー通知に送られて行が書かれない。この 2 つの設定を変えない。`filter_parameters` に `name` を足すと `item_name`・`operation_name` まで消えるので、氏名は「ペイロードに入れない」規則で守る。
 - `spec/contracts/correlation_spec.rb`：発注 → イベントを流す → 受注確定 → 購買の受け手、の全ログ行が同じ相関 ID を持ち、受け手の行の因果 ID が届いたイベントの `event_id` であることを確かめる。全ログ行には、Rails の `action_controller.request_started`・`active_job.started`・`active_job.completed` を含める。ログは、テストの中で購読者を足して集める。
-- `spec/jobs/log_context_spec.rb`：ジョブを直接の `perform_now` と、ワーカーの経路（`ActiveJob::Base.execute(job.serialize)`）で動かし、どちらでも次を確かめる。`active_job.started`・`active_job.completed`（成功と失敗）・`active_job.retry_scheduled` のイベントと本体の中で、付帯情報とテナントから文脈が設定されている。エラー通知の文脈にテナント ID が入る。実行の後は実行の前の文脈に戻る。
+- `spec/jobs/log_context_spec.rb`：ジョブを直接の `perform_now` と、ワーカーの経路（`ActiveJob::Base.execute(job.serialize)`）で動かし、どちらでも次を確かめる。`active_job.started`・`active_job.completed`（成功と失敗）・`active_job.retry_scheduled` のイベントと本体の中で、付帯情報とテナントから文脈が設定されている。エラー通知の文脈にテナント ID が入る。実行の後は実行の前の文脈に戻る。さらに、ワーカーの経路で引数の復元に失敗するジョブ（消したレコードの GlobalID を引数に持つもの）を、`discard_on ActiveJob::DeserializationError`・`retry_on ActiveJob::DeserializationError`・どちらも無し、の 3 通りで動かす。破棄では `after_discard` が呼ばれて `active_job.discarded` が出る。再試行では `active_job.retry_scheduled` が出て、登録し直したジョブが同じ付帯情報を持つ。どちらも無しでは例外が呼び出し元へ上がる。3 通りとも `active_job.completed` が出て、これらのイベントと `after_discard` の中で付帯情報から文脈が設定されている。
 - `spec/requests/log_hygiene_spec.rb`：`Platform::Logging.configure!` を通したテストの環境で、2 つの出口を `StringIO` に向けて集める。文字列のログは、`Platform::Logging.build` のロガーを本番の既定と同じ `info` の水準で `Rails.logger.broadcast_to` に足して集め、終わりに `stop_broadcasting_to` で外す。イベントは購読者を足して集める。流すのは、ログイン、メールアドレス・パスワード・自由記述の理由を値に含む mutation、変数を伴う GraphQL の要求、URL の `query`・`variables` に禁止の値を入れた `/graphql` への要求、例外のメッセージに禁止の値を含めて失敗する要求とジョブ、イベントの配送である。集めた全行が JSON として読め、どの行にも禁止の値が現れないことを確かめる。イベントのオブジェクトを `Rails.event.notify` に渡すと例外になることも確かめる。
 
 **判断**：ログの出口に `Rails.event` を使うか、lograge のような gem で文字列のログを JSON にするか
@@ -698,11 +702,17 @@ bundle exec rspec spec/contracts/correlation_spec.rb spec/requests/log_hygiene_s
 
 ログの検査は rspec の中にあるので、`config/ci.rb` と `.github/workflows/ci.yml` の rspec のステップで毎回流れる。
 
-`bin/jobs` を動かして発注を 1 件登録し、`grep <相関 ID> log/events.log` で 2 社の処理の行が並ぶことを、手で確かめる。
+rspec はテストの環境の構成だけを通るので、開発の環境の構成は次の 2 つで確かめる。
+
+```sh
+bin/rails middleware | grep -A1 'Platform::RequestContext'   # 開発の環境：次の行が Rails::Rack::Logger
+```
+
+開発の環境で `bin/dev` と `bin/jobs` を動かして発注を 1 件登録し、`grep <相関 ID> log/events.log` で、その要求の `action_controller.request_started` の行と、2 社のイベントの配送（`active_job.started`・`contracts.event_handled`）の行が、同じ相関 ID で並ぶことを、手で確かめる。
 
 **実装する文書の節**：`decisions.md` 2 章（テナント文脈のログへの伝播）、`adr/005` 決定 3、`data-model.md`「イベントの受け口と冪等キー」の付帯情報
 
-**文書に残すこと**：`adr/005` 決定 3 のジョブの引数の一覧に付帯情報を足す。止めたフレームワークの文字列のログの経路（購読・`Rails::Rack::Logger`・`ActionDispatch::DebugExceptions`）、イベントごとに書く項目の表、ロガーの構成と `Platform::Logging.configure!`、文脈を設定する位置、ログの出力先を `guides/config.md` に書く。
+**文書に残すこと**：`adr/005` 決定 3 に、ジョブが引数とは別に、直列化のトップレベルの項目として付帯情報を持つことを足す。`data-model.md`「イベントの受け口と冪等キー」の「ジョブの引数は、ペイロードとは別に付帯情報を持つ」を、引数ではなく直列化の項目に持つ形に直す。止めたフレームワークの文字列のログの経路（購読・`Rails::Rack::Logger`・`ActionDispatch::DebugExceptions`）、イベントごとに書く項目の表、全環境で挿入する `Platform::RequestContext` と、本番とテストだけが呼ぶ `Platform::Logging.configure!`、文脈を設定する位置、ログの出力先を `guides/config.md` に書く。
 
 ## M19 監査ログ
 
