@@ -13,6 +13,7 @@
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
 - **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
 - **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。以下の表では省略する。
+- **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 9 つである。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
 ## 状態は保存せず、時刻列から導出する
 
@@ -87,6 +88,7 @@
 | `item_prices`（販売単価の履歴） | `item_id`・`unit_price`・`valid_period`（`daterange`、有効期間）・`recorded_period`（`tstzrange`、記録期間）・`reason`・`recorded_by_user_id` | 単価は 0 以上。記録期間が終わっていない行同士は、同じ品目で有効期間が重ならない（排他制約）。記録期間を閉じる以外の UPDATE と、DELETE はトリガーが拒む |
 | `customer_part_mappings`（得意先品番の対応表） | `customer_tenant_id`→・`customer_part_number`・`item_id` | `(owner, customer_tenant_id, customer_part_number)` 一意。取引先は自社が受注側の取引関係（失効したものを含む）の相手に限る。受注を作る照合と対応表の登録は、取引先ごとの勧告ロック（`pg_advisory_xact_lock`）で直列にし、ロックを取ってから対応表を読む。直列にしないと、照合待ちの受注がコミットされる前に登録が終わり、照合のやり直しから漏れる |
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
+| `sales_order_sequences`（受注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
 | `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`priced_on`（単価を引いた有効日）・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。数量は正。照合前は `item_id` と写しの 4 列がすべて空、照合後はすべて埋まる |
 | `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引） |
 | `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意 |
@@ -127,6 +129,7 @@
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
 | `purchase_orders` | `order_no`・`supplier_tenant_id`→・`order_date`・`desired_delivery_on`・`awaiting_match_at`・`accepted_at`・`cancelled_at`・`supplier_cancelled_at` | 発注側の取消と受注側の取消は両立しない |
+| `purchase_order_sequences`（発注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
 | `purchase_order_lines` | `part_number`（自社品番）・`quantity`・`confirmed_item_name`・`confirmed_unit_price` | `(purchase_order_id, part_number)` 一意。数量は正。確定の写しの 2 列は、揃って空か揃って埋まる |
 | `cancellation_requests`（取消依頼） | `purchase_order_id`・`reason`・`outcome`（`approved` / `rejected`、空は回答待ち）・`decided_at` | 回答待ちは発注ごとに 1 件（部分一意索引） |
 | `inbound_shipments`（「出荷計上」の写し） | `purchase_order_id`・`shipment_id`→・`shipped_on` | `shipment_id` 一意 |
@@ -288,7 +291,7 @@ CREATE POLICY owner_write ON items FOR ALL
 
 `WITH CHECK` が全テーブルで同じなので、どのテーブルにも相手テナントの名義では書けない。イベントの受け手も自社の名義で書くだけなので、この規則に例外は無い。
 
-マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作る。主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。
+マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作り、表の説明を `comment:` で渡す（「全テーブルに共通の規則」）。`create_tenant_table` は、主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。
 
 相手テナントのデータを読む 3 つの経路にだけ、読み取り専用のポリシーを足す。PostgreSQL は、同じ操作に対する複数の許可ポリシーを OR で結ぶ。そのため、足したポリシーは `SELECT` だけを広げ、書き込みは `owner_write` のまま変わらない。
 

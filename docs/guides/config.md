@@ -83,7 +83,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 
 ### application.rb の schema_format：structure.sql に保存する
 
-`config.active_record.schema_format = :sql` で、スキーマを `db/schema.rb` ではなく `db/structure.sql` に保存する。マイグレーションの `execute` で作った RLS のポリシーと複合外部キーは `schema.rb` に書き出されず、`db:schema:load` で作るテストの DB に再現されない（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) 決定 1）。`structure.sql` が往復で変わらないことは `bin/check-structure` が確かめる（[bin.md](bin.md#bincheck-structure-が確かめる-2-つの往復)）。
+`config.active_record.schema_format = :sql` で、スキーマを `db/schema.rb` ではなく `db/structure.sql` に保存する。マイグレーションの `execute` で作った RLS のポリシーと複合外部キーは `schema.rb` に書き出されず、`db:schema:load` で作るテストの DB に再現されない（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) 決定 1）。表の説明（`COMMENT ON TABLE`）も `structure.sql` に書き出されるので、開発者は DB に繋がずに表の説明を読める（[data-model.md「全テーブルに共通の規則」](../architecture/data-model.md#テナントの持ち方全テーブルに共通の規則)）。`structure.sql` が往復で変わらないことは `bin/check-structure` が確かめる（[bin.md](bin.md#bincheck-structure-が確かめる-2-つの往復)）。
 
 ### initializers/strong_migrations.rb：危険なマイグレーションを止める
 

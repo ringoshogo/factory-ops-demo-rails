@@ -1,11 +1,12 @@
 # テナントの表を作るマイグレーションの補助（docs/architecture/data-model.md「テナントの持ち方」「RLS」）。
 # テナントの表は必ず create_tenant_table で作る。付け忘れは spec/db/tenant_enforcement_spec.rb が落とす。
+# 表の説明（COMMENT ON TABLE）は comment: で渡す。書式は data-model.md「全テーブルに共通の規則」、欠けは spec/db/table_comments_spec.rb が落とす。
 # どれも change の中で使え、巻き戻すと逆の操作になる。
 module TenantTable
   # owner_tenant_id・UUIDv7 の主キー・UNIQUE (owner_tenant_id, id) を持つ表を作り、
-  # FORCE ROW LEVEL SECURITY と owner_write のポリシーを付ける。
-  def create_tenant_table(table, **options)
-    create_table table, id: :uuid, default: -> { "uuidv7()" }, **options do |t|
+  # FORCE ROW LEVEL SECURITY と owner_write のポリシーを付ける。comment: は表の説明で、表に付ける。
+  def create_tenant_table(table, comment: nil, **options)
+    create_table table, id: :uuid, default: -> { "uuidv7()" }, comment:, **options do |t|
       t.uuid :owner_tenant_id, null: false
       t.foreign_key :tenants, column: :owner_tenant_id
       # 子の複合外部キーの参照先

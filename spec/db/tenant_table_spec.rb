@@ -16,10 +16,10 @@ RSpec.describe TenantTable do
       include TenantTable
 
       def change
-        create_tenant_table :tenant_table_spec_parents do |t|
+        create_tenant_table :tenant_table_spec_parents, comment: "[基盤] 試験用の親" do |t|
           t.boolean :published, null: false, default: false
         end
-        create_tenant_table :tenant_table_spec_children
+        create_tenant_table :tenant_table_spec_children, comment: "[基盤] 試験用の子"
         add_tenant_reference :tenant_table_spec_children, :tenant_table_spec_parents
         add_partner_read_policy :tenant_table_spec_parents, using: "published"
       end
@@ -63,6 +63,11 @@ RSpec.describe TenantTable do
     migrate(:down)
     expect(policies).to be_empty
     expect(migrated?).to be(false)
+  end
+
+  it "表に説明が付く" do
+    migrate(:up)
+    expect(OwnerConnection.lease_connection.table_comment(:tenant_table_spec_parents)).to eq("[基盤] 試験用の親")
   end
 
   context "作った表に、アプリのロールで書く" do

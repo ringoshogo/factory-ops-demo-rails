@@ -77,6 +77,13 @@ ALTER TABLE ONLY public.allocations FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE allocations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.allocations IS '[在庫] 引当。受注明細ごとに 1 行で、引き当てた数量と状態を持つ';
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -86,6 +93,13 @@ CREATE TABLE public.ar_internal_metadata (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE ar_internal_metadata; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ar_internal_metadata IS '[基盤] DB の環境名などの記録。Rails が管理する';
 
 
 --
@@ -103,6 +117,13 @@ CREATE TABLE public.customer_part_mappings (
 );
 
 ALTER TABLE ONLY public.customer_part_mappings FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE customer_part_mappings; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.customer_part_mappings IS '[受注] 得意先品番の対応表。取引先の品番を自社の品目に照合する';
 
 
 --
@@ -124,6 +145,13 @@ ALTER TABLE ONLY public.inbound_shipment_lines FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE inbound_shipment_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.inbound_shipment_lines IS '[購買] 入荷の明細。発注明細ごとの出荷数量を持つ';
+
+
+--
 -- Name: inbound_shipments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -138,6 +166,13 @@ CREATE TABLE public.inbound_shipments (
 );
 
 ALTER TABLE ONLY public.inbound_shipments FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE inbound_shipments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.inbound_shipments IS '[購買] 入荷。受注側の「出荷計上」の写しで、出荷実績 1 件に 1 行';
 
 
 --
@@ -163,6 +198,13 @@ ALTER TABLE ONLY public.items FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE items; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.items IS '[受注] 品目カタログ。公開した品目は、取引関係のある発注側から見える';
+
+
+--
 -- Name: partnership_grants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -177,6 +219,13 @@ CREATE TABLE public.partnership_grants (
 );
 
 ALTER TABLE ONLY public.partnership_grants FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE partnership_grants; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.partnership_grants IS '[取引関係] 取引関係ごとの権限付与（view_catalog・place_orders・view_shipments）';
 
 
 --
@@ -196,6 +245,13 @@ CREATE TABLE public.partnerships (
 );
 
 ALTER TABLE ONLY public.partnerships FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE partnerships; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.partnerships IS '[取引関係] 受注側が発注側と結ぶ取引関係。失効した関係も行として残す';
 
 
 --
@@ -220,6 +276,13 @@ ALTER TABLE ONLY public.purchase_order_lines FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE purchase_order_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.purchase_order_lines IS '[購買] 発注明細。自社品番と数量、受注確定で写す品目名・単価を持つ';
+
+
+--
 -- Name: purchase_order_sequences; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -232,6 +295,13 @@ CREATE TABLE public.purchase_order_sequences (
 );
 
 ALTER TABLE ONLY public.purchase_order_sequences FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE purchase_order_sequences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.purchase_order_sequences IS '[購買] 発注の伝票番号の採番行。テナントごとに最後に払い出した番号を持つ';
 
 
 --
@@ -255,6 +325,13 @@ CREATE TABLE public.purchase_orders (
 );
 
 ALTER TABLE ONLY public.purchase_orders FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE purchase_orders; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.purchase_orders IS '[購買] 発注の見出し。状況は時刻列と入荷・検収から導出する';
 
 
 --
@@ -282,6 +359,13 @@ ALTER TABLE ONLY public.sales_order_lines FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE sales_order_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sales_order_lines IS '[受注] 受注明細。照合までは品目が空で、照合で品目名・単価・税率を写す';
+
+
+--
 -- Name: sales_order_sequences; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -294,6 +378,13 @@ CREATE TABLE public.sales_order_sequences (
 );
 
 ALTER TABLE ONLY public.sales_order_sequences FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE sales_order_sequences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sales_order_sequences IS '[受注] 受注の伝票番号の採番行。テナントごとに最後に払い出した番号を持つ';
 
 
 --
@@ -322,12 +413,26 @@ ALTER TABLE ONLY public.sales_orders FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE sales_orders; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sales_orders IS '[受注] 発注から連結した受注の見出し。状況は時刻列から導出する';
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.schema_migrations (
     version character varying NOT NULL
 );
+
+
+--
+-- Name: TABLE schema_migrations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.schema_migrations IS '[基盤] 流したマイグレーションの版。Rails が管理する';
 
 
 --
@@ -347,6 +452,13 @@ CREATE TABLE public.shipment_lines (
 );
 
 ALTER TABLE ONLY public.shipment_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE shipment_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.shipment_lines IS '[出荷] 出荷実績の明細。出荷依頼の明細ごとに 1 行';
 
 
 --
@@ -370,6 +482,13 @@ ALTER TABLE ONLY public.shipment_request_lines FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE shipment_request_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.shipment_request_lines IS '[出荷] 出荷依頼の明細。受注明細ごとの品目と数量の写し';
+
+
+--
 -- Name: shipment_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -386,6 +505,13 @@ CREATE TABLE public.shipment_requests (
 );
 
 ALTER TABLE ONLY public.shipment_requests FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE shipment_requests; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.shipment_requests IS '[出荷] 出荷依頼。受注の「出荷可能」の写しで、受注ごとに 1 件';
 
 
 --
@@ -408,6 +534,13 @@ ALTER TABLE ONLY public.shipments FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE shipments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.shipments IS '[出荷] 出荷実績。出荷依頼を全量で計上し、発注側は自社の発注に連結した分を読む';
+
+
+--
 -- Name: shipping_instructions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -426,6 +559,13 @@ ALTER TABLE ONLY public.shipping_instructions FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE shipping_instructions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.shipping_instructions IS '[出荷] 出荷指示。有効な指示は出荷依頼ごとに 1 件';
+
+
+--
 -- Name: solid_queue_batch_executions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -435,6 +575,13 @@ CREATE TABLE public.solid_queue_batch_executions (
     batch_id bigint NOT NULL,
     created_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE solid_queue_batch_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_batch_executions IS '[キュー] バッチに属するジョブと、そのバッチの対応';
 
 
 --
@@ -480,6 +627,13 @@ CREATE TABLE public.solid_queue_batches (
 
 
 --
+-- Name: TABLE solid_queue_batches; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_batches IS '[キュー] ジョブのバッチと、その進み具合';
+
+
+--
 -- Name: solid_queue_batches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -514,6 +668,13 @@ CREATE TABLE public.solid_queue_blocked_executions (
 
 
 --
+-- Name: TABLE solid_queue_blocked_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_blocked_executions IS '[キュー] 同時実行の上限で待たされているジョブ';
+
+
+--
 -- Name: solid_queue_blocked_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -545,6 +706,13 @@ CREATE TABLE public.solid_queue_claimed_executions (
 
 
 --
+-- Name: TABLE solid_queue_claimed_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_claimed_executions IS '[キュー] ワーカーが取り出して実行中のジョブ';
+
+
+--
 -- Name: solid_queue_claimed_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -573,6 +741,13 @@ CREATE TABLE public.solid_queue_failed_executions (
     error text,
     created_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE solid_queue_failed_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_failed_executions IS '[キュー] 失敗したジョブと、その例外';
 
 
 --
@@ -615,6 +790,13 @@ CREATE TABLE public.solid_queue_jobs (
 
 
 --
+-- Name: TABLE solid_queue_jobs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_jobs IS '[キュー] Solid Queue に登録したジョブ。イベントもジョブとして登録する';
+
+
+--
 -- Name: solid_queue_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -642,6 +824,13 @@ CREATE TABLE public.solid_queue_pauses (
     queue_name character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE solid_queue_pauses; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_pauses IS '[キュー] 一時停止中のキュー';
 
 
 --
@@ -681,6 +870,13 @@ CREATE TABLE public.solid_queue_processes (
 
 
 --
+-- Name: TABLE solid_queue_processes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_processes IS '[キュー] 動いているワーカーなどのプロセスと、最後の生存通知';
+
+
+--
 -- Name: solid_queue_processes_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -713,6 +909,13 @@ CREATE TABLE public.solid_queue_ready_executions (
 
 
 --
+-- Name: TABLE solid_queue_ready_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_ready_executions IS '[キュー] すぐに実行できるジョブの待ち行列';
+
+
+--
 -- Name: solid_queue_ready_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -742,6 +945,13 @@ CREATE TABLE public.solid_queue_recurring_executions (
     run_at timestamp(6) without time zone NOT NULL,
     created_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE solid_queue_recurring_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_recurring_executions IS '[キュー] 定期実行のタスクから登録したジョブの記録';
 
 
 --
@@ -784,6 +994,13 @@ CREATE TABLE public.solid_queue_recurring_tasks (
 
 
 --
+-- Name: TABLE solid_queue_recurring_tasks; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_recurring_tasks IS '[キュー] 定期実行するタスクの定義';
+
+
+--
 -- Name: solid_queue_recurring_tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -817,6 +1034,13 @@ CREATE TABLE public.solid_queue_scheduled_executions (
 
 
 --
+-- Name: TABLE solid_queue_scheduled_executions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_scheduled_executions IS '[キュー] 実行の時刻を待つジョブ';
+
+
+--
 -- Name: solid_queue_scheduled_executions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -847,6 +1071,13 @@ CREATE TABLE public.solid_queue_semaphores (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE solid_queue_semaphores; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.solid_queue_semaphores IS '[キュー] 同時実行の上限を数えるセマフォ';
 
 
 --
@@ -890,6 +1121,13 @@ ALTER TABLE ONLY public.stock_movements FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE stock_movements; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.stock_movements IS '[在庫] 在庫移動履歴。在庫を変えるたびに追記し、書き換えない';
+
+
+--
 -- Name: stocks; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -910,6 +1148,13 @@ ALTER TABLE ONLY public.stocks FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: TABLE stocks; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.stocks IS '[在庫] 品目ごとの在庫。手持ち・引当済み・安全在庫の数量を持つ';
+
+
+--
 -- Name: tenants; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -921,6 +1166,13 @@ CREATE TABLE public.tenants (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
+
+
+--
+-- Name: TABLE tenants; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tenants IS '[取引関係] テナント。名前と、取引関係の相手の指定に使う取引用コードを持つ';
 
 
 --
@@ -941,6 +1193,13 @@ CREATE TABLE public.users (
 );
 
 ALTER TABLE ONLY public.users FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE users; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.users IS '[取引関係] テナントのユーザー。ログインの資格情報とセッションの世代を持つ';
 
 
 --
@@ -2696,6 +2955,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261009000000'),
 ('20261008000900'),
 ('20261008000800'),
 ('20261008000700'),
