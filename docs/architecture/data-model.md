@@ -13,6 +13,7 @@
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
 - **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
 - **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。以下の表では省略する。
+- **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する `schema_migrations`・`ar_internal_metadata`）・`[キュー]`（`solid_queue_*`）の 9 つである。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表は、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
 ## 状態は保存せず、時刻列から導出する
 
@@ -232,7 +233,7 @@ CREATE POLICY owner_write ON items FOR ALL
 
 `WITH CHECK` が全テーブルで同じなので、どのテーブルにも相手テナントの名義では書けない。イベントの受け手も自社の名義で書くだけなので、この規則に例外は無い。
 
-マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作る。主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。
+マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作り、表の説明を `comment:` で必ず渡す（「全テーブルに共通の規則」）。渡さないと、表を作る前に `ArgumentError` で止まる。`create_tenant_table` は、主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。
 
 相手テナントのデータを読む 3 つの経路にだけ、読み取り専用のポリシーを足す。PostgreSQL は、同じ操作に対する複数の許可ポリシーを OR で結ぶ。そのため、足したポリシーは `SELECT` だけを広げ、書き込みは `owner_write` のまま変わらない。
 

@@ -1,11 +1,20 @@
 # テナントの表を作るマイグレーションの補助（docs/architecture/data-model.md「テナントの持ち方」「RLS」）。
 # テナントの表は必ず create_tenant_table で作る。付け忘れは spec/db/tenant_enforcement_spec.rb が落とす。
+# 表の説明（COMMENT ON TABLE）は comment: で必ず渡す。書式は data-model.md「全テーブルに共通の規則」、検査は spec/db/table_comments_spec.rb。
 # どれも change の中で使え、巻き戻すと逆の操作になる。
 module TenantTable
+  # これより前のマイグレーションは説明を渡さずに表を作り、この版の AddTableComments がまとめて説明を付けた。
+  # 既存のマイグレーションは書き換えないので、説明を必須にするのはこの版から後だけにする
+  COMMENT_REQUIRED_SINCE = 20261009000000
+
   # owner_tenant_id・UUIDv7 の主キー・UNIQUE (owner_tenant_id, id) を持つ表を作り、
-  # FORCE ROW LEVEL SECURITY と owner_write のポリシーを付ける。
-  def create_tenant_table(table, **options)
-    create_table table, id: :uuid, default: -> { "uuidv7()" }, **options do |t|
+  # FORCE ROW LEVEL SECURITY と owner_write のポリシーを付ける。comment: は表の説明で、省くと ArgumentError になる。
+  def create_tenant_table(table, comment: nil, **options)
+    if comment.nil? && (version.nil? || version.to_i >= COMMENT_REQUIRED_SINCE)
+      raise ArgumentError, "create_tenant_table :#{table} に comment: で表の説明を渡す（data-model.md「全テーブルに共通の規則」）"
+    end
+
+    create_table table, id: :uuid, default: -> { "uuidv7()" }, comment:, **options do |t|
       t.uuid :owner_tenant_id, null: false
       t.foreign_key :tenants, column: :owner_tenant_id
       # 子の複合外部キーの参照先
