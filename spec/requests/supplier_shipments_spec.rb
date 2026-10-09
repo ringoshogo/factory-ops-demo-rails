@@ -1,7 +1,8 @@
 require "rails_helper"
 require_relative "../support/events"
 
-# 出荷計上の還流と経路 3（docs/implementation-plan.md M14、docs/architecture/graphql-schema.md「発注側の視点」）
+# 出荷計上の還流と経路 3。出荷計上で受注と発注の状況が進み、発注側は経路 3 の出荷を付与と取引関係がある間だけ読む。
+# 自社の入荷の写しは、経路 3 が閉じても残る（docs/architecture/graphql-schema.md「発注側の視点」）
 RSpec.describe "出荷計上の還流と経路 3", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }

@@ -1,6 +1,7 @@
 require "rails_helper"
 
-# 受注の引当（docs/implementation-plan.md M12 の完了条件、docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
+# 受注の引当。有効在庫の範囲でだけ引き当て、全量になったときに 1 回だけ「出荷可能」を出し、ロックを決まった順に取る
+# （docs/architecture/data-model.md「在庫（inventory）」「取消と出荷の競合を止める場所」）
 RSpec.describe Sales::OrderAllocation do
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }

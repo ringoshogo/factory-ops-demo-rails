@@ -1,6 +1,7 @@
 require "rails_helper"
 
-# 取引関係の GraphQL の入口（docs/implementation-plan.md M8 の完了条件、docs/architecture/graphql-schema.md「ID と node」「役割による制限」）
+# 取引関係の GraphQL の入口。取引関係を変える操作は admin に限り、失効すると発注側の経路 2 と権限の判定が閉じる。
+# 存在しない ID と見えない ID には同じ NOT_FOUND を返す（docs/architecture/graphql-schema.md「ID と node」「役割による制限」）
 RSpec.describe "取引関係の GraphQL", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }

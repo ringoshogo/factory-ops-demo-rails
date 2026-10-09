@@ -3,7 +3,7 @@ require_relative "../support/events"
 require_relative "../support/shared_examples/idempotent_receiver"
 
 # 1 つの「出荷計上」が、受注と購買の 2 つの宛先テナントでそれぞれ 1 回だけ処理される
-# （docs/implementation-plan.md M14 の完了条件、docs/architecture/data-model.md「イベントの受け口と冪等キー」）
+# （docs/architecture/data-model.md「イベントの受け口と冪等キー」）
 RSpec.describe "出荷計上の配送" do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }

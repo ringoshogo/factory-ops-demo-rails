@@ -1,5 +1,6 @@
 module Types
-  # 受注側が所有する出荷実績。発注側が読む SupplierShipment（M14）とは別の型にする
+  # 受注側が所有する出荷実績。発注側が経路 3 で読む SupplierShipment とは別の型にする
+  # （docs/architecture/graphql-schema.md「視点ごとに型を分ける」）
   class ShipmentType < BaseObject
     graphql_name "Shipment"
     perspective :supplier

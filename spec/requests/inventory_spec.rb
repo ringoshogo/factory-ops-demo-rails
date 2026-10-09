@@ -1,6 +1,7 @@
 require "rails_helper"
 
-# 在庫と引当の入口（docs/implementation-plan.md M12、docs/architecture/graphql-schema.md「mutation の一覧」）
+# 在庫と引当の入口。入庫と引当が受注の状況・在庫・移動履歴に現れ、有効在庫を超える出庫は入力の誤りになる
+# （docs/architecture/graphql-schema.md「mutation の一覧」、docs/architecture/data-model.md「在庫（inventory）」）
 RSpec.describe "在庫と引当", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let(:member) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user) } }
