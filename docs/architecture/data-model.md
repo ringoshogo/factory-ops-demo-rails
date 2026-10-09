@@ -6,7 +6,7 @@
 
 実装者は、テーブルを足すたびに次の規則に従う。
 
-- **所有テナント列**：テナントのデータを持つテーブルには、すべて `owner_tenant_id uuid not null` を持たせる。持たないのは `tenants` と Solid Queue の表（`solid_queue_*`）だけで、テナント列の列挙テスト（`decisions.md` 7 章）の除外宣言に理由を書く。
+- **所有テナント列**：テナントのデータを持つテーブルには、すべて `owner_tenant_id uuid not null` を持たせる。持たないのは `tenants`、Solid Queue の表（`solid_queue_*`）、外部の Webhook の受信の表（`webhook_inbox_events`）だけで、テナント列の列挙テスト（`decisions.md` 7 章）の除外宣言に理由を書く。
 - **主キー**：`id uuid`。値は UUIDv7 で、DB の `DEFAULT uuidv7()` で作る（`../adr/003-主キーにUUIDv7を使う.md`）。Solid Queue の表は、Solid Queue のスキーマのまま `bigint` にする。
 - **同じコンテキストの親子は複合外部キーでつなぐ**：親に `UNIQUE (owner_tenant_id, id)` を持たせ、子は `FOREIGN KEY (owner_tenant_id, 親_id) REFERENCES 親 (owner_tenant_id, id)` で参照する。親と子の所有テナントが食い違う行は、DB が拒否する。
 - **コンテキストをまたぐ参照は ID 列だけにする**：外部キー制約を張らず、AR の関連も張らない（`context-map.md`「疎結合を守る規則」1）。相手テナントへの参照（`buyer_tenant_id`・`supplier_tenant_id`・`customer_tenant_id`）と、連結元の伝票への参照（`source_purchase_order_id` など）も同じ扱いにする。
@@ -84,13 +84,16 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `items`（品目カタログ） | `code`・`name`・`unit`・`unit_price`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意。単価は 0 以上 |
+| `items`（品目カタログ） | `code`・`name`・`unit`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意 |
+| `item_prices`（販売単価の履歴） | `item_id`・`unit_price`・`valid_period`（`daterange`、有効期間）・`recorded_period`（`tstzrange`、記録期間）・`reason`・`recorded_by_user_id` | 単価は 0 以上。記録期間が終わっていない行同士は、同じ品目で有効期間が重ならない（排他制約）。記録期間を閉じる以外の UPDATE と、DELETE はトリガーが拒む |
 | `customer_part_mappings`（得意先品番の対応表） | `customer_tenant_id`→・`customer_part_number`・`item_id` | `(owner, customer_tenant_id, customer_part_number)` 一意。取引先は自社が受注側の取引関係（失効したものを含む）の相手に限る。受注を作る照合と対応表の登録は、取引先ごとの勧告ロック（`pg_advisory_xact_lock`）で直列にし、ロックを取ってから対応表を読む。直列にしないと、照合待ちの受注がコミットされる前に登録が終わり、照合のやり直しから漏れる |
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
 | `sales_order_sequences`（受注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
-| `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。数量は正。照合前は `item_id` と写しの 3 列がすべて空、照合後はすべて埋まる |
+| `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`priced_on`（単価を引いた有効日）・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。数量は正。照合前は `item_id` と写しの 4 列がすべて空、照合後はすべて埋まる |
 | `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引） |
 | `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意 |
+
+販売単価は、有効期間と記録期間の 2 つの時間軸で持つ（`../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md`）。担当者が単価を変える操作は、改定の予約と訂正の 2 つだけで、どちらも現在の行の記録期間を閉じて新しい行を足す。行は書き換えない。単価を引く公開 API は `Sales::ItemPrices.price_at` の 1 つで、有効日と記録時点を取る。カタログは今日の単価を、受注の照合は受注日の単価を、いまの記録時点で引き、受注明細には単価と一緒にその有効日（`priced_on`）を写す。
 
 ### 在庫（`inventory`）
 
@@ -156,6 +159,57 @@
 
 担当者が下書きを破棄すると、明細の `invoice_id` は空に戻る。担当者が確定すると `issued_at` が入り、その後は請求書も明細も変更しない。
 
+## コンテキストに属さないパッケージのテーブル
+
+### 監査ログ（`platform`）
+
+相手テナントに効果が及ぶ書き込みを記録する（`decisions.md` 2 章「監査」）。書くのは mutation の基底クラスとイベントのジョブの基底クラスだけで、操作の中で手書きしない（`graphql-schema.md`「監査ログ」）。
+
+| テーブル | 主な列 | 制約・冪等キー |
+|---|---|---|
+| `audit_logs` | `occurred_at`・`actor_type`（`user` / `system`）・`actor_user_id`・`action`（例：`purchase_order.place`・`event.received`）・`target_type`・`target_id`・`counterparty_tenant_id`→・`request_id`・`correlation_id`・`causation_id`・`metadata`（`jsonb`） | 追記だけ。`updated_at` を持たない。イベントの受信は `(owner, causation_id, action)` 一意（部分一意索引）で、同じイベントの 2 回目の配送で増えない |
+
+- **所有テナント**：書き込んだテナントである。mutation では操作者の所有テナント、イベントの受信では宛先テナントになる。相手テナントは `counterparty_tenant_id` に入れるだけで、相手からは見えない。
+- **追記だけにする仕組み**：アプリのロールには `SELECT`・`INSERT` だけを付与する（「RLS」）。トリガーが、すべての UPDATE と、保存期間の中の行の DELETE を拒む。所有ロールでも、保存期間の中の行は消せない。
+- **保存期間**：7 年。保存期間を過ぎた行は、所有ロールの rake タスク `audit:purge` が消す。
+- **`metadata` に入れないもの**：メールアドレス・氏名・自由記述。ID・コード・件数だけを入れる。
+
+### 通知（`notifications`）
+
+外部へのメールの送信と、その配信結果を持つ。非同期処理の型は `../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md` に従う。
+
+| テーブル | 主な列 | 制約・冪等キー |
+|---|---|---|
+| `email_deliveries`（送信記録） | `notification_key`・`kind`・`recipient_user_ids`（`uuid[]`）・`attempts`・`provider_message_id`・`accepted_at`・`delivered_at`・`bounced_at`・`dropped_at`・`failed_at`・`failure_reason` | `(owner, notification_key)` 一意（同じ通知の送信記録は 1 件）。確実な送信の種類だけが作る |
+| `webhook_inbox_events`（Webhook の受信） | `provider`・`provider_event_id`・`received_at`・`payload`（`jsonb`、メールアドレスを除く）・`processed_at` | `(provider, provider_event_id)` 一意。テナントの表ではない |
+
+- **宛先**：送信記録はユーザー ID だけを持ち、メールアドレスを持たない。ジョブが送るときに、自社の `users` から引く。
+- **状況**：送信記録の状況は、時刻列から優先順で導出する（失敗・不達・配信済・受付済・待機中）。Webhook の結果は、時刻列が空のときだけ書く。
+- **受信の表をテナントの表にしない理由**：Webhook が届いた時点では、テナントが決まらない。処理のジョブが、送信のときに付けたテナント ID で `Tenancy.with_tenant` を開いてから送信記録を書く。処理を終えた行は 30 日で消す。
+
+### 取り込み（`imports`）
+
+受注側の担当者が送った CSV を、置き場を経て業務の表へ反映する。
+
+| テーブル | 主な列 | 制約・冪等キー |
+|---|---|---|
+| `import_files` | `filename`・`byte_size`・`content`（`bytea`） | 10 MB まで（CHECK 制約）。取り込みを終えたら `content` を消す |
+| `imports` | `import_file_id`・`kind`（`items` / `stocks`）・`total_rows`・`applied_rows`・`failed_rows`・`started_at`・`staged_at`・`finished_at`・`failed_at`・`failure_reason`・`requested_by_user_id` | `import_file_id` 一意（1 つのファイルの取り込みは 1 回） |
+| `import_rows` | `import_id`・`row_number`・`data`（`jsonb`）・`applied_at`・`error` | `(import_id, row_number)` 一意。`applied_at` と `error` は両立しない |
+
+取り込みの状況は、時刻列と件数から優先順で導出する。
+
+| 優先 | 状況 | 条件 |
+|---|---|---|
+| 1 | 失敗 | `failed_at` がある |
+| 2 | 一部失敗 | `finished_at` があり、`failed_rows` が 1 以上 |
+| 3 | 完了 | `finished_at` がある |
+| 4 | 反映中 | `staged_at` がある |
+| 5 | 置き場へ写し中 | `started_at` がある |
+| 6 | 待機中 | それ以外 |
+
+反映は、品目の列を `upsert_all` で、単価の列を `Sales::ItemPrices.schedule` で、在庫を `Inventory::Adjustment` で書く。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。
+
 ## 取消と出荷の競合を止める場所
 
 受注の取消と出荷の計上は、別々のコンテキストで、別々の担当者が行う。両方が同時に進んでも、どちらか一方だけが成立するようにする。止める場所は、在庫の引当の行である。
@@ -192,6 +246,8 @@
 
 「出荷計上」は受注と購買の両方へ同じ値を運ぶ。購買は、受注 ID と受注明細 ID を保存しない。
 
+ジョブの引数は、ペイロードとは別に付帯情報を持つ。`Contracts.publish` が、イベントごとに `event_id`（UUIDv7）・相関 ID・因果 ID・発行元のテナント ID・発行時刻を入れる。付帯情報は、ログの文脈（相関 ID でテナントをまたぐ一連の処理を引く）、監査ログのイベントの受信の行、配送の遅れの計測に使い、受け手の業務の判断には使わない。受け手が書く表の冪等キーは、上の表のとおり業務の ID で取り、`event_id` では取らない。発行元が同じ業務の出来事で 2 回発行しても、結果を 1 つにするためである。
+
 受注側から購買へ返すイベントは、宛先を決める発注側テナントと、発注を引く条件に足す受注側テナントを運ぶ。購買の受け手は、発注 ID と受注側テナントの両方が一致する自社の発注だけを更新する。
 
 ## RLS
@@ -205,7 +261,7 @@ DB ロールは 2 つに分ける。どちらも `docker/initdb/01_roles.sql` �
 
 `config/database.yml` は、同じ DB に 2 つの設定を置く。アプリが使う `primary` はアプリのロールで接続し、`database_tasks: false` にする。DB のタスクは所有ロールの `owner` だけが行う。`db:rollback` と `db:migrate:up`・`down`・`redo` は設定ごとに回らず `primary` の接続でマイグレーションを流すので、`lib/tasks/db_roles.rake` が所有ロールの接続に切り替える。本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。デプロイの担当者は、所有ロールの資格情報（`DB_OWNER_USER`・`DB_OWNER_PASSWORD`）をマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。`BYPASSRLS` の資格情報を持つプロセスは、RLS の外で全テナントを読み書きできるからである。そのため、コンテナの起動（`bin/docker-entrypoint`）は `db:prepare` を流さない。資格情報の無いプロセスで DB のタスクを流すと、rake タスクが止まる。
 
-アプリのロールへの権限は、表を作るタスク（`db:migrate`・`db:schema:load`・`db:test:load_schema`・`db:prepare` など）の後に、同じ rake ファイルの `db:grant_app_role` が付与する。Rails の pg_dump は権限を落とす（`--no-privileges`）ので、権限を `structure.sql` に載せても、テスト DB には再現されない。付与するのは全テーブルの `SELECT`・`INSERT`・`UPDATE`・`DELETE` と連番の `USAGE`・`SELECT` で、`schema_migrations`・`ar_internal_metadata` は `SELECT` だけ、`tenants` は `SELECT`・`INSERT` だけにする。`tenants` は RLS を付けない表なので、`UPDATE`・`DELETE` を許すと、他社の名前や取引用コードを書き換えられる。テナントの名前の変更と削除は、所有ロールで行う。
+アプリのロールへの権限は、表を作るタスク（`db:migrate`・`db:schema:load`・`db:test:load_schema`・`db:prepare` など）の後に、同じ rake ファイルの `db:grant_app_role` が付与する。Rails の pg_dump は権限を落とす（`--no-privileges`）ので、権限を `structure.sql` に載せても、テスト DB には再現されない。付与するのは全テーブルの `SELECT`・`INSERT`・`UPDATE`・`DELETE` と連番の `USAGE`・`SELECT` で、`schema_migrations`・`ar_internal_metadata` は `SELECT` だけ、`tenants` は `SELECT`・`INSERT` だけにする。`tenants` は RLS を付けない表なので、`UPDATE`・`DELETE` を許すと、他社の名前や取引用コードを書き換えられる。テナントの名前の変更と削除は、所有ロールで行う。`audit_logs` も `SELECT`・`INSERT` だけにする。監査ログを追記だけにするためである。
 
 テナントは、トランザクションの中で `SET LOCAL app.tenant_id` で渡す。アプリでは `Tenancy.with_tenant(tenant_id) { ... }`（`packs/platform`）だけがこれを行う。トランザクション（外側にあればセーブポイント）を開き、`app.tenant_id` と `Current.tenant_id` を設定してブロックを実行する。
 
@@ -223,7 +279,7 @@ $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 
 `app.tenant_id` が未設定なら、この関数は空を返し、どの行にも一致しない。テナントの設定を忘れたクエリは、例外ではなく 0 行になる。例外にする役目はアプリ側の基底クラス `TenantRecord`（`packs/platform`）が受け持つ（`decisions.md` 2 章）。テナントの表のモデルはすべてこれを継承し、`Current.tenant_id` が空のままリレーションを作るか保存すると `Tenancy::MissingTenant` になる。`TenantRecord` は既定スコープをメソッドで定義して設定を確かめるが、条件は足さない。所有テナントの条件を既定で付けると、相手の行を読むたびに `unscoped` が要るからである。
 
-`tenants` と Solid Queue の表を除く全テーブルに、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
+`tenants`、Solid Queue の表、`webhook_inbox_events` を除く全テーブルに、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
 
 ```sql
 ALTER TABLE items ENABLE ROW LEVEL SECURITY;
@@ -247,6 +303,8 @@ $$ SELECT EXISTS (SELECT 1 FROM partnerships p
 -- 経路 1：カタログ
 CREATE POLICY partner_read ON items FOR SELECT
   USING (published AND partnership_active(owner_tenant_id, current_tenant_id()));
+CREATE POLICY partner_read ON item_prices FOR SELECT
+  USING (upper_inf(recorded_period) AND EXISTS (SELECT 1 FROM items i WHERE i.id = item_id));
 -- 経路 2：取引関係
 CREATE POLICY partner_read ON partnerships FOR SELECT
   USING (buyer_tenant_id = current_tenant_id() AND status = 'active');
@@ -260,7 +318,7 @@ CREATE POLICY partner_read ON shipment_lines FOR SELECT
 ```
 
 - **関数と子テーブルは、RLS を通して読む**：`partnership_active` と子テーブルのポリシーは、呼び出し元の権限で `partnerships`・`shipments` を読む。そのため、親が見えるときだけ子が見え、失効した関係は判定でも見えない。関数を `SECURITY DEFINER` にしない。
-- **RLS は粗い判定にとどめる**：RLS が判定するのは「所有テナントか、有効な関係があるか」までである。どの権限付与（`view_catalog`・`view_shipments`）があるかは、アプリの policy scope が判定する（`decisions.md` 2 章「RLS の役割」）。
+- **RLS は粗い判定にとどめる**：RLS が判定するのは「所有テナントか、有効な関係があるか」までである。単価の履歴（`item_prices`）は、記録期間が終わっていない行だけを相手に開き、そのうち今日の行に絞るのは `Sales::PublishedCatalog` の scope である。どの権限付与（`view_catalog`・`view_shipments`）があるかは、アプリの policy scope が判定する（`decisions.md` 2 章「RLS の役割」）。
 - **ログインの前のユーザー検索**：ログインの時点ではテナントが決まっていないので、`users` を RLS の下では引けない。メールアドレスからユーザー ID・所有テナント・`password_digest`・`session_version` だけを返す認証専用の関数 `find_login_user(email)` を 1 つ置き、この関数だけを RLS の外で動かす。関数は所有ロールの `SECURITY DEFINER` にし、`search_path` を固定する。固定しないと、呼び出し元が同名の表や関数を先に見つかる場所へ置いて差し替えられる。パスワードの照合はアプリ（`Partnerships::Authentication`）が行う。
 
 > 上の DDL とポリシーは、PostgreSQL 16 で試作して確かめた（UUIDv7 の代わりに `gen_random_uuid()`）。受注側・発注側・無関係の 3 テナントで次を確認した。未設定では 0 行になる。発注側に見えるのは、公開品目 1 件・取引関係・出荷の 3 経路だけである。相手名義の INSERT は RLS が拒否し、相手の行への UPDATE は 0 行になる。他テナントの親を指す子は、複合外部キーが拒否する。失効すると 3 経路がすべて閉じる。
