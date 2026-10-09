@@ -52,6 +52,36 @@ RSpec.describe RuboCop::Cop::FactoryOps::NoHistoryComment, :config do
     RUBY
   end
 
+  it "複数行のコメントは、語を含む行を落とす" do
+    expect_offense(<<~RUBY, msg: message("M14"))
+      # 発注側が読む出荷実績は、
+      # 経路 3 の写しである（M14）
+      ^^^^^^^^^^^^^^^^^^ %{msg}
+      x = 1
+    RUBY
+  end
+
+  it "=begin と =end の間に語があれば落とす" do
+    expect_offense(<<~RUBY, msg: message("TODO"))
+      =begin
+      ^^^^^^ %{msg}
+      TODO: あとで消す
+      =end
+      x = 1
+    RUBY
+  end
+
+  it "文字列とヒアドキュメントの中の # と、マジックコメントは通す" do
+    expect_no_offenses(<<~'RUBY')
+      # frozen_string_literal: true
+      a = "# TODO: M15 で足す"
+      b = 'レビューで直した # FIXME'
+      c = <<~TEXT
+        # TODO: 以前は M3 だった
+      TEXT
+    RUBY
+  end
+
   it "guides/comments.md の良い例と、語に似た文字列を通す" do
     expect_no_offenses(<<~RUBY)
       # role IN (...) と書くと、structure.sql を読み込み直したときに式の表記が変わり、差分検査が落ちる
