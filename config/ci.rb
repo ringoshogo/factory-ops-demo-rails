@@ -5,6 +5,7 @@ CI.run do
 
   step "Style: Ruby", "bin/rubocop"
   step "Packages: packwerk", "bin/packwerk validate && bin/packwerk check"
+  step "Ledgers: open items", "bin/check-open-items"
 
   step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec"
   step "Schema: structure.sql round-trip", "bin/check-structure"

@@ -1,0 +1,142 @@
+#!/usr/bin/env ruby
+# 残件の台帳と改善の候補の台帳の形と、追跡しているファイルの中の ID の参照を確かめる（docs/guides/dev-cycle.md「機械で守ること」）。
+#
+#   bin/check-open-items                 台帳の形と、追跡しているファイルの OI-NN・IB-NN の参照
+#   bin/check-open-items --due M16       加えて、引当先が M16 の open と blocked-user が残っていれば失敗する
+#   bin/check-open-items --text FILE     加えて、FILE（PR の本文など）の参照も確かめる。FILE が - なら標準入力を読む
+#   bin/check-open-items --root DIR      DIR をリポジトリの根として扱う
+require "optparse"
+require "open3"
+
+OPEN_ITEMS = "docs/plans/open-items.md"
+BACKLOG = "docs/plans/improvement-backlog.md"
+PLAN = "docs/implementation-plan.md"
+
+OI_STATES = %w[open judgment blocked-user decided closed].freeze
+OI_UNRESOLVED = %w[open judgment blocked-user].freeze
+OI_BLOCKING = %w[open blocked-user].freeze
+IB_STATES = %w[未着手 調査中 試行中 反映済み 起票済み 監視 見送り].freeze
+IB_NEEDS_RECORD = %w[試行中 反映済み 起票済み 監視 見送り].freeze
+
+# このスクリプトとその spec は、検査の見本として台帳に無い ID を含む
+SELF_FILES = %w[bin/check-open-items spec/bin/check_open_items_spec.rb].freeze
+
+options = { root: File.expand_path("..", __dir__), texts: [] }
+OptionParser.new do |opts|
+  opts.on("--due MILESTONE") { |v| options[:due] = v }
+  opts.on("--text FILE") { |v| options[:texts] << v }
+  opts.on("--root DIR") { |v| options[:root] = v }
+end.parse!
+
+root = options[:root]
+errors = []
+
+# 表の行のうち、先頭のセルが prefix-NN のものを、セルの配列にして返す
+def rows(path, prefix)
+  File.readlines(path, chomp: true).filter_map.with_index(1) do |line, lineno|
+    next unless line.start_with?("| #{prefix}-")
+
+    [ lineno, line.delete_prefix("|").delete_suffix("|").split("|").map(&:strip) ]
+  end
+end
+
+# ID が 01 から 1 ずつ増えていることを確かめ、定義された ID の一覧を返す
+def check_ids(rows, path, prefix, errors)
+  rows.each_with_index.map do |(lineno, cells), index|
+    id = cells[0]
+    expected = format("%s-%02d", prefix, index + 1)
+    errors << "#{path}:#{lineno}: ID が #{id} だが、前の行から続く番号は #{expected}" unless id == expected
+    id
+  end
+end
+
+milestones = File.read(File.join(root, PLAN)).scan(/^## (M\d+) /).flatten
+
+oi_path = File.join(root, OPEN_ITEMS)
+oi_rows = rows(oi_path, "OI")
+defined = check_ids(oi_rows, OPEN_ITEMS, "OI", errors)
+oi_rows.each do |lineno, cells|
+  at = "#{OPEN_ITEMS}:#{lineno}"
+  unless cells.size == 6
+    errors << "#{at}: 列が 6 つ（ID・状態・内容・出どころ・引当先・結果）ではなく #{cells.size} つある"
+    next
+  end
+
+  id, state, content, source, due, result = cells
+  errors << "#{at}: #{id} の状態 #{state} は #{OI_STATES.join('・')} のどれでもない" unless OI_STATES.include?(state)
+  errors << "#{at}: #{id} の内容が空" if content.empty?
+  errors << "#{at}: #{id} の出どころが空" if source.empty?
+  if !due.match?(/\AM\d+\z/)
+    errors << "#{at}: #{id} の引当先 #{due.inspect} がマイルストーンの番号（M16 など）ではない"
+  elsif !milestones.include?(due)
+    errors << "#{at}: #{id} の引当先 #{due} が #{PLAN} の節に無い"
+  end
+  case state
+  when "closed"
+    errors << "#{at}: #{id} は closed なのに、結果に commit の SHA が無い" unless result.match?(/\b\h{7,40}\b/)
+  when "decided"
+    errors << "#{at}: #{id} は decided なのに、結果に閉じた理由が無い" if result.empty?
+  when *OI_UNRESOLVED
+    errors << "#{at}: #{id} は #{state} なのに、結果が書いてある" unless result.empty?
+  end
+end
+
+ib_path = File.join(root, BACKLOG)
+ib_rows = rows(ib_path, "IB")
+defined += check_ids(ib_rows, BACKLOG, "IB", errors)
+ib_rows.each do |lineno, cells|
+  at = "#{BACKLOG}:#{lineno}"
+  unless cells.size == 6
+    errors << "#{at}: 列が 6 つ（ID・状態・テーマ・なぜ今か・追加日・判定の記録）ではなく #{cells.size} つある"
+    next
+  end
+
+  id, state, theme, signal, _added, record = cells
+  errors << "#{at}: #{id} の状態 #{state} は #{IB_STATES.join('・')} のどれでもない" unless IB_STATES.include?(state)
+  errors << "#{at}: #{id} のテーマが空" if theme.empty?
+  errors << "#{at}: #{id} のなぜ今か（シグナルの出どころ）が空" if signal.empty?
+  errors << "#{at}: #{id} は #{state} なのに、判定の記録が空" if IB_NEEDS_RECORD.include?(state) && record.empty?
+end
+
+reference = /\b(?:OI|IB)-\d+\b/
+check_text = lambda do |label, text|
+  text.each_line.with_index(1) do |line, lineno|
+    line.scan(reference).uniq.each do |id|
+      errors << "#{label}:#{lineno}: #{id} が台帳に無い" unless defined.include?(id)
+    end
+  end
+end
+
+files, status = Open3.capture2("git", "-C", root, "ls-files", "-z")
+abort "git ls-files が失敗した" unless status.success?
+files.split("\0").each do |file|
+  next if SELF_FILES.include?(file)
+
+  path = File.join(root, file)
+  next unless File.file?(path)
+
+  text = File.binread(path).force_encoding(Encoding::UTF_8)
+  next unless text.valid_encoding? && !text.include?("\0")
+
+  check_text.call(file, text)
+end
+
+options[:texts].each do |file|
+  check_text.call(file == "-" ? "(標準入力)" : file, file == "-" ? $stdin.read : File.read(file))
+end
+
+if (due = options[:due])
+  errors << "--due #{due} がマイルストーンの番号ではない" unless due.match?(/\AM\d+\z/)
+  oi_rows.each do |lineno, cells|
+    next unless cells[4] == due && OI_BLOCKING.include?(cells[1])
+
+    errors << "#{OPEN_ITEMS}:#{lineno}: 引当先が #{due} の #{cells[0]} が #{cells[1]} のまま残っている"
+  end
+end
+
+if errors.empty?
+  puts "台帳を確かめた：残件 #{oi_rows.size} 件、改善の候補 #{ib_rows.size} 件"
+else
+  warn errors
+  exit 1
+end
