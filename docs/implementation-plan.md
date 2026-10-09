@@ -57,7 +57,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 骨組み（M1〜M7）を先に作り、業務機能（M8〜M14）を業務の流れの順に、薄い縦切りで足した。業務機能の各マイルストーンは、テーブル・公開 API・policy・イベント・GraphQL のフィールド・行列テストの行を 1 つの単位で作る。
 
-残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。
+残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -93,7 +93,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 | M30 | メトリクス | メトリクスのラベルにテナントとユーザーが入らない |
 | M31 | SLO と障害対応の手順書 | どの警報も手順書を持ち、警報の規則が CI で検査される |
 | M32 | シードデータ | — |
-| M33 | フロントエンド | 流用元のデザインの刷新を待つ |
+| M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる（計画済み。実装は M32 の後） |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -113,6 +113,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M30 | M18・M28・M29 | 値の出どころが M18 の構造化イベントで、外部の呼び出しと取り込みの値も測る |
 | M31 | M30 | SLO と警報を M30 のメトリクスで書く |
 | M32 | M31 まで | シードが単価の履歴と取り込みも含む |
+| M33 | M32 | 画面が呼ぶ入口が M29 までにそろい、E2E の世界を M32 のシードと同じ形で作る |
 
 ---
 
@@ -1013,4 +1014,145 @@ CI にも、`promtool` の 2 つの検査を足す。各手順書の「確かめ
 
 ## M33 フロントエンド
 
-流用元の `factory-ops-demo` でデザインを刷新しているので、刷新が終わるまで着手しない。計画は、刷新が終わり、M32 までが終わってから、刷新後の画面部品を前提に立てる。方針は、factory-ops-demo の Next.js を流用し、データ取得層を REST から GraphQL へ書き換え、発注側の画面を足すことである（`handoff.md`「目的」）。
+**目的**：姉妹プロジェクト factory-ops-demo の `frontend/`（以下、流用元）の Next.js を写し、画面部品をそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を足す。読み手が、受注側と発注側の両方の画面で、取引関係・失効・取消・検収・請求が動くのを見られるようにする。計画は済んでおり、実装は M32 の後に行う。
+
+本節の用語は次のとおりである。**受注側**は GraphQL の `supplier` の視点（自社が受けた受注・在庫・出荷・請求を扱う）、**発注側**は `buyer` の視点（自社の発注と、相手を読む 3 経路を扱う）を指す。**画面**は Next のルート 1 つを指す。**入口**は GraphQL のルートのフィールド `viewer`・`buyer`・`supplier` を指す（`graphql-schema.md`「視点ごとに型を分ける」）。**画面の問い合わせ**は、画面が送る query と mutation の文書を指す（M17 の同名の一覧と同じもの）。
+
+担当者は、次の順に決めて作る。まず、流用元を本リポジトリのどこへ写すかを決める（置き場所）。次に、写した画面と足す画面が、どの入口を呼び、それがどのマイルストーンでそろうかを確かめる（画面の一覧）。そのうえで、画面の部品はそのままに、REST の呼び出しを GraphQL の呼び出しに替える（データ取得層）。最後に、それを流用元の E2E の規則と本リポジトリの CI で守る（テストとゲート）。各段の「判断」は担当者が既定のとおりに進めてよいもので、作者に確かめるものは末尾の「著者判断」にまとめた。
+
+**作るもの 1：置き場所**
+
+- 流用元の main（`958de71`）の `frontend/` を、本リポジトリの `frontend/` に写す。git の履歴は持ち込まず、写した commit を commit メッセージに書く。
+- 写さないもの：Cloudflare への配置（`wrangler.jsonc`・`open-next.config.ts`・`@opennextjs/cloudflare`・`wrangler`）、訪問者ごとのデモの開始・サンプル表示・混雑の通知（`lib/start-demo.ts`・`demo-session.ts`・`demo-state.ts`・`sample.ts`・`sample-data.json`・`components/demo-notice.tsx` と、それを分岐に使う箇所）、REST のスタブ（`e2e/stub-api.mjs`）と Go の API を起こす `e2e/start-api.sh`。
+- Ruby の検査から外す：`.rubocop.yml` の `AllCops.Exclude`、`packwerk.yml` の `exclude`、`.dockerignore` に `frontend/` を足す。`.github/dependabot.yml` に `frontend/` の npm を足す。
+- コードのコメント：写す担当者は、流用元の仕様・タスク・台帳の番号を指すコメント（`T-34`・`仕様 §7`・`正本 N-5`・`OI-45` の類）を、いまの振る舞いと理由に書き直すか消す。`guides/comments.md` の対象に `frontend/` を足し、`frontend/scripts/check-comments.mjs` が、これらの番号とマイルストーンの番号を含むコメントを落とす。`npm run lint` から呼ぶ。
+
+**判断**：流用元をどこに置くか
+
+- **既定の推奨**：本リポジトリの `frontend/` に写す。`schema.graphql` と画面の問い合わせが同じ commit で変わり、同じ CI で型検査される。非推奨を経ないスキーマの変更（M20）も、フロントエンドの型検査として同じ PR で落ちる。
+- **裏返る条件**：流用元と本デモの両方で、画面部品をこれからも育てる → 部品を npm のパッケージに切り出し、両方から読む。
+- **撤退コスト**：中。`frontend/` を別のリポジトリへ移すと、`schema.graphql` を取りに行く手順と、画面の問い合わせの一致を確かめる検査が要る。
+
+**作るもの 2：画面の一覧**
+
+画面の URL は視点で分け、受注側を `/supplier/...`、発注側を `/buyer/...` に置く。サイドバーは「受注側」「発注側」の 2 つのグループを持つ（著者判断 4）。表の「作るマイルストーン」は、画面が呼ぶ入口のフィールドと mutation を作るマイルストーンである。M15 以降のマイルストーンに依存する画面には ※ を付けた。
+
+| | 画面 | 視点 | 流用元の画面 | 呼ぶ入口のフィールドと mutation | 作るマイルストーン |
+|---|---|---|---|---|---|
+| 1 | `/` ログイン | 共通 | `/`（デモを開始） | `POST /session`・`DELETE /session`（`SessionsController`）、`viewer`（著者判断 3） | M4・M8 |
+| 2 | `/settings` 自社の情報 | 共通 | —（新規） | `viewer`（取引用コード `partnerCode` は `admin` だけ） | M8 |
+| 3 ※ | `/audit-logs` 監査ログ | 共通 | —（新規） | `viewer.auditLogs`（`admin` だけ） | M19 |
+| 4 ※ | `/supplier/dashboard` ダッシュボード | 受注側 | `/dashboard` | `supplier.dashboard`、かんばんは `supplier.salesOrders`、カードの操作は `allocateSalesOrder`・`createShippingInstruction`・`postShipment` | M26・M10・M12・M13 |
+| 5 | `/supplier/sales-orders` 受注一覧 | 受注側 | `/orders` | `supplier.salesOrders` | M10（状況の「検収済」は M23、取消審査中の印は M21） |
+| 6 ※ | `/supplier/sales-orders/[id]` 受注詳細 | 受注側 | `/orders/[id]` | `supplier.salesOrder`、`allocateSalesOrder`・`createShippingInstruction`・`cancelSalesOrder`・`approveCancellationReview`・`rejectCancellationReview` | M10・M12・M13・M21・M22 |
+| 7 | `/supplier/part-mappings` 品番の対応表 | 受注側 | —（新規） | `supplier.partMappings`・`registerPartMapping`、照合待ちの受注は `supplier.salesOrders`、品目の候補は `supplier.items` | M11 |
+| 8 | `/supplier/stocks` 在庫と移動履歴 | 受注側 | `/stocks` | `supplier.stocks`・`supplier.stockMovements`・`adjustStock` | M12 |
+| 9 | `/supplier/shipment-requests` 出荷依頼 | 受注側 | `/shipping-instructions` | `supplier.shipmentRequests`・`createShippingInstruction`・`cancelShippingInstruction`・`postShipment` | M13（状況の「出荷停止中」は M21） |
+| 10 | `/supplier/items` 品目 | 受注側 | `/items` | `supplier.items`・`saveItem`・`setItemPublished` | M9 |
+| 11 ※ | `/supplier/items/[id]` 品目の単価の履歴と改定 | 受注側 | —（新規） | `Item.prices(asOf:)`・`scheduleItemPrice`・`correctItemPrice`。品目を ID で引く入口は無い（著者判断 6） | M27 |
+| 12 | `/supplier/partnerships` 取引関係 | 受注側 | `/customers` | `supplier.partnerships`・`establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission`（変更は `admin` だけ） | M8 |
+| 13 ※ | `/supplier/billing` 請求の締め | 受注側 | —（新規） | `supplier.billingTerms`・`setBillingTerm`・`supplier.billableItems`・`closeBillingPeriod` | M24 |
+| 14 ※ | `/supplier/invoices` 請求書一覧 | 受注側 | —（新規） | `supplier.invoices` | M24 |
+| 15 ※ | `/supplier/invoices/[id]` 請求書詳細 | 受注側 | —（新規） | `supplier.invoice`・`Invoice.items`・`BillableItem.priceExplanation`・`discardDraftInvoice`・`issueInvoice` | M24・M25・M27 |
+| 16 ※ | `/supplier/imports` 取り込みの一覧と開始 | 受注側 | —（新規） | `POST /imports/files`・`startImport`・`supplier.imports` | M29 |
+| 17 ※ | `/supplier/imports/[id]` 取り込みの進み具合 | 受注側 | —（新規） | `supplier.import`・`Import.rowErrors`。進行中は数秒ごとに `router.refresh()` で読み直す | M29 |
+| 18 | `/buyer/suppliers` 取引先とカタログ | 発注側 | —（新規） | `buyer.suppliers`・`SupplierPartnership.catalog` | M8・M9 |
+| 19 | `/buyer/purchase-orders` 発注一覧 | 発注側 | `/orders` | `buyer.purchaseOrders`。入荷を待つ発注は「入荷予定」のタブで見る（著者判断 7） | M10（状況の「入荷予定」は M14、「検収済」は M23、取消は M21・M22） |
+| 20 | `/buyer/purchase-orders/new` 発注登録 | 発注側 | `/orders/new` | `buyer.suppliers`（`place_orders` の付与のある相手）・`SupplierPartnership.catalog`（参照に並べる）・`placePurchaseOrder`。品番は自社品番を入力する | M8・M9・M10 |
+| 21 ※ | `/buyer/purchase-orders/[id]` 発注詳細（入荷・検収・取消依頼） | 発注側 | `/orders/[id]` | `buyer.purchaseOrder`（`inboundShipments`・`supplierShipments`・`cancellationRequests`）・`inspectInboundShipment`・`requestPurchaseOrderCancellation` | M10・M14・M21・M23 |
+| 22 ※ | `/buyer/received-invoices` 受領請求書一覧 | 発注側 | —（新規） | `buyer.receivedInvoices` | M25 |
+| 23 ※ | `/buyer/received-invoices/[id]` 受領請求書詳細 | 発注側 | —（新規） | `buyer.receivedInvoice` | M25 |
+
+流用元にあって API に無い操作は、画面から外す。受注側による受注の登録（受注は発注からイベントで作られる）、明細ごとの引当と引当の解除（`allocateSalesOrder` は受注の単位で引き当てる）、品目と得意先の削除、得意先の住所と担当者がこれに当たる。流用元の品目の安全在庫は、在庫の値（`Stock.safetyStock`）として在庫の画面に出す。
+
+受注の状況は、流用元の 6 つから `SalesOrderStatus` の 7 つに替わる。ダッシュボードのかんばんの列は 7 つにし、流用元の「出荷指示済」の列は無くなる。出荷指示の有無はカードの `shipmentRequest.status` が `INSTRUCTED` であることで示し、「出荷実績計上」のボタンを出す。取消審査中と取消依頼中は、状況のバッジに重ねる印で示す（`graphql-schema.md`「状況の enum」）。流用元に無い状況のバッジの色は、著者判断 2 による。
+
+**作るもの 3：データ取得層**
+
+流用元は、サーバーコンポーネントで読み、server action で書き、どちらも Next のサーバーから API を呼ぶ。この形を保ち、呼び先だけを Rails の GraphQL に替える。
+
+- **呼び出し口**：`lib/graphql/request.ts` の 1 か所だけが Rails を呼ぶ。流用元の `lib/api-client.ts`・`api.ts`・`api-types.ts` と、`lib/*-actions.ts` の REST の呼び出しを、これに置き換える。`fetch` は `cache: "no-store"` で呼び、Next のデータのキャッシュ（`"use cache"`・`unstable_cache`・`fetch` の `next.revalidate`）は使わない。キャッシュの鍵にセッションが入らないので、あるテナントへの応答を別のテナントに返すからである。ESLint の `no-restricted-syntax` と `no-restricted-imports` で、これらを書くと落ちるようにする。
+- **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next のサーバーが Asia/Tokyo の今日として出す。
+- **画面の問い合わせ**：`frontend/graphql/<視点>/<操作名>.graphql` に 1 ファイル 1 つで置き、断片（fragment）はそのファイルの中でだけ使う。一覧は絞り込みの引数を使わず、`first: 100` で `pageInfo.hasNextPage` が偽になるまで読み、流用元の並べ替え・絞り込み・タブの純関数にそのまま渡す（著者判断 1）。
+- **認証**：ログインの server action が、Rails の `POST /session` に JSON で資格情報を送り、応答の `Set-Cookie` にあるセッションの Cookie（`_factory_ops_session`）を、同じ属性（`HttpOnly`・`SameSite=Lax`・本番は `Secure`・期限）で `cookies().set` に写す。`request.ts` は、ブラウザから届いた Cookie のうちセッションの Cookie だけを Rails へ送る。ログアウトの server action は `DELETE /session` を呼び、Cookie を消す。Rails が応答のたびに延ばす期限の扱いは、著者判断 5 による。
+- **`Origin` と CSRF**：ブラウザが見るオリジンはフロントエンドの 1 つだけにし、Rails の CORS は開けない（`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」）。ブラウザからの書き込みは server action を通り、Next が `Origin` と `Host` の一致を確かめる。Next のサーバーは Rails へ `Content-Type: application/json` で送るので、`ApplicationController` の制限をそのまま通る。例外は取り込みのファイル（M29 の `POST /imports/files`）で、`next.config.mjs` の `rewrites` で同じオリジンの下に出し、ブラウザから `multipart/form-data` で送る。Rails は、ブラウザの `Origin` を、許可したオリジン（フロントエンドのオリジン）と比べる。
+- **エラー**：`request.ts` が応答を次の表のとおりに分け、画面は分けた結果だけを見る。流用元の `ApiResult` の `code` の一覧は、この分け方に置き換える。ユーザーエラーの `message` は API の文言をそのまま出し、言い換えるのは次にすることを書き足すときだけにする（流用元の `handbook/README.md`「同じ意味を2箇所に実装しない」）。
+
+  | 応答 | 画面の扱い |
+  |---|---|
+  | HTTP 401 | セッションの Cookie を消し、ログインの画面へ移す |
+  | 接続できない・5xx・タイムアウト | 流用元の「API に届かない」表示（`error-notice`・`list-error`）を出す |
+  | ID で引く入口（`supplier.salesOrder(id:)` など）の `null`、mutation の `NOT_FOUND` | どちらも流用元の見つからない画面（`not-found-message`）にする。無いのか見えないのかを言い分けない |
+  | mutation の `NOT_PERMITTED` | 1 つの文言で出す。失効・付与なし・存在しない相手のどれなのかを、画面で推し量って言い分けない |
+  | mutation の `INVALID_INPUT` | `path` の指す入力欄の下に出す。`path` が空ならフォームの上に出す |
+  | mutation の `CONFLICT` | 最新の状態を読み直してから、メッセージを出す |
+  | トップレベルの `FORBIDDEN` とその他のトップレベルのエラー | 画面の上に、処理できなかったことを出す。`admin` だけの操作のボタンは `viewer.role` が `admin` のときだけ出すので、`FORBIDDEN` は通常は起きない |
+
+- **テナントの切り替え**：ユーザーは 1 つのテナントに属するので、テナントを切り替えるには、ログアウトして別のテナントのユーザーでログインする。画面にテナントを選ぶ欄は置かない。受注側と発注側の切り替えは、同じテナントの中でサイドバーのグループを移ることで行う。
+
+**判断**：Rails をどこから呼ぶか
+
+- **既定の推奨**：Next のサーバー（サーバーコンポーネントと server action）からだけ呼ぶ。ブラウザが Rails を直接呼ぶのは、取り込みのファイルの送信だけにする。流用元の画面部品はこの形で書かれており、そのまま使える。セッションの Cookie はフロントエンドのオリジンの Cookie になり、CORS を開けずに済む。
+- **裏返る条件**：ブラウザで頻繁に読み直す画面や、楽観的な更新が要る画面が増える → その画面だけ、Next の route handler を挟んでブラウザから呼ぶ。Rails へは route handler が同じ呼び出し口で送る。
+- **撤退コスト**：中。呼び出し口は `request.ts` の 1 か所だが、画面ごとにクライアントコンポーネントへ書き換えることになる。
+
+**判断**：GraphQL のクライアント
+
+- **既定の推奨**：codegen の `TypedDocumentNode` と、`fetch` の薄い包み（`request.ts`）だけにする。Apollo Client と urql は入れない。読みはサーバーで毎回取り直すので、正規化したキャッシュの出番が無い。
+- **裏返る条件**：上の判断が裏返り、ブラウザで読む画面が増える → urql を入れ、ブラウザ側の読みだけをそれで書く。
+- **撤退コスト**：小。生成した型はどのクライアントでも使える。
+
+**判断**：画面の問い合わせの正本をどこに置くか
+
+- **既定の推奨**：`frontend/graphql/` を正本にする。M17 の `spec/fixtures/graphql/screens/` を消し、クエリ数の予算（M17）・複雑度のテスト（M26）・操作名の登録の一致のテスト（M30）が `frontend/graphql/` を読むように替える。画面が実際に送る問い合わせと、検査する問い合わせが 1 つになる。
+- **裏返る条件**：`frontend/` を別のリポジトリに置く → `spec/fixtures/graphql/screens/` を残し、フロントエンドの CI で両者の一致を確かめる。
+- **撤退コスト**：小。3 つのテストの読み先を 1 行ずつ替えるだけである。
+
+**作るもの 4：テストとゲート**
+
+流用元の E2E は、Go の API に当てる live と、REST のスタブに当てる stub の 2 系統である。本デモは、Rails に当てる 1 系統にする。stub が作っていた「API に届かない」状態は、届かない URL を向いた Next のサーバーをもう 1 つ立てて作る。
+
+- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 のシードと同じ形の世界（受注側 1 社・発注側 2 社・各社のユーザー）を公開 API とイベントで 1 組ずつ作る。テストは、自分のワーカー番号の世界のユーザーでログインし、他の世界に書かない。
+- **画面の通し試験**：E2E に次の 2 本を置く。1 本目は、重要シナリオ S2（M26）を画面で通す。失効の後、発注側の取引先とカタログと出荷が空になり、発注登録が `NOT_PERMITTED` の文言になる。2 本目は、発注側の 2 社のユーザーで続けてログインし、前のテナントの伝票番号が画面に出ないことを確かめる。
+- **流用元の規則**：流用元の `handbook/README.md` の E2E と見た目の規則を、次のとおり持ち込む。
+
+  | 流用元の規則 | 本デモでの置き方 |
+  |---|---|
+  | 同じ種類の要素の寸法・そろえ・はみ出しを、最初のタスクで全画面について測る | 流用元の `e2e/support/tokens.ts`・`table-align.ts`・`contrast.ts` と、カードの高さ・はみ出し（`scrollWidth <= clientWidth`）の検査を写し、M33 の最初の作業で置く。測る画面の一覧は `app/` のルートのファイルから作り、手で並べない。足した画面が測られないまま通らないようにするためである |
+  | 中身の違うデータを作ってから測る | E2E の世界に、最も長い品目名と取引先名、ボタンのある行と無い行、各状況の enum の全値の行を入れる。シードの短くそろった中身だけで測らない |
+  | 寸法・色・フォーカスは、アニメーションと色の遷移が終わってから測る。キーは 1 つ押すごとにフォーカスの移りを待つ | 流用元の `e2e/support/style.ts`・`router.ts` の待ち方をそのまま使う |
+  | 数える前に画面の変化を待ち、遷移の後は着いたことを先に確かめる | 同上。イベントで進む表示（発注 → 受注確定）はワーカーの処理を待つので、`expect.poll` と再読み込みで待ち、固定の時間は待たない |
+  | 1 回だけ落ちたテストを、再実行で緑にして流さない | CPU の遅延（CDP の `Emulation.setCPUThrottlingRate`）で再現率を測り、待ち方の誤りか製品の競合かを分ける。Playwright の `retries` は 0 にする |
+  | 集計の数字と、そこから飛ぶ一覧は、同じ条件で絞る | ダッシュボードの状況ごとの件数と、受注一覧のタブの件数が一致することを E2E で確かめる |
+  | テストは、壊したときに落ちて初めて意味を持つ | 本リポジトリの「守りの検査は、外すとテストが落ちることを確かめる」（`handoff.md`「1 つのマイルストーンの回し方」）と同じに扱う |
+  | 見せる前に、同じ種類の要素どうしをスクリーンショットで見比べる | 検収表（画面 × ライト・ダーク × 1280・1024・390px）のスクリーンショットを撮り、担当者が見比べてから作者に見せる。作者が受け入れるまで M33 を終えない |
+
+  流用元の開発の進め方（台帳・交差レビュー・RED と GREEN の push の規約）と、配信先のエッジに掛かる上限の検査は持ち込まない。本書の「1 つのマイルストーンの進め方」と、`handoff.md` のレビューの回し方に従う。
+- **CI**：`.github/workflows/ci.yml` にジョブを 2 つ足す。`frontend` は、`npm ci`・`npm run codegen:check`・`npm run lint`（コメントの検査を含む）・`npm run typecheck`・`npm run test:unit` を流す。`e2e` は、既存の test のジョブと同じ PostgreSQL 18 のサービスとロールの準備をし、Ruby と Node を入れ、`npx playwright install --with-deps chromium` の後に `npm run test:e2e` を流す。
+
+**完了条件**
+
+```sh
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+cd frontend && npm run test:e2e
+bundle exec rspec spec/graphql/query_budget_spec.rb   # 画面の問い合わせを frontend/graphql から読む
+```
+
+次を、手で確かめる。`schema.graphql` から画面が使うフィールドを 1 つ消すと、`npm run codegen:check` か `npm run typecheck` が落ちる。`request.ts` に `"use cache"` を足すと、`npm run lint` が落ちる。作者が検収表のスクリーンショットを見て受け入れる。
+
+**著者判断（着手の時に作者に確かめる）**：次の点は既定を置いて計画した。担当者は、着手の前に作者に確かめ、答えが既定と違えば、本節を先に直してから作る。
+
+1. **一覧の読み方**：一覧は全ページを読み切ってから、流用元の純関数で並べ替え・絞り込み・タブの件数を出す。500 件で読むのをやめ、やめたことを画面に出す。GraphQL の一覧は `totalCount` も並べ替えの引数も持たない（`graphql-schema.md`「ページングと N+1」）ので、1 ページだけを並べ替えると、並べ替えが嘘になるからである。上限を超える一覧が日常になるなら、コネクションに並べ替えの引数を足し、サーバーで並べる。
+2. **状況のバッジの色**：流用元に無い状況（品番照合待ち・検収済・発注の各状況・出荷依頼・取り込み・請求書）は、意味の近い流用元の状況の色を使い回し、色のトークンを足さない。作者が色での区別を求めるなら、トークンを足し、流用元の図形のコントラストの検査に載せる。
+3. **ログインの画面**：メールアドレスとパスワードの入力欄に、M32 のシードのアカウント（メールアドレスと、共通のパスワード）の一覧を並べ、押すと入力欄に入る。一覧は `db/seeds/demo_accounts.json` の 1 か所に置き、シードとフロントエンドの両方が読む。
+4. **サイドバーと最初の画面**：テナントは発注側と受注側のどちらにもなりうるので、サイドバーには両方のグループを常に出す。ログインの直後は、`supplier.partnerships` が空でなければ受注側のダッシュボードへ、空なら発注側の発注一覧へ移す。
+5. **セッションの期限**：Rails は、応答のたびにセッションの Cookie を書き直して期限を延ばす。サーバーコンポーネントは Cookie を書けないので、延びた Cookie は server action の応答でだけブラウザに写す。読むだけの利用では、期限はログインか最後の書き込みから 12 時間になる。
+6. **入口に足すフィールド**：品目を ID で引く `supplier.item(id:)` と、サイドバーに自社の名前を出す `viewer.tenant` が無い。どちらも足すだけの変更なので、M33 で足し、`graphql-schema.md` と行列テストの期待値に行を足す。
+7. **入荷の一覧**：発注をまたいだ入荷の一覧の入口（`buyer.inboundShipments`）は足さず、発注一覧の「入荷予定」のタブで代える。検収は発注詳細で行う。
+8. **公開の配置**：手元（`bin/rails server` と `next start`）で見せるところまでにする。公開する配置と、訪問者ごとのデータの分離（流用元のデモの開始に当たるもの）は作らない。
+
+**範囲外**：公開の配置と訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
+
+**実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
+
+**文書に残すこと**：画面の問い合わせの置き場を、本書の M17 と `graphql-schema.md`「ページングと N+1」で `frontend/graphql/` に書き直す。`guides/comments.md` の対象に `frontend/` を足す。著者判断 6 で足したフィールドを `graphql-schema.md`「視点ごとに型を分ける」に書く。`README.md` の「構成」に、フロントエンドの起動の手順を書く。
