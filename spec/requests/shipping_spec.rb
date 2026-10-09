@@ -2,7 +2,7 @@ require "rails_helper"
 require_relative "../support/events"
 
 # 出荷指示と出荷実績の計上の入口。出荷可能になった受注に出荷依頼が現れ、有効な指示のある出荷依頼だけを計上できる
-# （docs/architecture/graphql-schema.md「mutation の一覧」、docs/architecture/data-model.md「出荷（fulfillment）」）
+# （docs/architecture/graphql-schema.md「mutation の一覧」、docs/architecture/data-model.md「出荷（`fulfillment`）」）
 RSpec.describe "出荷指示と出荷実績の計上", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant, name: "組立メーカー") }

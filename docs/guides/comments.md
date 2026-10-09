@@ -75,7 +75,7 @@ self.enqueue_after_transaction_commit = true
 
 ```ruby
 # ✗ 受注の引当（docs/implementation-plan.md M12 の完了条件、docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
-# ○ 受注の引当。有効在庫が負にならず、引当のたびに移動履歴が残る（docs/architecture/data-model.md「在庫（inventory）」）
+# ○ 受注の引当。有効在庫が負にならず、引当のたびに移動履歴が残る（docs/architecture/data-model.md「在庫（`inventory`）」）
 ```
 
 spec の冒頭のコメントには、その spec が守る規則と、規則が書かれた設計文書の節を書く。

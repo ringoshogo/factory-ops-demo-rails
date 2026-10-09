@@ -1,7 +1,7 @@
 require "rails_helper"
 
 # 出荷実績の計上。有効な指示のある出荷依頼を、有効な引当を消費して全量で 1 回だけ計上し、ロックを決まった順に取る
-# （docs/architecture/data-model.md「取消と出荷の競合を止める場所」「出荷（fulfillment）」）
+# （docs/architecture/data-model.md「取消と出荷の競合を止める場所」「出荷（`fulfillment`）」）
 RSpec.describe Fulfillment::Shipping do
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
