@@ -546,7 +546,7 @@ bundle exec rspec --tag concurrency   # 同上
   - 使わない先読みの検出を外す理由：`Bullet.raise` は検出の種類を問わず例外にする。公開 API は、値の組み立てに要る関連を GraphQL の選択によらずまとめて先読みするので、使わない先読みの報告は直す対象にならない。
   - カウンタキャッシュの検出を外す理由：状況と件数は時刻列と公開 API で導出し（`data-model.md`「状態は保存せず、時刻列から導出する」）、カウンタキャッシュの列を持たない。
 - `spec/support/bullet.rb`：各 example を `around` で `Bullet.profile { example.run }` に包む。`Bullet.profile` は、`start_request` で検出を始め、example の後に検出があれば `perform_out_of_channel_notifications` で通知し（`Bullet.raise` なので例外になる）、`ensure` で `end_request` を呼ぶ。`start_request` と `end_request` だけで包むと、検出しても通知されず、`end_request` が検出の状態を消すので、example は通る。`bullet: false` か `:concurrency` のメタデータを持つ example は包まない。
-  - `spec/requests` の example：`spec/rails_helper.rb` が置き場から `bullet: false` を付ける。Bullet は、HTTP の要求を自分のミドルウェア（`Bullet::Rack`）で同じ手順で包む。外でも包むと、ミドルウェアの `start_request` と `end_request` が外の検出の状態を上書きして消すので、二重に管理しない。
+  - HTTP の要求を流す example（`type: :request`）：`spec/rails_helper.rb` が `type: :request` から `bullet: false` を付ける。Bullet は、HTTP の要求を自分のミドルウェア（`Bullet::Rack`）で同じ手順で包む。外でも包むと、ミドルウェアの `start_request` と `end_request` が外の検出の状態を上書きして消すので、二重に管理しない。要求は `spec/requests` の外（シナリオ・行列テスト）でも流すので、置き場では決めない。要求の外でイベントを受け手まで流す補助（`deliver_enqueued_events`・`deliver_oldest_event`）は、検出の外で呼ばれたら自分で `Bullet.profile` に包む。
   - `:concurrency` のメタデータを持つ example（M16）：別のスレッドで操作する。Bullet は検出の状態をスレッドごとに持つので、別のスレッドの読み込みは見えない。
   - 包みが出す例外は、example が終わった後の `around` の中で起きる。example の中の `expect { }.to raise_error` では捕まえられないので、例外を確かめる example は `bullet: false` を付け、自分で `Bullet.profile` を呼ぶ。
 - 一覧のテストの規則：Bullet は、1 回の読み込みで 1 件しか返らなかったレコードを N+1 の候補にしない。担当者は、一覧を返す公開 API のテストで、親を 2 件以上作り、それぞれの関連を読む値を確かめる。
@@ -567,12 +567,12 @@ bundle exec rspec --tag concurrency   # 同上
   | `SupplierPartMappings` | 7 | 受注側の `member` | `supplier.partMappings` | `customer`・`item` |
   | `SupplierPartnerships` | 12 | 受注側の `admin` | `supplier.partnerships` | `buyer`・`permissions` |
   | `BuyerSuppliers` | 18・20 | 発注側の `member` | `buyer.suppliers` | `supplier`・`permissions` |
-  | `BuyerSupplierCatalog` | 18・20 | 発注側の `member`（相手から `view_catalog` の付与あり） | 取引先 1 つの `SupplierPartnership.catalog` | なし |
+  | `BuyerSupplierCatalog` | 18・20 | 発注側の `member`（相手から `view_catalog` の付与あり） | `buyer.supplier(supplierTenantId:)` で選んだ取引先の `SupplierPartnership.catalog` | なし |
   | `BuyerPurchaseOrders` | 19 | 発注側の `member`（相手から `view_shipments` の付与あり） | `buyer.purchaseOrders` | `supplier`・`lines`・`inboundShipments`・`supplierShipments` |
 
-  一覧の中にコネクションを入れ子にした問い合わせは、親ごとにページングの問い合わせが出るので、画面の問い合わせに置かない。カタログは、取引先を 1 つ選んでから引く（`BuyerSupplierCatalog`）。
+  一覧の中にコネクションを入れ子にした問い合わせは、親ごとにページングの問い合わせが出るので、画面の問い合わせに置かない。カタログは、取引先を 1 つ選ぶ入口（`buyer.supplier(supplierTenantId:)`）で選んでから引く（`BuyerSupplierCatalog`）。
 - `spec/graphql/query_budget_spec.rb`：画面の問い合わせの一覧の問い合わせごとに、一覧の親が 1 件のときと 20 件のときの SQL の件数が同じであることを確かめる。spec は、問い合わせごとに次を決めて流す。
-  - **操作者と変数**：上の表の操作者でログインした状態の `context` を作り、変数の `first` に 20 を明示する。1 ページの件数の既定に頼らない。
+  - **操作者と変数**：上の表の操作者でログインした状態の `context` を作る。一覧の親がコネクションの問い合わせは、変数の `first` に 20 を明示し、1 ページの件数の既定に頼らない。リストで返す一覧（`supplier.partnerships`・`buyer.suppliers`）は `first` を持たない。
   - **親と子の作り方**：親を 1 件と 20 件作り、入れ子の件数を問い合わせごとに表で持つ。リストの入れ子は、業務の制約が許す範囲で各親に 2 件作る。`BuyerPurchaseOrders` の `inboundShipments`・`supplierShipments` は、分納しない（`data-model.md` の `shipments.shipment_request_id` 一意）ので発注ごとに 1 件にする。単数の入れ子は各親に 1 件作る。
   - **関連先を親ごとに変える**：関連先の ID で引く入れ子（`customer`・`supplier`・`buyer`・`item`・`salesOrder` など）は、親ごとに別の関連先を作る。20 件の親が同じ関連先を指すと、ソースの中ではキーが 1 つにまとまり、ソースを外しても同じ SQL が `cached: true` になって数えられないので、N+1 が件数に出ない。親の ID で引く入れ子（`lines` など）は、もともと親ごとに違う。
   - **応答の確かめ**：件数を比べる前に、応答に `errors` が無いこと、一覧の件数が 1 件と 20 件であること、表の入れ子の件数が各親で作った件数と一致することを確かめる。認可の失敗や空の一覧で件数がそろう場合を、通さないためである。

@@ -71,10 +71,10 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 | 経路 | 型 | 開く条件 | 呼ぶ公開 API |
 |---|---|---|---|
 | 1. カタログ | `SupplierPartnership.catalog` → `PublishedCatalogItem` | 有効な取引関係と `view_catalog` の付与 | `Sales::PublishedCatalog` |
-| 2. 取引関係 | `BuyerView.suppliers` → `SupplierPartnership` | 有効な取引関係 | `Partnerships::Directory` |
+| 2. 取引関係 | `BuyerView.suppliers`・`BuyerView.supplier` → `SupplierPartnership` | 有効な取引関係 | `Partnerships::Directory` |
 | 3. 自社の発注に連結した出荷 | `PurchaseOrder.supplierShipments` → `SupplierShipment` | 有効な取引関係と `view_shipments` の付与 | `Fulfillment::PartnerShipments` |
 
-開く条件は、各公開 API が取引関係の公開 API（`Partnerships::Access`）に問い合わせて判定する。条件を満たさなければ、公開 API は空を返す。GraphQL 層では、経路ごとにエラーにも `null` にもしない。取引関係が失効した時点で、3 つの経路はどれも空になり、RLS も同じ行を閉じる（`data-model.md`「RLS」）。
+開く条件は、各公開 API が取引関係の公開 API（`Partnerships::Access`）に問い合わせて判定する。条件を満たさなければ、公開 API は空を返す。GraphQL 層では、経路ごとにエラーにも `null` にもしない。ただし取引先を 1 社選ぶ `buyer.supplier` は、1 件を引く入口なので、ほかの 1 件を引く入口と同じく `null` を返す（「ID と `node`」）。取引関係が失効した時点で、3 つの経路はどれも空になり、RLS も同じ行を閉じる（`data-model.md`「RLS」）。
 
 経路 3 の出荷実績は、購買が持つ写しの入荷（`InboundShipment`）と同じ出荷を指す。業務の正本は写しの入荷で、検収はこれに対して行う。経路 3 は、受注側の出荷実績そのものを、権限付与がある間だけ見せる。
 
@@ -83,6 +83,8 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 ```graphql
 type BuyerView {
   suppliers: [SupplierPartnership!]!
+  "経路 2 の取引先を 1 社選ぶ。取引関係の無い相手・失効した相手・存在しないテナントは区別せず null"
+  supplier(supplierTenantId: ID!): SupplierPartnership
   purchaseOrders(first: Int, after: String, filter: PurchaseOrderFilter): PurchaseOrderConnection!
   purchaseOrder(id: ID!): PurchaseOrder
   receivedInvoices(first: Int, after: String): ReceivedInvoiceConnection!
@@ -399,7 +401,7 @@ ID でレコードを引く入口は、視点の下に型ごとに置く（`buye
 
 相手テナントを指す引数も、テナントが存在するかどうかを明かさない。
 
-- **取引関係を前提にする引数**（`placePurchaseOrder` の `supplierTenantId` など）：公開 API はテナントを引かず、`Partnerships::Access` の判定だけで扱う。存在しないテナントも、取引関係の無いテナント・失効したテナント・権限付与の無いテナントと同じ `NOT_PERMITTED` になる。
+- **取引関係を前提にする引数**（`placePurchaseOrder` の `supplierTenantId` など）：公開 API はテナントを引かず、`Partnerships::Access` の判定だけで扱う。存在しないテナントも、取引関係の無いテナント・失効したテナント・権限付与の無いテナントと同じ `NOT_PERMITTED` になる。クエリの `buyer.supplier(supplierTenantId:)` は、存在しないテナントも、取引関係の無いテナント・失効したテナントと同じ `null` を返す。
 - **取引関係を結ぶ相手**（`establishPartnership`）：受注側の `admin` は、相手を発注側テナントの取引用コード（`tenants.partner_code`）で指定する。取引用コードは推測できない無作為の値で、発注側の `admin` が `viewer.partnerCode` で読み、受注側へ業務の外で伝える。一致するテナントが無ければ `NOT_FOUND` を返す。相手の名前は、取引関係を結んだ後に `Partnership.buyer` で初めて見せる。テナントの `code` は推測できるので、指定に使わない。使うと、総当たりで他社の名前を集められる。
 
 ## 認可：宣言の無い型・リゾルバ・mutation は拒否する
@@ -511,7 +513,7 @@ type AuditLog {
 
 | フィールド | 呼ぶ公開 API |
 |---|---|
-| `buyer.suppliers` | `Partnerships::Directory.for_buyer` |
+| `buyer.suppliers`・`buyer.supplier` | `Partnerships::Directory.for_buyer`・`for_buyer_supplier` |
 | `SupplierPartnership.catalog` | `Sales::PublishedCatalog.items` |
 | `buyer.purchaseOrders`・`buyer.purchaseOrder` | `Purchasing::PurchaseOrders` |
 | `PurchaseOrder.lines`・`cancellationRequests`・`inboundShipments` | `Purchasing::PurchaseOrders`（発注 ID をまとめて渡す） |
@@ -679,15 +681,15 @@ enum UserErrorCode {
 
 N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
 
-- **公開 API の中の N+1**：Bullet をテストで有効にし、関連を 1 件ずつ読むと例外にする。Bullet は検出の状態をスレッド変数に置くので、Dataloader のソースの Fiber の中の読み込みも見える。`spec/support/bullet.rb` が各 example を `Bullet.profile` で包み、`spec/requests` の example は Bullet のミドルウェアが要求ごとに包む。競合テスト（`:concurrency`）は別のスレッドで操作し、Bullet に見えないので包まない。
+- **公開 API の中の N+1**：Bullet をテストで有効にし、関連を 1 件ずつ読むと例外にする。Bullet は検出の状態をスレッド変数に置くので、Dataloader のソースの Fiber の中の読み込みも見える。`spec/support/bullet.rb` が各 example を `Bullet.profile` で包む。HTTP の要求を流す example（`type: :request`）は、Bullet のミドルウェアが要求ごとに包むので外の包みから外し、要求の外でイベントを受け手まで流す補助が自分で検出を始める。競合テスト（`:concurrency`）は別のスレッドで操作し、Bullet に見えないので包まない。
 - **フィールドの N+1**：GraphQL の型は AR のレコードではなく公開 API の値を受け取るので、親ごとに公開 API を呼ぶ N+1 は Bullet に見えない。画面の問い合わせごとに、親が 1 件と 20 件のときの SQL の件数が同じであることを、クエリ数の予算のテスト（`spec/graphql/query_budget_spec.rb`）で確かめる。
 
 どちらの検査も、テストのデータが N+1 を出せなければ素通りする。テストを書く人は、次の 2 つを守る。
 
-- **一覧のテストは、親を 2 件以上作る**：Bullet は、1 回の読み込みで 1 件しか返らなかったレコードを N+1 の候補にしない。一覧を返す公開 API のテストでは、親を 2 件以上作り、それぞれの関連を読む値を確かめる。準備のデータは factory で作る。Bullet は作ったレコードも候補から外すので、`spec/support/bullet.rb` は factory が動く間だけ検出を止めている。公開 API を呼んで準備したレコードは、候補にならない。
-- **画面の問い合わせは、一覧の中にコネクションを入れ子にしない**：一覧の要素の下にコネクションを置くと、親ごとにページングの問い合わせが出る。コネクションは、親を 1 つに決めてから引く。画面の問い合わせは、操作名を付けて 1 ファイル 1 つで `spec/fixtures/graphql/screens` に置き、クエリ数の予算のテストの表に、操作者・一覧の親・入れ子の件数を足す。表に無いファイルがあると、そのテストが落ちる。
+- **一覧のテストは、親を 2 件以上作る**：Bullet は、1 回の読み込みで 1 件しか返らなかったレコードを N+1 の候補にしない。一覧を返す公開 API のテストでは、親を 2 件以上作り、それぞれの関連を読む値を確かめる。準備のデータは factory で作り、確かめる公開 API は factory が終わった後に呼ぶ。Bullet は作ったレコードも候補から外すので、`spec/support/bullet.rb` は factory が動く間だけ検出を止めている。factory の属性やコールバックの中で公開 API を呼ぶと、その読み込みは検出されない。公開 API を呼んで準備したレコードは、候補にならない。
+- **画面の問い合わせは、一覧の中にコネクションを入れ子にしない**：一覧の要素の下にコネクションを置くと、親ごとにページングの問い合わせが出る。コネクションは、親を 1 つに決めてから引く（カタログは `buyer.supplier(supplierTenantId:)` で取引先を 1 社選んでから引く）。画面の問い合わせは、操作名を付けて 1 ファイル 1 つで `spec/fixtures/graphql/screens` に置き、クエリ数の予算のテストの表に、操作者・一覧の親・入れ子の件数を足す。表に無いファイルと、リストの要素の下にコネクションを置いたファイルがあると、そのテストが落ちる。
 
-> 取引先を 1 つ選んで引く入口がまだ無いので、`BuyerSupplierCatalog` は取引先の一覧（`buyer.suppliers`）の下でカタログを引く。クエリ数の予算のテストは、取引先を 1 件にして、カタログの品目を親として数える（`../plans/open-items.md` OI-25）。
+公開 API の中で親ごとに発行するクエリのうち、関連の読み込みでないもの（`where` で子を引き直す、など）は、Bullet にも、画面の問い合わせを通らない書き込みの経路ではクエリ数の予算にも見えない。一括で引くことを守りたい公開 API は、その spec で SQL の数を数える（`Sales::PartMappings.register` の spec）。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 
