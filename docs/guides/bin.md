@@ -44,6 +44,7 @@
 | `bin/packwerk` | packwerk の入口。`validate` で設定の整合を、`check` で依存とプライバシーの違反を調べる | Bundler 生成（M2 で追加） | [ADR 002](../adr/002-packwerkを初日からCIで強制する.md)、[packs-and-packwerk.md](packs-and-packwerk.md) |
 | `bin/check-structure` | `db/structure.sql` が、マイグレーションを流した結果とも、読み込み直して書き出した結果とも一致することを確かめる | 本デモで書いたもの | [ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) |
 | `bin/check-open-items` | 残件と改善の候補の 2 つの台帳の形と、追跡しているファイルに書いた `OI-NN`・`IB-NN` が台帳にあることを確かめる。`--due M<番号>` を付けると、引当先がそのマイルストーンの `open` と `blocked-user` が残っていれば失敗する。`--text` で PR の本文も確かめる | 本デモで書いたもの | [dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること) |
+| `bin/test-layers` | rspec の JSON の出力（`--format json --out tmp/rspec.json`）を読み、テストの層ごとの件数・割合・時間を表にする。どの層の置き場にも当たらないファイルがあれば失敗し、割合が目安を外れたら警告の注釈を出す。`GITHUB_STEP_SUMMARY` があれば、表をジョブの要約にも書く | 本デモで書いたもの | [testing.md「テストの層」](testing.md#テストの層) |
 | `bin/brakeman` | Brakeman（Rails のコードの静的なセキュリティ検査）。`--ensure-latest` を付け、古い版なら失敗させる | Rails 生成 | — |
 | `bin/bundler-audit` | Gemfile.lock の gem に既知の脆弱性が無いかを調べる。無視する CVE は `config/bundler-audit.yml` に書く | Rails 生成 | — |
 | `bin/ci` | `config/ci.rb` に並べた工程を順に流す、手元用の CI | Rails 生成 | 工程は [config.md「CI の工程」](config.md#ci-の工程) |
@@ -67,7 +68,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、3 つ�
 |---|---|
 | `scan_ruby` | `bin/brakeman --no-pager`、`bin/bundler-audit` |
 | `lint` | `bin/rubocop -f github`、`bin/packwerk validate && bin/packwerk check`、`bin/check-open-items`（PR では本文を `--text -` で渡す） |
-| `test` | psql で `docker/initdb/01_roles.sql`、`bin/rails db:test:prepare`、`bundle exec rspec`、`bin/check-structure` |
+| `test` | psql で `docker/initdb/01_roles.sql`、`bin/rails db:test:prepare`、`bundle exec rspec --format progress --format json --out tmp/rspec.json`、`bin/test-layers tmp/rspec.json`、`bin/check-structure` |
 
 `test` のジョブは `bin/setup` を流さない。サービスのコンテナには初期化スクリプトを渡せないので、ロールはワークフローが psql で作る。
 

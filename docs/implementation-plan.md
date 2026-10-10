@@ -501,37 +501,13 @@ bundle exec rspec spec/rubocop   # Cop が悪い例を落とし、良い例を�
 
 **作るもの**
 
-- テストの層の定義（`config/test_layers.yml`）。担当者は、テストのファイルを足すとき、どの層の置き場に置くかを次の表で決める。
+層の定義・層への配分の規則・競合テストの置き場・重要シナリオの表は `guides/testing.md` にある。本節は、このマイルストーンで作るものだけを挙げる。
 
-  | 層 | 置き場 | 確かめること | 件数の目安 |
-  |---|---|---|---|
-  | 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | 60% 以上 |
-  | 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | 30% 以下 |
-  | シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオ | 10% 以下 |
-  | ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/platform`・`spec/rubocop` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制） | 数えない |
-
-  割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
-
-- 競合テストの置き場：2 つの接続から同時に操作するテストは、`concurrency` の置き場に置く。パッケージの非公開のモデルを使うものは、パッケージの外から非公開の定数を参照できないので、`packs/*/spec/concurrency` に置く。既存の競合テスト（在庫の行ロック・発注と失効・受注の引当・品番の対応表の登録）をここへ移し、同じファイルにある競合でない example は単体の置き場に残す。`spec/rails_helper.rb` は、`concurrency` の置き場のファイルに `:concurrency` のメタデータを付ける（`define_derived_metadata`）。層の判定（`bin/test-layers`）と Bullet の対象外（M17）は、どちらもこの置き場から決まる。
-- 層への配分の規則：業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）は、単体で網羅する。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。担当者が既存の request spec から単体へ移すのは、公開 API の spec と同じ業務の分岐を確かめているものだけである。次の規則は HTTP の入口でしか確かめられないので、request spec に残す。
-  - 認証：セッションの無い要求と、世代の古いセッションの要求が 401 になる
-  - セッション：Cookie の属性、ログインでのセッションの作り直し、ログアウトでの世代の更新
-  - 認可の配線：視点・型・mutation の宣言が、入口を通した要求で効く
-  - トランザクションの単位：ユーザーエラーだけの応答はコミットし、トップレベルのエラーと例外はロールバックする（`graphql-schema.md`「1 回のリクエストがたどる道」）
-- `bin/test-layers`：rspec の JSON の出力を読み、層ごとの件数・割合・時間を表にして、標準出力と `$GITHUB_STEP_SUMMARY` に書く。example の層は、JSON の `id`（`./packs/sales/spec/public/sales/part_mappings_spec.rb[1:2:1]` の形）のファイルの部分で決める。`file_path` は、共有の example（`it_behaves_like`）では共有の example を定義したファイルを指すので使わない。どの層の置き場にも当たらないファイルがあれば失敗する。割合が目安を外れたら、GitHub の警告の注釈（`::warning::`）を出す。
-- CI：`.github/workflows/ci.yml` と `config/ci.rb` の rspec のステップを、`bundle exec rspec --format progress --format json --out tmp/rspec.json` にし、続けて `bin/test-layers tmp/rspec.json` を流す。
-- 重要シナリオ。シナリオは 2 社のユーザーとして GraphQL を通して操作し、`:solid_queue` のまま `deliver_enqueued_events` でイベントを流す。`concurrency` の置き場のテストは、トランザクションで包まない設定で 2 つの接続から同時に操作し、作った行を後で所有ロールで消す（監査ログができた後の消し方は M19）。`spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、`concurrency` と同じく置き場から付ける。担当者が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
-
-  | | シナリオ | 確かめること | 置き場 | 作るマイルストーン |
-  |---|---|---|---|---|
-  | S1 | テナントの境界 | 発注側が、イベントで受け取った相手の ID（出荷実績 ID）と、受注側の伝票の ID を、ID を取るすべての入口（下の列挙）に持ち込んでも、相手のデータに届かない（`null` か `NOT_FOUND`） | `spec/scenarios/tenant_boundary_spec.rb` | M16 |
-  | S2 | 取引関係の失効 | 失効で 3 経路と新しい発注が閉じ、連結済みの取引は請求まで進む | `spec/scenarios/revocation_spec.rb` | M26 |
-  | S3 | 発注と受注の連結 | 照合待ち → 対応表の登録 → 受注確定。同じイベントを 2 回流しても、イベントの届く順を入れ替えても、受注は 1 件で、発注の状況は同じになる | `spec/scenarios/order_linking_spec.rb` | M16 |
-  | S4 | 引当・出荷・取消の競合 | 同じ出荷依頼の同時の計上は 1 件だけ成立する。同時の引当と出庫で有効在庫が負にならない。同時の取消と計上はどちらか一方だけが成立する | `spec/concurrency/` | M16（計上・引当）、M22（取消） |
-  | S5 | 請求の金額と税の丸め | 発注 → 受注 → 出荷 → 検収 → 締め → 発行 → 受領請求書で、単価・数量・税額・合計が 2 社で一致し、税が請求書・税率ごとに 1 回だけ切り捨てられる | `spec/scenarios/billing_amounts_spec.rb` | M25 |
-
-- S1 の入口の列挙：`tenant_boundary_spec.rb` は、`FactoryOpsSchema` の型を走査し、ID 型の引数（入力型の中の ID 型の項目を含む）を取るフィールドと mutation を集める。spec は、入口ごとに相手の ID をどの引数に入れるかを表で持ち、集めた入口が表に無ければ落ちる。後のマイルストーンで ID を取る入口を足した担当者は、S1 の表に行を足す。
-- 行列テストとの分担：行列テスト（M6）は、全表・全入口を 5 つのペルソナで 1 段ずつ確かめる。シナリオは、段をつないだ道（イベントで知った ID を別の入口に持ち込む、など）を確かめる。行列テストに行を足して済むものは、シナリオにしない。
+- テストの層の定義（`config/test_layers.yml`）と、`guides/testing.md`「テストの層」の表
+- `bin/test-layers`：rspec の JSON の出力を読み、層ごとの件数・割合・時間を表にして、標準出力と `$GITHUB_STEP_SUMMARY` に書く。example の層は JSON の `id` のファイルの部分で決め、未分類のファイルがあれば失敗し、割合が目安を外れたら警告の注釈を出す（`guides/testing.md`「テストの層」）
+- 競合テストの置き場：既存の競合テスト（在庫の行ロック・発注と失効・受注の引当・品番の対応表の登録）を `concurrency` の置き場へ移す。`spec/rails_helper.rb` は、置き場から `:concurrency` と `:scenario` のメタデータを付け、`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にする（`guides/testing.md`「競合テスト」「重要シナリオ」）
+- CI：`.github/workflows/ci.yml` と `config/ci.rb` の rspec のステップを、`bundle exec rspec --format progress --format json --out tmp/rspec.json` にし、続けて `bin/test-layers tmp/rspec.json` を流す
+- 重要シナリオの S1・S3 と、S4 のうち計上・引当・出荷指示の取消の競合（`guides/testing.md`「重要シナリオ」）。S1 は、ID を取る入口をスキーマから集め、表に無い入口があれば落ちる（`guides/testing.md`「S1 の入口の列挙」）
 
 **判断**：層の割合を CI の失敗にするか
 
@@ -558,7 +534,7 @@ bundle exec rspec --tag concurrency   # 同上
 
 **実装する文書の節**：`decisions.md` 7 章、`adr/005` 決定 6（テストでのジョブの扱い）
 
-**文書に残すこと**：層の定義・競合テストの置き場・request spec に残す規則・重要シナリオの表を `guides/testing.md` に移し、本節からはそこを参照する。
+**文書に残すこと**：層の定義・競合テストの置き場・request spec に残す規則・重要シナリオの表は `guides/testing.md` にある。置き場を変えたら、`config/test_layers.yml` と同じ変更で直す。
 
 ## M17 N+1 の検出
 

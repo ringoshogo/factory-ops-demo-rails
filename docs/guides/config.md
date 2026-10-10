@@ -22,6 +22,7 @@
 | `database.yml` | DB の接続先とロール | 変更 | [DB の接続](#db-の接続) |
 | `queue.yml` | Solid Queue のワーカーの設定 | 追加（生成器のまま） | [ジョブ](#ジョブ) |
 | `recurring.yml` | Solid Queue の定期実行 | 追加（生成器のまま） | [ジョブ](#ジョブ) |
+| `test_layers.yml` | テストの層ごとの置き場と、割合の目安。`bin/test-layers` が読む | 追加 | [testing.md「テストの層」](testing.md#テストの層) |
 | `ci.rb` | `bin/ci` が流す工程 | 変更 | [CI の工程](#ci-の工程) |
 | `bundler-audit.yml` | `bin/bundler-audit` が無視する CVE | 生成のまま | — |
 | `credentials.yml.enc` | 暗号化した秘密情報 | 生成のまま | [使っていない機能の設定](#使っていない機能の設定) |
@@ -118,7 +119,8 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 |---|---|---|---|
 | Packages: packwerk | — | `bin/packwerk validate && bin/packwerk check` | 依存の向きと公開 API の限定を強制する（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md)） |
 | Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
-| Tests | `bin/rails test` | `bin/rails db:test:prepare && bundle exec rspec` | テストに RSpec を使う |
+| Tests | `bin/rails test` | `bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json` | テストに RSpec を使う。層ごとの件数を数えるため、JSON の出力も書く |
+| Tests: layers | — | `bin/test-layers tmp/rspec.json` | テストの層ごとの件数・割合・時間を報告し、未分類のファイルを止める（[testing.md「テストの層」](testing.md#テストの層)） |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。

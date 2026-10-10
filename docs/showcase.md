@@ -64,7 +64,7 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/supplier_s
 - `spec/platform/tenancy_session_spec.rb`：接続に残ったテナントが次の利用者に漏れない
 - `spec/requests/supplier_shipments_spec.rb`：失効すると、権限の付与が残っていても経路 3 が空になり、自社の写しは残る
 
-**状態**：実装済み（3 経路と失効は M8・M9・M14）。失効の後に連結済みの取引が請求まで進むことの通し試験は計画（M26、`spec/scenarios/revocation_spec.rb`）。イベントで知った相手の ID をすべての入口に持ち込むシナリオは計画（M16、`spec/scenarios/tenant_boundary_spec.rb`）。
+**状態**：実装済み（3 経路と失効は M8・M9・M14）。失効の後に連結済みの取引が請求まで進むことの通し試験は計画（M26、`spec/scenarios/revocation_spec.rb`）。イベントで知った相手の ID を、ID を取るすべての入口に持ち込むシナリオは実装済み（`spec/scenarios/tenant_boundary_spec.rb`）。
 
 ### 2. コンテキストの境界と依存の向き
 
@@ -247,25 +247,26 @@ bin/check-structure
 **何を示すか**：テストの大半を、速く、落ちた場所から原因が分かる単体テスト（公開 API・モデル・policy）に置き、壊れると事故になる流れだけを専用のシナリオテストで端から端まで確かめる。テストは本番と同じ仕組みの上で動かす。
 
 **設計判断**
-- [`implementation-plan.md`](implementation-plan.md)「M16 テストの層と重要シナリオ」
+- [`guides/testing.md`](guides/testing.md)（テストの層・層への配分・競合テスト・重要シナリオ）
 - [`adr/005-イベントのジョブをトランザクション内で登録する.md`](adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6（テストでも Active Job の `:test` アダプタに差し替えない）
 
 **どこで守っているか**
-- 単体は `packs/*/spec`、結合は `spec/requests`・`spec/contracts` に置く
+- 単体は `packs/*/spec`、結合は `spec/requests`・`spec/contracts`、シナリオは `spec/scenarios` と `concurrency` の置き場に置く。層の定義 `config/test_layers.yml` を読む `bin/test-layers` が、層ごとの件数・割合・時間を CI で報告し、どの層にも当たらないファイルを落とす
 - テストは RLS の掛かる `factory_app` で接続するので、RLS を迂回しない（`spec/db/tenant_enforcement_spec.rb`「接続中のロール」）
 - イベントは `:solid_queue` のまま `solid_queue_jobs` の行を読んで受け手まで流す（`spec/support/events.rb` の `deliver_enqueued_events`）
-- 同時実行は、2 つの接続を別のスレッドで動かして確かめる（`ordering_lock_spec.rb`・`order_allocation_lock_spec.rb`・`part_mappings_spec.rb`）
-- 層の定義 `config/test_layers.yml` と、層ごとの件数を CI で報告する `bin/test-layers`（計画：M16）
-- 重要シナリオ S1〜S5（テナントの境界・失効・連結・競合・請求の金額）を `spec/scenarios`・`spec/concurrency` に置き、`--tag scenario` で単独で流す（計画：M16〜M25）
+- 同時実行は、2 つの接続を別のスレッドで動かして確かめ、`spec/concurrency`・`packs/*/spec/concurrency` に置く（`--tag concurrency`）
+- 重要シナリオ S1〜S5（テナントの境界・失効・連結・競合・請求の金額）は、置き場から `:scenario` のタグが付き、`--tag scenario` で単独で流す。絞り込みの結果が 0 件なら失敗する
 
 **どう確かめられるか**
 
 ```sh
 bundle exec rspec packs        # 単体
 bundle exec rspec spec/requests spec/contracts   # 結合
+bundle exec rspec --tag scenario --tag concurrency   # シナリオ
+bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
-**状態**：本番と同じ仕組みで動かすことと同時実行のテストは実装済み。層の報告と重要シナリオは計画（M16、S2 は M26、S5 は M25）。
+**状態**：層の報告と、重要シナリオの S1・S3・S4（計上・引当・出荷指示の取消）は実装済み。S2 は計画（M26）、S4 の受注の取消は計画（M22）、S5 は計画（M25）。
 
 ### 10. 運用性
 
@@ -295,6 +296,7 @@ bundle exec rspec spec/requests spec/contracts   # 結合
 - 現在地と次の一手：[`handoff.md`](handoff.md)（決まったこと・決まっていないこと・次にやること）
 - 実装の順と完了条件：[`implementation-plan.md`](implementation-plan.md)（マイルストーンごとに、機械で守るようになる規則と完了条件のコマンドを書く）
 - コメントの規約：[`guides/comments.md`](guides/comments.md)（いまの振る舞いと理由だけを書き、根拠を設計文書の節で指す）
+- テストの置き場と重要シナリオ：[`guides/testing.md`](guides/testing.md)
 - 生成物から変えたことの解説：[`guides/bin.md`](guides/bin.md)・[`guides/config.md`](guides/config.md)・[`guides/packs-and-packwerk.md`](guides/packs-and-packwerk.md)
 
 **どう確かめられるか**：コードのコメントと spec の冒頭は、根拠を設計文書の節で指している（例：`packs/purchasing/app/public/purchasing/ordering.rb`、`spec/graphql/perspective_reachability_spec.rb`）。

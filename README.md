@@ -48,6 +48,7 @@ pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対�
 | `docs/plans/open-items.md` | 残件の台帳。その場で片付けず、決まったマイルストーンまでに決着させる事項の正本 |
 | `docs/plans/improvement-backlog.md` | 改善の候補の台帳。期限は無いが、いまのやり方より良くできるかもしれない事項と、その裁定の記録 |
 | `docs/guides/comments.md` | コードのコメントの規約。いまの振る舞いと理由だけを書き、経緯・マイルストーンの番号・予定を書かない。良い例と悪い例 |
+| `docs/guides/testing.md` | テストの層と置き場、層への配分、競合テストの書き方、重要シナリオ S1〜S5 |
 | `docs/adr/001-スキーマ管理にridgepoleを採用しない.md` | スキーマ管理に Rails マイグレーション＋`structure.sql` を選ぶ理由 |
 | `docs/adr/002-packwerkを初日からCIで強制する.md` | `packs/` 構成と packwerk の依存・プライバシーチェックを初日から CI で強制する理由 |
 | `docs/adr/003-主キーにUUIDv7を使う.md` | 主キーを UUIDv7 にし、DB で生成する理由 |

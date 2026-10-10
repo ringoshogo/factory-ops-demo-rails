@@ -24,3 +24,8 @@
 | OI-16 | open | コードと文書の「ID と node」の参照を、見出し「ID と `node`」（`graphql-schema.md`）の表記にそろえ、見出しの文字列で grep して当たるようにする | M15 の実装レビュー（Low の範囲外の残り） | M16 | |
 | OI-17 | open | M33 の画面 18 を、一覧の中にコネクションを入れ子にしない規則（M17）に合わせて書き直す | サイクル 01 の計画レビュー（残件の候補） | M33 | |
 | OI-18 | open | `data-model.md` の `audit_logs.actor_user_id` に「→」が無く、外部キーかどうかが曖昧。ユーザーは `platform` の外の表なので、コンテキストをまたぐ参照の規則（外部キーを張らない）に合わせて記述をそろえる | サイクル 01 の計画レビュー（残件の候補） | M19 | |
+| OI-19 | judgment | `bin/` の検査のスクリプトの spec（`spec/bin`）を、テストの層のガードに入れた。計画の層の表に無い置き場で、構造の規則を確かめる検査と同じく、対象の数に比例して増え、業務の流れを確かめないからである | M16 の実装 | M20 | |
+| OI-20 | judgment | S1 の「相手のデータに届かない」結果を、入口の種類ごとに決めた。1 件を引くフィールドは `null`、一覧を ID で絞るフィールドは空、対象を引く mutation は `NOT_FOUND`、`placePurchaseOrder` は相手の有無と取引関係を区別しない `NOT_PERMITTED`（`graphql-schema.md`「ID と `node`」）。計画は「`null` か `NOT_FOUND`」だけを挙げていた | M16 の実装 | M20 | |
+| OI-21 | judgment | 既存の request spec を単体へ移さなかった。公開 API の spec と同じ業務の分岐を確かめている example が無かった（分岐を確かめる公開 API の spec が無いものは OI-22）。そのため単体・結合・シナリオの 3 つとも目安を外れ、`bin/test-layers` は警告を出す | M16 の実装 | M20 | |
+| OI-22 | open | 公開 API の単体の spec が無い業務の分岐を、単体に書き足し、同じ分岐を確かめる request spec の example を削る。対象は `Purchasing::Ordering.place`（相手の種類ごとの `NOT_PERMITTED`・明細の誤りと上限・伝票番号）、`Sales::PurchaseOrderTranslator`（照合待ち・重複配送・内部 ID を運ばない）、`Sales::PartMappings.register`（全明細の照合で確定・別の取引先の対応を使わない・失効した相手への登録）、`Sales::Catalog` の品目の保存（同じコードの更新・公開の状態を変えない） | M16 の実装（単体 39.8%・結合 46.3% で目安を外れた） | M20 | |
+| OI-23 | judgment | 既存の競合テストの 4 ファイルは、同じパッケージの `spec/concurrency` へ移すだけにし、新しく足した補助（`spec/support/concurrency.rb`）へ書き換えなかった。移す変更と書き換える変更を混ぜると、移した後も同じ example が通ることを差分で確かめにくいからである | M16 の実装 | M20 | |
