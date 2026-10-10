@@ -25,7 +25,7 @@ bin/packwerk validate && bin/packwerk check   # M2 から
 bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json                # M16 から。テストの層ごとの件数の報告
 bin/check-structure                           # structure.sql の往復の検査
-bin/check-schema-compat                       # M20 の 2 つ目の PR から（M20「初回の導入」）。GraphQL のスキーマの破壊的変更の検査
+bin/check-schema-compat                       # M20 から。GraphQL のスキーマの破壊的変更の検査
 bin/check-open-items --due M<番号>            # 引当先がこのマイルストーンの残件が、open と blocked-user のまま残っていない
 ```
 
@@ -779,7 +779,7 @@ bundle exec rspec --tag concurrency && bundle exec rspec --tag concurrency   # �
   - 例外の一覧（`docs/graphql/breaking-changes.yml`）：規則で落とした変更は、例外の一覧に同じ変更のクラス名と座標の行があるときだけ通す。秘密を漏らすフィールドを非推奨を経ずに消すときは、削除の規則で落ちた `FieldRemoved` をこの行で通す。行は `change`・`path`・`reason` を持ち、`reason` が空の行があれば、一覧の読み込みで失敗する。クラス名か座標が違う行は、その変更を通さない。どの変更にも当たらない行は、警告として一覧に出す。
 - `bin/check-schema-compat`：基準（環境変数 `BASE_REF`、既定は `origin/main`）と HEAD の分岐点の `schema.graphql` と、作業中の `schema.graphql` を互換の判定に渡し、落とす変更が 1 つでもあれば失敗する。分岐点に `schema.graphql` が無いときも失敗する。結果を標準出力と `$GITHUB_STEP_SUMMARY` に書く。
 - `spec/graphql/schema_compat_spec.rb`：小さな新旧の SDL（`spec/fixtures/graphql/schema_compat/`）を互換の判定に渡し、全分岐を確かめる。非推奨でないフィールドの削除・非推奨でない enum の値の削除（出力にだけ使う enum と、入力に使う enum の両方）・非推奨のフィールド・引数・enum の値の削除・型の削除・フィールドの型の変更（非推奨のフィールドを含む）・比較器が非破壊とする型の変更（出力の非 null 化）・必須の引数の追加・必須の入力項目の追加・enum の値の追加・例外の行の一致・非推奨でないフィールドの削除を例外の行で通す場合・クラス名か座標の違う例外の行・`reason` の無い例外の行・どの変更にも当たらない例外の行・基準に `schema.graphql` が無い場合である。
-- CI：`.github/workflows/ci.yml` の lint のジョブで、`actions/checkout` を `fetch-depth: 0` にして基準を取れるようにし、`bin/check-schema-compat` を流す。`config/ci.rb` にも同じステップを足す。
+- CI：`.github/workflows/ci.yml` の lint のジョブで、`actions/checkout` を `fetch-depth: 0` にして基準を取れるようにし、`bin/check-schema-compat` を流す。基準は、PR では向き先（`origin/<base_ref>`）、main への push では push の前の先端（`github.event.before`）にする（`graphql-schema.md`「互換の判定」）。`config/ci.rb` にも同じステップを足す。
 - 初回の導入：最初は基準に `schema.graphql` が無く、比べられない。担当者は M20 を 2 つの PR に分ける。1 つ目の PR は、`schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat` を入れ、CI のステップは足さない。2 つ目の PR は、1 つ目が main に入った後に、CI のステップを足す。
 
 **判断**：比較に graphql-schema_comparator を使うか
@@ -795,7 +795,7 @@ bundle exec rspec --tag concurrency && bundle exec rspec --tag concurrency   # �
 ```sh
 bin/rails graphql:schema:idl && git diff --exit-code schema.graphql
 bundle exec rspec spec/graphql/schema_dump_spec.rb spec/graphql/schema_compat_spec.rb
-BASE_REF=origin/main bin/check-schema-compat   # 2 つ目の PR で
+BASE_REF=origin/main bin/check-schema-compat
 ```
 
 **実装する文書の節**：`graphql-schema.md`「スキーマの変更と非推奨」

@@ -179,7 +179,7 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 - 視点の宣言と認可の宣言：基底クラス `app/graphql/types/base_object.rb`・`app/graphql/resolvers/base_resolver.rb`・`app/graphql/mutations/base_mutation.rb` と `app/graphql/authorization_declarations.rb`。宣言が無ければ開発とテストで例外、本番で `FORBIDDEN`
 - `node` を置かない：`app/graphql/factory_ops_schema.rb` の `object_from_id` は呼ばれたら例外にする。ID で引く入口は視点の下に型ごとに置く
 - 問い合わせの深さと複雑度の上限：同じく `app/graphql/factory_ops_schema.rb`
-- スキーマの破壊的変更：`schema.graphql` を commit し、`bin/check-schema-compat` が非推奨を経ない削除を落とす。CI で流すステップは、基準の main に `schema.graphql` が入った後に足す（M20 の 2 つ目の PR）
+- スキーマの破壊的変更：`schema.graphql` を commit し、CI の lint のジョブで `bin/check-schema-compat` が非推奨を経ない削除を落とす
 
 **どう確かめられるか**
 
@@ -191,7 +191,7 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 - `authorization_declarations_spec.rb`：全型・全リゾルバ・全 mutation が宣言を持ち、認可の例外が `graphql-schema.md` の表と一致する
 - `base_classes_spec.rb`：宣言の無いものを拒否し、拒否を `FORBIDDEN` に揃える
 
-**状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、CI で流すのは M20 の 2 つ目の PR からである。
+**状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、互換の判定は CI で流している（M20）。
 
 ### 7. 時間の扱い：販売単価のバイテンポラル履歴
 

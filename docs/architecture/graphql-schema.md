@@ -748,9 +748,11 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 
 ### 互換の判定
 
-スキーマを変えた実装者は、PR を出す前に `bin/check-schema-compat` を流す。スクリプトは、基準の ref（環境変数 `BASE_REF`、既定は `origin/main`）と HEAD の分岐点（`git merge-base`）の `schema.graphql` と、作業中の `schema.graphql` を比べ、落とす変更が 1 つでもあれば失敗する。分岐点に `schema.graphql` が無いときも、比べられないので失敗する。結果の一覧は標準出力に書き、`$GITHUB_STEP_SUMMARY` があればそこにも書く。
+CI の lint のジョブは、PR と main への push のたびに `bin/check-schema-compat` を流す。スキーマを変えた実装者は、PR を出す前に手元でも流す。スクリプトは、基準の ref（環境変数 `BASE_REF`、既定は `origin/main`）と HEAD の分岐点（`git merge-base`）の `schema.graphql` と、作業中の `schema.graphql` を比べ、落とす変更が 1 つでもあれば失敗する。分岐点に `schema.graphql` が無いときも、比べられないので失敗する。結果の一覧は標準出力に書き、`$GITHUB_STEP_SUMMARY` があればそこにも書く。
 
-基準の先端ではなく分岐点と比べるのは、ブランチを切った後に基準へ入ったフィールドや値が、それを知らない作業中のスキーマでは削除に見えるからである。PR のマージ commit を checkout した CI では、分岐点は基準の先端になり、作業中のスキーマは基準の変更を含むので、手元と同じく PR の変更だけが比べられる。
+基準の先端ではなく分岐点と比べるのは、ブランチを切った後に基準へ入ったフィールドや値が、それを知らない作業中のスキーマでは削除に見えるからである。
+
+CI は、契機ごとに基準を選ぶ。`actions/checkout` は `fetch-depth: 0` で全ブランチを `origin/` の下に取り、PR では PR のマージ commit を checkout する（[actions/checkout](https://github.com/actions/checkout#usage)）。PR では、基準を PR の向き先（`origin/<base_ref>`）にする。分岐点は基準の先端になり、作業中のスキーマは基準の変更を含むので、手元と同じく PR の変更だけが比べられる。main への push では、基準を push の前の main の先端（`github.event.before`）にし、その push で main に入った変更を比べる。`origin/main` を基準にすると、分岐点が HEAD 自身になり、何も比べない。force push で push の前の先端がどの ref からも届かなくなると、分岐点が見つからずに失敗する。
 
 判定は `lib/schema_compat.rb` が、graphql-schema_comparator が返す変更ごとに行う。変更は、比較器の変更のクラス名（`FieldRemoved` など）と座標（変更の `path`。`PurchaseOrder.lines`・`Query.order.id` の形）で識別する。規則は上から当て、先に当たった規則で決める。
 
