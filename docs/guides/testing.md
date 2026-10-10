@@ -22,7 +22,7 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json
 ```
 
-`bin/test-layers` は、example の層を JSON の `id`（`./packs/sales/spec/public/sales/catalog_spec.rb[1:2:1]` の形）のファイルの部分で決める。`file_path` は、共有の example（`it_behaves_like`）では共有の example を定義したファイルを指すので使わない。どの層の置き場にも当たらないファイルがあれば失敗する。割合が目安を外れたときは GitHub の警告の注釈（`::warning::`）を出すが、失敗にはしない。割合は機能の種類で揺れ、未分類さえ止めれば数え方は崩れないからである。
+`bin/test-layers` は、example の層を JSON の `id`（`./packs/sales/spec/public/sales/catalog_spec.rb[1:2:1]` の形）のファイルの部分で決める。`file_path` は、共有の example（`it_behaves_like`）では共有の example を定義したファイルを指すので使わない。どの層の置き場にも当たらないファイルがあれば失敗する。割合が目安を外れたときは GitHub の警告の注釈（`::warning::`）を出すが、失敗にはしない。割合は機能の種類で揺れ、未分類さえ止めれば数え方は崩れないからである。目安を 3 マイルストーン続けて外れたら、単体の割合の下限を失敗の条件に変える（`implementation-plan.md` M16「判断」）。続けて外れた数は、単体の spec の無い業務の分岐を単体に書き足した後（OI-22）から数える（OI-24）。
 
 ## 層への配分
 
@@ -39,15 +39,15 @@ bin/test-layers tmp/rspec.json
 
 2 つの接続から同時に操作するテスト（競合テスト）は、`concurrency` の置き場に置く。公開 API だけを使うものは `spec/concurrency` に、パッケージの非公開のモデルを使うものは `packs/<パッケージ>/spec/concurrency` に置く。パッケージの外からは、非公開の定数を参照できないからである。競合でない example は、同じ対象の example でも単体の置き場に置く。
 
-`spec/rails_helper.rb` は、`concurrency` の置き場のファイルに `:concurrency` のメタデータを、置き場から付ける（`define_derived_metadata`）。`bin/test-layers` の層の判定と、Bullet の対象外も、この置き場から決まる。
+`spec/rails_helper.rb` は、`concurrency` の置き場のファイルに `:concurrency` のメタデータを、置き場から付ける（`define_derived_metadata`）。`bin/test-layers` の層の判定も、この置き場から決まる。
 
 競合テストを書く人は、`spec/support/concurrency.rb` の補助を使い、次のように書く。
 
-1. `self.use_transactional_tests = false` にする。例ごとのトランザクションの中では、接続が 1 本に固定され、2 つの接続にならない。
+1. `self.use_transactional_tests = false` にする。example ごとのトランザクションの中では、接続が 1 本に固定され、2 つの接続にならない。
 2. 先の操作を `hold_open` で、コミットせずに開いたままにする。
-3. 後の操作を `in_thread` で別の接続から始め、`blocked_on_lock?` でロックを待っていることを確かめる。待たずに終わる操作は、ロックで直列になっていない。
-4. 先の操作をコミットさせ、後の操作の結果と、残った行を確かめる。
-5. 作った行は、例の後で `delete_owned_rows` が所有ロールの接続で消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。
+3. 後の操作を `in_thread` で別の接続から始め、`blocked_on_lock?(後のスレッド, by: 先のスレッド)` で、後の接続が先の接続のロックを待っていることを確かめる。補助は 2 つの接続の pid を控え、`pg_blocking_pids` で待ちの相手を確かめるので、無関係な接続の待ちを数えない。待たずに終わる操作は、ロックで直列になっていない。
+4. 先の操作を `commit` でコミットさせ、後の操作の結果を `finish` で受け取る。どちらもスレッドの例外を送出し直すので、先の操作のコミットの失敗も隠れない。
+5. 作った行を、example の後で `delete_owned_rows` に消させる。補助は、開いたままのトランザクションをすべて閉じさせ、スレッドが終わったことを確かめてから、所有ロールの接続でそのテナントの行とイベントのジョブを消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。スレッドが終わらなければ、行を消さずに失敗する。
 
 ## 重要シナリオ
 

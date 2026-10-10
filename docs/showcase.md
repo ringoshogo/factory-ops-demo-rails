@@ -254,15 +254,15 @@ bin/check-structure
 - 単体は `packs/*/spec`、結合は `spec/requests`・`spec/contracts`、シナリオは `spec/scenarios` と `concurrency` の置き場に置く。層の定義 `config/test_layers.yml` を読む `bin/test-layers` が、層ごとの件数・割合・時間を CI で報告し、どの層にも当たらないファイルを落とす
 - テストは RLS の掛かる `factory_app` で接続するので、RLS を迂回しない（`spec/db/tenant_enforcement_spec.rb`「接続中のロール」）
 - イベントは `:solid_queue` のまま `solid_queue_jobs` の行を読んで受け手まで流す（`spec/support/events.rb` の `deliver_enqueued_events`）
-- 同時実行は、2 つの接続を別のスレッドで動かして確かめ、`spec/concurrency`・`packs/*/spec/concurrency` に置く（`--tag concurrency`）
-- 重要シナリオ S1〜S5（テナントの境界・失効・連結・競合・請求の金額）は、置き場から `:scenario` のタグが付き、`--tag scenario` で単独で流す。絞り込みの結果が 0 件なら失敗する
+- 重要シナリオ S1〜S5（テナントの境界・失効・連結・競合・請求の金額）は、置き場からタグが付く。`spec/scenarios` の S1・S2・S3・S5 には `:scenario` が、競合の S4 を置く `spec/concurrency`・`packs/*/spec/concurrency` には `:concurrency` が付き、それぞれ `--tag` で単独で流せる。絞り込みの結果が 0 件なら失敗する
+- 同時実行は、2 つの接続を別のスレッドで動かし、後の接続が先の接続のロックを待つことを pid で確かめる（`spec/support/concurrency.rb`）
 
 **どう確かめられるか**
 
 ```sh
-bundle exec rspec packs        # 単体
+bundle exec rspec packs --tag ~concurrency   # 単体
 bundle exec rspec spec/requests spec/contracts   # 結合
-bundle exec rspec --tag scenario --tag concurrency   # シナリオ
+bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちらかのタグが付いたもの）
 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
