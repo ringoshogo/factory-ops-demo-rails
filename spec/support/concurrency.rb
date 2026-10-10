@@ -106,7 +106,8 @@ module ConcurrencyHelpers
 
   # スレッドをすべて終わらせてから、tables の行のうち tenant_ids のテナントが所有する行と、そのテナントを宛先にした
   # イベントのジョブを消す。所有ロールの接続で消すのは、アプリのロールでは RLS が他のテナントの行を隠すからである。
-  # tables は子の表から先に並べる。テナントとユーザーは、監査の行が指すので消さない（KEPT_TABLES）
+  # tables は子の表から先に並べる。テナントとユーザーは、監査の行が指すので消さない（KEPT_TABLES）。
+  # 消した後に、KEPT_TABLES の外でそのテナントの行が残る表があれば、tables の書き漏らしなので失敗する
   def delete_owned_rows(tenant_ids, tables)
     kept = tables & KEPT_TABLES
     raise ArgumentError, "#{kept.join('・')} の行は消さない（監査の行が指す）" if kept.any?
@@ -123,9 +124,20 @@ module ConcurrencyHelpers
         SQL
       end
     end
+    left = (owned_tables(connection) - KEPT_TABLES).select do |table|
+      connection.select_value("SELECT EXISTS (SELECT 1 FROM #{table} WHERE owner_tenant_id IN (#{ids}))")
+    end
+    raise "#{left.join('・')} に行が残った。delete_owned_rows に渡す表を足す" if left.any?
   end
 
   private
+
+  def owned_tables(connection)
+    connection.select_values(<<~SQL)
+      SELECT table_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'owner_tenant_id' ORDER BY table_name
+    SQL
+  end
 
   def current_backend_pid = ApplicationRecord.lease_connection.select_value("SELECT pg_backend_pid()")
   def concurrency_threads = (@concurrency_threads ||= [])

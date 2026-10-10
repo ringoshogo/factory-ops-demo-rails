@@ -108,5 +108,18 @@ RSpec.describe "監査ログの追記だけの仕組み" do
         expect(remaining).to eq([ kept ])
       end
     end
+
+    # 一時表は search_path の先頭に来るので、表を修飾しない関数は同じ名前の一時表を消す
+    it "保存期間を過ぎた行を消す関数は、同じ名前の一時表があっても監査ログの表を消す" do
+      with_owner_rows do |tenant|
+        expired = insert_audit_log(owner, tenant, occurred_at: "now() - interval '7 years' - interval '1 day'")
+        owner.execute("CREATE TEMP TABLE audit_logs (occurred_at timestamptz) ON COMMIT DROP")
+        owner.execute("INSERT INTO audit_logs VALUES (now() - interval '8 years')")
+
+        expect(owner.select_value("SELECT purge_expired_audit_logs()")).to eq(1)
+        expect(owner.select_value("SELECT count(*) FROM pg_temp.audit_logs")).to eq(1)
+        expect(owner.select_value("SELECT count(*) FROM public.audit_logs WHERE id = #{owner.quote(expired)}")).to eq(0)
+      end
+    end
   end
 end

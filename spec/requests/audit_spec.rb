@@ -154,6 +154,22 @@ RSpec.describe "監査ログの記録", type: :request do
     expect(event_job_count).to eq(0)
   end
 
+  # 要求の外でスキーマを流すと、相関 ID の文脈が無い（OI-42）
+  it "相関 ID の無い文脈で audit の mutation を流すと、監査の行の INSERT が失敗し、業務の行もイベントのジョブも残らない" do
+    actor = Tenancy.with_tenant(buyer.id) { Partnerships::Authentication.actor(buyer_member.id, session_version: buyer_member.session_version) }
+    Rails.event.clear_context
+
+    expect {
+      Tenancy.with_tenant(buyer.id) do
+        Current.set(actor:) do
+          FactoryOpsSchema.execute("mutation($input: PlacePurchaseOrderInput!) { #{format(PLACE, '$input')} }",
+            variables: { "input" => place_input }, context: { current_user: actor })
+        end
+      end
+    }.to raise_error(ActiveRecord::NotNullViolation, /correlation_id/)
+    expect([ purchase_order_ids, audit_rows(buyer), event_job_count ]).to eq([ [], [], 0 ])
+  end
+
   describe "イベントの受信" do
     def sales_order_count = Tenancy.with_tenant(supplier.id) { ActiveRecord::Base.lease_connection.select_value("SELECT count(*) FROM sales_orders") }
 

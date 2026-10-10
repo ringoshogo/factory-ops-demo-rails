@@ -60,6 +60,13 @@ RSpec.describe ConcurrencyHelpers do
     end
   end
 
+  it "後始末は、渡されなかった表にそのテナントの行が残れば失敗する" do
+    Tenancy.with_tenant(tenant.id) { FactoryBot.create(:stock) }
+
+    expect { delete_owned_rows([ tenant.id ], []) }.to raise_error(/stocks に行が残った/)
+    delete_owned_rows([ tenant.id ], %w[stocks])
+  end
+
   it "後始末は、コミットさせていないトランザクションを閉じ、スレッドを終わらせる" do
     _, _release, holder = hold_open(tenant.id) { nil }
     stopped = release_queue

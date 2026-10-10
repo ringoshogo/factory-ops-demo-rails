@@ -78,8 +78,9 @@ CREATE FUNCTION public.partnership_active(supplier uuid, buyer uuid) RETURNS boo
 
 CREATE FUNCTION public.purge_expired_audit_logs() RETURNS bigint
     LANGUAGE sql
+    SET search_path TO 'pg_catalog', 'pg_temp'
     AS $$
-  WITH deleted AS (DELETE FROM audit_logs WHERE occurred_at < now() - interval '7 years' RETURNING 1)
+  WITH deleted AS (DELETE FROM public.audit_logs WHERE occurred_at < now() - interval '7 years' RETURNING 1)
   SELECT count(*) FROM deleted
 $$;
 
@@ -3083,6 +3084,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261011000000'),
 ('20261010000000'),
 ('20261009000000'),
 ('20261008000900'),
