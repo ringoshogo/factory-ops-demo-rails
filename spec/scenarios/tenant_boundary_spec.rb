@@ -110,50 +110,52 @@ RSpec.describe "テナントの境界", type: :request do
   let(:buyer_admin) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user, :admin) } }
   attr_reader :own_item_id, :partner_ids
 
-  # 2 社が取引関係を結び、発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷が届いた状態を作る。
-  # 発注側は、自社が受注側の取引関係と品目も持つ
-  before do
-    login_as(supplier_admin)
-    partnership_id = mutate!("establishPartnership", "partnership { id }", partnerCode: buyer.partner_code).dig("partnership", "id")
-    mutate!("grantPermission", "partnership { id }", partnershipId: partnership_id, permission: "PLACE_ORDERS")
-    item_id = mutate!("saveItem", "item { id }", code: "BOLT-8", name: "六角ボルト M8", unit: "本", unitPrice: "120").dig("item", "id")
-    mutate!("registerPartMapping", "partMapping { id }", customerTenantId: buyer.id, customerPartNumber: "MY-BOLT", itemId: item_id)
-    mutate!("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
+  describe "相手の ID を入口に持ち込む" do
+    # 2 社が取引関係を結び、発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷が届いた状態を作る。
+    # 発注側は、自社が受注側の取引関係と品目も持つ
+    before do
+      login_as(supplier_admin)
+      partnership_id = mutate!("establishPartnership", "partnership { id }", partnerCode: buyer.partner_code).dig("partnership", "id")
+      mutate!("grantPermission", "partnership { id }", partnershipId: partnership_id, permission: "PLACE_ORDERS")
+      item_id = mutate!("saveItem", "item { id }", code: "BOLT-8", name: "六角ボルト M8", unit: "本", unitPrice: "120").dig("item", "id")
+      mutate!("registerPartMapping", "partMapping { id }", customerTenantId: buyer.id, customerPartNumber: "MY-BOLT", itemId: item_id)
+      mutate!("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
 
-    login_as(buyer_admin)
-    purchase_order_id = mutate!("placePurchaseOrder", "purchaseOrder { id }",
-      supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 4 } ]).dig("purchaseOrder", "id")
-    deliver_enqueued_events
+      login_as(buyer_admin)
+      purchase_order_id = mutate!("placePurchaseOrder", "purchaseOrder { id }",
+        supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 4 } ]).dig("purchaseOrder", "id")
+      deliver_enqueued_events
 
-    login_as(supplier_admin)
-    sales_order_id = query("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
-    mutate!("allocateSalesOrder", "salesOrder { id }", salesOrderId: sales_order_id)
-    deliver_enqueued_events
-    request_id = query("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
-    mutate!("createShippingInstruction", "shipmentRequest { id }", shipmentRequestId: request_id, plannedDate: "2026-10-20")
-    mutate!("postShipment", "shipmentRequest { id }", shipmentRequestId: request_id, shippedOn: "2026-10-20")
-    posted = enqueued_payloads("Contracts::ShipmentPosted").first
-    deliver_enqueued_events
+      login_as(supplier_admin)
+      sales_order_id = query("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
+      mutate!("allocateSalesOrder", "salesOrder { id }", salesOrderId: sales_order_id)
+      deliver_enqueued_events
+      request_id = query("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
+      mutate!("createShippingInstruction", "shipmentRequest { id }", shipmentRequestId: request_id, plannedDate: "2026-10-20")
+      mutate!("postShipment", "shipmentRequest { id }", shipmentRequestId: request_id, shippedOn: "2026-10-20")
+      posted = enqueued_payloads("Contracts::ShipmentPosted").first
+      deliver_enqueued_events
 
-    login_as(buyer_admin)
-    expect(query("query($id: ID!) { buyer { purchaseOrder(id: $id) { status } } }", id: purchase_order_id))
-      .to eq("buyer" => { "purchaseOrder" => { "status" => "INBOUND" } })
-    mutate!("establishPartnership", "partnership { id }", partnerCode: own_customer.partner_code)
-    @own_item_id = mutate!("saveItem", "item { id }", code: "OWN-1", name: "自社品目", unit: "個", unitPrice: "10").dig("item", "id")
+      login_as(buyer_admin)
+      expect(query("query($id: ID!) { buyer { purchaseOrder(id: $id) { status } } }", id: purchase_order_id))
+        .to eq("buyer" => { "purchaseOrder" => { "status" => "INBOUND" } })
+      mutate!("establishPartnership", "partnership { id }", partnerCode: own_customer.partner_code)
+      @own_item_id = mutate!("saveItem", "item { id }", code: "OWN-1", name: "自社品目", unit: "個", unitPrice: "10").dig("item", "id")
 
-    @partner_ids = {
-      shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
-      sales_order_line: posted.fetch("lines").sole.fetch("sales_order_line_id"), shipment_request: request_id, item: item_id,
-      partnership: partnership_id, supplier_tenant: supplier.id, buyer_tenant: buyer.id, outsider_tenant: outsider.id
-    }
-    expect(partner_ids.values).to all(be_present)
-  end
+      @partner_ids = {
+        shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
+        sales_order_line: posted.fetch("lines").sole.fetch("sales_order_line_id"), shipment_request: request_id, item: item_id,
+        partnership: partnership_id, supplier_tenant: supplier.id, buyer_tenant: buyer.id, outsider_tenant: outsider.id
+      }
+      expect(partner_ids.values).to all(be_present)
+    end
 
-  boundary.each do |entry, row|
-    it "発注側のユーザーが #{entry} に相手の ID を入れても、相手のデータに届かない" do
-      results = row.fetch(:ids).index_with { |kind| instance_exec(partner_ids.fetch(kind), &row.fetch(:run)) }
+    boundary.each do |entry, row|
+      it "発注側のユーザーが #{entry} に相手の ID を入れても、相手のデータに届かない" do
+        results = row.fetch(:ids).index_with { |kind| instance_exec(partner_ids.fetch(kind), &row.fetch(:run)) }
 
-      expect(results).to eq(row.fetch(:ids).index_with { row.fetch(:reach) })
+        expect(results).to eq(row.fetch(:ids).index_with { row.fetch(:reach) })
+      end
     end
   end
 end
