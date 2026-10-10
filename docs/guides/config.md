@@ -27,8 +27,6 @@
 | `ci.rb` | `bin/ci` が流す工程 | 変更 | [CI の工程](#ci-の工程) |
 | `bundler-audit.yml` | `bin/bundler-audit` が無視する CVE | 生成のまま | — |
 | `credentials.yml.enc` | 暗号化した秘密情報 | 生成のまま | [使っていない機能の設定](#使っていない機能の設定) |
-| `cable.yml` | Action Cable の接続先 | 生成のまま | [使っていない機能の設定](#使っていない機能の設定) |
-| `storage.yml` | Active Storage の保存先 | 生成のまま | [使っていない機能の設定](#使っていない機能の設定) |
 | `locales/en.yml` | 翻訳の見本 | 生成のまま | [使っていない機能の設定](#使っていない機能の設定) |
 
 Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `application.rb` → `environment.rb` の順に読み、初期化の中で `environments/<環境>.rb`、`initializers/*.rb`、`routes.rb` を読む。
@@ -37,7 +35,7 @@ Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `appl
 
 ### application.rb で変えたこと
 
-`application.rb` は `config.api_only = true` の API モードで、生成のままの部分に次の 5 つを足した。DB・ジョブ・ログに関わる 3 つは、それぞれの節で説明する。
+`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 5 つを足した。DB・ジョブ・ログに関わる 3 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
 
 - **`autoload_lib` の除外に `rubocop` と `schema_compat.rb` を足す。** `lib/rubocop/` はカスタム Cop で、`lib/schema_compat.rb` はスキーマの互換の判定である。どちらも開発とテストのグループにしかない gem（rubocop・graphql-schema_comparator）を読むので、本番の起動では読めない。自動読み込みの対象から外す。
 - **Cookie とセッションのミドルウェアを足す。** API モードの Rails は、Cookie とセッションのミドルウェアを持たない。本デモはログインを Cookie のセッションで保つので、`ActionDispatch::Cookies` とセッションのストアを明示的に足す。セッションの Cookie は `SameSite=Lax` にし、本番では `secure` を付け、最後のリクエストから 12 時間で切れるようにする（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 1）。
@@ -140,7 +138,7 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 
 ### 止めたフレームワークの文字列のログ
 
-JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4 と Solid Queue 1.7 で止めた経路は次の 5 つで、本番とテストだけで止める。
+JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4・Solid Queue 1.7.0・Ruby 3.4.11 で止めた経路は次の 5 つで、本番とテストだけで止める。
 
 | 経路 | 書いていたもの | 止め方 |
 |---|---|---|
@@ -150,7 +148,11 @@ JSON の書式は、文字列の中の秘密やクエリの本文を消さない
 | `Rails::Rack::Logger` | 要求の開始の行に `request.filtered_path`。`filter_parameters` は名前で隠すだけなので、URL の `query`・`variables` の値が残る | ミドルウェアから外す。外して失う `request.action_dispatch` の計装は、Rails 8.1.4 の中に購読者が無い |
 | `ActionDispatch::DebugExceptions` | 捕まえた例外のメッセージとバックトレース（`fatal`） | ミドルウェアから外す。本番ではこれが唯一の役目である。例外は `ActionDispatch::Executor` がエラー通知に送り、ログには `action_controller.request_completed` の状態コードが残る |
 
-残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（ファイルの添付・テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
+残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
+
+止める経路は名指しの一覧なので、依存を上げて値を文字列で書く購読かミドルウェアが加わっても、それだけでは止まらない。そこで `spec/platform/logging_spec.rb` が、子のプロセスで本番の環境を初期化し、`ActiveSupport::LogSubscriber` の購読のクラスの集合・`Rails.event` の購読者・ミドルウェアの並びが、許した一覧と一致することを確かめる（[ADR 008](../adr/008-本番に残すログの購読とミドルウェアを許した一覧で守る.md)）。依存を上げてこの spec が落ちたら、増えた購読かミドルウェアのソースを読む。値を文字列で書くなら `Platform::Logging` で外して上の表に足し、書かないなら spec の許した一覧に足す。`ActiveSupport::Notifications` を直接購読するものと、gem の中から `Rails.logger` を直接呼ぶものは一覧に出ないので、依存を上げる PR で変更点を読んで見る。
+
+> Ruby 3.3.3 から 3.4.11 へ上げ、`bundle update` を流した前後で、本番の環境の購読とミドルウェアの並びを比べた。Rails 8.1.4・Solid Queue 1.7.0 は版の制約の中の最新で変わらず、違いは使っていない部品を外して消えた Active Storage の購読 2 つだけだった。
 
 `debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。水準は環境変数 `RAILS_LOG_LEVEL` で決め、既定は `info`、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`production.rb` は `config.after_initialize` で、初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。環境変数ではなく最終の水準を見るので、`config.log_level` を直接 `:debug` にしても起動しない。止めるのは設定からの指定だけで、初期化の後にコードで水準を変える・ロガーを差し替える経路はコードレビューで止める（OI-36）。
 
@@ -234,9 +236,19 @@ GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci
 
 ## 使っていない機能の設定
 
+`rails new` は、本デモが使わない Rails の部品と gem も読み込む。読み込まれた部品があると、読む人や AI がそれを使える前提で設計するので、使わない部品は読み込まない。外したものと残したものは次のとおりである。
+
+| 部品 | 扱い | 理由 |
+|---|---|---|
+| Active Storage・Action Mailbox・Action Text・Action Cable | 外した。`application.rb` で読み込まず、`environments/*.rb` の `active_storage.service`、`storage.yml`・`cable.yml`、保存先の `storage/` も置かない | ファイルの添付・メールの受信・リッチテキスト・WebSocket の機能が無い。取り込みのファイルも Active Storage に置かない（`implementation-plan.md` M29） |
+| image_processing の gem と、`Dockerfile` の libvips | 外した | Active Storage の画像の変換にだけ使う |
+| kamal の gem と、`.dockerignore` の `/.kamal` | 外した | Kamal でデプロイしない。デプロイ先の選び方は [decisions.md「8. 実行基盤とデータ基盤：PostgreSQL と Solid 系で始め、デプロイ先は運用人員で選ぶ」](../architecture/decisions.md#8-実行基盤とデータ基盤postgresql-と-solid-系で始めデプロイ先は運用人員で選ぶ) にある |
+| Action Mailer | 残した | 通知のメールを送る（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md)） |
+| thruster の gem | 残した | `Dockerfile` の起動の命令が `bin/thrust` で Puma を包む |
+
+外した部品の定数が起動の後に無く、Action Mailer があることは `spec/platform/framework_loading_spec.rb` が確かめる。部品を足すときは、この表と spec を同じ変更で直す。
+
 次のファイルは、Rails が生成したまま残っているが、本デモの機能は使っていない。
 
 - **`credentials.yml.enc`**：暗号化した秘密情報。復号の鍵 `config/master.key` は `.gitignore` で除外していて、リポジトリに無い。アプリのコードは credentials を読まないが、本番の `secret_key_base`（セッションの Cookie の暗号化に使う）はここから取る。本番のコンテナには `RAILS_MASTER_KEY` を渡す（`Dockerfile` の冒頭のコメント）。開発とテストでは、Rails が `tmp/local_secret.txt` を作って使う。
-- **`cable.yml`**：Action Cable（WebSocket）の接続先。本デモに WebSocket の機能は無い。
-- **`storage.yml`**：Active Storage（ファイルの添付）の保存先。本デモにファイルの添付は無い。
 - **`locales/en.yml`**：翻訳の見本の 1 行だけがある。

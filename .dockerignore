@@ -24,18 +24,8 @@
 /tmp/pids/*
 !/tmp/pids/.keep
 
-# Ignore storage (uploaded files in development and any SQLite databases).
-/storage/*
-!/storage/.keep
-/tmp/storage/*
-!/tmp/storage/.keep
-
 # Ignore CI service files.
 /.github
-
-# Ignore Kamal files.
-/config/deploy*.yml
-/.kamal
 
 # Ignore development files
 /.devcontainer
