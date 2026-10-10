@@ -47,8 +47,6 @@ RSpec.describe "ログの出口と書式" do
           ActiveJob::StructuredEventSubscriber
           ActiveRecord::LogSubscriber
           ActiveRecord::StructuredEventSubscriber
-          ActiveStorage::LogSubscriber
-          ActiveStorage::StructuredEventSubscriber
         ])
         expect(production.fetch("event_subscribers")).to eq(%w[Platform::JsonLogSubscriber])
         expect(production.fetch("middlewares")).to eq(%w[
