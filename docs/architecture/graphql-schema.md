@@ -15,7 +15,7 @@
    - API モードの Rails は Cookie・セッションのミドルウェアと CSRF 対策を持たない。ミドルウェアを明示的に足し、セッションの Cookie を `SameSite=Lax`・`HttpOnly` にする。`GraphqlController` と `SessionsController` は、`application/json` の本文だけを受け付ける（`ApplicationController`）。他サイトのフォームは `application/json` を送れず、`fetch` で送るには CORS のプリフライトが要るからである。`GraphqlController` は POST だけを受け付ける。
    - ログインは、成功したときにセッションを作り直してから ID を保存する。ログインの前のセッションを引き継がせないためである。
    - `GraphqlController` は、スキーマを実行する前に、ログの文脈（リクエスト ID・テナント・ユーザー・操作名・相関 ID）を `Rails.event.set_context` で設定する。文脈は Fiber のストレージにあり、Dataloader の Fiber は作られた時点の値を写して持つので、実行の途中で設定した値はフィールドの解決に届かない（`../implementation-plan.md` M18）。
-   - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「テーブル」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
+   - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「取引関係と権限付与（`partnerships`）」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
 3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
@@ -78,7 +78,7 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 経路 3 の出荷実績は、購買が持つ写しの入荷（`InboundShipment`）と同じ出荷を指す。業務の正本は写しの入荷で、検収はこれに対して行う。経路 3 は、受注側の出荷実績そのものを、権限付与がある間だけ見せる。
 
-相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。`SupplierShipment` の明細の型 `SupplierShipmentLine` も、出荷明細 ID を返さず、自社の発注明細で識別する。到達可能性のテストが、これら 4 つの型に ID のフィールドが無いことを確かめる。購買が持つ相手側の ID（`data-model.md`「購買」）も、GraphQL のフィールドには出さない。
+相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。`SupplierShipment` の明細の型 `SupplierShipmentLine` も、出荷明細 ID を返さず、自社の発注明細で識別する。到達可能性のテストが、これら 4 つの型に ID のフィールドが無いことを確かめる。購買が持つ相手側の ID（`data-model.md`「購買（`purchasing`）」）も、GraphQL のフィールドには出さない。
 
 ```graphql
 type BuyerView {
@@ -465,7 +465,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 ### 監査ログ
 
-監査ログには、相手テナントに効果が及ぶ書き込みを記録する（`decisions.md` 2 章「監査」）。相手テナントへのイベントを出す操作、相手から見えるデータ（カタログ・取引関係）を変える操作、相手の操作で自社のデータが変わったこと（イベントの受信）がこれに当たる。本デモで書き込みが起きる入口は mutation とイベントのジョブの 2 つだけなので、記録はその 2 つの基底クラスが行い、個々の操作で手書きしない。
+監査ログには、相手テナントに効果が及ぶ書き込みを記録する。何がそれに当たるかは `decisions.md` 2 章「監査」にある。本デモで書き込みが起きる入口は mutation とイベントのジョブの 2 つだけなので、記録はその 2 つの基底クラスが行い、個々の操作で手書きしない。
 
 mutation の実装者は、認可の宣言と並べて、監査の宣言を必ず書く。宣言は次の 2 つのどちらかで、宣言が無ければ認可の宣言と同じく、開発とテストでは例外、本番では拒否する。
 
@@ -657,6 +657,8 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `ShipmentRequestStatus` | `CANCELLED`（取消済）・`SHIPPED`（出荷済）・`ON_HOLD`（出荷停止中）・`INSTRUCTED`（出荷指示済）・`READY`（出荷待ち） | — |
 | `ImportStatus` | `FAILED`（失敗）・`PARTIALLY_FAILED`（一部失敗）・`SUCCEEDED`（完了）・`APPLYING`（反映中）・`STAGING`（置き場へ写し中）・`QUEUED`（待機中） | — |
 
+`ShipmentRequestStatus` の `ON_HOLD` は、出荷停止を記録する表を足すまで、スキーマに無い（`data-model.md`「状態は保存せず、時刻列から導出する」）。値を足す変更は、互換の判定で危険な変更として通る。
+
 その他の enum は、保存された列の値をそのまま写す。
 
 | enum | 値 | 元の列 |
@@ -735,7 +737,7 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 
 ## スキーマの変更と非推奨
 
-スキーマの形は、リポジトリの根の `schema.graphql` に書き出して commit する。型を変えた実装者は、`bin/rails graphql:schema:idl` で書き直し、同じ commit に入れる。書き直しを忘れると `spec/graphql/schema_dump_spec.rb` が落ちる。
+スキーマの形は、リポジトリの根の `schema.graphql` に書き出して commit する。型を変えた実装者は、`bin/rails graphql:schema:idl` で書き直し、同じ commit に入れる。書き直しを忘れると `spec/graphql/schema_dump_spec.rb` が落ちる。スキーマに `extra_types` で型を足さない。graphql-ruby 2.6 の書き出しは、`extra_types` の型を、フィールドから届く型とは別にもう一度書くので、`schema.graphql` に同じ型が 2 回並ぶ。共通の型（`Tenant`・`UserError`・`PageInfo` など）は、フィールドから届かせる（OI-47）。
 
 クライアントを壊す変更（フィールド・引数・enum の値の削除、型の変更、必須の引数の追加）は、次の順で行う。
 

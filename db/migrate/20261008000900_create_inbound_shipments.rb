@@ -1,7 +1,7 @@
 class CreateInboundShipments < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 購買が持つ「出荷計上」の写しと、読む経路 3（docs/architecture/data-model.md「購買」「RLS」）。
+  # 購買が持つ「出荷計上」の写しと、読む経路 3（docs/architecture/data-model.md「購買（`purchasing`）」「RLS」）。
   # inbound_shipments.shipment_id は受注側テナントの出荷実績の ID 参照
   def change
     create_tenant_table :inbound_shipments do |t|

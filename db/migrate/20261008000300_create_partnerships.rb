@@ -1,7 +1,7 @@
 class CreatePartnerships < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 取引関係と権限付与、読む経路 2 のポリシー（docs/architecture/data-model.md「取引関係と権限付与」「RLS」）
+  # 取引関係と権限付与、読む経路 2 のポリシー（docs/architecture/data-model.md「取引関係と権限付与（`partnerships`）」「RLS」）
   def change
     # owner_tenant_id は受注側。失効させた関係は再び有効にせず、取引を再開するときは新しい関係を結ぶので、
     # 一意にするのは有効な関係だけにする

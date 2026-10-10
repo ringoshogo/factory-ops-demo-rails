@@ -4,7 +4,7 @@ require "rails_helper"
 # owner_tenant_id を持たない表は、理由とともにここで宣言する。
 RSpec.describe "テナント列" do
   EXEMPT_TABLES = {
-    "tenants" => "テナントそのもの。取引先の名前を表示するため、どのテナントからも読める（data-model.md「取引関係と権限付与」）",
+    "tenants" => "テナントそのもの。取引先の名前を表示するため、どのテナントからも読める（data-model.md「取引関係と権限付与（`partnerships`）」）",
     "schema_migrations" => "Rails がマイグレーションの適用を記録する表。業務データを持たない",
     "ar_internal_metadata" => "Rails が DB の環境を記録する表。業務データを持たない",
     **%w[

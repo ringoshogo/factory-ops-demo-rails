@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 取引関係の公開 API の判定と可視範囲（docs/architecture/data-model.md「取引関係と権限付与」）
+# 取引関係の公開 API の判定と可視範囲（docs/architecture/data-model.md「取引関係と権限付与（`partnerships`）」）
 RSpec.describe "Partnerships::Access と Directory" do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }

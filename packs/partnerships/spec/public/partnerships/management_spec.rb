@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 取引関係を結ぶ・失効させる・権限を付与する操作と、表の制約（docs/architecture/data-model.md「取引関係と権限付与」）
+# 取引関係を結ぶ・失効させる・権限を付与する操作と、表の制約（docs/architecture/data-model.md「取引関係と権限付与（`partnerships`）」）
 RSpec.describe "Partnerships::Management" do
   # with_tenant の中で初めて作ると、例外で戻したセーブポイントと一緒に消える
   let!(:supplier) { FactoryBot.create(:tenant) }

@@ -1,7 +1,7 @@
 class CreateFulfillment < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 出荷依頼・出荷指示・出荷実績（docs/architecture/data-model.md「出荷」）。
+  # 出荷依頼・出荷指示・出荷実績（docs/architecture/data-model.md「出荷（`fulfillment`）」）。
   # sales_order_id・sales_order_line_id・item_id は受注の行の、buyer_tenant_id・source_purchase_order_* は相手テナントの ID 参照
   def change
     create_tenant_table :shipment_requests do |t|

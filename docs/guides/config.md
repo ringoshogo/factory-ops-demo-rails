@@ -39,7 +39,7 @@ Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `appl
 
 `application.rb` は `config.api_only = true` の API モードで、生成のままの部分に次の 5 つを足した。DB・ジョブ・ログに関わる 3 つは、それぞれの節で説明する。
 
-- **`autoload_lib` の除外に `rubocop` を足す。** `lib/rubocop/` はカスタム Cop で、rubocop の gem を読み込まない本番の起動では読めない。自動読み込みの対象から外す。
+- **`autoload_lib` の除外に `rubocop` と `schema_compat.rb` を足す。** `lib/rubocop/` はカスタム Cop で、`lib/schema_compat.rb` はスキーマの互換の判定である。どちらも開発とテストのグループにしかない gem（rubocop・graphql-schema_comparator）を読むので、本番の起動では読めない。自動読み込みの対象から外す。
 - **Cookie とセッションのミドルウェアを足す。** API モードの Rails は、Cookie とセッションのミドルウェアを持たない。本デモはログインを Cookie のセッションで保つので、`ActionDispatch::Cookies` とセッションのストアを明示的に足す。セッションの Cookie は `SameSite=Lax` にし、本番では `secure` を付け、最後のリクエストから 12 時間で切れるようにする（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 1）。
 - **`schema_format = :sql`**（[DB の接続](#db-の接続)）
 - **`queue_adapter = :solid_queue`**（[ジョブ](#ジョブ)）
@@ -80,7 +80,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 - `bin/rails db:migrate` などの DB のタスクは、`owner` の設定でだけ流れる。
 - `db:rollback` と `db:migrate:up`・`down`・`redo` は、設定ごとに回らず `primary` の接続で流れる。`lib/tasks/db_roles.rake` が、これらを所有ロールの接続に切り替える。
 - 表を作るタスクの後に、同じ rake ファイルの `db:grant_app_role` がアプリのロールへ権限を付与する。
-- 本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。デプロイの担当者は、所有ロールの資格情報をマイグレーションの工程にだけ渡す（[bin.md「bin/docker-entrypoint で変えたこと」](bin.md#bindocker-entrypoint-で変えたこと)）。
+- 本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。所有ロールの資格情報を渡す工程は [data-model.md「RLS」](../architecture/data-model.md#rls) にある。
 
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
 
@@ -197,7 +197,7 @@ Rails は、executor で包まれた処理（Web の要求と、ワーカーが�
 
 ### 相関 ID と因果 ID
 
-- **相関 ID**（`correlation_id`）：一連の処理の始まりで 1 つ決め、最後まで同じ値を運ぶ。利用者の要求では `request_id` を、要求の外で発行したイベント（相関 ID の無い文脈）ではそのイベントの `event_id` を相関 ID にする。
+- **相関 ID**（`correlation_id`）：一連の処理の始まりで 1 つ決め、最後まで同じ値を運ぶ。利用者の要求では `request_id` を、要求の外で発行したイベント（相関 ID の無い文脈）ではそのイベントの `event_id` を相関 ID にする。mutation の入口は要求（`GraphqlController`）だけなので、mutation はいつも相関 ID を持つ。監査の行は相関 ID を必須にする（[data-model.md「監査ログ（`platform`）」](../architecture/data-model.md#監査ログplatform)）ので、要求の外から mutation を流す入口を足す人は、その入口の相関 ID の始め方を同じ変更で決める。決めないと、監査の行の INSERT が失敗して操作ごと戻る（OI-42）。
 - **因果 ID**（`causation_id`）：いまの処理を直接引き起こしたものの ID。要求では空、イベントの受け手では届いたイベントの `event_id` である。
 - **付帯情報**：`ApplicationJob` は、ジョブを作った時点（`initialize`）の相関 ID とテナント ID を付帯情報に入れる。`Contracts.publish` は、ジョブを作った後、登録の前に、付帯情報をイベントのもの（[data-model.md「イベントの受け口と冪等キー」](../architecture/data-model.md#イベントの受け口と冪等キー)）に置き換える。付帯情報は直列化の最上位の項目（`"app_metadata"`）に入るので、再試行の登録にも引き継がれる（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3）。項目の無いジョブは、付帯情報の文脈を設定せずに動かす。
 
@@ -224,6 +224,7 @@ grep <相関 ID> log/events.log
 |---|---|---|---|
 | Packages: packwerk | — | `bin/packwerk validate && bin/packwerk check` | 依存の向きと公開 API の限定を強制する（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md)） |
 | Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
+| Ledgers: commit references | — | `bin/check-commit-refs` | 台帳・証跡・引き継ぎに書いた SHA が HEAD の祖先かを確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | Tests | `bin/rails test` | `bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json` | テストに RSpec を使う。層ごとの件数を数えるため、JSON の出力も書く |
 | Tests: layers | — | `bin/test-layers tmp/rspec.json` | テストの層ごとの件数・割合・時間を報告し、未分類のファイルを止める（[testing.md「テストの層」](testing.md#テストの層)） |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |

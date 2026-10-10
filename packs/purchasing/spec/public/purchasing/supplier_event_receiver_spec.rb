@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 「出荷計上」の購買の受け手（docs/architecture/data-model.md「購買」「イベントの受け口と冪等キー」）。
+# 「出荷計上」の購買の受け手（docs/architecture/data-model.md「購買（`purchasing`）」「イベントの受け口と冪等キー」）。
 # 配送表を通した重複配送は spec/contracts/shipment_posted_delivery_spec.rb が確かめる
 RSpec.describe Purchasing::SupplierEventReceiver do
   let(:supplier) { FactoryBot.create(:tenant) }

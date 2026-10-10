@@ -2,7 +2,7 @@
 # 残件の台帳と改善の候補の台帳の形と、追跡しているファイルの中の ID の参照を確かめる（docs/guides/dev-cycle.md「機械で守ること」）。
 #
 #   bin/check-open-items                 台帳の形と、追跡しているファイルの OI-NN・IB-NN の参照
-#   bin/check-open-items --due M16       加えて、引当先が M16 の open と blocked-user が残っていれば失敗する
+#   bin/check-open-items --due M<番号>   加えて、引当先がそのマイルストーンの open と blocked-user が残っていれば失敗する
 #   bin/check-open-items --text FILE     加えて、FILE（PR の本文など）の参照も確かめる。FILE が - なら標準入力を読む
 #   bin/check-open-items --root DIR      DIR をリポジトリの根として扱う
 require "optparse"

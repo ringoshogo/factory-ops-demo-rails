@@ -25,7 +25,7 @@ bin/packwerk validate && bin/packwerk check   # M2 から
 bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json                # M16 から。テストの層ごとの件数の報告
 bin/check-structure                           # structure.sql の往復の検査
-bin/check-schema-compat                       # M20 から。GraphQL のスキーマの破壊的変更の検査
+bin/check-schema-compat                       # M20 の 2 つ目の PR から（M20「初回の導入」）。GraphQL のスキーマの破壊的変更の検査
 bin/check-open-items --due M<番号>            # 引当先がこのマイルストーンの残件が、open と blocked-user のまま残っていない
 ```
 
@@ -60,6 +60,8 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
 
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。
+
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
 | M1 | 骨組みと CI | 主キーが DB の `uuidv7()` で作られ、`structure.sql` に残る |
@@ -82,6 +84,8 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 | M18 | 構造化ログと相関 ID | ログが 1 行 1 件の JSON で文脈を持ち、テナントをまたぐ一連の処理が 1 つの相関 ID で引ける |
 | M19 | 監査ログ | 相手テナントに効果が及ぶ書き込みが必ず記録され、記録は書き換えも削除もできない |
 | M20 | GraphQL スキーマの破壊的変更の検出 | 非推奨を経ない破壊的変更が CI を通らない |
+| M34 | 依存の更新と使っていない部品の削除 | 読み込む Rails の部品が `guides/config.md` の記述と一致し、保守の続く Ruby で動く |
+| M35 | 分岐の網羅率の警告 | PR が足した行の分岐のうち、どの example も通らないものが CI の警告に出る |
 | M21 | 取消依頼と審査 | 審査中は出荷が止まり、取消は受注側の承認でだけ成立する |
 | M22 | 受注側の取消と、取消と出荷の競合 | 同時に進んだ取消と出荷のどちらか一方だけが成立する |
 | M23 | 検収 | 検収数量が出荷数量を超えず、検収が受注側へ 1 回だけ届く |
@@ -107,7 +111,9 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M18 | M4・M7 | 文脈を `GraphqlController` と `ApplicationJob`・`Contracts::EventJob` で設定する |
 | M19 | M16・M18 | 監査ログの相関 ID を、M18 の文脈から取る。競合テストの後始末を、M16 の `concurrency` の置き場のテストに対して決める |
 | M20 | M5 | スキーマを書き出す |
-| M21〜M26 | M15〜M20 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる |
+| M34 | M18・M20 | 依存の更新で、M18 のログの衛生の spec が止めた経路を確かめる。M20 の 2 つ目の PR（CI の互換の検査）の後に CI の設定を変える |
+| M35 | M34 | 分岐の網羅率を、上げた後の Ruby で測る |
+| M21〜M26 | M15〜M20・M34・M35 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる。上げた Ruby で書き、足した分岐の未通過を警告で見る |
 | M27 | M19・M20・M25 | 単価の変更を監査する。請求書の説明が発行済みの請求書を使う |
 | M28 | M18・M25 | 送信の失敗をログに出す。確実な通知の呼び出し元が「請求書発行」の受け手である |
 | M29 | M27・M18 | 単価の列を `Sales::ItemPrices` で反映する。進み具合をログに出す |
@@ -158,7 +164,7 @@ CI のワークフローは、GitHub のリポジトリを作った後の最初�
 
 ## M2 パッケージ構成と packwerk
 
-**目的**：`context-map.md`「許可する依存の向き」を packwerk の依存チェックで、公開 API の限定をプライバシーチェックで、CI が強制する。
+**目的**：`context-map.md`「疎結合を守る規則」の依存の向きの表を packwerk の依存チェックで、公開 API の限定をプライバシーチェックで、CI が強制する。
 
 **作るもの**
 
@@ -196,7 +202,7 @@ bin/rails runner 'Rails.autoloaders.main.eager_load; puts :ok'   # packs の自�
 
 **実装する文書の節**：`adr/002` の決定、`context-map.md`「疎結合を守る規則」1・2・5
 
-**文書に残すこと**：`context-map.md`「許可する依存の向き」の表に `platform` を足し、`contracts` の依存先を「`platform` だけ」に直す（コンテキストに属さないパッケージの表にも足す）。`adr/002` の未確認の事項を、確かめた結果で置き換える。packs-rails を外した場合は、その手順を `adr/002` に書く。
+**文書に残すこと**：`context-map.md`「疎結合を守る規則」の依存の向きの表に `platform` を足し、`contracts` の依存先を「`platform` だけ」に直す（コンテキストに属さないパッケージの表にも足す）。`adr/002` の未確認の事項を、確かめた結果で置き換える。packs-rails を外した場合は、その手順を `adr/002` に書く。
 
 ## M3 テナントの強制（DB 側）
 
@@ -408,7 +414,7 @@ M21 以降は、横断の仕組み（M15〜M20）に合わせて、次も作る�
 
 **完了条件**：発注 → イベントを流す → 受注確定 → 発注が「受注済」、の通しのテスト。照合できない明細で「受注側で確認中」になるテスト。存在しない・関係の無い・失効した・付与の無い相手への発注が、どれも同じ `NOT_PERMITTED` になる。
 
-**実装する文書の節**：`context-map.md`「発注の連結と品番の照合」1〜4、`data-model.md`「購買」「受注」「イベントの受け口と冪等キー」の該当行
+**実装する文書の節**：`context-map.md`「発注の連結と品番の照合」1〜4、`data-model.md`「購買（`purchasing`）」「受注（`sales`）」「イベントの受け口と冪等キー」の該当行
 
 **文書に残すこと**：採番の表の名前と列を `data-model.md`「テナントの持ち方」の伝票番号の項に書く。
 
@@ -627,7 +633,7 @@ Dataloader を外したときにクエリ数の予算が落ちることは、`qu
   - **例外の行**：`ActionDispatch::DebugExceptions` は、捕まえた例外のメッセージとバックトレースを `fatal` で書く。本番ではこれが唯一の役目なので、ミドルウェアから外す。例外は `ActionDispatch::Executor` がエラー通知に送り、ログには `action_controller.request_completed` の状態コードが残る。
 
   残る `Rails.logger` の行は、JSON の書式（`Platform::JsonLogFormatter`）で書き、同じ文脈を JSON の `context` に入れる。
-  - ロガーの構成：`Platform::Logging.build(io)` が、`Platform::JsonLogFormatter` を付けた `ActiveSupport::Logger` を作る。`ActiveSupport::TaggedLogging` で包まない。TaggedLogging は、タグを文字列としてメッセージの前に付けてから書式に渡すので、行が JSON で始まらない。Rails は `config.logger` を TaggedLogging で包まず、ジョブのログは、ロガーが `tagged` を持たなければタグを付けない。リクエスト ID などは、タグではなく文脈から JSON に入る。
+  - ロガーの構成：`Platform::Logging.build(io)` が、`Platform::JsonLogFormatter` を付けた `ActiveSupport::Logger` を作る。`ActiveSupport::TaggedLogging` で包まない。TaggedLogging は、タグを文字列としてメッセージに混ぜてから書式に渡すので、要求 ID などはタグにせず、文脈から `context` の項目に入れる（`guides/config.md`「ログの出口：Rails.event と Rails.logger」）。Rails は `config.logger` を TaggedLogging で包まず、ジョブのログは、ロガーが `tagged` を持たなければタグを付けない。リクエスト ID などは、タグではなく文脈から JSON に入る。
   - 構成の入口：要求の文脈を設定するミドルウェアの登録と、ログの書式の設定を分ける。文脈はどの環境でも要るが、JSON の書式は本番とテストだけに掛けるからである。
     - **文脈のミドルウェア**：`config/application.rb` が、全環境で `config.middleware.insert_before Rails::Rack::Logger, Platform::RequestContext` を呼ぶ。開発では `Rails::Rack::Logger` が直後に残り、要求の開始の行を、文脈を設定した後に Rails の文字列のまま書く。
     - **ログの書式**：`Platform::Logging.configure!(config, io)` が、`config.logger` の設定・`config.log_tags` の消去・`Rails::Rack::Logger` と `ActionDispatch::DebugExceptions` の削除・`config.after_initialize` での購読の解除をまとめて行う。`config/environments/production.rb`（`STDOUT`）と `config/environments/test.rb`（`log/test.log`）がこれを呼ぶ。Rails は `config.middleware` の挿入をすべて当ててから削除を当てるので、`Rails::Rack::Logger` を消しても、`Platform::RequestContext` はその位置に残る。ミドルウェアの構成は起動の時点で決まり、spec の中から変えられないので、衛生の spec が本番と同じ構成を通るには、テストの環境も同じ入口を通す必要がある。開発の環境は、読みやすさのため Rails の文字列のログのままにする。
@@ -648,7 +654,7 @@ Dataloader を外したときにクエリ数の予算が落ちることは、`qu
   - **ジョブ**：`ApplicationJob` は `perform_now` を上書きし、`super` の前に文脈を設定する。ワーカー（`ActiveJob::Base.execute` から `perform_now`）と、直接の `perform_now` の両方がここを通り、Active Job の計装と例外の処理の外側にあたる。文脈の値は、業務の引数ではなく、ジョブが引数とは別に持つ付帯情報（下の「付帯情報の運び方」）から読み、ここで引数を復元しない。Active Job の private のメソッドも呼ばない。Rails 8.1.4 は、引数の復元を `super` の中の、再試行・破棄の処理と計装の内側で行う。先に復元すると、復元の失敗（`ActiveJob::DeserializationError`）が `retry_on`・`discard_on`・`after_discard` を通らず、`active_job.completed` も出ない。
 
   `GraphqlController` は、スキーマを実行する前に文脈を設定する。`Rails.event` の文脈は Fiber のストレージにあり、Dataloader が作る Fiber は、作られた時点の値を写して持つ。Fiber の中で設定した値は、親に戻らない。
-- 文脈の後始末：Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、`Rails.event` の文脈を空にし、エラー通知の文脈（`ActiveSupport::ExecutionContext`）を始まりの push と対で pop する（入れ子を許さない既定では、push も pop も空にする）。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで、`ApplicationJob#perform_now` は、実行の前の `Rails.event.context` を退避して `ensure` で戻し、エラー通知の文脈は `Rails.error.set_context(...) { super }` のブロックの形で設定する（ブロックを抜けると前の値に戻る）。`spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
+- 文脈の後始末：Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、`Rails.event` の文脈を空にし、エラー通知の文脈（`ActiveSupport::ExecutionContext`）を始まりの push と対で pop する（入れ子を許さない既定では、push も pop も空にする）。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで、`ApplicationJob#perform_now` は、実行の前の `Rails.event.context` を退避して `ensure` で戻し、エラー通知の文脈も丸ごと退避し、項目の集合ごとジョブの項目に置き換えて、`ensure` で丸ごと戻す（`guides/config.md`「文脈の後始末」）。`spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
 - 相関 ID と因果 ID：
   - **相関 ID**（`correlation_id`）：一連の処理の始まりで 1 つ決め、最後まで同じ値を運ぶ。利用者のリクエストでは、`request_id` を相関 ID にする。
   - **因果 ID**（`causation_id`）：いまの処理を直接引き起こしたものの ID。リクエストでは空、イベントの受け手では届いたイベントの `event_id` である。
@@ -715,7 +721,7 @@ bin/rails middleware | grep -A1 'Platform::RequestContext'   # 開発の環境�
   | `setItemPublished` | `item.set_published` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
   | `registerPartMapping` | `part_mapping.register` | 成功の値の対応表の行 | 入力の `customerTenantId`（確定させる受注は、すべてこの相手の受注である） |
   | `placePurchaseOrder` | `purchase_order.place` | 成功の値の発注 | 入力の `supplierTenantId` |
-  | `postShipment` | `shipment.post` | 成功の値の出荷実績 | 出荷依頼の発注側 |
+  | `postShipment` | `shipment.post` | 成功の値の出荷依頼から引き直した出荷実績（OI-38） | 出荷依頼の発注側 |
 
 - 監査の行とコミットの単位：基底 mutation は、`perform` が成功の値を返したときだけ、公開 API が戻った後に、リクエストのトランザクションの中で 1 行を書く。リクエストのトランザクションは `GraphqlController` が開き、次のように閉じる（`graphql-schema.md`「1 回のリクエストがたどる道」）。
   - **ユーザーエラー**：失敗を返した公開 API は、自分のセーブポイントまで書き込みを戻している。基底 mutation は監査の行を書かない。リクエストはコミットされるので、同じリクエストで先に成功した mutation の業務の行と監査の行は残る。
@@ -767,15 +773,11 @@ bundle exec rspec --tag concurrency && bundle exec rspec --tag concurrency   # �
 - `lib/tasks/graphql.rake`：`GraphQL::RakeTask.new(schema_name: "FactoryOpsSchema")`。`bin/rails graphql:schema:idl` が、リポジトリの根に `schema.graphql` を書く。
 - `spec/graphql/schema_dump_spec.rb`：`FactoryOpsSchema.to_definition` が `schema.graphql` と一致することを確かめる。型を変えて書き直しを忘れると落ちる。
 - graphql-schema_comparator（`~> 1.2`）を development と test のグループに入れる。
-- 互換の判定（`lib/schema_compat.rb`）：基準の SDL と作業中の SDL と例外の一覧を受け取り、`GraphQL::SchemaComparator.compare` の結果の変更ごとに、通すか落とすかを返す。変更は、比較器の変更のクラス名（`FieldRemoved` など）と、スキーマの座標（変更の `path`。`PurchaseOrder.lines` の形）で識別する。判定は次の順に当て、先に当たった規則で決める。
-  1. **削除の変更**（`FieldRemoved`・`FieldArgumentRemoved`・`InputFieldRemoved`・`EnumValueRemoved`・`TypeRemoved`）：比較器の重大度（`breaking?`・`non_breaking?`）を見ずに、次の規則で決める。消えた要素が基準のスキーマで `@deprecated` だったときに通す。`TypeRemoved` は、基準のスキーマで、その型を返すか受け取るフィールドと引数がすべて非推奨だったときに通す。比較器は、出力にだけ使う enum の値の削除を非破壊に分類するので、この規則を重大度より後に当てると、非推奨を経ない削除が通る。
-  2. **型の変更**（`FieldTypeChanged`・`FieldArgumentTypeChanged`・`InputFieldTypeChanged`）：比較器が非破壊に分類する変更（出力の型を null 可から非 null にする、入力の型を非 null から null 可にする）は、クライアントを壊さないので通す。それ以外の型の変更は、非推奨を経ても通さない。
-  3. **必須の引数・入力項目の追加**：非推奨を経ても通さない。
-  4. **上に当たらない変更**：非破壊の変更と危険な変更（enum の値の追加など）は、一覧を出すだけで通す。破壊的変更は落とす。
+- 互換の判定（`lib/schema_compat.rb`）：基準の SDL と作業中の SDL と例外の一覧を受け取り、`GraphQL::SchemaComparator.compare` の結果の変更ごとに、通すか落とすかを返す。変更は、比較器の変更のクラス名（`FieldRemoved` など）と、スキーマの座標（変更の `path`。`PurchaseOrder.lines` の形）で識別する。判定の規則と当てる順は `graphql-schema.md`「互換の判定」の表にある（削除・型の変更・必須の追加と既定値を外す変更・上に当たらない変更の 4 つ）。
 
-  2 と 3 で落ちる変更は、担当者が、新しい型や引数を持つフィールドを足し、古いフィールドを非推奨にしてから、別の PR で消す（`graphql-schema.md`「スキーマの変更と非推奨」）。非推奨のフィールドの型をその場で変えても通らない。
-  - 例外の一覧（`docs/graphql/breaking-changes.yml`）：1〜4 で落とした変更は、例外の一覧に同じ変更のクラス名と座標の行があるときだけ通す。秘密を漏らすフィールドを非推奨を経ずに消すときは、1 で落ちた `FieldRemoved` をこの行で通す。行は `change`・`path`・`reason` を持ち、`reason` が空の行があれば、一覧の読み込みで失敗する。クラス名か座標が違う行は、その変更を通さない。どの変更にも当たらない行は、警告として一覧に出す。
-- `bin/check-schema-compat`：基準（環境変数 `BASE_REF`、既定は `origin/main`）の `schema.graphql` と、作業中の `schema.graphql` を互換の判定に渡し、落とす変更が 1 つでもあれば失敗する。基準に `schema.graphql` が無いときも失敗する。結果を標準出力と `$GITHUB_STEP_SUMMARY` に書く。
+  型の変更と必須の追加で落ちる変更は、担当者が、新しい型や引数を持つフィールドを足し、古いフィールドを非推奨にしてから、別の PR で消す（`graphql-schema.md`「スキーマの変更と非推奨」）。非推奨のフィールドの型をその場で変えても通らない。
+  - 例外の一覧（`docs/graphql/breaking-changes.yml`）：規則で落とした変更は、例外の一覧に同じ変更のクラス名と座標の行があるときだけ通す。秘密を漏らすフィールドを非推奨を経ずに消すときは、削除の規則で落ちた `FieldRemoved` をこの行で通す。行は `change`・`path`・`reason` を持ち、`reason` が空の行があれば、一覧の読み込みで失敗する。クラス名か座標が違う行は、その変更を通さない。どの変更にも当たらない行は、警告として一覧に出す。
+- `bin/check-schema-compat`：基準（環境変数 `BASE_REF`、既定は `origin/main`）と HEAD の分岐点の `schema.graphql` と、作業中の `schema.graphql` を互換の判定に渡し、落とす変更が 1 つでもあれば失敗する。分岐点に `schema.graphql` が無いときも失敗する。結果を標準出力と `$GITHUB_STEP_SUMMARY` に書く。
 - `spec/graphql/schema_compat_spec.rb`：小さな新旧の SDL（`spec/fixtures/graphql/schema_compat/`）を互換の判定に渡し、全分岐を確かめる。非推奨でないフィールドの削除・非推奨でない enum の値の削除（出力にだけ使う enum と、入力に使う enum の両方）・非推奨のフィールド・引数・enum の値の削除・型の削除・フィールドの型の変更（非推奨のフィールドを含む）・比較器が非破壊とする型の変更（出力の非 null 化）・必須の引数の追加・必須の入力項目の追加・enum の値の追加・例外の行の一致・非推奨でないフィールドの削除を例外の行で通す場合・クラス名か座標の違う例外の行・`reason` の無い例外の行・どの変更にも当たらない例外の行・基準に `schema.graphql` が無い場合である。
 - CI：`.github/workflows/ci.yml` の lint のジョブで、`actions/checkout` を `fetch-depth: 0` にして基準を取れるようにし、`bin/check-schema-compat` を流す。`config/ci.rb` にも同じステップを足す。
 - 初回の導入：最初は基準に `schema.graphql` が無く、比べられない。担当者は M20 を 2 つの PR に分ける。1 つ目の PR は、`schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat` を入れ、CI のステップは足さない。2 つ目の PR は、1 つ目が main に入った後に、CI のステップを足す。
@@ -796,17 +798,78 @@ bundle exec rspec spec/graphql/schema_dump_spec.rb spec/graphql/schema_compat_sp
 BASE_REF=origin/main bin/check-schema-compat   # 2 つ目の PR で
 ```
 
-**実装する文書の節**：`graphql-schema.md`「スキーマの変更と非推奨」、`adr/004`
+**実装する文書の節**：`graphql-schema.md`「スキーマの変更と非推奨」
 
 **文書に残すこと**：通す変更の規則と、例外の一覧の書式（`change`・`path`・`reason`）を、`graphql-schema.md`「スキーマの変更と非推奨」に書く。
+
+## M34 依存の更新と使っていない部品の削除
+
+**目的**：使っていない Rails の部品と gem を残さず、保守の続く Ruby で動かす。読む人や AI が、読み込まれた部品を見て使える前提で設計しない。依存を上げる前に、本番で止めているフレームワークの文字列のログ（`guides/config.md`「止めたフレームワークの文字列のログ」）が、新しい版で漏れないことを確かめる。
+
+**作るもの**
+
+1. 止めたログの経路の調べ直し（改善の候補 IB-14）：上げた後の Rails・Solid Queue・Ruby で、値を文字列で書く購読とミドルウェアが、止めた 5 つの経路のほかに増えていないかを確かめる。購読者の一覧とミドルウェアの並びを上げる前と後で比べ、ログの衛生の spec を新しい版で流す。拒否の一覧を、原則出さない許可の形に変えるかを「判断」に書く
+2. 使っていない部品を外す：`config/application.rb` の Active Storage・Action Mailbox・Action Text・Action Cable の読み込み、`config/environments/*.rb` の `active_storage.service`、`config/storage.yml`、`config/cable.yml`、kamal と image_processing の gem、Dockerfile の libvips。thruster（Dockerfile の起動の命令が使う）と Action Mailer（通知の送り方を `adr/007` が決める）は残す
+3. Ruby を 3.4 の最新の patch に上げる：`.ruby-version` と Dockerfile を変える（CI は `.ruby-version` を読む）。上げる前に、3.3.3 で `RUBYOPT=-W:deprecated` を付けて全件を流し、警告の件数を取っておく
+
+**判断**：Ruby を 3.4 へ直接上げるか
+
+- **既定の推奨**：直接上げる。文字列を比べる spec に `Hash#inspect` の表記に頼るものは無く、変える場所は `.ruby-version` と Dockerfile だけである
+- **裏返る条件**：3.4 で全件が通らない gem があり、すぐに直せない → 3.3 系の最新の patch にとどめ、3.4 は 3.3 系の保守が終わる前に別に上げる
+- **撤退コスト**：小さい。`.ruby-version` と Dockerfile を戻すだけで済む
+
+**完了条件**
+
+```sh
+bundle exec rspec                                                # 全件。本番の環境の起動は spec/platform/logging_spec.rb の子のプロセスが確かめる
+RUBYOPT=-W:deprecated bundle exec rspec 2>&1 | grep -c "warning:"   # 上げる前の件数を超えない
+git grep -nE "active_storage|action_mailbox|action_text|action_cable|image_processing|kamal" -- config app Gemfile Dockerfile   # 0 件
+```
+
+`ruby -v` が `.ruby-version` と同じ版で、`bundle outdated --only-explicit` に、保守の終わった版の gem が無い。
+
+**実装する文書の節**：`guides/config.md`「application.rb で変えたこと」「使っていない機能の設定」「止めたフレームワークの文字列のログ」、`README.md`「開発環境」
+
+**文書に残すこと**：外した部品と残した部品の理由を `guides/config.md` に書く。止めたログの経路の調べ直しの結果を、`guides/config.md`「止めたフレームワークの文字列のログ」に書く。
+
+## M35 分岐の網羅率の警告
+
+**目的**：PR が足した行の分岐のうち、どの example も通らないものを、実装レビューの前に一覧にする。確かめる example の抜け（サイクル 01 で 4 件）を、レビューだけに頼らずに見つける。網羅率は「実行したか」だけを見て「確かめたか」は見ないので、失敗にはせず警告にとどめる。
+
+**作るもの**
+
+- 計測：`spec/spec_helper.rb` は、環境変数 `COVERAGE=1` のときだけ、標準の `Coverage` で行と分岐を数え、結果を `tmp/coverage.json` に書く。gem は足さない
+- `bin/check-branch-coverage`：`tmp/coverage.json` と、基準の ref（`BASE_REF`、既定は `origin/main`）と HEAD の分岐点からの `git diff` を照らし、足した行か変えた行にある分岐のうち、どの example も通らないものを一覧にする。標準出力と `$GITHUB_STEP_SUMMARY` に書き、行ごとに GitHub の警告の注釈を出す。終了コードは 0 にする
+- CI：test のジョブを履歴をすべて取る形（`fetch-depth: 0`）にし、`COVERAGE=1` で rspec を流してから `bin/check-branch-coverage` を流す。`config/ci.rb` にも足す
+- いま通っていない公開 API の失敗の経路 7 か所の example：出荷の指示（`Fulfillment::Instructions`）と計上（`Fulfillment::Shipping`）の `NOT_FOUND`、受注の引当（`Sales::OrderAllocation`）の取消済・出荷済の `CONFLICT`、品目の保存（`Sales::Catalog`）の `NOT_FOUND`、イベントの受け手 3 つ（`Purchasing::SupplierEventReceiver`・`Sales::FulfillmentEventReceiver`・`Fulfillment::SalesEventReceiver`）の想定外のイベント
+- `spec/bin/check_branch_coverage_spec.rb`：小さな計測の結果と差分を渡し、足した行の未通過の分岐だけを一覧にし、足していない行の未通過と、通った分岐を出さないことを確かめる
+
+**判断**：計測と照合に gem（SimpleCov と undercover）を使うか
+
+- **既定の推奨**：使わない。標準の `Coverage` と `git diff` を照らす自前のスクリプトにする。undercover は libgit2 のネイティブのビルド（rugged）に依存し、要るのは差分の行と未通過の分岐を照らすことだけである
+- **裏返る条件**：照合の規則（名前の変わったファイル・子のプロセスの計測など）が増え、自前のスクリプトの保守が重くなる → SimpleCov（子のプロセスを含められる）と undercover に移す
+- **撤退コスト**：小さい。計測の結果の形が同じなので、スクリプトを差し替えるだけで済む
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/bin/check_branch_coverage_spec.rb
+COVERAGE=1 bundle exec rspec && bin/check-branch-coverage   # 終了コード 0。公開 API の失敗の経路 7 か所は一覧に出ない
+```
+
+サイクル 01 の M20 の実装レビューで出た互換の判定の未検証の分岐（X1）について、直す前の commit（`ded1244` の親）を作業ツリーの外に取り出し、`COVERAGE=1` で `spec/graphql/schema_compat_spec.rb` を流して `bin/check-branch-coverage` を当てると、その分岐が警告に出る。
+
+**実装する文書の節**：`guides/testing.md`（分岐の網羅率の警告の読み方を足す）、`guides/bin.md`
+
+**文書に残すこと**：警告が出たときに、example を足すか、足さない理由を PR の本文に書くことを `guides/testing.md` に書く。次のサイクルの振り返りで、警告の件数と、そのうち example を足した件数を数える。
 
 ## M21 取消依頼と審査
 
 **目的**：発注側の取消は、受注側の承認でだけ成立する。審査中は出荷の指示と計上が止まる。
 
-**作るもの**：`cancellation_requests`・`cancellation_reviews`・`shipping_holds`、取消依頼・出荷停止・出荷停止解除・取消承認・取消却下・出荷取消のイベント、出荷済みの受注への取消依頼の自動却下、`requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`、受注と発注の状況の「取消審査中」「取消依頼中」
+**作るもの**：`cancellation_requests`・`cancellation_reviews`・`shipping_holds`、取消依頼・出荷停止・出荷停止解除・取消承認・取消却下・出荷取消のイベント、出荷済みの受注への取消依頼の自動却下、`requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`、受注と発注の状況の「取消審査中」「取消依頼中」、出荷依頼の状況の「出荷停止中」の導出と `ShipmentRequestStatus` の `ON_HOLD`
 
-**完了条件**：依頼 → 停止 → 承認 → 発注が「取消済み」・出荷依頼が「取消済」の通しのテスト。依頼 → 却下 → 発注が元の状況に戻る通しのテスト。審査中の出荷の計上が拒否されるテスト。
+**完了条件**：依頼 → 停止 → 承認 → 発注が「取消済み」・出荷依頼が「取消済」の通しのテスト。依頼 → 却下 → 発注が元の状況に戻る通しのテスト。審査中の出荷の計上が拒否されるテスト。出荷依頼の状況の導出表の 3 行目（解除されていない出荷停止があれば「出荷停止中」）と、出荷停止を解除した後に元の状況へ戻ることを確かめる、出荷依頼の状況の spec の example。
 
 **実装する文書の節**：`context-map.md`「取消の流れ」1〜4、`data-model.md`「出荷（`fulfillment`）」の出荷停止
 
@@ -828,7 +891,7 @@ BASE_REF=origin/main bin/check-schema-compat   # 2 つ目の PR で
 
 **完了条件**：出荷数量を超える検収が `INVALID_INPUT` になるテスト。すべての出荷実績が検収されたときだけ受注が「検収済」になるテスト。
 
-**実装する文書の節**：`context-map.md`「検収と請求の流れ」1〜3、`data-model.md`「購買」「受注」の検収の表
+**実装する文書の節**：`context-map.md`「検収と請求の流れ」1〜3、`data-model.md`「購買（`purchasing`）」「受注（`sales`）」の検収の表
 
 ## M24 請求の締め
 
@@ -848,7 +911,7 @@ BASE_REF=origin/main bin/check-schema-compat   # 2 つ目の PR で
 
 **完了条件**：確定後の変更が拒否されるテスト。同じ請求書発行を 2 回流しても写しが 1 件のテスト。`total = subtotal + tax_total` の CHECK 制約のテスト。重要シナリオ S5（`spec/scenarios/billing_amounts_spec.rb`）が通る。
 
-**実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6、`data-model.md`「購買」の受領請求書
+**実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6、`data-model.md`「購買（`purchasing`）」の受領請求書
 
 ## M26 ダッシュボードと失効の通し試験
 

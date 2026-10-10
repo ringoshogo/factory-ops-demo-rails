@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 出荷指示（docs/architecture/data-model.md「出荷」）。有効な出荷指示は出荷依頼ごとに 1 件
+# 出荷指示（docs/architecture/data-model.md「出荷（`fulfillment`）」）。有効な出荷指示は出荷依頼ごとに 1 件
 RSpec.describe Fulfillment::Instructions do
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }

@@ -13,8 +13,6 @@ PR #22。どちらの系統も Conditional Go で、指摘はすべて同じブ�
 | Codex | Conditional Go |
 | Claude | Conditional Go |
 
-直した後、Codex が対応の commit を読み直し、X1〜X6・C1〜C8・C10〜C12 を解消と判定した。C9 は、Codex から PR の本文を見られなかったので「一部」としたが、本文に 3 件の名前があることを親が確かめた。新しい指摘は無く、M16 に条件は残っていない。
-
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
 | Medium | Codex | Cop の spec が、コメントの解析の境界を守っていない。`=begin`／`=end` を無視するように Cop を壊しても spec が全件通る | 連続する `#` 行と `=begin`／`=end` の中の語を落とす例、文字列・ヒアドキュメントの中の `#` とマジックコメントを通す例を足した。`=begin`／`=end` を無視するように Cop を壊すと spec が落ちることを確かめてから戻した | `2093fb6` |
@@ -30,6 +28,8 @@ PR #25。どちらの系統も Conditional Go で、指摘はすべて同じブ�
 |---|---|
 | Codex | Conditional Go |
 | Claude | Conditional Go |
+
+直した後、Codex が対応の commit を読み直し、X1〜X6・C1〜C8・C10〜C12 を解消と判定した。C9 は、Codex から PR の本文を見られなかったので「一部」としたが、本文に 3 件の名前があることを親が確かめた。新しい指摘は無く、M16 に条件は残っていない。
 
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
@@ -493,6 +493,8 @@ PR #29。1 つ目の PR（`schema.graphql`・書き出しの検査・互換の�
 | Low | Claude | C8：基準の ref の先端と比べるので、載せ直していないブランチでは、基準に後から入ったフィールドが削除に見える | 基準の ref と HEAD の分岐点（`git merge-base`）の `schema.graphql` と比べる。手元のブランチと PR のマージ commit の両方の example を足した。`graphql-schema.md` に書いた | `ded1244`・この commit |
 | Low | Claude | C9：`@oneOf` の追加や `repeatable` を外す変更を比較器が出さない。union のメンバーとインターフェースの実装は非推奨にできない | 比較器の限界として `graphql-schema.md`「互換の判定」に書いた | この commit |
 
+Codex は直した後のブランチ（`ded1244`・`7cc1dd9`）を読み直し、判定を Go にした。Codex の X1〜X4 と Claude の C1〜C9 の 13 件をすべて解消と判定し、新しい指摘は無かった。互換の判定の 33 件をメモリ上で流し直して全件が通り、既定値が `false`・`0`・null の場合と null 可化の 6 つの場合も期待どおりだった。読み取りだけの環境なので、一時リポジトリでの CLI の確かめと、DB を使う spec は流していない。
+
 指摘を直した後に壊して、落ちることを確かめた。壊したファイルは複製から戻した。
 
 | 壊し方 | 落ちた example |
@@ -513,9 +515,9 @@ C8 の壊し方では、PR のマージ commit の example は落ちない。マ
 
 ### SHA の置き換え
 
-取りまとめ役が M16・M17 の直しを取り込むために M17〜M20 のブランチを載せ直し、commit の SHA が変わった。載せ直しの前と後の対応表の 1 列目の SHA を、追跡しているファイルから `git grep` で探し、`open-items.md` と `cycle-01-task-reviews.md` の該当箇所を 2 列目の SHA に置き換えた。置き換えた後は、1 列目のどの SHA も `git grep` で見つからない。M19 を載せ直す前の SHA のような、対応表に無い古い SHA は、次の祖先の確かめで見つかる。
+取りまとめ役が M16・M17 の直しを取り込むために M17〜M20 のブランチを載せ直し、commit の SHA が変わった。載せ直しの前と後の対応表の 1 列目の SHA を、追跡しているファイルから `git grep` で探し、`open-items.md` と `cycle-01/implementation-reviews.md` の該当箇所を 2 列目の SHA に置き換えた。置き換えた後は、1 列目のどの SHA も `git grep` で見つからない。M19 を載せ直す前の SHA のような、対応表に無い古い SHA は、次の祖先の確かめで見つかる。
 
-台帳・証跡・引き継ぎ（`open-items.md`・`cycle-01-task-reviews.md`・`improvement-backlog.md`・`handoff.md`）に `` ` `` で囲んで書いた 7〜40 桁の 16 進をすべて集め、`git cat-file -e <sha>^{commit}` と `git merge-base --is-ancestor <sha> HEAD` で確かめた。27 個のすべてが HEAD の祖先の commit だった。
+台帳・証跡・引き継ぎ（`open-items.md`・`cycle-01/implementation-reviews.md`・`improvement-backlog.md`・`handoff.md`）に `` ` `` で囲んで書いた 7〜40 桁の 16 進をすべて集め、`git cat-file -e <sha>^{commit}` と `git merge-base --is-ancestor <sha> HEAD` で確かめた。27 個のすべてが HEAD の祖先の commit だった。
 
 ### 実装の記録
 

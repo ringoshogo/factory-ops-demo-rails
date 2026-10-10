@@ -12,7 +12,7 @@
 - **コンテキストをまたぐ参照は ID 列だけにする**：外部キー制約を張らず、AR の関連も張らない（`context-map.md`「疎結合を守る規則」1）。相手テナントへの参照（`buyer_tenant_id`・`supplier_tenant_id`・`customer_tenant_id`）と、連結元の伝票への参照（`source_purchase_order_id` など）も同じ扱いにする。
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
 - **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
-- **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。以下の表では省略する。
+- **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。追記だけの `audit_logs` は、どちらも持たず、DB の `now()` で埋める `occurred_at` が作成の時刻を兼ねる（「監査ログ（`platform`）」）。以下の表では省略する。
 - **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 9 つである。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
 ## 状態は保存せず、時刻列から導出する
@@ -58,6 +58,8 @@
 | 3 | 出荷停止中 | 同じ受注に、解除されていない出荷停止がある |
 | 4 | 出荷指示済 | 有効な出荷指示がある |
 | 5 | 出荷待ち | それ以外 |
+
+出荷停止を記録する表（`shipping_holds`）は、取消依頼と審査を作るとき（`implementation-plan.md` M21）に足す。それまで、公開 API は「出荷停止中」を導出せず、GraphQL の `ShipmentRequestStatus` も `ON_HOLD` を返さない。
 
 ## 取引関係と権限付与（`partnerships`）
 
@@ -167,11 +169,11 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `audit_logs` | `occurred_at`・`actor_type`（`user` / `system`）・`actor_user_id`→・`action`（例：`purchase_order.place`・`event.received`）・`target_type`・`target_id`・`counterparty_tenant_id`→・`request_id`・`correlation_id`・`causation_id`・`metadata`（`jsonb`） | 追記だけ。`updated_at` を持たない。`actor_user_id` は `actor_type` が `user` のときだけ埋まる（CHECK 制約）。イベントの受信は `(owner, causation_id, action)` 一意（部分一意索引）で、同じイベントの 2 回目の配送で増えない |
+| `audit_logs` | `occurred_at`・`actor_type`（`user` / `system`）・`actor_user_id`→・`action`（例：`purchase_order.place`・`event.received`）・`target_type`・`target_id`・`counterparty_tenant_id`→・`request_id`・`correlation_id`・`causation_id`・`metadata`（`jsonb`） | 追記だけ。`created_at`・`updated_at` を持たず、`occurred_at` が作成の時刻を兼ねる。`actor_user_id` は `actor_type` が `user` のときだけ埋まる（CHECK 制約）。イベントの受信は `(owner, causation_id, action)` 一意（部分一意索引）で、同じイベントの 2 回目の配送で増えない |
 
 - **所有テナント**：書き込んだテナントである。mutation では操作者の所有テナント、イベントの受信では宛先テナントになる。相手テナントは `counterparty_tenant_id` に入れるだけで、相手からは見えない。
 - **ユーザーと相手テナントへの参照**：`actor_user_id`（取引関係の `users`）と `counterparty_tenant_id` は、コンテキストをまたぐ参照なので外部キーを張らない（「全テーブルに共通の規則」）。所有テナントの `owner_tenant_id` には、テナントの表と同じく外部キーがあるので、監査の行を持つテナントは消せない。
-- **追記だけにする仕組み**：アプリのロールには `SELECT`・`INSERT` だけを付与する（「RLS」）。トリガーが、すべての UPDATE と、保存期間の中の行の DELETE を拒む。行のトリガーは `TRUNCATE` で動かないので、`TRUNCATE` を拒む文単位のトリガーも置く。トリガーが止めるのは、所有ロールを含む通常の DML（UPDATE・DELETE・TRUNCATE）による誤った書き換えと削除である。表の所有者である所有ロールは、トリガーを外すことも表を落とすこともできるので、そうした DDL はマイグレーションのレビューで止める。
+- **追記だけにする仕組み**：アプリのロールには `SELECT`・`INSERT` だけを付与する（「RLS」）。トリガーが、すべての UPDATE と、保存期間の中の行の DELETE を拒む。行のトリガーは `TRUNCATE` で動かないので、`TRUNCATE` を拒む文単位のトリガーも置く。トリガーが止めるのは、所有ロールを含む通常の DML（UPDATE・DELETE・TRUNCATE）による誤った書き換えと削除である。表の所有者である所有ロールは、トリガーを外すことも表を落とすこともできるので、そうした DDL はマイグレーションのレビューで止める。`occurred_at` はアプリが渡さず、DB の既定値（`now()`）で埋める。INSERT の値を `now()` に固定するトリガーは置かないので、アプリのロールは過去の時刻の行を書け、その行はすぐ消せる。固定すると、保存期間を確かめる spec が過去の時刻の行を作れないからである（OI-45）。
 - **保存期間**：7 年。保存期間を過ぎた行は、所有ロールの rake タスク `audit:purge` が、DB の関数 `purge_expired_audit_logs()` を呼んで消す。関数は表を `public.audit_logs` と修飾し、`search_path` を固定する。呼び出し元の `search_path` に同じ名前の一時表があっても、それを消さない。運用の担当者は、所有ロールの資格情報を持つ工程で、月に 1 回流す。Web とワーカーには資格情報が無いので流せない。保存期間は、トリガーと関数の両方に同じ値で書いてあり、変えるときは両方を同じマイグレーションで直す。
 - **`metadata` に入れないもの**：メールアドレス・氏名・自由記述。ID・コード・件数だけを入れる。
 
@@ -280,7 +282,7 @@ $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 
 `app.tenant_id` が未設定なら、この関数は空を返し、どの行にも一致しない。テナントの設定を忘れたクエリは、例外ではなく 0 行になる。例外にする役目はアプリ側の基底クラス `TenantRecord`（`packs/platform`）が受け持つ（`decisions.md` 2 章）。テナントの表のモデルはすべてこれを継承し、`Current.tenant_id` が空のままリレーションを作るか保存すると `Tenancy::MissingTenant` になる。`TenantRecord` は既定スコープをメソッドで定義して設定を確かめるが、条件は足さない。所有テナントの条件を既定で付けると、相手の行を読むたびに `unscoped` が要るからである。
 
-`tenants`、Solid Queue の表、`webhook_inbox_events` を除く全テーブルに、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
+所有テナント列を持つ全テーブル（「テナントの持ち方」）に、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
 
 ```sql
 ALTER TABLE items ENABLE ROW LEVEL SECURITY;
