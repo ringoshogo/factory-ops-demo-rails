@@ -10,10 +10,25 @@ module Contracts
     end
 
     payload = event.to_payload
+    metadata = event_metadata(event)
     Subscriptions.routes(event.class.name).each do |route|
       tenant_id = payload.fetch(route.tenant_key).presence or raise ArgumentError, "宛先テナントが空: #{route.tenant_key}"
-      job = EventJob.publishing { EventJob.perform_later(event.class.name, payload, route.receiver, tenant_id) }
+      job = EventJob.new(event.class.name, payload, route.receiver, tenant_id)
+      job.app_metadata = metadata.merge("tenant_id" => tenant_id)
+      EventJob.publishing { job.enqueue }
       raise ActiveJob::EnqueueError, "#{event.class.name} を #{route.receiver} へ登録できなかった" unless job.successfully_enqueued?
     end
   end
+
+  # イベントの付帯情報（docs/architecture/data-model.md「イベントの受け口と冪等キー」）。ペイロードにも引数にも入れない。
+  # 受け手の中で発行すると、文脈の因果 ID は受け手が受け取ったイベントの ID なので、それが次のイベントの因果 ID になる。
+  # 相関 ID の無い文脈（要求の外で公開 API を呼んだとき）では、このイベントから一連の処理が始まる
+  def self.event_metadata(event)
+    event_id = SecureRandom.uuid_v7
+    context = Rails.event.context
+    { "event_id" => event_id, "event_name" => event.class.name, "correlation_id" => context[:correlation_id] || event_id,
+      "causation_id" => context[:causation_id], "source_tenant_id" => Current.tenant_id,
+      "published_at" => Time.current.iso8601(6) }
+  end
+  private_class_method :event_metadata
 end

@@ -225,3 +225,165 @@ Dataloader を外したときに予算が落ちることは、予算の spec の
 ### 残件の処理
 
 引当先が M17 の残件は無かった。決めたことは OI-25〜OI-27 に `judgment` として登録した。OI-25 は実装レビューの指摘（X2）で入口を足して閉じた。
+
+## M18 構造化ログと相関 ID
+
+PR #27。Codex は No Go、Claude は Conditional Go で、指摘はすべて同じブランチの commit で直した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | No Go |
+| Claude | Conditional Go |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex | X1：`operationName` がハッシュ・配列だと、中の値が要求の開始の行と文脈に残る。未認証の要求でも書く | 操作名と変数のキーは、GraphQL の名前の形の文字列だけを、コントローラと購読者の両方で書く。ほかの型と形は中の値ごと落とす。未認証の要求にハッシュ、認証済みの要求に配列、変数のキーに禁止の値を入れる回帰テストを、ログの衛生の spec と購読者の spec と GraphQL の入口の spec に足した | `27d355e` |
+| High | Codex | X2：エラー通知の文脈は渡した項目だけが書き換わり、要求の `request_id`・`user_id` や別のテナントがジョブに混ざる。`:job` も実行の後に残る | `perform_now` が、エラー通知の文脈も丸ごと退避し、いまの項目を空にしてからジョブの項目（`job` を含む）を設定し、例外の経路を含めて `ensure` で丸ごと戻す。ジョブの文脈の spec は、直接の `perform_now` を executor の外で動かし、入れ子のジョブと付帯情報の無いジョブを足し、どちらの文脈も項目を絞らずに比べる。OI-30 と `config.md` を合わせた | `27d355e`・`d541e5e` |
+| Medium | Codex | X3：本番で `RAILS_LOG_LEVEL=debug` を選べ、SQL のバインド値などを書く | `Platform::Logging.production_level` が `info` より細かい水準を拒み、`production.rb` がそれを通す。`debug` で本番の環境が起動しないことを、子のプロセスで確かめる。`config.md` に既定と許す値を書いた | `27d355e`・`d541e5e` |
+| Low | Codex | X4：TaggedLogging を使わない理由（行が JSON で始まらない）が事実と違う | タグがメッセージに混ざるので、文脈を `context` の項目に入れる、と直した（`logging.rb`・`config.md`） | `27d355e`・`d541e5e` |
+| Medium | Claude | C1：`ActionMailer::LogSubscriber` が送信の失敗を例外のメッセージ込みで書く | 購読を外し、構成の spec の一覧と `config.md` の表と OI-28 に足した | `27d355e`・`d541e5e` |
+| Medium | Claude | C2：要求の側のエラー通知の文脈を確かめるテストが無い | スキーマの実行の中で例外を上げ、通知の文脈に `request_id`・相関 ID・テナント・ユーザーが入ることを確かめる example を足した | `27d355e` |
+| Low | Claude | C3：`/up` の要求の行が本番で毎回出る | 購読者が `Rails::HealthController` の要求の行を書かない | `27d355e` |
+| Low | Claude | C4：`config.md` の表に `active_job.enqueued_at` が無い | 足した | `d541e5e` |
+| Low | Claude | C5：ADR 005 の「付帯情報のテナントはログの文脈にだけ」 | 「ログとエラー通知の文脈にだけ」に直した | `d541e5e` |
+| Low | Claude | C6：証跡の数値が再現しない | 下の「実装の記録」の数を直し、流したコマンドを書いた | この commit |
+| Low | Claude | C7：ログの衛生の spec が、セッションの Cookie と失敗するログインを流していない | 失敗するログインを足し、ログインで受け取った Cookie の値を禁止の値に入れた | `27d355e` |
+| Low | Claude | C8：直接の `perform_now` で上がった例外は、呼び出し元が拾っても `handled: false` で通知される | OI-29 に書いた | `d541e5e` |
+
+Codex は直した後のブランチ（`04efb16`）を読み直し、判定は No Go のままだった。X1・X4・C1〜C8 は解消し、X2・X3 は一部が残った。残りの 3 点（Y1〜Y3）を同じブランチで直した。
+
+| 重さ | 指摘 | 対応 | commit |
+|---|---|---|---|
+| Medium | Y1（X3 の残り）：環境変数の検証は、`config.log_level = :debug` の直接の指定で迂回できる | 環境変数を検証せず、`production.rb` の `config.after_initialize` で初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。子のプロセスで、`RAILS_LOG_LEVEL=debug` と、`production.rb` の後に `config.log_level = :debug` を指定した場合の両方が起動しないことを確かめる | `5118a37`・`b2fb616` |
+| Medium | Y2（X2 の残り）：既存の項目を空の値にして書き換えるので、実行の後に `job: nil` やジョブが足した項目が残る。spec の `compact` が差を隠していた | エラー通知の文脈の置き場を、項目の集合ごと置き換える。`ActiveSupport::ExecutionContext.clear` は `Current` の値と入れ子のスタックも捨てるので使わない（Rails 8.1.4 の `execution_context.rb`）。置き換えた後に引数なしの `set` で変更の通知を出す。spec は `compact` をやめて `to_h` をそのまま比べ、本体でジョブが足した項目が実行の後に残らないことも確かめる | `5118a37`・`b2fb616` |
+| Low | Y3：同じスレッドで 2 つのジョブの Fiber を交互に動かすと、エラー通知の文脈が混ざる | 直さない。Rails の既定の分離の単位はスレッドで、Solid Queue はジョブをスレッドで動かすので、いまは起きない。前提を OI-35 に `judgment` で登録し、分離の単位が `:thread` であることを確かめる example を足した | `5118a37`・`b2fb616` |
+
+Y1〜Y3 のテストを先に書き、実装の前に流した。39 examples のうち 15 が落ちた（ジョブの文脈 13 件、本番の水準 2 件）。分離の単位のガードは、いまの設定を守るので通った。直した後に壊して、次のとおり落ちることを確かめた。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| `production.rb` が初期化の後の水準を確かめない | `本番の環境は、RAILS_LOG_LEVEL=debug でも config.log_level = :debug の直接の指定でも起動しない` |
+| 水準の確かめで `debug` を許す | `info より細かい水準のロガーを拒み、info 以上を許す` と、上の 1 件 |
+| 以前の形（環境変数だけを検証する）に戻す | 上の起動の 1 件（直接の指定で起動した） |
+| エラー通知の文脈を、既存の項目を空の値にして書き換える形に戻す | ジョブの文脈の spec の 13 件すべて |
+| テストの環境の分離の単位を `:fiber` にする | `Rails の文脈の分離の単位はスレッドである` |
+
+直した後の全件は 1001 examples, 0 failures だった。
+
+Codex は `32874ed` を 3 回目に読み直し、判定は No Go のままだった。Y2 は解消し、Y1・Y3 は一部が残った。残りは次の 3 点で、取りまとめ役の判断でコードを直さずに台帳に登録し、Conditional Go として先へ進めた。計画の目的は、運用で選べる設定（環境変数・`config.log_level`）で本番に debug を選べないことで、それは満たしている。
+
+| 重さ | 指摘 | 対応 |
+|---|---|---|
+| Medium | 検査より後の `after_initialize`・ロガーの差し替え・`broadcast_to` で、水準を debug にできる | OI-36 に登録した。コードで水準を変える経路は原理的に防げず、コードレビューで止める。`config.md` に制限の範囲を書いた |
+| Medium | 差し替える前の debug のロガーが、Active Record などの別の出力の経路に残る | 同じく OI-36 |
+| Low | Y3 のガードは分離の設定だけを確かめ、ジョブの実行方式を Fiber に変えたことを検出しない | OI-35 に書いた |
+
+指摘のテストを先に書き、実装の前に流した。62 examples のうち 18 が落ちた（ジョブの文脈 11 件、構成と購読者 5 件、ログの衛生 1 件、GraphQL の入口の操作名 1 件）。要求の側のエラー通知の文脈（C2）は、実装がすでにあったので通った。
+
+直した後に、直した防壁を壊して落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| 購読者が操作名を検証せずに書く | `GraphQL の操作名と変数のキーは、GraphQL の名前の形の文字列だけを書く。…`、ログの衛生の 1 件 |
+| コントローラが操作名を検証せずに文脈に入れる | `操作名が GraphQL の名前の形の文字列でなければ、ログの文脈にも操作の終わりにも書かない`、ログの衛生の 1 件 |
+| 購読者が変数のキーを検証せずに書く | 購読者の操作名の 1 件、ログの衛生の 1 件 |
+| エラー通知の文脈を、渡した項目だけ書き換える | ジョブの文脈の spec の 13 件すべて |
+| エラー通知の文脈を、実行の後に戻さない | 同じ 13 件 |
+| 本番で許す水準に `debug` を足す | `info より細かい水準を拒み、info 以上を許す`、`本番の環境は、RAILS_LOG_LEVEL=debug を与えると起動しない` |
+| `production.rb` が水準を `production_level` に通さない | `本番の環境は、RAILS_LOG_LEVEL=debug を与えると起動しない` |
+| `ActionMailer::LogSubscriber` を外さない | `params・ジョブの引数・例外のメッセージを文字列で書くフレームワークの購読を外している` |
+| `Platform::RequestContext` と `GraphqlController` がエラー通知の文脈を設定しない | `スキーマの実行の中で上がった例外の通知に、request_id・相関 ID・テナント・ユーザーが入る` |
+| 購読者がヘルスチェックの要求を書く | `ヘルスチェックの要求は書かない` |
+
+失敗するログインとセッションの Cookie（C7）は、いまの実装がどの行にも書かないことを守るガードで、壊す実装の箇所が無い。
+
+直した後、次のコマンドを 5 回続けて流し、5 回とも 62 examples, 0 failures だった。
+
+```sh
+bundle exec rspec spec/jobs/log_context_spec.rb spec/platform/logging_spec.rb spec/requests/log_hygiene_spec.rb spec/requests/graphql_entry_spec.rb spec/contracts/correlation_spec.rb
+```
+
+直した後の全件は 1000 examples, 0 failures で、層ごとの表は次のとおり。未分類のファイルは無く、3 つの層が目安を外れて警告を出した（OI-24）。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 95 | 38.3% | 1.27s | 60% 以上 |
+| 結合 | 116 | 46.8% | 4.39s | 30% 以下 |
+| シナリオ | 37 | 14.9% | 6.73s | 10% 以下 |
+| ガード | 752 | — | 214.88s | 数えない |
+
+### 実装の記録
+
+テストを先に書き、実装の前に流した。33 examples のうち 32 が落ちた。通った 1 件（`購読者の例外は、テストの環境では呼び出し元まで上がる`）は、Rails が `consider_all_requests_local` から決める既定値を、変えていないことを守るガードである。実装の後、4 つの spec は 33 examples, 0 failures になった。
+
+| 対象 | RED の落ち方 |
+|---|---|
+| `spec/platform/logging_spec.rb` | 20 件のうち 19 件。`Platform::RequestContext`・`Platform::JsonLogFormatter`・`Platform::JsonLogSubscriber`・`Platform::Logging` が無い（NameError）、ミドルウェアに `Rails::Rack::Logger` と `ActionDispatch::DebugExceptions` が残る、文字列のログの購読が付いている、`log_arguments` が真 |
+| `spec/jobs/log_context_spec.rb` | 10 件すべて。イベントと本体の文脈にジョブの項目と付帯情報が無い、エラー通知にテナント ID が付かない、登録し直したジョブに `app_metadata` が無い |
+| `spec/contracts/correlation_spec.rb` | 2 件すべて。行に相関 ID が無い |
+| `spec/requests/log_hygiene_spec.rb` | 1 件。購読者が無い |
+
+実装を壊して、落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| `Platform::Logging.configure!` が `Rails::Rack::Logger` を外さない | `文脈のミドルウェアは要求 ID を付けた後にあり、要求の開始と例外を文字列で書くミドルウェアは無い`、`ログイン・mutation・URL の変数・失敗する要求とジョブ・イベントの配送の全行が JSON で、禁止の値を含まない` |
+| `ActionDispatch::DebugExceptions` を外さない | 同じ 2 件 |
+| `ActionController`・`ActionDispatch`・`ActiveJob` の `LogSubscriber` を外さない | `params・ジョブの引数・例外のメッセージを文字列で書くフレームワークの購読を外している`、ログの衛生の 1 件 |
+| `SolidQueue::LogSubscriber` を外さない | 同じ 2 件 |
+| 購読者が表で項目を絞らず、ペイロードをすべて書く | `要求の開始は params を書かない` など、購読者の 6 件とログの衛生の 1 件 |
+| GraphQL のクエリの本文を、要約せずに書く | `GraphQL の要求の開始は、操作名・クエリの SHA-256 の要約・変数のキーの一覧に置き換える`、ログの衛生の 1 件 |
+| ハッシュでないペイロードを例外にしない | `ハッシュでないペイロードは例外にする。…`、`イベントのオブジェクトを Rails.event.notify に渡すと、呼び出し元で例外になる` |
+| 表に無いイベントもペイロードを書く | `表に無いイベントは、name・context・timestamp だけを書く` |
+| `ApplicationJob.log_arguments = false` を消す | `ジョブの引数をログに書かない` |
+| 書式が例外のメッセージを書く | `例外を渡されたら、メッセージを書かずにクラス名だけを書く` |
+| `Platform::RequestContext` が相関 ID を設定しない | 相関 ID の spec の 2 件 |
+| `GraphqlController` が、スキーマを実行した後に文脈を設定する | `要求の開始の行には request_id と相関 ID が付き、テナントとユーザーと操作名はスキーマの実行の中の行から付く` |
+| ジョブの文脈を、`perform_now` ではなく `around_perform` で設定する | ジョブの文脈の spec の 10 件のうち 9 件と、相関 ID の spec の 1 件 |
+| `perform_now` が、`super` の前に引数を復元する | 引数の復元に失敗するジョブの 3 件（`discard_on では、…`・`retry_on では、…`・`どちらも無ければ、…`） |
+| `perform_now` が、実行の前の文脈に戻さない | ジョブの文脈の spec の 10 件のうち 8 件 |
+| `perform_now` が、呼び出し元の文脈を消さずに足す | ジョブの文脈の spec の 10 件のうち 9 件 |
+| `perform_now` が、上がる例外をエラー通知に送らない | `失敗では、終了のイベントに文脈が付き、エラー通知の文脈にテナント ID が入る`（2 つの経路）、`どちらも無ければ、例外が呼び出し元へ上がり、…` |
+| `serialize` が `app_metadata` を入れない | ジョブの文脈の spec の 10 件のうち 7 件と、相関 ID の spec の 2 件（`発注の要求から購買の受け手までの全ログ行が、…`・`相関 ID の無い文脈で発行したイベントは、…`）。相関 ID の無い文脈の example を足す前に壊したときは 1 件だったので、`27d355e` で壊し直して数えた |
+| `Contracts.publish` が文脈の因果 ID を付帯情報に入れない | `発注の要求から購買の受け手までの全ログ行が、…受け手の因果 ID は届いたイベントの ID である` |
+| ジョブの因果 ID を、届いたイベントの ID ではなく付帯情報の因果 ID にする | 同じ 1 件 |
+| 相関 ID の無い文脈で、イベントの ID を相関 ID にしない | `相関 ID の無い文脈で発行したイベントは、そのイベントから一連の処理が始まり、自分の ID を相関 ID にする` |
+| `contracts.event_handled` を出さない | 相関 ID の spec の 1 件と、ログの衛生の 1 件 |
+| `BaseMutation` がユーザーエラーのコードを集めない | `成功・ユーザーエラー・トップレベルのエラーを分け、ユーザーエラーのコードを書く` |
+| `spec/support/log_context.rb` を読み込まない | `example の中で設定したログとエラー通知の文脈は、次の example へ持ち越されない` |
+| 購読者が `log/events.log` のパス（`Pathname`）に `write` する | `Rails.event のイベントを、log/events.log の末尾に 1 行ずつ足す` |
+
+壊して落ちなかったものは、テストを直してから壊し直した。
+
+- ジョブの文脈を `around_perform` で設定しても、失敗と再試行の example は通った。`around_perform` で設定した文脈は戻されずに `active_job.completed` まで残るからである。失敗と再試行でも `active_job.started` の文脈を確かめるようにした。
+- `ActionDispatch::DebugExceptions` を外さなくても、ログの衛生の spec は通った。テストの環境は rescue できない例外を、`DebugExceptions` が書く前に送出し直すからである。失敗する要求を rescue できる例外にした（OI-33）。
+- `SolidQueue::LogSubscriber` を外さなくても、ログの衛生の spec は通った。ワーカーのスレッドを通らないからである。ワーカーと同じ `thread_error` の通知を出すようにした（OI-28）。
+
+RED の後に足した example（`spec/platform/logging_spec.rb` の後始末と `log/events.log` の 2 件、`spec/contracts/correlation_spec.rb` の相関 ID の無い文脈の 1 件、`spec/requests/graphql_entry_spec.rb` の操作の終わりのイベントの 1 件）は、実装の後に書いたので RED が無い。上の表の壊し方で落ちることを確かめた。
+
+計画の手での確認は、次のとおりだった。
+
+- `bin/rails middleware | grep -A1 'Platform::RequestContext'` は、開発の環境で次の行が `Rails::Rack::Logger` だった。本番の環境（`RAILS_ENV=production`）では `Rails::Rack::SilenceRequest` の後にあり、`Rails::Rack::Logger` と `ActionDispatch::DebugExceptions` は無かった。
+- 開発の環境で `bin/dev` と `bin/jobs` を動かし、発注を 1 件登録して `grep <相関 ID> log/events.log` を流した。要求の `action_controller.request_started`・`active_job.enqueued`・`graphql.operation_completed`・`action_controller.request_completed` と、受注側テナントの「発注登録」の配送（`active_job.started`・`contracts.event_handled`・`active_job.completed`）と、発注側テナントの「受注確定」の配送が、同じ相関 ID で並んだ。受け手の行の因果 ID は、それぞれが受け取ったイベントの `event_id` だった。
+- 最初の確認では、`log/events.log` に 1 行しか残らなかった。購読者が書き込み先の `Pathname` を IO とみなし、`Pathname#write` が書くたびにファイルを作り直していた。購読者は IO だけを受け取り、`initializers/event_log.rb` が追記で開くようにし、追記を確かめる example を足した。
+
+次のコマンドを 5 回続けて流し、5 回とも 93 examples, 0 failures だった。`spec/jobs` と `spec/contracts` はディレクトリごと流したので、ログの spec のほかの example も含む。
+
+```sh
+bundle exec rspec spec/platform/logging_spec.rb spec/jobs spec/contracts spec/requests/log_hygiene_spec.rb spec/requests/graphql_entry_spec.rb
+```
+
+### 層ごとの表
+
+全件（991 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した（OI-24）。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 95 | 38.6% | 1.26s | 60% 以上 |
+| 結合 | 114 | 46.3% | 5.04s | 30% 以下 |
+| シナリオ | 37 | 15.0% | 6.02s | 10% 以下 |
+| ガード | 745 | — | 217.57s | 数えない |
+
+### 残件の処理
+
+引当先が M18 の残件は無かった。決めたことは OI-28〜OI-34 に `judgment` として登録した。

@@ -1,4 +1,5 @@
 require_relative "boot"
+require_relative "../packs/platform/lib/platform/request_context"
 
 require "rails"
 # Pick the frameworks you want:
@@ -53,6 +54,11 @@ module FactoryOpsDemoRails
 
     # RLS のポリシーと複合外部キーを残すため（adr/001）
     config.active_record.schema_format = :sql
+
+    # 要求 ID と相関 ID を、要求の開始のイベントより外側で文脈に設定する。全環境で入れる。
+    # 本番とテストは直後の Rails::Rack::Logger を外す（Platform::Logging.configure!）が、Rails は挿入を当ててから削除を当てるので、
+    # この位置に残る（docs/guides/config.md「ログ」）
+    config.middleware.insert_before Rails::Rack::Logger, Platform::RequestContext
 
     # Solid Queue を業務 DB と同じ接続に置く。connects_to を設定せず、全環境で同じアダプタにする（docs/adr/005 決定 1）
     config.active_job.queue_adapter = :solid_queue

@@ -28,7 +28,10 @@ module Contracts
     end
 
     def perform(event_name, payload, _receiver, _tenant_id)
+      started_at = Time.current
       route.receiver.constantize.handle(event_name.constantize.from_payload(payload))
+      Rails.event.notify("contracts.event_handled", event_name:, receiver: route.receiver,
+        delivery_lag_ms: delivery_lag_ms(started_at))
     end
 
     # 発行元のテナントではなく、宛先テナントの名義で受け手を動かす。宛先は引数を信じず、
@@ -49,6 +52,12 @@ module Contracts
     end
 
     private
+
+    # 配送の遅れ。発行時刻は付帯情報にあり、付帯情報の無いジョブでは測れない
+    def delivery_lag_ms(started_at)
+      published_at = app_metadata&.dig("published_at") or return nil
+      ((started_at - Time.iso8601(published_at)) * 1000).round
+    end
 
     def route
       event_name, _payload, receiver = arguments
