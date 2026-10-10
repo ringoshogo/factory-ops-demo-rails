@@ -26,7 +26,7 @@ Rails のアプリは、どのクラスからどのクラスでも呼べる。�
 | `sales` | 品目・受注・品番の対応表 | `Sales::OrderAllocation`・`PublishedCatalog` |
 | `inventory` | 在庫・引当・在庫の移動 | `Inventory::Allocation`・`Stocks` |
 | `fulfillment` | 出荷依頼・出荷指示・出荷 | `Fulfillment::Shipping`・`PartnerShipments` |
-| `billing` | 請求。まだ `package.yml` だけで、コードは無い | — |
+| `billing` | 請求条件・請求対象明細・請求書（締めと下書きの破棄） | `Billing::Closing`・`Invoices` |
 
 GraphQL の層（`app/graphql/`）やコントローラなど、どのコンテキストにも属さないコードは、リポジトリの直下の `app/` に置く。直下はルートパッケージ（`package.yml` がリポジトリの直下にある、名前が `.` のパッケージ）に属する。
 
@@ -169,13 +169,14 @@ packs/sales cannot have privacy violations on packs/inventory because strict mod
 
 ## CI で落ちる場所
 
-パッケージの境界は、次の 4 つで検査する。
+パッケージの境界は、次の 5 つで検査する。
 
 | 検査 | 落ちる条件 | 流す場所 |
 |---|---|---|
 | `bin/packwerk validate` | `package.yml` の書式の誤り、存在しないパッケージへの依存、依存の循環 | GitHub Actions の `lint`、`bin/ci` |
 | `bin/packwerk check` | 依存の違反、プライバシーの違反 | 同上 |
 | `spec/packwerk/enforcement_spec.rb` | packwerk が違反を検出しなくなったとき。一時ファイルで依存の違反とプライバシーの違反を作り、`bin/packwerk check` が失敗することを確かめる | rspec |
+| `spec/packwerk/dependency_table_spec.rb` | `context-map.md`「疎結合を守る規則」の依存の向きの表と、各 `package.yml` の `dependencies` の集合が食い違うとき | rspec |
 | `spec/packwerk/purchasing_uses_only_published_catalog_spec.rb` | `packs/purchasing` の中に、`Sales::PublishedCatalog` 以外の `Sales::` の定数への参照があるとき | rspec |
 
 `enforcement_spec.rb` は、検査の仕組みそのもの（`packwerk.yml` の `require` や `package.yml` の `strict`）が誰かに外されたときに落ちる。`bin/packwerk check` は違反が無ければ通るので、仕組みが外れていても気づけないからである。
@@ -206,6 +207,7 @@ packs/sales cannot have privacy violations on packs/inventory because strict mod
 他のパッケージから呼ばれる入口を作る開発者は、次の形に揃える（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md) 決定 4、[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 3）。
 
 - **置き場**：`packs/<パッケージ>/app/public/<パッケージ>/` に置く。
+- **名前**：`app/models/<パッケージ>/` と `app/public/<パッケージ>/` は同じ名前空間に入るので、公開 API のモジュールをモデルと同じ名前にできない。モデルの名前の複数形にする（`Sales::SalesOrders`・`Purchasing::ReceiptInspections`）。
 - **返す値**：AR モデルを返さず、`Data.define` の読み取り用の値（`Inventory::StockValue` など）に詰めて返す。AR モデルを返すと、受け取った側がそのモデルを書き換えられる。
 - **引数**：操作者（`Partnerships::Actor`）を必須の引数にし、自パッケージの policy の scope（`Inventory::Scope` など）を掛けてから読む。
 

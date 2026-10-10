@@ -216,7 +216,7 @@ grep <相関 ID> log/events.log
 
 ## 環境ごとの設定
 
-`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）を足したほかは生成のままである。本デモの読み方で知っておくとよいのは次の 2 つ。
+`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）を消したほかは生成のままである。本デモの読み方で知っておくとよいのは次の 2 つ。
 
 - **`test.rb` の `eager_load = ENV["CI"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。
 - **`production.rb` に Solid Queue の `connects_to` が無い**：[ジョブ](#ジョブ) のとおり、意図して書いていない。
@@ -237,6 +237,8 @@ grep <相関 ID> log/events.log
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
+
+ワークフローのステップと契機ごとの `BASE_REF` の式、`config/ci.rb` の工程は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
 
 ## 使っていない機能の設定
 
