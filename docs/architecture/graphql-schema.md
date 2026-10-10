@@ -735,7 +735,7 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 
 ## スキーマの変更と非推奨
 
-スキーマの形は、リポジトリの根の `schema.graphql` に書き出して commit する。型を変えた実装者は、`bin/rails graphql:schema:idl` で書き直し、同じ commit に入れる。書き直しを忘れると `spec/graphql/schema_dump_spec.rb` が落ちる。
+スキーマの形は、リポジトリの根の `schema.graphql` に書き出して commit する。型を変えた実装者は、`bin/rails graphql:schema:idl` で書き直し、同じ commit に入れる。書き直しを忘れると `spec/graphql/schema_dump_spec.rb` が落ちる。スキーマに `extra_types` で型を足さない。graphql-ruby 2.6 の書き出しは、`extra_types` の型を、フィールドから届く型とは別にもう一度書くので、`schema.graphql` に同じ型が 2 回並ぶ。共通の型（`Tenant`・`UserError`・`PageInfo` など）は、フィールドから届かせる（OI-47）。
 
 クライアントを壊す変更（フィールド・引数・enum の値の削除、型の変更、必須の引数の追加）は、次の順で行う。
 
