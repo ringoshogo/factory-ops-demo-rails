@@ -39,7 +39,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 | 項目 | 値 |
 |---|---|
-| Ruby | 3.3.3（rbenv）。3.3.0 は構文解析の不具合（Ruby bug #20090）で Rails 8.1 の Action View を読み込めない |
+| Ruby | 3.4.11（rbenv）。版は `.ruby-version` に書き、`Dockerfile` の `RUBY_VERSION` を同じ版にする。この版にする理由は `Dockerfile` の `RUBY_VERSION` の直前のコメントにある |
 | Rails | 8.1 系、API モード |
 | DB | PostgreSQL 18（`docker compose` の `postgres:18`）。開発とテストの両方で使う。拡張は `btree_gist`（M27、`adr/006`）だけを入れる |
 | pg_dump | 18 系。手元は Homebrew の `libpq`（keg-only）を PATH の先頭に足して使い、CI は PGDG の `postgresql-client-18` を入れる |

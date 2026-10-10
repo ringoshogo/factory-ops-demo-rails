@@ -27,7 +27,7 @@ bundle exec rspec
 
 DB には 2 つのロールで接続する。アプリとテストは RLS が掛かる `factory_app`、DB のタスクは表の所有者の `factory_owner` を使い、どちらも `bin/setup` が作る（`docs/architecture/data-model.md`「RLS」）。本番で所有ロールの資格情報を渡す工程も、同じ節にある。
 
-pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対して動かず、`db/structure.sql` を書けないため、`bin/setup` は 18 未満なら止まる。Ruby は `.ruby-version` の版を rbenv で入れる。
+pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対して動かず、`db/structure.sql` を書けないため、`bin/setup` は 18 未満なら止まる。Ruby は `.ruby-version` の版を rbenv で入れる。この版にする理由は、`Dockerfile` の `RUBY_VERSION` の直前のコメントにある。
 
 ## ドキュメント
 

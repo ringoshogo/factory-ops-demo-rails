@@ -8,7 +8,9 @@
 # For a containerized dev environment, see Dev Containers: https://guides.rubyonrails.org/getting_started_with_devcontainer.html
 
 # Make sure RUBY_VERSION matches the Ruby version in .ruby-version
-ARG RUBY_VERSION=3.3.3
+# 保守の続く Ruby で動かすため、3.4 系の最新の patch にする。3.3 系は 2026-04-01 に通常の保守を終えてセキュリティの修正だけになり、
+# 2027-03-31 に保守を終える見込みである（ruby-lang.org「Ruby の各ブランチのメンテナンス状況」https://www.ruby-lang.org/ja/downloads/branches/）
+ARG RUBY_VERSION=3.4.11
 FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 
 # Rails app lives here

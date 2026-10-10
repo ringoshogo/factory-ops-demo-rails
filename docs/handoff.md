@@ -80,7 +80,7 @@
 
 ### 開発環境
 
-- `export PATH="$HOME/.rbenv/shims:/opt/homebrew/opt/libpq/bin:$PATH"`（Ruby 3.3.3、pg_dump 18）
+- `export PATH="$HOME/.rbenv/shims:/opt/homebrew/opt/libpq/bin:$PATH"`（Ruby 3.4.11、pg_dump 18。この版にする理由は `Dockerfile` の `RUBY_VERSION` の直前のコメントにある）
 - DB は `docker compose up -d --wait`（PostgreSQL 18、ポート 5433）
 - rspec の全件は 2 分を超える。テストを並行して流すときは、別名の一時 DB を使う
 - GitHub の操作（push・PR）の前に `gh auth switch -u ringoshogo` で個人アカウントへ切り替える。gh の既定は仕事用の `ringo-shg` で、そのままでは push できない
