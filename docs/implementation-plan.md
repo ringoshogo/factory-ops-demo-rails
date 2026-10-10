@@ -1041,6 +1041,7 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 - `supplier.dashboard`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API）
 - `spec/scenarios/revocation_spec.rb`（重要シナリオ S2）：発注 → 受注確定 → 失効 → 経路 1〜3 が空・新しい発注が `NOT_PERMITTED` → 引当・出荷・検収・締め・発行がそのまま進み、発注側に受領請求書が届く
 - 画面の問い合わせごとの複雑度のテスト（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧から読む
+- 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合テスト（OI-79）。停止中の受注に有効な出荷指示ができるなら、受け手を直列にする
 
 **完了条件**：上の 2 つのテストが通る。全マイルストーンの共通の完了条件が通る。
 
