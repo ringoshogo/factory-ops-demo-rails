@@ -923,9 +923,9 @@ bundle exec rspec packs/purchasing/spec/public/purchasing/cancellation_requests_
 
 ## M22 受注側の取消と、取消と出荷の競合
 
-**目的**：受注側は審査なしで取り消せる。同時に進んだ取消と出荷計上は、引当の行ロックでどちらか一方だけが成立する。
+**目的**：受注側は審査なしで取り消せる。同時に進んだ取消と出荷計上は、在庫の行 → 引当の行の順に取る行ロックでどちらか一方だけが成立する。
 
-**作るもの**：`Sales::OrderCancellation.cancel`（M21 の受注の内部の取消の処理を使う）、受注取消のイベントと購買の受け手（`supplier_cancelled_at`）、`cancelSalesOrder`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）。出荷取消のイベントと出荷の受け手は M21 のものを使う。審査の承認（M21）と受注側の取消は同じ受注の内部の取消の処理を通るので、下の競合テストが両方の経路の引当の行ロックを確かめる。
+**作るもの**：`Sales::OrderCancellation.cancel`（M21 の受注の内部の取消の処理を使う）、受注取消のイベントと購買の受け手（`supplier_cancelled_at`）、`cancelSalesOrder`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）。出荷取消のイベントと出荷の受け手は M21 のものを使う。審査の承認（M21）と受注側の取消は同じ受注の内部の取消の処理を通るので、下の競合テストが両方の経路の在庫の行と引当の行のロックを確かめる。
 
 受注側の取消の結果は次のとおりである。
 
@@ -1026,7 +1026,7 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 
 **目的**：確定した請求書と明細は変わらない。写しは発注側の名義で 1 回だけ作られる。
 
-**作るもの**：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`
+**作るもの**：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。締め日が今日より後の締めを許すか（OI-77）を作者の判断を受けて決め、決めた条件を `closing_spec.rb` の example で確かめる
 
 **完了条件**：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でないテスト。確定後の変更が拒否されるテスト。同じ請求書発行を 2 回流しても写しが 1 件のテスト。`total = subtotal + tax_total` の CHECK 制約のテスト。重要シナリオ S5（`spec/scenarios/billing_amounts_spec.rb`）が通る。
 

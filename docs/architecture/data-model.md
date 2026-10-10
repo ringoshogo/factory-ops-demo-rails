@@ -90,7 +90,7 @@
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
 | `sales_order_sequences`（受注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
 | `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`priced_on`（単価を引いた有効日）・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。数量は正。照合前は `item_id` と写しの 4 列がすべて空、照合後はすべて埋まる |
-| `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引） |
+| `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引）。決定と決定の時刻は、揃って空か揃って埋まる |
 | `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意。数量は 0 以上 |
 
 販売単価は、有効期間と記録期間の 2 つの時間軸で持つ（`../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md`）。担当者が単価を変える操作は、改定の予約と訂正の 2 つだけで、どちらも現在の行の記録期間を閉じて新しい行を足す。行は書き換えない。単価を引く公開 API は `Sales::ItemPrices.price_at` の 1 つで、有効日と記録時点を取る。カタログは今日の単価を、受注の照合は受注日の単価を、いまの記録時点で引き、受注明細には単価と一緒にその有効日（`priced_on`）を写す。
@@ -131,7 +131,7 @@
 | `purchase_orders` | `order_no`・`supplier_tenant_id`→・`order_date`・`desired_delivery_on`・`awaiting_match_at`・`accepted_at`・`cancelled_at`・`supplier_cancelled_at` | 発注側の取消と受注側の取消は両立しない |
 | `purchase_order_sequences`（発注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
 | `purchase_order_lines` | `part_number`（自社品番）・`quantity`・`confirmed_item_name`・`confirmed_unit_price` | `(purchase_order_id, part_number)` 一意。数量は正。確定の写しの 2 列は、揃って空か揃って埋まる |
-| `cancellation_requests`（取消依頼） | `purchase_order_id`・`reason`・`outcome`（`approved` / `rejected`、空は回答待ち）・`decided_at` | 回答待ちは発注ごとに 1 件（部分一意索引） |
+| `cancellation_requests`（取消依頼） | `purchase_order_id`・`reason`・`outcome`（`approved` / `rejected`、空は回答待ち）・`decided_at` | 回答待ちは発注ごとに 1 件（部分一意索引）。回答と回答の時刻は、揃って空か揃って埋まる |
 | `inbound_shipments`（「出荷計上」の写し） | `purchase_order_id`・`shipment_id`→・`shipped_on` | `shipment_id` 一意 |
 | `inbound_shipment_lines` | `purchase_order_line_id`・`shipped_quantity` | `(inbound_shipment_id, purchase_order_line_id)` 一意 |
 | `receipt_inspections`（入荷検収） | `inbound_shipment_id`・`inspected_on` | `inbound_shipment_id` 一意（入荷 1 件に 1 回） |
@@ -147,7 +147,7 @@
 |---|---|---|
 | `billing_terms`（請求条件） | `customer_tenant_id`→・`closing_day`（1〜28、31 は末日） | `(owner, customer_tenant_id)` 一意。締め日は 1〜28 か 31（CHECK 制約） |
 | `billable_items`（請求対象明細） | `customer_tenant_id`→・`shipment_id`→・`sales_order_line_id`→・`source_purchase_order_line_id`→・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`inspected_on`・`invoice_id`（空は未請求） | `(shipment_id, sales_order_line_id)` 一意。数量は正、単価は 0 以上、税率は 8 か 10。`invoice_id` は請求書へ複合外部キーでつなぐ |
-| `invoices` | `customer_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_at`（空は下書き）・`subtotal`・`tax_total`・`total` | `(owner, invoice_number)` 一意。下書きは取引先ごとに 1 件（部分一意索引）。請求番号は確定した請求書だけが持つ。`period_start <= period_end`。`total = subtotal + tax_total` |
+| `invoices` | `customer_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_at`（空は下書き）・`subtotal`・`tax_total`・`total` | `(owner, invoice_number)` 一意。下書きは取引先ごとに 1 件（部分一意索引）。請求番号は確定した請求書だけが持つ。`period_start <= period_end`。`subtotal`・`tax_total` は 0 以上。`total = subtotal + tax_total` |
 | `invoice_tax_summaries` | `invoice_id`・`tax_rate_percent`・`taxable_amount`・`tax_amount` | `(invoice_id, tax_rate_percent)` 一意。税率は 8 か 10、金額は 0 以上 |
 
 受注側の担当者は、取引先と締め日を指定して締めを実行する。請求は、締めの入力と状態を次の表の上から順に確かめ、最初に当たった結果を返す。失敗はどれも何も書かない。
