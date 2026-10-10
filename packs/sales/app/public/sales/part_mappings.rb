@@ -30,17 +30,19 @@ module Sales
       OperationResult.failure(:invalid_input, path: [ error.attribute ], message: error.full_message)
     end
 
-    # 確定も取消もされていない受注のうち、この品番の照合前の明細を持つものを、受注 → 受注明細の順にロックして照合する
+    # 確定も取消もされていない受注のうち、この品番の照合前の明細を持つものを、受注 → 受注明細の順にロックして照合する。
+    # 明細は全受注の分を 1 回で引く。受注ごとに引くと、照合待ちの受注の数だけクエリが出る
     def self.rematch(actor, mapping)
       unmatched = SalesOrderLine.where(item_id: nil, customer_part_number: mapping.customer_part_number)
       orders = Scope.sales_orders(actor, :own)
         .where(customer_tenant_id: mapping.customer_tenant_id, confirmed_at: nil, cancelled_at: nil)
-        .where(id: unmatched.select(:sales_order_id)).order(:id).lock
+        .where(id: unmatched.select(:sales_order_id)).order(:id).lock.to_a
+      lines = SalesOrderLine.where(sales_order_id: orders.map(&:id)).order(:sales_order_id, :id).lock.group_by(&:sales_order_id)
       orders.each do |order|
-        lines = order.lines.lock.to_a
-        lines.select { !_1.matched? && _1.customer_part_number == mapping.customer_part_number }
+        order_lines = lines.fetch(order.id)
+        order_lines.select { !_1.matched? && _1.customer_part_number == mapping.customer_part_number }
           .each { _1.update!(PartMatching.copy(mapping.item)) }
-        PartMatching.confirm(order) if lines.all?(&:matched?)
+        PartMatching.confirm(order, order_lines) if order_lines.all?(&:matched?)
       end
     end
 

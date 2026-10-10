@@ -21,14 +21,15 @@ module Sales
       { item_id: item&.id, item_name: item&.name, unit_price: item&.unit_price, tax_rate_percent: item&.tax_rate_percent }
     end
 
-    # 全明細が照合できた受注を確定し、「受注確定」を出す。受注・受注明細・品目の ID は運ばない
-    def self.confirm(order)
+    # 全明細が照合できた受注を確定し、「受注確定」を出す。受注・受注明細・品目の ID は運ばない。
+    # 明細を読み込み済みの呼び出し元は lines に渡し、受注ごとに明細を引き直さない
+    def self.confirm(order, lines = order.lines)
       order.update!(confirmed_at: Time.current)
       Contracts.publish(Contracts::SalesOrderConfirmed.new(
         purchase_order_id: order.source_purchase_order_id,
         buyer_tenant_id: order.customer_tenant_id,
         supplier_tenant_id: order.owner_tenant_id,
-        lines: order.lines.map do |line|
+        lines: lines.map do |line|
           { "purchase_order_line_id" => line.source_purchase_order_line_id, "item_name" => line.item_name,
             "unit_price" => line.unit_price.to_s }
         end
