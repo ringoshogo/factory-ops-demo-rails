@@ -145,19 +145,39 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `billing_terms`（請求条件） | `customer_tenant_id`→・`closing_day`（1〜28、31 は末日） | `(owner, customer_tenant_id)` 一意 |
-| `billable_items`（請求対象明細） | `customer_tenant_id`→・`shipment_id`→・`sales_order_line_id`→・`source_purchase_order_line_id`→・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`inspected_on`・`invoice_id`（空は未請求） | `(shipment_id, sales_order_line_id)` 一意 |
-| `invoices` | `customer_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_at`（空は下書き）・`subtotal`・`tax_total`・`total` | `(owner, invoice_number)` 一意。下書きは取引先ごとに 1 件（部分一意索引）。`total = subtotal + tax_total` |
+| `billing_terms`（請求条件） | `customer_tenant_id`→・`closing_day`（1〜28、31 は末日） | `(owner, customer_tenant_id)` 一意。締め日は 1〜28 か 31（CHECK 制約） |
+| `billable_items`（請求対象明細） | `customer_tenant_id`→・`shipment_id`→・`sales_order_line_id`→・`source_purchase_order_line_id`→・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`inspected_on`・`invoice_id`（空は未請求） | `(shipment_id, sales_order_line_id)` 一意。数量は正、単価は 0 以上、税率は 8 か 10。`invoice_id` は請求書へ複合外部キーでつなぐ |
+| `invoices` | `customer_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_at`（空は下書き）・`subtotal`・`tax_total`・`total` | `(owner, invoice_number)` 一意。下書きは取引先ごとに 1 件（部分一意索引）。請求番号は確定した請求書だけが持つ。`period_start <= period_end`。`total = subtotal + tax_total` |
 | `invoice_tax_summaries` | `invoice_id`・`tax_rate_percent`・`taxable_amount`・`tax_amount` | `(invoice_id, tax_rate_percent)` 一意 |
 
-受注側の担当者が締めを実行すると、請求は次の順に処理する。
+受注側の担当者は、取引先と締め日を指定して締めを実行する。請求は、締めの入力と状態を次の表の上から順に確かめ、最初に当たった結果を返す。失敗はどれも何も書かない。
 
-1. 請求条件の行をロックして、同じ取引先の締めを直列にする。
+| 入力・状態 | 結果 |
+|---|---|
+| 取引先が、自社が受注側の取引関係（失効したものを含む）の相手でない | `NOT_FOUND`（`path` は取引先） |
+| 取引先に請求条件が無い | `NOT_FOUND`（`path` は取引先） |
+| 締め日が請求条件の締め日（31 は月末）に当たらない | `INVALID_INPUT`（`path` は締め日） |
+| 取引先に下書きの請求書がある | `CONFLICT` |
+| 締め日が、同じ取引先の前の請求書（下書きを除く）の `period_end` 以前 | `INVALID_INPUT`（`path` は締め日）。期間が逆転するか重なるからである |
+| 締め日以前に検収された未請求明細が 0 件 | `CONFLICT`。請求書を作らない |
+| それ以外 | 締め日以前に検収された未請求明細をすべて集めて下書きを作る |
+
+請求条件を設定する操作（`Billing::Terms.set`）も、取引先が取引関係の相手でなければ `NOT_FOUND` を返し、次に締め日が 1〜28・31 の外なら `INVALID_INPUT` を返す。
+
+締めが成り立つと、請求は次の順に処理する。
+
+1. 請求条件の行をロックして、同じ取引先の締めを直列にする。上の表の 2 行目以降は、このロックの下で確かめる。
 2. 締め日以前に検収された未請求明細を、すべて集める。前回の締めの後に届いた、前の期間の検収も含める。
-3. 下書きの請求書を作り、集めた明細の `invoice_id` を埋める。
+3. 下書きの請求書を作り、集めた明細の `invoice_id` を、集めた明細の ID で埋める。条件で引き直すと、締めの最中に届いた明細まで結ぶからである。
 4. 税率ごとに課税対象額を足し上げ、税額を 1 回だけ切り捨てて `invoice_tax_summaries` に書く。
 
-担当者が下書きを破棄すると、明細の `invoice_id` は空に戻る。担当者が確定すると `issued_at` が入り、その後は請求書も明細も変更しない。
+請求書の期間は、`period_end` を指定した締め日、`period_start` を同じ取引先の前の請求書（下書きを除く）の `period_end` の翌日にする。前の請求書が無ければ、集めた明細の最も古い検収日にする。遅れて届いた前の期間の検収は、検収日が `period_start` より前でも集める。期間は請求書の表示のためのもので、集める明細は検収日が締め日以前かどうかだけで決まる。
+
+請求番号は、下書きでは振らず、確定で振る。破棄した下書きで欠番を作らないためである。下書きの `invoice_number` は空で、GraphQL の `Invoice.invoiceNumber` は空を許す。
+
+「請求対象確定」の受け手は、請求条件の行をロックしない。締めの最中に届いた明細は、締めを待たずに未請求のまま残り、次の締めで集まる。
+
+担当者が下書きを破棄すると、請求は同じ請求条件の行をロックしてから、明細の `invoice_id` を空に戻し、税率ごとの集計と下書きを消す。発行済みの請求書の破棄は `CONFLICT` になる。担当者が確定すると `issued_at` と請求番号が入り、その後は請求書も明細も変更しない。
 
 ## コンテキストに属さないパッケージのテーブル
 
