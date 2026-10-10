@@ -151,23 +151,27 @@ RSpec.describe Fulfillment::SalesEventReceiver do
     end
 
     describe "届く順の入れ替わり" do
-      it "出荷停止解除が出荷停止より先に届いても、後から届いた出荷停止は解除済みのまま残らない" do
+      it "出荷停止解除が出荷停止より先に届くと解除済みの停止を作り、後から届いた出荷停止は何もしない" do
         handle(event)
-        publish(held, released)
 
-        deliver_enqueued_events(newest_first: true)
-
+        handle(released)
         expect(holds).to match([ [ review_id, be_present ] ])
+        released_at = holds.sole.last
+        handle(held)
+
+        expect(holds).to eq([ [ review_id, released_at ] ])
         expect(status).to eq(:ready)
       end
 
-      it "出荷取消が出荷停止より先に届いても、後から届いた出荷停止は解除済みのまま残らない" do
+      it "出荷取消が出荷停止より先に届くと解除済みの停止を作り、後から届いた出荷停止は何もしない" do
         handle(event)
-        publish(held, cancelled)
 
-        deliver_enqueued_events(newest_first: true)
-
+        handle(cancelled)
         expect(holds).to match([ [ review_id, be_present ] ])
+        released_at = holds.sole.last
+        handle(held)
+
+        expect(holds).to eq([ [ review_id, released_at ] ])
         expect(status).to eq(:cancelled)
       end
 

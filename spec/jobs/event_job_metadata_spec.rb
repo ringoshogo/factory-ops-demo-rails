@@ -42,7 +42,8 @@ RSpec.describe Contracts::EventJob do
     expect([ user_count, receipt_count ]).to eq([ 0, 0 ])
   end
 
-  described_class::REQUIRED_METADATA.each do |key|
+  # 実装の一覧から作らない。実装から項目を外すと、その項目を確かめる example も消えるからである
+  %w[event_id event_name correlation_id source_tenant_id published_at].each do |key|
     it "付帯情報に #{key} が無ければ、受け手の書き込みを残さずに MissingMetadata で失敗する" do
       data = job_data.merge("app_metadata" => job_data.fetch("app_metadata").except(key))
 

@@ -27,6 +27,7 @@ module Purchasing
       end
       order.update!(accepted_at: Time.current)
     end
+
     # 取消依頼に回答を記録する。回答が空のときだけ書き、承認なら発注を取消済みにする。却下は回答の記録だけで、
     # 発注は依頼の前の状況に戻る（docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）
     def self.answer_cancellation(order, event, outcome)

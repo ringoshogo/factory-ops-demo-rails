@@ -76,6 +76,13 @@ RSpec.describe "取消依頼と審査", type: :request do
 
   def review_id = sales_order.fetch("cancellationReviews").sole.fetch("id")
 
+  # 操作者のテナントが書いた監査の行（docs/architecture/graphql-schema.md「監査ログ」の表）
+  def audit_rows(tenant, action)
+    Tenancy.with_tenant(tenant.id) do
+      AuditLog.where(action:).pluck(:actor_user_id, :target_type, :target_id, :counterparty_tenant_id)
+    end
+  end
+
   it "依頼で出荷が止まり、承認すると発注が取消済み・出荷依頼が取消済になり、引当が解除される" do
     request_cancellation
 
@@ -85,9 +92,14 @@ RSpec.describe "取消依頼と審査", type: :request do
     expect(mutate("postShipment", "shipmentRequest { status }", shipmentRequestId: @request_id, shippedOn: "2026-10-20"))
       .to eq("shipmentRequest" => nil, "errors" => [ { "code" => "CONFLICT" } ])
 
-    expect(mutate("approveCancellationReview", "salesOrder { status cancellationReviewPending }", cancellationReviewId: review_id))
+    approved_review_id = review_id
+    expect(mutate("approveCancellationReview", "salesOrder { status cancellationReviewPending }", cancellationReviewId: approved_review_id))
       .to eq("salesOrder" => { "status" => "CANCELLED", "cancellationReviewPending" => false }, "errors" => [])
     deliver_enqueued_events
+    expect(audit_rows(buyer, "purchase_order.request_cancellation"))
+      .to eq([ [ buyer_member.id, "PurchaseOrder", @purchase_order_id, supplier.id ] ])
+    expect(audit_rows(supplier, "cancellation_review.approve"))
+      .to eq([ [ supplier_admin.id, "CancellationReview", approved_review_id, buyer.id ] ])
 
     expect(sales_order).to include("cancellationReviews" => [ include("decision" => "APPROVED", "decidedAt" => be_present) ],
       "shipmentRequest" => { "status" => "CANCELLED", "instruction" => nil })
@@ -102,8 +114,11 @@ RSpec.describe "取消依頼と審査", type: :request do
   it "依頼を却下すると、発注は依頼の前の状況に戻り、出荷停止が解除されて計上できる" do
     request_cancellation
 
-    expect(mutate("rejectCancellationReview", "salesOrder { status cancellationReviewPending }", cancellationReviewId: review_id))
+    rejected_review_id = review_id
+    expect(mutate("rejectCancellationReview", "salesOrder { status cancellationReviewPending }", cancellationReviewId: rejected_review_id))
       .to eq("salesOrder" => { "status" => "ALLOCATED", "cancellationReviewPending" => false }, "errors" => [])
+    expect(audit_rows(supplier, "cancellation_review.reject"))
+      .to eq([ [ supplier_admin.id, "CancellationReview", rejected_review_id, buyer.id ] ])
     expect(mutate("approveCancellationReview", "salesOrder { status }", cancellationReviewId: review_id))
       .to eq("salesOrder" => nil, "errors" => [ { "code" => "CONFLICT" } ])
     deliver_enqueued_events
