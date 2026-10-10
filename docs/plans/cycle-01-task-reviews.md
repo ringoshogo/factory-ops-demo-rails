@@ -228,15 +228,61 @@ Dataloader を外したときに予算が落ちることは、予算の spec の
 
 ## M18 構造化ログと相関 ID
 
-実装レビューの前。判定と指摘は、レビューを受けた後に書く。
+PR #27。Codex は No Go、Claude は Conditional Go で、指摘はすべて同じブランチの commit で直した。
 
 | 系統 | 判定 |
 |---|---|
-| Codex |  |
-| Claude |  |
+| Codex | No Go |
+| Claude | Conditional Go |
 
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
+| High | Codex | X1：`operationName` がハッシュ・配列だと、中の値が要求の開始の行と文脈に残る。未認証の要求でも書く | 操作名と変数のキーは、GraphQL の名前の形の文字列だけを、コントローラと購読者の両方で書く。ほかの型と形は中の値ごと落とす。未認証の要求にハッシュ、認証済みの要求に配列、変数のキーに禁止の値を入れる回帰テストを、ログの衛生の spec と購読者の spec と GraphQL の入口の spec に足した | `27d355e` |
+| High | Codex | X2：エラー通知の文脈は渡した項目だけが書き換わり、要求の `request_id`・`user_id` や別のテナントがジョブに混ざる。`:job` も実行の後に残る | `perform_now` が、エラー通知の文脈も丸ごと退避し、いまの項目を空にしてからジョブの項目（`job` を含む）を設定し、例外の経路を含めて `ensure` で丸ごと戻す。ジョブの文脈の spec は、直接の `perform_now` を executor の外で動かし、入れ子のジョブと付帯情報の無いジョブを足し、どちらの文脈も項目を絞らずに比べる。OI-30 と `config.md` を合わせた | `27d355e`・`d541e5e` |
+| Medium | Codex | X3：本番で `RAILS_LOG_LEVEL=debug` を選べ、SQL のバインド値などを書く | `Platform::Logging.production_level` が `info` より細かい水準を拒み、`production.rb` がそれを通す。`debug` で本番の環境が起動しないことを、子のプロセスで確かめる。`config.md` に既定と許す値を書いた | `27d355e`・`d541e5e` |
+| Low | Codex | X4：TaggedLogging を使わない理由（行が JSON で始まらない）が事実と違う | タグがメッセージに混ざるので、文脈を `context` の項目に入れる、と直した（`logging.rb`・`config.md`） | `27d355e`・`d541e5e` |
+| Medium | Claude | C1：`ActionMailer::LogSubscriber` が送信の失敗を例外のメッセージ込みで書く | 購読を外し、構成の spec の一覧と `config.md` の表と OI-28 に足した | `27d355e`・`d541e5e` |
+| Medium | Claude | C2：要求の側のエラー通知の文脈を確かめるテストが無い | スキーマの実行の中で例外を上げ、通知の文脈に `request_id`・相関 ID・テナント・ユーザーが入ることを確かめる example を足した | `27d355e` |
+| Low | Claude | C3：`/up` の要求の行が本番で毎回出る | 購読者が `Rails::HealthController` の要求の行を書かない | `27d355e` |
+| Low | Claude | C4：`config.md` の表に `active_job.enqueued_at` が無い | 足した | `d541e5e` |
+| Low | Claude | C5：ADR 005 の「付帯情報のテナントはログの文脈にだけ」 | 「ログとエラー通知の文脈にだけ」に直した | `d541e5e` |
+| Low | Claude | C6：証跡の数値が再現しない | 下の「実装の記録」の数を直し、流したコマンドを書いた | この commit |
+| Low | Claude | C7：ログの衛生の spec が、セッションの Cookie と失敗するログインを流していない | 失敗するログインを足し、ログインで受け取った Cookie の値を禁止の値に入れた | `27d355e` |
+| Low | Claude | C8：直接の `perform_now` で上がった例外は、呼び出し元が拾っても `handled: false` で通知される | OI-29 に書いた | `d541e5e` |
+
+指摘のテストを先に書き、実装の前に流した。62 examples のうち 18 が落ちた（ジョブの文脈 11 件、構成と購読者 5 件、ログの衛生 1 件、GraphQL の入口の操作名 1 件）。要求の側のエラー通知の文脈（C2）は、実装がすでにあったので通った。
+
+直した後に、直した防壁を壊して落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| 購読者が操作名を検証せずに書く | `GraphQL の操作名と変数のキーは、GraphQL の名前の形の文字列だけを書く。…`、ログの衛生の 1 件 |
+| コントローラが操作名を検証せずに文脈に入れる | `操作名が GraphQL の名前の形の文字列でなければ、ログの文脈にも操作の終わりにも書かない`、ログの衛生の 1 件 |
+| 購読者が変数のキーを検証せずに書く | 購読者の操作名の 1 件、ログの衛生の 1 件 |
+| エラー通知の文脈を、渡した項目だけ書き換える | ジョブの文脈の spec の 13 件すべて |
+| エラー通知の文脈を、実行の後に戻さない | 同じ 13 件 |
+| 本番で許す水準に `debug` を足す | `info より細かい水準を拒み、info 以上を許す`、`本番の環境は、RAILS_LOG_LEVEL=debug を与えると起動しない` |
+| `production.rb` が水準を `production_level` に通さない | `本番の環境は、RAILS_LOG_LEVEL=debug を与えると起動しない` |
+| `ActionMailer::LogSubscriber` を外さない | `params・ジョブの引数・例外のメッセージを文字列で書くフレームワークの購読を外している` |
+| `Platform::RequestContext` と `GraphqlController` がエラー通知の文脈を設定しない | `スキーマの実行の中で上がった例外の通知に、request_id・相関 ID・テナント・ユーザーが入る` |
+| 購読者がヘルスチェックの要求を書く | `ヘルスチェックの要求は書かない` |
+
+失敗するログインとセッションの Cookie（C7）は、いまの実装がどの行にも書かないことを守るガードで、壊す実装の箇所が無い。
+
+直した後、次のコマンドを 5 回続けて流し、5 回とも 62 examples, 0 failures だった。
+
+```sh
+bundle exec rspec spec/jobs/log_context_spec.rb spec/platform/logging_spec.rb spec/requests/log_hygiene_spec.rb spec/requests/graphql_entry_spec.rb spec/contracts/correlation_spec.rb
+```
+
+直した後の全件は 1000 examples, 0 failures で、層ごとの表は次のとおり。未分類のファイルは無く、3 つの層が目安を外れて警告を出した（OI-24）。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 95 | 38.3% | 1.27s | 60% 以上 |
+| 結合 | 116 | 46.8% | 4.39s | 30% 以下 |
+| シナリオ | 37 | 14.9% | 6.73s | 10% 以下 |
+| ガード | 752 | — | 214.88s | 数えない |
 
 ### 実装の記録
 
@@ -265,12 +311,12 @@ Dataloader を外したときに予算が落ちることは、予算の spec の
 | 書式が例外のメッセージを書く | `例外を渡されたら、メッセージを書かずにクラス名だけを書く` |
 | `Platform::RequestContext` が相関 ID を設定しない | 相関 ID の spec の 2 件 |
 | `GraphqlController` が、スキーマを実行した後に文脈を設定する | `要求の開始の行には request_id と相関 ID が付き、テナントとユーザーと操作名はスキーマの実行の中の行から付く` |
-| ジョブの文脈を、`perform_now` ではなく `around_perform` で設定する | ジョブの文脈の spec の 9 件すべてと、相関 ID の spec の 1 件 |
+| ジョブの文脈を、`perform_now` ではなく `around_perform` で設定する | ジョブの文脈の spec の 10 件のうち 9 件と、相関 ID の spec の 1 件 |
 | `perform_now` が、`super` の前に引数を復元する | 引数の復元に失敗するジョブの 3 件（`discard_on では、…`・`retry_on では、…`・`どちらも無ければ、…`） |
-| `perform_now` が、実行の前の文脈に戻さない | ジョブの文脈の spec の 8 件 |
-| `perform_now` が、呼び出し元の文脈を消さずに足す | ジョブの文脈の spec の 9 件 |
+| `perform_now` が、実行の前の文脈に戻さない | ジョブの文脈の spec の 10 件のうち 8 件 |
+| `perform_now` が、呼び出し元の文脈を消さずに足す | ジョブの文脈の spec の 10 件のうち 9 件 |
 | `perform_now` が、上がる例外をエラー通知に送らない | `失敗では、終了のイベントに文脈が付き、エラー通知の文脈にテナント ID が入る`（2 つの経路）、`どちらも無ければ、例外が呼び出し元へ上がり、…` |
-| `serialize` が `app_metadata` を入れない | ジョブの文脈の spec の 7 件と、相関 ID の spec の 1 件 |
+| `serialize` が `app_metadata` を入れない | ジョブの文脈の spec の 10 件のうち 7 件と、相関 ID の spec の 2 件（`発注の要求から購買の受け手までの全ログ行が、…`・`相関 ID の無い文脈で発行したイベントは、…`）。相関 ID の無い文脈の example を足す前に壊したときは 1 件だったので、`27d355e` で壊し直して数えた |
 | `Contracts.publish` が文脈の因果 ID を付帯情報に入れない | `発注の要求から購買の受け手までの全ログ行が、…受け手の因果 ID は届いたイベントの ID である` |
 | ジョブの因果 ID を、届いたイベントの ID ではなく付帯情報の因果 ID にする | 同じ 1 件 |
 | 相関 ID の無い文脈で、イベントの ID を相関 ID にしない | `相関 ID の無い文脈で発行したイベントは、そのイベントから一連の処理が始まり、自分の ID を相関 ID にする` |
@@ -293,7 +339,11 @@ RED の後に足した example（`spec/platform/logging_spec.rb` の後始末と
 - 開発の環境で `bin/dev` と `bin/jobs` を動かし、発注を 1 件登録して `grep <相関 ID> log/events.log` を流した。要求の `action_controller.request_started`・`active_job.enqueued`・`graphql.operation_completed`・`action_controller.request_completed` と、受注側テナントの「発注登録」の配送（`active_job.started`・`contracts.event_handled`・`active_job.completed`）と、発注側テナントの「受注確定」の配送が、同じ相関 ID で並んだ。受け手の行の因果 ID は、それぞれが受け取ったイベントの `event_id` だった。
 - 最初の確認では、`log/events.log` に 1 行しか残らなかった。購読者が書き込み先の `Pathname` を IO とみなし、`Pathname#write` が書くたびにファイルを作り直していた。購読者は IO だけを受け取り、`initializers/event_log.rb` が追記で開くようにし、追記を確かめる example を足した。
 
-ジョブの文脈・相関 ID・ログの衛生・ログの構成・GraphQL の入口の spec を 5 回続けて流し、5 回とも 93 examples, 0 failures だった。
+次のコマンドを 5 回続けて流し、5 回とも 93 examples, 0 failures だった。`spec/jobs` と `spec/contracts` はディレクトリごと流したので、ログの spec のほかの example も含む。
+
+```sh
+bundle exec rspec spec/platform/logging_spec.rb spec/jobs spec/contracts spec/requests/log_hygiene_spec.rb spec/requests/graphql_entry_spec.rb
+```
 
 ### 層ごとの表
 
