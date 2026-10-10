@@ -16,7 +16,6 @@ RSpec.describe Fulfillment::SalesEventReceiver do
   end
 
   after do
-    finish_concurrent_threads
     delete_owned_rows([ supplier.id, buyer.id ], %w[shipment_request_lines shipment_requests])
   end
 
@@ -24,11 +23,11 @@ RSpec.describe Fulfillment::SalesEventReceiver do
     _, release, first = hold_open(supplier.id) { described_class.handle(event) }
 
     second = in_thread(supplier.id) { described_class.handle(event) }
-    expect(blocked_on_lock?(second)).to be(true)
+    expect(blocked_on_lock?(second, by: first)).to be(true)
 
-    release << true
-    first.join
-    expect { second.value }.not_to raise_error
+    # 先の配送のコミットと、後の配送のどちらにも例外が出ない
+    expect { commit(release, first) }.not_to raise_error
+    expect { finish(second) }.not_to raise_error
     expect(Tenancy.with_tenant(supplier.id) { [ Fulfillment::ShipmentRequest.count, Fulfillment::ShipmentRequestLine.count ] })
       .to eq([ 1, 1 ])
   end

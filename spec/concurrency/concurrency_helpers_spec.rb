@@ -1,0 +1,61 @@
+require "rails_helper"
+require_relative "../support/concurrency"
+
+# 競合テストの補助が、ロックの待ちを取り違えず、先行のトランザクションの失敗を隠さず、開いたままのトランザクションを
+# 後始末で閉じる（docs/guides/testing.md「競合テスト」）。補助が誤ると、競合テストは何も確かめずに通る
+RSpec.describe ConcurrencyHelpers do
+  self.use_transactional_tests = false
+
+  let!(:tenant) { FactoryBot.create(:tenant) }
+  let(:lock_key) { SecureRandom.random_number(2**31) }
+
+  after { delete_owned_rows([ tenant.id ], []) }
+
+  def advisory_lock(key) = ApplicationRecord.lease_connection.execute("SELECT pg_advisory_xact_lock(#{key})")
+
+  it "ロックの待ちは、後行の接続が先行の接続を待っているときだけ真になり、無関係な接続の待ちを数えない" do
+    _, release, holder = hold_open(tenant.id) { advisory_lock(lock_key) }
+    # 先行の接続を待つ、検査の対象ではない接続
+    bystander = in_thread(tenant.id) { advisory_lock(lock_key) }
+    expect(blocked_on_lock?(bystander, by: holder)).to be(true)
+
+    # 先行の接続とは別のロックを取り、待たずに終わる接続
+    _, other_release, other = hold_open(tenant.id) { advisory_lock(lock_key + 1) }
+    free = in_thread(tenant.id) { sleep 0.3 }
+    expect(blocked_on_lock?(free, by: other)).to be(false)
+
+    commit(release, holder)
+    commit(other_release, other)
+    finish(bystander)
+  end
+
+  it "同じスレッドを先行と後行に渡すと失敗する" do
+    _, _release, holder = hold_open(tenant.id) { nil }
+
+    expect { blocked_on_lock?(holder, by: holder) }.to raise_error(/同じ接続/)
+  end
+
+  it "ブロックの結果を返した後に先行のトランザクションが失敗すると、commit がその例外を送出する" do
+    allow(Tenancy).to receive(:reset!).and_wrap_original do |original, connection|
+      raise "コミットの後の失敗" if Thread.current[:fail_after_block]
+
+      original.call(connection)
+    end
+    result, release, holder = hold_open(tenant.id) do
+      Thread.current[:fail_after_block] = true
+      :done
+    end
+
+    expect(result).to eq(:done)
+    expect { commit(release, holder) }.to raise_error("コミットの後の失敗")
+  end
+
+  it "後始末は、コミットさせていないトランザクションを閉じ、スレッドを終わらせる" do
+    _, _release, holder = hold_open(tenant.id) { nil }
+    stopped = release_queue
+    paused = in_thread(tenant.id) { stopped.pop }
+
+    expect { finish_concurrent_threads }.not_to raise_error
+    expect([ holder, paused ].map(&:alive?)).to eq([ false, false ])
+  end
+end

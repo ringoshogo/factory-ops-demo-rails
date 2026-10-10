@@ -23,7 +23,6 @@ RSpec.describe Fulfillment::Shipping do
   end
 
   after do
-    finish_concurrent_threads
     delete_owned_rows([ supplier.id, request.buyer_tenant_id ], %w[
       shipment_lines shipments shipping_instructions shipment_request_lines shipment_requests
       stock_movements allocations stocks
@@ -47,11 +46,10 @@ RSpec.describe Fulfillment::Shipping do
     expect(posted).to be_success
 
     second = in_thread(supplier.id) { post }
-    expect(blocked_on_lock?(second)).to be(true)
+    expect(blocked_on_lock?(second, by: poster)).to be(true)
 
-    release << true
-    poster.join
-    expect(second.value.failures.map(&:code)).to eq([ :conflict ])
+    expect(commit(release, poster)).to be_success
+    expect(finish(second).failures.map(&:code)).to eq([ :conflict ])
     expect(shipped).to eq([ 1, { on_hand: 5, allocated: 0 } ])
   end
 
@@ -60,11 +58,10 @@ RSpec.describe Fulfillment::Shipping do
     expect(posted).to be_success
 
     canceller = in_thread(supplier.id) { cancel }
-    expect(blocked_on_lock?(canceller)).to be(true)
+    expect(blocked_on_lock?(canceller, by: poster)).to be(true)
 
-    release << true
-    poster.join
-    expect(canceller.value.failures.map(&:code)).to eq([ :conflict ])
+    expect(commit(release, poster)).to be_success
+    expect(finish(canceller).failures.map(&:code)).to eq([ :conflict ])
     expect(instruction_statuses).to eq([ "active" ])
     expect(shipped).to eq([ 1, { on_hand: 5, allocated: 0 } ])
   end
@@ -74,11 +71,10 @@ RSpec.describe Fulfillment::Shipping do
     expect(cancelled).to be_success
 
     poster = in_thread(supplier.id) { post }
-    expect(blocked_on_lock?(poster)).to be(true)
+    expect(blocked_on_lock?(poster, by: canceller)).to be(true)
 
-    release << true
-    canceller.join
-    expect(poster.value.failures.map(&:code)).to eq([ :conflict ])
+    expect(commit(release, canceller)).to be_success
+    expect(finish(poster).failures.map(&:code)).to eq([ :conflict ])
     expect(instruction_statuses).to eq([ "cancelled" ])
     expect(shipped).to eq([ 0, { on_hand: 10, allocated: 5 } ])
   end

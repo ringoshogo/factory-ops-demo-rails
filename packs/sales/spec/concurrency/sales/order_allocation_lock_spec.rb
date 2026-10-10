@@ -1,8 +1,7 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/owner_connection"
+require_relative "../../../../../spec/support/concurrency"
 
-# 同じ品目を 2 つの受注が同時に引き当てても、有効在庫を超えて引き当てない（docs/architecture/data-model.md「在庫」）。
-# 2 つの接続で同時に動かすので、例ごとのトランザクションを使わず、作った行は例の後で所有ロールで消す
+# 同じ品目を 2 つの受注が同時に引き当てても、有効在庫を超えて引き当てない（docs/architecture/data-model.md「在庫（`inventory`）」）
 RSpec.describe Sales::OrderAllocation do
   self.use_transactional_tests = false
 
@@ -18,47 +17,20 @@ RSpec.describe Sales::OrderAllocation do
     end
   end
 
+  # 全量を引き当てた受注の「出荷可能」のジョブも、受注側のテナントの分として消す
   after do
-    @threads&.each { _1.join(10) }
-    connection = OwnerConnection.lease_connection
-    tenants = [ supplier.id, *orders.map(&:customer_tenant_id) ].map { connection.quote(_1) }.join(", ")
-    %w[stock_movements allocations stocks sales_order_lines sales_orders items].each do |table|
-      connection.execute("DELETE FROM #{table} WHERE owner_tenant_id IN (#{tenants})")
-    end
-    connection.execute("DELETE FROM tenants WHERE id IN (#{tenants})")
-  end
-
-  def in_thread(&block)
-    Thread.new { Tenancy.with_tenant(supplier.id, &block) }.tap do |thread|
-      thread.report_on_exception = false
-      (@threads ||= []) << thread
-    end
-  end
-
-  def waiting_for_lock?
-    ActiveRecord::Base.lease_connection.select_value(
-      "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'"
-    ).positive?
+    delete_owned_rows([ supplier.id, *orders.map(&:customer_tenant_id) ],
+      %w[stock_movements allocations stocks sales_order_lines sales_orders items])
   end
 
   it "先の引当がコミットするまで後の引当は在庫の行で待ち、後の引当は残りの有効在庫だけを引き当てる" do
-    allocated = Queue.new
-    commit = Queue.new
-    first = in_thread do
-      described_class.allocate(actor, sales_order_id: orders[0].id).tap do
-        allocated << true
-        commit.pop
-      end
-    end
-    allocated.pop
+    first_result, release, first = hold_open(supplier.id) { described_class.allocate(actor, sales_order_id: orders[0].id) }
+    expect(first_result).to be_success
 
-    second = in_thread { described_class.allocate(actor, sales_order_id: orders[1].id) }
-    deadline = 5.seconds.from_now
-    sleep 0.01 until !second.alive? || waiting_for_lock? || Time.current > deadline
-    expect(waiting_for_lock?).to be(true)
-    commit << true
+    second = in_thread(supplier.id) { described_class.allocate(actor, sales_order_id: orders[1].id) }
+    expect(blocked_on_lock?(second, by: first)).to be(true)
 
-    expect([ first.value.value.status, second.value.value.status ]).to eq(%i[allocated received])
+    expect([ commit(release, first).value.status, finish(second).value.status ]).to eq(%i[allocated received])
     Tenancy.with_tenant(supplier.id) do
       expect(Inventory::Stocks.for_items(actor, [ item.id ]).fetch(item.id).to_h.slice(:on_hand, :allocated))
         .to eq(on_hand: 10, allocated: 10)

@@ -2,7 +2,7 @@ require "rails_helper"
 require_relative "../support/concurrency"
 
 # 同じ品目の引当と出庫が 2 つの接続で同時に進んでも、有効在庫が負にならない。在庫の行ロックが 2 つを直列にし、
-# 後の操作は先の操作がコミットした後の有効在庫で判断する（docs/architecture/data-model.md「在庫」）
+# 後の操作は先の操作がコミットした後の有効在庫で判断する（docs/architecture/data-model.md「在庫（`inventory`）」）
 RSpec.describe "引当と出庫の競合" do
   self.use_transactional_tests = false
 
@@ -14,7 +14,6 @@ RSpec.describe "引当と出庫の競合" do
   before { Tenancy.with_tenant(supplier.id) { Inventory::Adjustment.adjust(actor, item_id:, type: "inbound", quantity: 10) } }
 
   after do
-    finish_concurrent_threads
     delete_owned_rows([ supplier.id ], %w[stock_movements allocations stocks])
   end
 
@@ -30,11 +29,10 @@ RSpec.describe "引当と出庫の競合" do
     expect(allocated).to eq(sales_order_line_id => 8)
 
     remover = in_thread(supplier.id) { outbound(5) }
-    expect(blocked_on_lock?(remover)).to be(true)
+    expect(blocked_on_lock?(remover, by: allocator)).to be(true)
 
-    release << true
-    allocator.join
-    expect(remover.value.failures.map(&:code)).to eq([ :invalid_input ])
+    expect(commit(release, allocator)).to eq(sales_order_line_id => 8)
+    expect(finish(remover).failures.map(&:code)).to eq([ :invalid_input ])
     expect(stock).to eq(on_hand: 10, allocated: 8, available: 2)
   end
 
@@ -43,11 +41,10 @@ RSpec.describe "引当と出庫の競合" do
     expect(removed).to be_success
 
     allocator = in_thread(supplier.id) { allocate(8) }
-    expect(blocked_on_lock?(allocator)).to be(true)
+    expect(blocked_on_lock?(allocator, by: remover)).to be(true)
 
-    release << true
-    remover.join
-    expect(allocator.value).to eq(sales_order_line_id => 3)
+    expect(commit(release, remover)).to be_success
+    expect(finish(allocator)).to eq(sales_order_line_id => 3)
     expect(stock).to eq(on_hand: 3, allocated: 3, available: 0)
   end
 end

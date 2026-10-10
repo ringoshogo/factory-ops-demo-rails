@@ -1,8 +1,7 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/owner_connection"
+require_relative "../../../../../spec/support/concurrency"
 
-# 受注を作る照合と対応表の登録が同時に進んでも、照合待ちの受注を見落とさない（Sales::PartMatching.lock）。
-# 2 つの接続で同時に動かすので、例ごとのトランザクションを使わず、作った行は例の後で所有ロールで消す
+# 受注を作る照合と対応表の登録が同時に進んでも、照合待ちの受注を見落とさない（Sales::PartMatching.lock）
 RSpec.describe Sales::PartMappings do
   self.use_transactional_tests = false
 
@@ -21,49 +20,25 @@ RSpec.describe Sales::PartMappings do
   end
 
   after do
-    connection = OwnerConnection.lease_connection
-    ids = [ supplier.id, buyer.id ].map { connection.quote(_1) }.join(", ")
-    %w[sales_order_lines sales_orders sales_order_sequences customer_part_mappings items partnership_grants partnerships].each do |table|
-      connection.execute("DELETE FROM #{table} WHERE owner_tenant_id IN (#{ids})")
-    end
-    connection.execute("DELETE FROM solid_queue_jobs WHERE class_name = 'Contracts::EventJob'")
-    connection.execute("DELETE FROM tenants WHERE id IN (#{ids})")
+    delete_owned_rows([ supplier.id, buyer.id ],
+      %w[sales_order_lines sales_orders sales_order_sequences customer_part_mappings items partnership_grants partnerships])
   end
 
   def statuses
     Tenancy.with_tenant(supplier.id) { Sales::SalesOrders.list(actor, first: 10, after: nil).values.map(&:status) }
   end
 
-  # 相手の接続が、取引先ごとのロックを待っているか
-  def waiting_for_lock?
-    ActiveRecord::Base.lease_connection.select_value(
-      "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory'"
-    ).positive?
-  end
-
   it "ACL が照合待ちの受注をコミットする前に登録しても、登録は ACL のコミットを待って照合し直す" do
-    translated = Queue.new
-    commit = Queue.new
-    translator = Thread.new do
-      Tenancy.with_tenant(supplier.id) do
-        Sales::PurchaseOrderTranslator.handle(event)
-        translated << true
-        commit.pop
-      end
-    end
-    translated.pop
+    _, release, translator = hold_open(supplier.id) { Sales::PurchaseOrderTranslator.handle(event) }
 
-    registering = Thread.new do
-      Tenancy.with_tenant(supplier.id) do
-        described_class.register(actor, customer_tenant_id: buyer.id, customer_part_number: "MY-BOLT", item_id: item.id)
-      end
+    registering = in_thread(supplier.id) do
+      described_class.register(actor, customer_tenant_id: buyer.id, customer_part_number: "MY-BOLT", item_id: item.id)
     end
-    deadline = 5.seconds.from_now
-    sleep 0.01 until !registering.alive? || waiting_for_lock? || Time.current > deadline
-    commit << true
+    # 登録は、取引先ごとの advisory lock を待つ
+    expect(blocked_on_lock?(registering, by: translator)).to be(true)
 
-    expect(registering.value).to be_success
-    translator.join
+    commit(release, translator)
+    expect(finish(registering)).to be_success
     expect(statuses).to eq([ :received ])
   end
 end
