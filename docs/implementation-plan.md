@@ -847,7 +847,7 @@ bin/bundler-audit
 
 **作るもの**
 
-- 計測：`spec/spec_helper.rb` は、環境変数 `COVERAGE=1` のときだけ、ファイルの先頭（Rails とアプリを読み込む前）で標準の `Coverage` を行と分岐で始め、rspec の終わりに結果を `tmp/coverage.json` に書く。gem は足さない。結果は、計測の対象のファイルごとに、分岐の座標（種類・開始の行と列・終わりの行と列）と通過の回数の組を配列で持つ
+- 計測：`spec/spec_helper.rb` は、環境変数 `COVERAGE=1` のときだけ、ファイルの先頭（Rails とアプリを読み込む前）で標準の `Coverage` を分岐で始め、rspec の終わりに結果を `tmp/coverage.json` に書く。gem は足さない。結果は、計測の対象のファイルごとに、分岐の座標（種類・開始の行と列・終わりの行と列）と通過の回数の組を配列で持つ
 - 計測の範囲：計測の対象は、rspec のプロセスが読み込んだ `app/`・`packs/*/app/`・`lib/` の Ruby のファイルである。子のプロセス（`spec/platform/logging_spec.rb` の本番の起動、`spec/bin` が流す `bin/` のスクリプト）は測らない。`bin/` のスクリプトと `config/`・`db/` は対象の外にする
 - `bin/check-branch-coverage`：`tmp/coverage.json` と、基準の ref（`BASE_REF`、既定は `origin/main`）と HEAD の分岐点からの `git diff` を照らし、計測の対象のファイルの足した行か変えた行にある分岐のうち、どの example も通らないものを一覧にする。差分にある計測の対象のファイルが計測の結果に無いとき（どの example も読み込まなかった）は、「計測なし」としてファイルごとに一覧に出し、未通過なしとして扱わない。標準出力と `$GITHUB_STEP_SUMMARY` に書き、行ごとに GitHub の警告の注釈を出す。終了コードは 0 にする。`tmp/coverage.json` が無いか読めないときは、終了コード 1 で失敗する
 - CI：test のジョブを履歴をすべて取る形（`fetch-depth: 0`）にし、既存の rspec のステップを `COVERAGE=1` で流す形に置き換えて（2 回流さない）から `bin/check-branch-coverage` を流す。基準は、lint のジョブの `bin/check-schema-compat` と同じ式で契機ごとに決める。PR では向き先（`origin/<base_ref>`）、main への push では push の前の先端（`github.event.before`）である。`origin/main` を既定のまま使うと、main への push では分岐点が HEAD 自身になって差分が空になり、積み重ねた PR では main からの累積の差分になるからである。`config/ci.rb` にも足す
