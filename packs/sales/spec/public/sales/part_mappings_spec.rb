@@ -12,14 +12,18 @@ RSpec.describe Sales::PartMappings do
 
   let(:item) { FactoryBot.create(:item, name: "六角ボルト M8", unit_price: 120) }
 
-  # 一覧のテストの規則で、親を 2 件以上作る（docs/architecture/graphql-schema.md「ページングと N+1」）
-  it "照合待ちの受注が 2 件あると、登録で両方の明細を照合して確定し、受注ごとに「受注確定」を出す" do
-    orders = Array.new(2) do
+  def pending_orders(count)
+    Array.new(count) do
       FactoryBot.create(:sales_order, customer_tenant_id: customer.id).tap do |order|
         FactoryBot.create(:sales_order_line, sales_order: order, customer_part_number: "MY-BOLT")
         FactoryBot.create(:sales_order_line, :matched, sales_order: order)
       end
     end
+  end
+
+  # 一覧のテストの規則で、親を 2 件以上作る（docs/architecture/graphql-schema.md「ページングと N+1」）
+  it "照合待ちの受注が 2 件あると、登録で両方の明細を照合して確定し、受注ごとに「受注確定」を出す" do
+    orders = pending_orders(2)
     confirmed = []
     allow(Contracts).to receive(:publish).and_wrap_original { |original, event| confirmed << event; original.call(event) }
 
@@ -29,5 +33,18 @@ RSpec.describe Sales::PartMappings do
     expect(Sales::SalesOrders.by_ids(actor, orders.map(&:id)).values.map(&:status)).to all(eq(:received))
     expect(confirmed.map(&:purchase_order_id)).to match_array(orders.map(&:source_purchase_order_id))
     expect(confirmed.map { _1.lines.map { |line| line["item_name"] } }).to all(include("六角ボルト M8"))
+  end
+
+  # 明細を受注ごとに引くクエリは、関連の読み込みではないので Bullet に見えない。SQL の数で確かめる
+  it "照合し直す受注の明細は、受注の数によらず 1 回で引く" do
+    pending_orders(3)
+    line_queries = []
+    counter = ->(*, payload) { line_queries << payload[:sql] if payload[:sql].start_with?('SELECT "sales_order_lines".') }
+
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+      described_class.register(actor, customer_tenant_id: customer.id, customer_part_number: "MY-BOLT", item_id: item.id)
+    end
+
+    expect(line_queries.size).to eq(1)
   end
 end
