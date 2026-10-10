@@ -67,6 +67,11 @@ RSpec.configure do |config|
 
   # Filter lines from Rails gems in backtraces.
   config.filter_rails_from_backtrace!
+
+  # テストの層の置き場から、重要シナリオと競合テストのメタデータを付ける（docs/guides/testing.md「テストの層」）。
+  # 置き場で決めるので、手でタグを付け忘れても --tag scenario・--tag concurrency から漏れない
+  config.define_derived_metadata(file_path: %r{/spec/scenarios/}) { |metadata| metadata[:scenario] = true }
+  config.define_derived_metadata(file_path: %r{/spec/concurrency/}) { |metadata| metadata[:concurrency] = true }
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
 end

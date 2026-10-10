@@ -7,7 +7,8 @@ CI.run do
   step "Packages: packwerk", "bin/packwerk validate && bin/packwerk check"
   step "Ledgers: open items", "bin/check-open-items"
 
-  step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec"
+  step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json"
+  step "Tests: layers", "bin/test-layers tmp/rspec.json"
   step "Schema: structure.sql round-trip", "bin/check-structure"
 
   step "Security: Gem audit", "bin/bundler-audit"
