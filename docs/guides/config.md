@@ -117,6 +117,7 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 | 工程 | 生成のまま | 本デモ | 理由 |
 |---|---|---|---|
 | Packages: packwerk | — | `bin/packwerk validate && bin/packwerk check` | 依存の向きと公開 API の限定を強制する（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md)） |
+| Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | Tests | `bin/rails test` | `bin/rails db:test:prepare && bundle exec rspec` | テストに RSpec を使う |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 

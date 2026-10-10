@@ -43,6 +43,10 @@ pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対�
 | `docs/guides/bin.md` | `bin/` の各スクリプトの役割。誰がいつ流すか、Rails の生成物から何を変えたか |
 | `docs/guides/config.md` | `config/` の各ファイルの役割。生成のままか変えたかと、変えた理由 |
 | `docs/guides/packs-and-packwerk.md` | `packs/` 構成と packwerk の入門。2 つの検査、CI で落ちる場所、パッケージ・依存・公開 API を足す手順 |
+| `docs/guides/dev-cycle.md` | 開発の回し方。サイクル・計画レビュー・実装レビュー・サイクル末の段階・残件の台帳と、文書の置き場の振り分け |
+| `docs/guides/cycle-end.md` | サイクル末の 5 つの段階（振り返り・知見の収穫・逸脱検査・再発防止・台帳の棚卸し）と改善の探索の手順。各段階で読むもの・出すもの・終えてよい条件 |
+| `docs/plans/open-items.md` | 残件の台帳。その場で片付けず、決まったマイルストーンまでに決着させる事項の正本 |
+| `docs/plans/improvement-backlog.md` | 改善の候補の台帳。期限は無いが、いまのやり方より良くできるかもしれない事項と、その裁定の記録 |
 | `docs/guides/comments.md` | コードのコメントの規約。いまの振る舞いと理由だけを書き、経緯・マイルストーンの番号・予定を書かない。良い例と悪い例 |
 | `docs/adr/001-スキーマ管理にridgepoleを採用しない.md` | スキーマ管理に Rails マイグレーション＋`structure.sql` を選ぶ理由 |
 | `docs/adr/002-packwerkを初日からCIで強制する.md` | `packs/` 構成と packwerk の依存・プライバシーチェックを初日から CI で強制する理由 |

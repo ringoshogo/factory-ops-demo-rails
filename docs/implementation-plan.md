@@ -4,7 +4,7 @@
 
 ## 1 つのマイルストーンの進め方
 
-担当者は、マイルストーンに着手するたびに次の順で進める。
+担当者は、マイルストーンに着手するたびに次の順で進める。計画レビュー・実装レビュー・残件の台帳を含む回し方の全体は、`guides/dev-cycle.md` にある。
 
 1. 本書の該当節を読み、「実装する文書の節」に挙げた設計文書の節を読む。
 2. 「作るもの」を実装する。設計文書に書いていないことを決めたら、「文書に残すこと」に挙げた文書へ、同じ作業の中で書き足す。設計文書と食い違う実装にしたときも、先に文書を直す。
@@ -26,6 +26,7 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json                # M16 から。テストの層ごとの件数の報告
 bin/check-structure                           # structure.sql の往復の検査
 bin/check-schema-compat                       # M20 から。GraphQL のスキーマの破壊的変更の検査
+bin/check-open-items --due M<番号>            # 引当先がこのマイルストーンの残件が、open と blocked-user のまま残っていない
 ```
 
 `bin/check-structure` は、開発の DB にマイグレーションを流した結果と、`structure.sql` を読み込み直して書き出した結果が、どちらも `structure.sql` と一致することを確かめる。空の DB への `db:migrate` は `structure.sql` を読み込むだけでマイグレーションを流さないので、`structure.sql` を退避してから流す。文字列の列の CHECK 制約は `status::text IN (...)` と書く。`status IN (...)` と書くと、マイグレーションの結果と読み込み直した結果で式の表記が変わり、この検査が落ちる。
@@ -1140,7 +1141,7 @@ CI にも、`promtool` の 2 つの検査を足す。各手順書の「確かめ
 - 流用元の main（`958de71`）の `frontend/` を、本リポジトリの `frontend/` に写す。git の履歴は持ち込まず、写した commit を commit メッセージに書く。
 - 写さないもの：Cloudflare への配置（`wrangler.jsonc`・`open-next.config.ts`・`@opennextjs/cloudflare`・`wrangler`）、訪問者ごとのデモの開始・サンプル表示・混雑の通知（`lib/start-demo.ts`・`demo-session.ts`・`demo-state.ts`・`sample.ts`・`sample-data.json`・`components/demo-notice.tsx` と、それを分岐に使う箇所）、REST のスタブ（`e2e/stub-api.mjs`）と Go の API を起こす `e2e/start-api.sh`。
 - Ruby の検査から外す：`.rubocop.yml` の `AllCops.Exclude`、`packwerk.yml` の `exclude`、`.dockerignore` に `frontend/` を足す。`.github/dependabot.yml` に `frontend/` の npm を足す。
-- コードのコメント：写す担当者は、流用元の仕様・タスク・台帳の番号を指すコメント（`T-34`・`仕様 §7`・`正本 N-5`・`OI-45` の類）を、いまの振る舞いと理由に書き直すか消す。`guides/comments.md` の対象に `frontend/` を足し、`frontend/scripts/check-comments.mjs` が、これらの番号とマイルストーンの番号を含むコメントを落とす。`npm run lint` から呼ぶ。
+- コードのコメント：写す担当者は、流用元の仕様・タスク・台帳の番号を指すコメント（`T-34`・`仕様 §7`・`正本 N-5`・流用元の台帳の `OI-NN` の類）を、いまの振る舞いと理由に書き直すか消す。`guides/comments.md` の対象に `frontend/` を足し、`frontend/scripts/check-comments.mjs` が、これらの番号とマイルストーンの番号を含むコメントを落とす。`npm run lint` から呼ぶ。
 
 **判断**：流用元をどこに置くか
 

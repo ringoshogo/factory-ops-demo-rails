@@ -54,6 +54,17 @@ jobs:
       - name: Check package boundaries
         run: bin/packwerk validate && bin/packwerk check
 
+      # 残件と改善の候補の台帳の形と、ID の参照を確かめる（docs/guides/dev-cycle.md「機械で守ること」）
+      - name: Check ledgers
+        run: bin/check-open-items
+
+      # PR の本文に書いた OI-NN・IB-NN も台帳にあること。本文は式に直接埋め込まず、環境変数で渡す
+      - name: Check ledger references in the PR body
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" | bin/check-open-items --text -
+
   test:
     runs-on: ubuntu-latest
 
