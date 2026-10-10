@@ -64,9 +64,13 @@ class ApplicationJob < ActiveJob::Base
 
   private
 
-  # Rails.error.set_context は渡した項目だけを書き換えるので、いまの項目を空にしてから設定する
+  # エラー通知の文脈を、項目の集合ごと置き換える。Rails.error.set_context は渡した項目だけを書き換え、
+  # ActiveSupport::ExecutionContext.clear は CurrentAttributes の値と入れ子のスタックも捨てるので、どちらも使わない。
+  # 文脈の置き場（record.store）は Rails 8.1.4 の内部なので、spec/jobs/log_context_spec.rb が項目の集合で確かめる。
+  # 置き換えた後に引数なしの set を呼び、変更の通知（ActiveRecord::QueryLogs のキャッシュの消去）を出す
   def replace_error_context(context)
-    ActiveSupport::ExecutionContext.set(**ActiveSupport::ExecutionContext.to_h.transform_values { nil }, **context)
+    ActiveSupport::ExecutionContext.send(:record).store.replace(context)
+    ActiveSupport::ExecutionContext.set
   end
 
   # 付帯情報の無いジョブは、ジョブ自身の項目だけを設定する。イベントのジョブは、届いたイベントの ID を因果 ID にする

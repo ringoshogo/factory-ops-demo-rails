@@ -9,12 +9,13 @@ module Platform
       ActiveSupport::Logger.new(io).tap { _1.formatter = JsonLogFormatter.new }
     end
 
-    # 本番で許す水準。debug は SQL のバインド値や、JSON の解析に失敗した要求の本文を文字列のまま書く
-    PRODUCTION_LEVELS = %i[info warn error fatal unknown].freeze
+    # 本番のロガーの水準を確かめる。debug は SQL のバインド値や、JSON の解析に失敗した要求の本文を文字列のまま書く。
+    # 環境変数ではなく初期化の後のロガーを見るので、config.log_level を直接書き換えても通らない
+    def self.verify_production_level!(logger)
+      return if logger.level >= ::Logger::INFO
 
-    def self.production_level(level)
-      PRODUCTION_LEVELS.find { _1.to_s == level.to_s.downcase } or
-        raise ArgumentError, "RAILS_LOG_LEVEL は #{PRODUCTION_LEVELS.join("・")} のどれかにする（#{level} は書かない値を書く）"
+      label = %w[debug info warn error fatal unknown].fetch(logger.level, logger.level.to_s)
+      raise ArgumentError, "Platform::Logging: 本番のログの水準は info 以上にする（いまは #{label}。RAILS_LOG_LEVEL と config.log_level を確かめる）"
     end
 
     def self.configure!(config, io)

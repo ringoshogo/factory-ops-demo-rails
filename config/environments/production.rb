@@ -34,8 +34,9 @@ Rails.application.configure do
   # 1 行 1 件の JSON を標準出力に書く。要求 ID はタグではなく文脈から入る（docs/guides/config.md「ログ」）
   Platform::Logging.configure!(config, STDOUT)
 
-  # info より細かい水準は起動の時点で拒む（docs/guides/config.md「ログ」）
-  config.log_level = Platform::Logging.production_level(ENV.fetch("RAILS_LOG_LEVEL", "info"))
+  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
+  # info より細かい水準は、初期化の後のロガーで確かめて起動を止める（docs/guides/config.md「ログ」）
+  config.after_initialize { Platform::Logging.verify_production_level!(Rails.logger) }
 
   # Prevent health checks from clogging up the logs.
   config.silence_healthcheck_path = "/up"

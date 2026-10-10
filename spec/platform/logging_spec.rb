@@ -41,24 +41,40 @@ RSpec.describe "ログの出口と書式" do
     end
 
     # SQL のバインド値や、JSON の解析に失敗した要求の本文は debug の水準で書かれる
+    # 本番の水準の制限は、環境変数でも config.log_level の直接の指定でもなく、初期化の後の Rails.logger の水準で確かめる
     describe "本番の水準" do
-      it "info より細かい水準を拒み、info 以上を許す" do
-        expect { Platform::Logging.production_level("debug") }.to raise_error(ArgumentError, /debug/)
-        expect(%w[info warn error fatal unknown].map { Platform::Logging.production_level(_1) })
-          .to eq(%i[info warn error fatal unknown])
+      it "info より細かい水準のロガーを拒み、info 以上を許す" do
+        logger = ->(level) { ActiveSupport::BroadcastLogger.new(Platform::Logging.build(StringIO.new).tap { _1.level = level }) }
+
+        expect { Platform::Logging.verify_production_level!(logger.call(:debug)) }.to raise_error(ArgumentError, /debug/)
+        expect { Platform::Logging.verify_production_level!(logger.call(:info)) }.not_to raise_error
       end
 
-      it "本番の環境は、RAILS_LOG_LEVEL=debug を与えると起動しない" do
-        run = ->(level) do
-          Open3.capture2e({ "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x", "RAILS_LOG_LEVEL" => level },
-            "bin/rails", "runner", "print Rails.logger.level", chdir: Rails.root.to_s)
+      # 子のプロセスで本番の環境を初期化し、Rails.logger の水準を返す。direct_level は production.rb の後の直接の指定
+      def boot_production(log_level: nil, direct_level: nil)
+        script = <<~RUBY
+          require "./config/application"
+          #{direct_level ? "Rails.application.initializer('spec.direct_level', before: :initialize_logger) { |app| app.config.log_level = :#{direct_level} }" : ""}
+          Rails.application.initialize!
+          print Rails.logger.level
+        RUBY
+        env = { "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x", "RAILS_LOG_LEVEL" => log_level }
+        Open3.capture2e(env, RbConfig.ruby, "-e", script, chdir: Rails.root.to_s)
+      end
+
+      it "本番の環境は、RAILS_LOG_LEVEL=debug でも config.log_level = :debug の直接の指定でも起動しない" do
+        [ { log_level: "debug" }, { direct_level: "debug" } ].each do |setting|
+          output, status = boot_production(**setting)
+          expect(status).not_to be_success, "起動した: #{setting}"
+          expect(output).to include("Platform::Logging")
         end
-
-        output, status = run.call("debug")
-        expect(status).not_to be_success
-        expect(output).to include("RAILS_LOG_LEVEL")
-        expect(run.call("warn").first.lines.last).to eq("2")
+        expect(boot_production(log_level: "warn").first.lines.last).to eq("2")
       end
+    end
+
+    # ジョブの文脈の置き換えと戻し方（ApplicationJob#perform_now）は、文脈をスレッドごとに持つことを前提にする（OI-35）
+    it "Rails の文脈の分離の単位はスレッドである" do
+      expect(ActiveSupport::IsolatedExecutionState.isolation_level).to eq(:thread)
     end
 
     it "購読者の例外は、テストの環境では呼び出し元まで上がる" do

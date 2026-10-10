@@ -28,6 +28,8 @@ RSpec.describe ApplicationJob do
       retry_on RetrySpecError, wait: 0, attempts: 2
 
       def perform(outcome)
+        # ジョブの中で足した項目も、実行の後に残らない
+        Rails.error.set_context(added_in_job: "x")
         LogContextSpecSeen << [ "perform", Rails.event.context, LogContextSpecErrorContext.call ]
         raise ArgumentError, "失敗" if outcome == "fail"
         raise RetrySpecError if outcome == "retry"
@@ -63,12 +65,13 @@ RSpec.describe ApplicationJob do
     { job_id: job.job_id, job_class:, queue: "default", tenant_id:, correlation_id: "corr-1" }
   end
 
-  # エラー通知の文脈の全体。空の値は、設定していない項目と同じに扱う。ジョブは job_id で比べる
+  # エラー通知の文脈の全体。項目の集合ごと比べ、ジョブは job_id で比べる
   def self.comparable(context)
-    context.compact.transform_values { _1.is_a?(ActiveJob::Base) ? _1.job_id : _1 }
+    context.transform_values { _1.is_a?(ActiveJob::Base) ? _1.job_id : _1 }
   end
 
-  def job_error_context(job) = { job: job.job_id, tenant_id:, correlation_id: "corr-1" }
+  # LogContextSpecJob の本体は、ジョブの文脈に added_in_job を足す
+  def job_error_context(job) = { job: job.job_id, tenant_id:, correlation_id: "corr-1", added_in_job: "x" }
 
   OUTER_EVENT_CONTEXT = { request_id: "outer", user_id: "outer-user" }.freeze
   OUTER_ERROR_CONTEXT = { request_id: "outer", user_id: "outer-user", tenant_id: "outer-tenant", correlation_id: "outer-corr" }.freeze
@@ -140,7 +143,7 @@ RSpec.describe ApplicationJob do
 
         expect(run(path, job)).to eq(error: nil, **restored)
         expect(seen.assoc("perform"))
-          .to eq([ "perform", { job_id: job.job_id, job_class: "LogContextSpecJob", queue: "default" }, { job: job.job_id } ])
+          .to eq([ "perform", { job_id: job.job_id, job_class: "LogContextSpecJob", queue: "default" }, { job: job.job_id, added_in_job: "x" } ])
       end
 
       it "ジョブの中で別のジョブを動かすと、内側はその付帯情報の文脈になり、抜けた後は外側の文脈に戻る" do
