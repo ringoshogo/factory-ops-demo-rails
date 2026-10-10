@@ -1,0 +1,7 @@
+# 分岐の網羅率の計測の対象（docs/guides/testing.md「分岐の網羅率の警告」）。spec/support/branch_coverage.rb と
+# bin/check-branch-coverage が読む。rspec のプロセスが読み込む業務とライブラリのコードに限る。
+# bin/ のスクリプトは子のプロセスで動き、config/・db/ は起動のときに 1 回通るだけで分岐を確かめる場所ではないので含めない
+targets:
+  - app/**/*.rb
+  - packs/*/app/**/*.rb
+  - lib/**/*.rb

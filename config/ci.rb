@@ -9,7 +9,8 @@ CI.run do
   step "Ledgers: commit references", "bin/check-commit-refs"
   step "GraphQL: schema compatibility", "bin/check-schema-compat"
 
-  step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json"
+  step "Tests: RSpec", "bin/rails db:test:prepare && COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json"
+  step "Tests: branch coverage", "bin/check-branch-coverage"
   step "Tests: layers", "bin/test-layers tmp/rspec.json"
   step "Schema: structure.sql round-trip", "bin/check-structure"
 

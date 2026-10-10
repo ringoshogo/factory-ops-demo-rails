@@ -1,0 +1,110 @@
+#!/usr/bin/env ruby
+# 計測の結果（tmp/coverage.json）と、基準の ref と HEAD の分岐点からの差分を照らし、足した行か変えた行にある分岐のうち、
+# どの example も通らないものを警告にする（docs/guides/testing.md「分岐の網羅率の警告」）。
+#
+#   COVERAGE=1 bundle exec rspec
+#   bin/check-branch-coverage                     基準は origin/main
+#   BASE_REF=origin/feature bin/check-branch-coverage
+#
+# 網羅率は example がその分岐を実行したかだけを見て、確かめたかは見ないので、失敗にはせず終了コード 0 で終わる。
+# 差分にある計測の対象のファイルが計測の結果に無ければ「計測なし」で出す。未通過なしとして扱うと、どの example も
+# 読み込まないファイルの分岐が見えなくなるからである。計測の結果が無いか読めないときは、照らせないので失敗する。
+# 一覧は標準出力に書き、環境変数 GITHUB_STEP_SUMMARY があればそのファイルにも書き足す
+require "json"
+require "open3"
+require "yaml"
+
+RESULT = "tmp/coverage.json"
+TARGETS = YAML.load_file(File.expand_path("../config/branch_coverage.yml", __dir__)).fetch("targets")
+
+def git(*args, root:)
+  out, err, status = Open3.capture3("git", *args, chdir: root)
+  [ out, err, status.success? ]
+end
+
+def target?(path) = TARGETS.any? { File.fnmatch?(_1, path, File::FNM_PATHNAME) }
+
+# 基準と作業ツリーの差分の、足した行と変えた行の番号をファイルごとに返す。名前を変えたファイルは、
+# 全行を足した行として数える（--no-renames）。照合を単純に保ち、移した先の未通過の分岐を見落とさないためである
+def changed_lines(fork_point, root:)
+  out, err, ok = git("-c", "core.quotePath=false", "diff", "--no-renames", "--no-ext-diff", "--no-color", "--unified=0",
+    "--diff-filter=d", fork_point, root:)
+  abort "git diff に失敗した: #{err}" unless ok
+
+  lines = Hash.new { |hash, key| hash[key] = [] }
+  file = nil
+  out.each_line do |line|
+    case line
+    when %r{\A\+\+\+ b/(.+)\n?\z} then file = Regexp.last_match(1)
+    when /\A@@ -\S+ \+(\d+)(?:,(\d+))? @@/
+      start = Regexp.last_match(1).to_i
+      count = Regexp.last_match(2)&.to_i || 1
+      lines[file].concat((start...(start + count)).to_a) if file && count.positive?
+    end
+  end
+  lines
+end
+
+# まだ commit していないファイルは git diff に出ないので、全行を足した行として足す
+def untracked_lines(root:)
+  out, err, ok = git("-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", root:)
+  abort "git ls-files に失敗した: #{err}" unless ok
+
+  out.lines(chomp: true).to_h { |path| [ path, (1..File.foreach(File.join(root, path)).count).to_a ] }
+end
+
+base_ref = ENV.fetch("BASE_REF", "").then { _1.empty? ? "origin/main" : _1 }
+
+root, err, ok = git("rev-parse", "--show-toplevel", root: Dir.pwd)
+abort "git のリポジトリの中で流す: #{err}" unless ok
+root = root.strip
+
+begin
+  coverage = JSON.parse(File.read(File.join(root, RESULT)))
+rescue SystemCallError, JSON::ParserError => e
+  abort "#{RESULT} を読めない（#{e.message}）。COVERAGE=1 bundle exec rspec で計測してから流す"
+end
+
+fork_point, _err, ok = git("merge-base", base_ref, "HEAD", root:)
+unless ok
+  abort "#{base_ref} と HEAD の分岐点が見つからない。" \
+    "基準の ref を取得したか（CI では actions/checkout の fetch-depth: 0）、BASE_REF が正しいかを確かめる"
+end
+fork_point = fork_point.strip
+
+changes = changed_lines(fork_point, root:).merge(untracked_lines(root:)).select { |path, _| target?(path) }
+
+uncovered = []
+unmeasured = []
+changes.sort.each do |path, lines|
+  arms = coverage[path]
+  next unmeasured << path if arms.nil?
+
+  arms.each do |arm|
+    next unless arm.fetch("count").zero? && lines.include?(arm.fetch("start_line"))
+
+    uncovered << { path:, line: arm.fetch("start_line"), type: arm.fetch("type"),
+                   range: "#{arm.fetch('start_line')}:#{arm.fetch('start_column')}〜#{arm.fetch('end_line')}:#{arm.fetch('end_column')}" }
+  end
+end
+
+report = [ "## 分岐の網羅率", "", "基準: #{base_ref} との分岐点 #{fork_point[0, 7]}", "" ]
+if uncovered.empty? && unmeasured.empty?
+  report << "足した行と変えた行の分岐は、すべてどれかの example が通った"
+else
+  unless uncovered.empty?
+    report.push("### どの example も通らない分岐（#{uncovered.size} 件）", "", "| ファイル | 行 | 分岐 | 範囲 |", "|---|---|---|---|")
+    uncovered.each { report << "| `#{_1[:path]}` | #{_1[:line]} | #{_1[:type]} | #{_1[:range]} |" }
+    report << ""
+  end
+  unless unmeasured.empty?
+    report.push("### 計測なし（#{unmeasured.size} 件）", "", "どの example も読み込まなかったので、分岐を照らせない", "")
+    unmeasured.each { report << "- `#{_1}`" }
+  end
+end
+report = "#{report.join("\n")}\n"
+
+puts report
+uncovered.each { puts "::warning file=#{_1[:path]},line=#{_1[:line]}::どの example も通らない分岐（#{_1[:type]}）" }
+unmeasured.each { puts "::warning file=#{_1}::計測なし（どの example も読み込まなかった）" }
+File.write(ENV["GITHUB_STEP_SUMMARY"], report, mode: "a") if ENV["GITHUB_STEP_SUMMARY"].to_s != ""
