@@ -6,16 +6,17 @@ module Purchasing
 
     # lines は { inbound_shipment_line_id:, accepted_quantity: } の配列で、入荷の全明細を 1 回ずつ並べる。
     # 検収数量は 0 以上・出荷数量以下の整数で、0 は全量の不合格を表す。明細の省略・重複・別の入荷の明細と数量の誤りは
-    # INVALID_INPUT、同じ入荷への 2 回目は CONFLICT。検収日は登録した日にする。
+    # INVALID_INPUT、同じ入荷への 2 回目は入力を確かめる前に CONFLICT。検収日は登録した日にする。
     # 入荷の行ロックで同じ入荷への検収を直列にし、inbound_shipment_id の一意索引が最後に守る。
     # 取引関係の状態は見ない。連結済みの発注は、失効の後も検収できる
     def self.record(actor, inbound_shipment_id:, lines:)
       inbound = InboundShipment.where(purchase_order_id: Scope.call(actor, :own).select(:id)).lock.find_by(id: inbound_shipment_id)
       return OperationResult.failure(:not_found, path: [ :inbound_shipment_id ]) unless inbound
 
+      return OperationResult.failure(:conflict, message: "Inbound shipment is already inspected") if inbound.inspection
+
       invalid = invalid_line(inbound, lines)
       return invalid if invalid
-      return OperationResult.failure(:conflict, message: "Inbound shipment is already inspected") if inbound.inspection
 
       ReceiptInspection.transaction(requires_new: true) do
         inspection = inbound.create_inspection!(owner_tenant_id: inbound.owner_tenant_id, inspected_on: Date.current,

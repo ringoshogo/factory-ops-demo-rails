@@ -113,7 +113,18 @@ RSpec.describe Sales::PurchasingEventReceiver do
       let(:written_rows) { -> { records.size } }
     end
 
-    it "検収の前の出荷済の受注は、検収済にならない" do
+    it "検収の前の出荷済の受注は、同じ得意先の別の受注の検収完了が届いても検収済にならない" do
+      other = Tenancy.with_tenant(supplier.id) do
+        FactoryBot.create(:sales_order, customer_tenant_id: buyer.id, shipped_at: Time.current).tap do |order|
+          FactoryBot.create(:sales_order_line, :matched, sales_order: order)
+        end
+      end
+      other_line = Tenancy.with_tenant(supplier.id) { other.lines.sole }
+
+      handle(inspected.with(shipment_id: SecureRandom.uuid, purchase_order_id: other.source_purchase_order_id,
+        lines: [ { "purchase_order_line_id" => other_line.source_purchase_order_line_id, "accepted_quantity" => 1 } ]))
+
+      expect(Tenancy.with_tenant(supplier.id) { Sales::SalesOrders.find(actor, other.id) }.status).to eq(:inspected)
       expect(shipped_order_value.status).to eq(:shipped)
     end
 

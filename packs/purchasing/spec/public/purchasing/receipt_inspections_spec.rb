@@ -148,6 +148,12 @@ RSpec.describe Purchasing::ReceiptInspections, ".record" do
     expect(inspected_jobs.size).to eq(1)
   end
 
+  it "検収済の入荷への 2 回目は、入力が誤っていても入力を確かめる前に CONFLICT になる" do
+    record
+
+    expect(failure_of(record(lines: []))).to eq([ [ :conflict, nil ] ])
+  end
+
   it "見えない入荷は NOT_FOUND" do
     other = FactoryBot.create(:tenant)
     others_inbound = Tenancy.with_tenant(other.id) { FactoryBot.create(:inbound_shipment) }

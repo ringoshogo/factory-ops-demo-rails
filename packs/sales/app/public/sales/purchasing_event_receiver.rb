@@ -35,9 +35,10 @@ module Sales
         purchase_order_id: event.purchase_order_id, buyer_tenant_id: order.customer_tenant_id, supplier_tenant_id: order.owner_tenant_id))
     end
     # 冪等キーは出荷実績 ID と受注明細 ID の組で、受注の行ロックが同じ出荷実績の配送を直列にする。
+    # 全明細を同じトランザクションで書くので、書いたかどうかは出荷実績 ID だけで判定する。
     # 分納しないので出荷実績は受注ごとに 1 件で、その検収完了が届けば受注のすべての出荷実績が検収されている。
     # 検収は出荷の後にしか起きないが、受注側の「出荷計上」の配送が遅れると先に届くので、出荷済でなければ失敗させて再配送に任せる。
-    # 検収済の時刻だけを先に書くと、出荷の後という CHECK 制約に当たるうえ、検収済の受注に出荷の時刻が後から付く
+    # 検収済の時刻だけを先に書くと、出荷済であることを求める CHECK 制約に当たる
     def self.inspect_shipment(event)
       order = SalesOrder.lock.find_by!(owner_tenant_id: Current.tenant_id, source_purchase_order_id: event.purchase_order_id,
         customer_tenant_id: event.buyer_tenant_id)
