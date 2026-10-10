@@ -138,7 +138,7 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 
 ### 止めたフレームワークの文字列のログ
 
-JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4 と Solid Queue 1.7 で止めた経路は次の 5 つで、本番とテストだけで止める。
+JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4・Solid Queue 1.7.0・Ruby 3.4.11 で止めた経路は次の 5 つで、本番とテストだけで止める。
 
 | 経路 | 書いていたもの | 止め方 |
 |---|---|---|
@@ -148,7 +148,11 @@ JSON の書式は、文字列の中の秘密やクエリの本文を消さない
 | `Rails::Rack::Logger` | 要求の開始の行に `request.filtered_path`。`filter_parameters` は名前で隠すだけなので、URL の `query`・`variables` の値が残る | ミドルウェアから外す。外して失う `request.action_dispatch` の計装は、Rails 8.1.4 の中に購読者が無い |
 | `ActionDispatch::DebugExceptions` | 捕まえた例外のメッセージとバックトレース（`fatal`） | ミドルウェアから外す。本番ではこれが唯一の役目である。例外は `ActionDispatch::Executor` がエラー通知に送り、ログには `action_controller.request_completed` の状態コードが残る |
 
-残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（ファイルの添付・テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
+残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
+
+止める経路は名指しの一覧なので、依存を上げて値を文字列で書く購読かミドルウェアが加わっても、それだけでは止まらない。そこで `spec/platform/logging_spec.rb` が、子のプロセスで本番の環境を初期化し、`ActiveSupport::LogSubscriber` の購読のクラスの集合・`Rails.event` の購読者・ミドルウェアの並びが、許した一覧と一致することを確かめる（[ADR 008](../adr/008-本番に残すログの購読とミドルウェアを許した一覧で守る.md)）。依存を上げてこの spec が落ちたら、増えた購読かミドルウェアのソースを読む。値を文字列で書くなら `Platform::Logging` で外して上の表に足し、書かないなら spec の許した一覧に足す。`ActiveSupport::Notifications` を直接購読するものと、gem の中から `Rails.logger` を直接呼ぶものは一覧に出ないので、依存を上げる PR で変更点を読んで見る。
+
+> Ruby 3.3.3 から 3.4.11 へ上げ、`bundle update` を流した前後で、本番の環境の購読とミドルウェアの並びを比べた。Rails 8.1.4・Solid Queue 1.7.0 は版の制約の中の最新で変わらず、違いは使っていない部品を外して消えた Active Storage の購読 2 つだけだった。
 
 `debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。水準は環境変数 `RAILS_LOG_LEVEL` で決め、既定は `info`、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`production.rb` は `config.after_initialize` で、初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。環境変数ではなく最終の水準を見るので、`config.log_level` を直接 `:debug` にしても起動しない。止めるのは設定からの指定だけで、初期化の後にコードで水準を変える・ロガーを差し替える経路はコードレビューで止める（OI-36）。
 
