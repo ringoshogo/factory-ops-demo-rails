@@ -390,15 +390,22 @@ bundle exec rspec spec/platform/logging_spec.rb spec/jobs spec/contracts spec/re
 
 ## M19 監査ログ
 
-実装レビューの前。判定と指摘は、レビューを受けた後に書く。
+PR #28。どちらの系統も Go で、指摘は Low だけだった。C4 のほかは同じブランチの commit で直した。
 
 | 系統 | 判定 |
 |---|---|
-| Codex |  |
-| Claude |  |
+| Codex | Go |
+| Claude | Go |
 
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
+| Low | Codex | X1：`data-model.md` の「所有ロールでも消せず、表を空にもできない」は、トリガーが有効な通常の DML に限る | トリガーが止めるのは所有ロールを含む通常の DML で、トリガーを外す・表を落とす DDL はマイグレーションのレビューで止める、と書き直した | この commit |
+| Low | Codex | X2：`purge_expired_audit_logs()` が `search_path` に依存し、同じ名前の一時表を消しうる | 新しいマイグレーションで、表を `public.audit_logs` と修飾し、`SET search_path = pg_catalog, pg_temp` を付けて作り直した。同じ名前の一時表があっても監査ログの表を消す example を足し、修飾と固定を外した関数で落ちることを確かめた。`data-model.md` に書いた | `6bb6396`・この commit |
+| Low | Codex | X3：相関 ID が無いときの失敗（OI-42）を直接確かめていない | 相関 ID の文脈を消して `placePurchaseOrder` をスキーマに流し、`correlation_id` の NOT NULL の違反で、業務の行・監査の行・イベントのジョブが残らないことを確かめる example を足した。テスト DB で NOT NULL を外すと落ちることを確かめた。OI-42 の「空」を「NULL」に直した | `6bb6396`・この commit |
+| Low | Claude | C1：X1 と同じ | X1 と同じ | この commit |
+| Low | Claude | C2：`delete_owned_rows` がテナントを消さなくなり、消す表を書き漏らすと行が黙って残る | 消した後に、`owner_tenant_id` を持つ表のうち残す表の外に、そのテナントの行が残れば失敗する。補助の spec に example を足し、`stock_allocation_spec.rb` から `stocks` を外すと 2 件とも落ちることを確かめた。`testing.md` に書いた | `6bb6396`・この commit |
+| Low | Claude | C3：受信の行の一意キーに受け手が入らず、同じテナントに受け手が 2 つあると 1 行になる | 受信の行はイベントと受け手のテナントごとに 1 行、と `graphql-schema.md`「監査ログ」に書いた。いまの配送表では、同じテナントに受け手が 2 つあるイベントは無い | この commit |
+| Low | Claude | C4：アプリのロールは過去の `occurred_at` で INSERT でき、その行はすぐ消せる | 直さず、OI-45 に `judgment` として登録した | この commit |
 
 ### 実装の記録
 
@@ -444,14 +451,14 @@ bundle exec rspec spec/platform/logging_spec.rb spec/jobs spec/contracts spec/re
 
 ### 層ごとの表
 
-M18 の直し（`9e239cc`）の上に載せ直した後の全件（1062 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した（OI-24）。
+実装レビューの指摘を直した後の全件（1065 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した（OI-24）。`--tag concurrency` は、同じテスト DB に続けて 2 回流して、2 回とも 19 examples, 0 failures だった。
 
 | 層 | example | 割合 | 時間 | 目安 |
 |---|---|---|---|---|
-| 単体 | 101 | 37.7% | 1.22s | 60% 以上 |
-| 結合 | 128 | 47.8% | 5.36s | 30% 以下 |
-| シナリオ | 39 | 14.6% | 6.76s | 10% 以下 |
-| ガード | 794 | — | 231.30s | 数えない |
+| 単体 | 101 | 37.4% | 1.28s | 60% 以上 |
+| 結合 | 129 | 47.8% | 5.22s | 30% 以下 |
+| シナリオ | 40 | 14.8% | 6.78s | 10% 以下 |
+| ガード | 795 | — | 227.20s | 数えない |
 
 ### 残件の処理
 
@@ -459,4 +466,4 @@ M18 の直し（`9e239cc`）の上に載せ直した後の全件（1062 examples
 |---|---|
 | OI-18 | `actor_user_id` を外部キーを張らない参照で作り、`data-model.md` の記述をそろえて閉じた |
 
-決めたことは OI-37〜OI-44 に `judgment` として登録した。
+決めたことは OI-37〜OI-44 に `judgment` として登録した。実装レビューの C4 は OI-45 に登録した。
