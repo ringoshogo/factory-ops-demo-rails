@@ -8,10 +8,11 @@ module Purchasing
 
     def place? = true
 
-    # 取消依頼は、自社の発注なら役割を問わない
+    # 取消依頼と入荷の検収は、自社の発注なら役割を問わない
     def request_cancellation? = show?
+    def inspect_receipt? = show?
 
-    # 発注と発注明細の値のどちらにも使う
+    # 発注・発注明細・入荷・検収の値のどれにも使う
     def show? = record.owner_tenant_id == user.tenant_id
   end
 end

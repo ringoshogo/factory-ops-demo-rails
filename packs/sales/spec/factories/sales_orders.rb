@@ -42,4 +42,13 @@ FactoryBot.define do
     source_cancellation_request_id { SecureRandom.uuid }
     requested_at { Time.current }
   end
+
+  # 出荷実績は ID で参照するだけなので、作らない
+  factory :inspection_record, class: "Sales::InspectionRecord" do
+    owner_tenant_id { Current.tenant_id }
+    sales_order_line { association :sales_order_line, owner_tenant_id: }
+    shipment_id { SecureRandom.uuid }
+    quantity { sales_order_line.quantity }
+    inspected_on { Date.current }
+  end
 end

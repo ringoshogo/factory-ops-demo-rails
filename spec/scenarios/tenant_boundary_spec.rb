@@ -84,6 +84,14 @@ RSpec.describe "テナントの境界", type: :request do
       ids: documents, reach: not_found,
       run: ->(id) { mutate("requestPurchaseOrderCancellation", purchaseOrderId: id, reason: "数量の誤り") }
     },
+    "Mutation.inspectInboundShipment(input.inboundShipmentId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("inspectInboundShipment", inboundShipmentId: id, lines: []) }
+    },
+    # 自社の入荷に相手の ID を明細として入れる。入荷の明細でない ID は、別の入荷の明細と同じ INVALID_INPUT になる
+    "Mutation.inspectInboundShipment(input.lines.inboundShipmentLineId)" => {
+      ids: documents, reach: { "errors" => [ { "code" => "INVALID_INPUT" } ] },
+      run: ->(id) { mutate("inspectInboundShipment", inboundShipmentId: own_inbound_id, lines: [ { inboundShipmentLineId: id, acceptedQuantity: 1 } ]) }
+    },
     "Mutation.approveCancellationReview(input.cancellationReviewId)" => {
       ids: documents, reach: not_found, run: ->(id) { mutate("approveCancellationReview", cancellationReviewId: id) }
     },
@@ -128,7 +136,7 @@ RSpec.describe "テナントの境界", type: :request do
   let!(:outsider) { FactoryBot.create(:tenant) }
   let(:supplier_admin) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, :admin) } }
   let(:buyer_admin) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user, :admin) } }
-  attr_reader :own_item_id, :partner_ids
+  attr_reader :own_item_id, :own_inbound_id, :partner_ids
 
   describe "相手の ID を入口に持ち込む" do
     # 2 社が取引関係を結び、発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷が届いた状態を作る。
@@ -158,8 +166,9 @@ RSpec.describe "テナントの境界", type: :request do
       deliver_enqueued_events
 
       login_as(buyer_admin)
-      expect(query("query($id: ID!) { buyer { purchaseOrder(id: $id) { status } } }", id: purchase_order_id))
-        .to eq("buyer" => { "purchaseOrder" => { "status" => "INBOUND" } })
+      inbound = query("query($id: ID!) { buyer { purchaseOrder(id: $id) { status inboundShipments { id } } } }", id: purchase_order_id)
+      expect(inbound.dig("buyer", "purchaseOrder", "status")).to eq("INBOUND")
+      @own_inbound_id = inbound.dig("buyer", "purchaseOrder", "inboundShipments").sole.fetch("id")
       # 2 件目の発注に取消を依頼し、受注側に審査中の審査を作る
       cancelling_id = mutate!("placePurchaseOrder", "purchaseOrder { id }",
         supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 1 } ]).dig("purchaseOrder", "id")

@@ -21,5 +21,6 @@ module Types
     field :post_shipment, mutation: Mutations::PostShipment
     field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
     field :request_purchase_order_cancellation, mutation: Mutations::RequestPurchaseOrderCancellation
+    field :inspect_inbound_shipment, mutation: Mutations::InspectInboundShipment
   end
 end

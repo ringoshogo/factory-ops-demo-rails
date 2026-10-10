@@ -8,10 +8,15 @@ module Types
     field :id, ID, null: false
     field :shipped_on, GraphQL::Types::ISO8601Date, null: false
     field :lines, [ InboundShipmentLineType ], null: false
+    field :inspection, ReceiptInspectionType, description: "検収前は空"
 
-    def lines
-      dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :inbound_shipment_lines_for, context[:current_user])
-        .load(object.id)
+    def lines = load_from(:inbound_shipment_lines_for)
+    def inspection = load_from(:inspections_for)
+
+    private
+
+    def load_from(method)
+      dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, method, context[:current_user]).load(object.id)
     end
   end
 end

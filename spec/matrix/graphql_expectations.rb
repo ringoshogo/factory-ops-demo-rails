@@ -182,6 +182,16 @@ module MatrixExpectations
       variables: ->(world) { { input: { purchaseOrderId: world.linked_order(:purchase_order).id, reason: "数量の誤り" } } },
       expect: MatrixWorld::PERSONAS.index_with(:not_found).merge(granted_buyer: :value)
     },
+    # 検収前の入荷の全明細を出荷数量で検収する。入荷を所有する granted_buyer だけが検収でき、受注側の supplier にも見えない
+    "Mutation.inspectInboundShipment" => {
+      query: "mutation($input: InspectInboundShipmentInput!) { inspectInboundShipment(input: $input) { purchaseOrder { id } errors { code } } }",
+      variables: lambda { |world|
+        line = world.row("inbound_shipment_lines", :granted_buyer)
+        { input: { inboundShipmentId: line.inbound_shipment_id,
+                   lines: [ { inboundShipmentLineId: line.id, acceptedQuantity: line.shipped_quantity } ] } }
+      },
+      expect: MatrixWorld::PERSONAS.index_with(:not_found).merge(granted_buyer: :value)
+    },
     # 発注に連結した受注。受注側の supplier だけが取り消せる
     "Mutation.cancelSalesOrder" => {
       query: "mutation($input: CancelSalesOrderInput!) { cancelSalesOrder(input: $input) { salesOrder { id } errors { code } } }",

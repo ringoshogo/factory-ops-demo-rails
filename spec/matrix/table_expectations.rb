@@ -57,6 +57,10 @@ module MatrixExpectations
     # 入荷は発注側だけが所有する「出荷計上」の写しで、受注側から読む経路は無い
     "inbound_shipments" => OWNER_ONLY,
     "inbound_shipment_lines" => OWNER_ONLY,
+    # 検収は発注側だけが所有し、受注側へは「検収完了」で写す。受注側の検収の記録も発注側から読む経路は無い
+    "receipt_inspections" => OWNER_ONLY,
+    "receipt_inspection_lines" => OWNER_ONLY,
+    "inspection_records" => OWNER_ONLY,
     # 監査ログは書いたテナントだけが読む。相手テナントへの写しは作らない
     "audit_logs" => OWNER_ONLY
   }.freeze
