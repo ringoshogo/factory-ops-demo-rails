@@ -746,18 +746,22 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 
 ### 互換の判定
 
-スキーマを変えた実装者は、PR を出す前に `bin/check-schema-compat` を流す。スクリプトは、基準（環境変数 `BASE_REF`、既定は `origin/main`）の `schema.graphql` と作業中の `schema.graphql` を比べ、落とす変更が 1 つでもあれば失敗する。基準に `schema.graphql` が無いときも、比べられないので失敗する。結果の一覧は標準出力に書き、`$GITHUB_STEP_SUMMARY` があればそこにも書く。
+スキーマを変えた実装者は、PR を出す前に `bin/check-schema-compat` を流す。スクリプトは、基準の ref（環境変数 `BASE_REF`、既定は `origin/main`）と HEAD の分岐点（`git merge-base`）の `schema.graphql` と、作業中の `schema.graphql` を比べ、落とす変更が 1 つでもあれば失敗する。分岐点に `schema.graphql` が無いときも、比べられないので失敗する。結果の一覧は標準出力に書き、`$GITHUB_STEP_SUMMARY` があればそこにも書く。
+
+基準の先端ではなく分岐点と比べるのは、ブランチを切った後に基準へ入ったフィールドや値が、それを知らない作業中のスキーマでは削除に見えるからである。PR のマージ commit を checkout した CI では、分岐点は基準の先端になり、作業中のスキーマは基準の変更を含むので、手元と同じく PR の変更だけが比べられる。
 
 判定は `lib/schema_compat.rb` が、graphql-schema_comparator が返す変更ごとに行う。変更は、比較器の変更のクラス名（`FieldRemoved` など）と座標（変更の `path`。`PurchaseOrder.lines`・`Query.order.id` の形）で識別する。規則は上から当て、先に当たった規則で決める。
 
 | 順 | 変更 | 通すもの |
 |---|---|---|
-| 1 | 削除（`FieldRemoved`・`FieldArgumentRemoved`・`InputFieldRemoved`・`EnumValueRemoved`・`TypeRemoved`） | 消えた要素が、基準のスキーマで `@deprecated` だったもの。`TypeRemoved` は、基準のスキーマでその型を返すか受け取るフィールド・引数・入力項目がすべて非推奨だったもの。union とインターフェースを返すフィールドは、その型を返しうるので数える |
+| 1 | 削除（`FieldRemoved`・`FieldArgumentRemoved`・`InputFieldRemoved`・`EnumValueRemoved`・`TypeRemoved`） | 消えた要素が、基準のスキーマで `@deprecated` だったもの。`TypeRemoved` は、基準のスキーマでその型を返すか受け取るフィールド・引数・入力項目がすべて非推奨だったもの。union とインターフェースを返すフィールドは、その型を返しうるので数える。非推奨のフィールドの引数は、フィールドと一緒に消せるので数えない |
 | 2 | 型の変更（`FieldTypeChanged`・`FieldArgumentTypeChanged`・`InputFieldTypeChanged`） | 比較器が非破壊に分類するもの（出力の型を null 可から非 null にする、入力の型を非 null から null 可にする） |
-| 3 | 必須の引数・入力項目の追加（`FieldArgumentAdded`・`InputFieldAdded` のうち比較器が破壊に分類するもの） | 無い |
+| 3 | 必須の引数・入力項目の追加（`FieldArgumentAdded`・`InputFieldAdded` のうち比較器が破壊に分類するもの）と、非 null の引数・入力項目から既定値を外す変更（`FieldArgumentDefaultChanged`・`InputFieldDefaultChanged` のうち変更後に既定値が無いもの） | 無い。既定値を外す変更は、比較器が危険に分類するが、既存の問い合わせを必須の追加と同じく壊す |
 | 4 | 上に当たらない変更 | 非破壊の変更と危険な変更（enum の値の追加など）。破壊的変更は落とす |
 
 削除は、比較器の重大度（`breaking?`・`non_breaking?`）より先に見る。比較器は、出力にだけ使う enum の値の削除を非破壊に分類するので、重大度を先に見ると非推奨を経ない削除が通る。
+
+比較器（graphql-schema_comparator 1.2.1）が変更として出さないものは、判定にかからない。入力型への `@oneOf` の追加と、ディレクティブの `repeatable` を外す変更がそれに当たり、どちらも既存の問い合わせを壊しうるので、レビューで止める。union のメンバーとインターフェースの実装は `@deprecated` を付けられないので、規則 4 で落ちた `UnionMemberRemoved`・`ObjectTypeInterfaceRemoved` を通すには、例外の一覧に行を書く。
 
 ### 例外の一覧
 
