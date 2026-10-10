@@ -140,22 +140,22 @@ PR #26。Codex は No Go、Claude は Conditional Go で、指摘はすべて同
 
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
-| High | Codex | X1：HTTP の要求を流すシナリオで、最初の要求の後の直接の呼び出し（イベントの配送）が Bullet の検出の外になる。`Bullet::Rack` が外の包みの検出を上書きして消す | `bullet: false` を置き場ではなく `type: :request` から付け、イベントを流す補助（`deliver_enqueued_events`・`deliver_oldest_event`）が検出の外なら自分で `Bullet.profile` を始めるようにした。要求の後に流したイベントの受け手の N+1 が落ちる example を足した | `0cbcc9a` |
-| Medium | Codex | X2：`BuyerSupplierCatalog` が取引先の一覧の下でコネクションを引き、予算のテストは取引先 1 件に固定して増加を隠している | 取引先を 1 社選ぶ `buyer.supplier(supplierTenantId:)` を足し、`BuyerSupplierCatalog` をそれで引く形にした。S1 の表・行列テスト・request spec に行を足し、取引関係の無い相手・失効・存在しない ID・自社のテナントが `null` になることを確かめた。一覧の要素の下のコネクションを落とす検査を足し、OI-25 を閉じた | `b1c5bca`・`9e715f0` |
-| Medium | Codex | X3：`rematch` の一括取得を受注ごとの取得に戻しても、spec が落ちない。関連の読み込みでないので Bullet にも見えない | 登録の間に流れる明細の取得の SQL を数え、受注 3 件で 1 回であることを確かめる example を足した | `7975269` |
-| Low | Codex | 補足：OI-26 に検証の対象を factory の後に呼ぶことを書き、factory の後の N+1 が例外になる負例を足す。OI-27 に合わせて計画を直す。一括取得の退行を Bullet で捕まえられないことを記録に書く | OI-26 と `graphql-schema.md` に書き、負例を足した。計画の予算の変数の行を直した。記録は下の「実装の記録」に書いた | `0cbcc9a`・`9e715f0` |
-| Medium | Claude | C1：`spec/requests` の外で HTTP を流す spec（シナリオ・行列テスト）が二重に包まれ、最初の要求の後で外の検出が消える | X1 と同じ。`graphql-schema.md` と計画の記述を「HTTP の要求を流す example（`type: :request`）」に直した | `0cbcc9a`・`9e715f0` |
-| Low | Claude | C2：`BuyerSupplierCatalog` が規則に反し、規則を守らせる検査も無い | X2 と同じ | `b1c5bca` |
-| Low | Claude | C3：`rails_helper` の除外を消しても何も落ちない | `type: :request の example は bullet: false を持ち、包まない` を足した | `0cbcc9a` |
-| Low | Claude | C4：`testing.md` から、一覧のテストで親を 2 件以上作る規則への参照が無い | 「層への配分」に 1 文と参照を足した | `9e715f0` |
-| Low | Claude | C5：許可リストのエラー文が、項目が多すぎる場合を言わない | 「項目は type・class_name・association・reason の 4 つに限る」にした | `0cbcc9a` |
+| High | Codex | X1：HTTP の要求を流すシナリオで、最初の要求の後の直接の呼び出し（イベントの配送）が Bullet の検出の外になる。`Bullet::Rack` が外の包みの検出を上書きして消す | `bullet: false` を置き場ではなく `type: :request` から付け、イベントを流す補助（`deliver_enqueued_events`・`deliver_oldest_event`）が検出の外なら自分で `Bullet.profile` を始めるようにした。要求の後に流したイベントの受け手の N+1 が落ちる example を足した | `e7a88e6` |
+| Medium | Codex | X2：`BuyerSupplierCatalog` が取引先の一覧の下でコネクションを引き、予算のテストは取引先 1 件に固定して増加を隠している | 取引先を 1 社選ぶ `buyer.supplier(supplierTenantId:)` を足し、`BuyerSupplierCatalog` をそれで引く形にした。S1 の表・行列テスト・request spec に行を足し、取引関係の無い相手・失効・存在しない ID・自社のテナントが `null` になることを確かめた。一覧の要素の下のコネクションを落とす検査を足し、OI-25 を閉じた | `d2360be`・`10b09a8` |
+| Medium | Codex | X3：`rematch` の一括取得を受注ごとの取得に戻しても、spec が落ちない。関連の読み込みでないので Bullet にも見えない | 登録の間に流れる明細の取得の SQL を数え、受注 3 件で 1 回であることを確かめる example を足した | `3a8becf` |
+| Low | Codex | 補足：OI-26 に検証の対象を factory の後に呼ぶことを書き、factory の後の N+1 が例外になる負例を足す。OI-27 に合わせて計画を直す。一括取得の退行を Bullet で捕まえられないことを記録に書く | OI-26 と `graphql-schema.md` に書き、負例を足した。計画の予算の変数の行を直した。記録は下の「実装の記録」に書いた | `e7a88e6`・`10b09a8` |
+| Medium | Claude | C1：`spec/requests` の外で HTTP を流す spec（シナリオ・行列テスト）が二重に包まれ、最初の要求の後で外の検出が消える | X1 と同じ。`graphql-schema.md` と計画の記述を「HTTP の要求を流す example（`type: :request`）」に直した | `e7a88e6`・`10b09a8` |
+| Low | Claude | C2：`BuyerSupplierCatalog` が規則に反し、規則を守らせる検査も無い | X2 と同じ | `d2360be` |
+| Low | Claude | C3：`rails_helper` の除外を消しても何も落ちない | `type: :request の example は bullet: false を持ち、包まない` を足した | `e7a88e6` |
+| Low | Claude | C4：`testing.md` から、一覧のテストで親を 2 件以上作る規則への参照が無い | 「層への配分」に 1 文と参照を足した | `10b09a8` |
+| Low | Claude | C5：許可リストのエラー文が、項目が多すぎる場合を言わない | 「項目は type・class_name・association・reason の 4 つに限る」にした | `e7a88e6` |
 
 Codex は直した後の差分を読み直し、上の指摘はすべて解消したとして Conditional Go にした。読み直しで出た指摘も同じブランチで直した。
 
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
-| Medium | Codex | X4：`BulletDetection.wrap` は、factory の間の `Bullet.pause` で `Bullet.start?` が偽になるのを検出の外と取り違え、`Bullet.profile` を始める。その `end_request` が外側の収集の状態を消し、再開した後の N+1 が見えない | 検出の中かどうかを、収集の状態（`Bullet.notification_collector`）の有無で見分けるようにした。止めている間に呼んでも収集の状態が残り、再開した後の N+1 が落ちる example を足した。直す前はこの example が「collector が nil」で落ちた | `d04b779` |
-| Low | Codex | 入れ子の検査の負例に、コネクションの `nodes`・`edges.node` の下のコネクションが無い | いまのスキーマにはその形の型が無いので、spec の中で小さなスキーマを作り、`orders.nodes.items` と `orders.edges.node.items` を見つけることを確かめた。コネクションの判定を `Types::BaseConnection` から `GraphQL::Types::Relay::ConnectionBehaviors` を持つ型に広げた（エッジの型と、ふつうの型が持つ `edge_type` には当たらない） | `d04b779` |
+| Medium | Codex | X4：`BulletDetection.wrap` は、factory の間の `Bullet.pause` で `Bullet.start?` が偽になるのを検出の外と取り違え、`Bullet.profile` を始める。その `end_request` が外側の収集の状態を消し、再開した後の N+1 が見えない | 検出の中かどうかを、収集の状態（`Bullet.notification_collector`）の有無で見分けるようにした。止めている間に呼んでも収集の状態が残り、再開した後の N+1 が落ちる example を足した。直す前はこの example が「collector が nil」で落ちた | `fb86092` |
+| Low | Codex | 入れ子の検査の負例に、コネクションの `nodes`・`edges.node` の下のコネクションが無い | いまのスキーマにはその形の型が無いので、spec の中で小さなスキーマを作り、`orders.nodes.items` と `orders.edges.node.items` を見つけることを確かめた。コネクションの判定を `Types::BaseConnection` から `GraphQL::Types::Relay::ConnectionBehaviors` を持つ型に広げた（エッジの型と、ふつうの型が持つ `edge_type` には当たらない） | `fb86092` |
 
 指摘を直した後に、直した防壁を壊して落ちることを確かめた。
 
@@ -237,26 +237,26 @@ PR #27。Codex は No Go、Claude は Conditional Go で、指摘はすべて同
 
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
-| High | Codex | X1：`operationName` がハッシュ・配列だと、中の値が要求の開始の行と文脈に残る。未認証の要求でも書く | 操作名と変数のキーは、GraphQL の名前の形の文字列だけを、コントローラと購読者の両方で書く。ほかの型と形は中の値ごと落とす。未認証の要求にハッシュ、認証済みの要求に配列、変数のキーに禁止の値を入れる回帰テストを、ログの衛生の spec と購読者の spec と GraphQL の入口の spec に足した | `27d355e` |
-| High | Codex | X2：エラー通知の文脈は渡した項目だけが書き換わり、要求の `request_id`・`user_id` や別のテナントがジョブに混ざる。`:job` も実行の後に残る | `perform_now` が、エラー通知の文脈も丸ごと退避し、いまの項目を空にしてからジョブの項目（`job` を含む）を設定し、例外の経路を含めて `ensure` で丸ごと戻す。ジョブの文脈の spec は、直接の `perform_now` を executor の外で動かし、入れ子のジョブと付帯情報の無いジョブを足し、どちらの文脈も項目を絞らずに比べる。OI-30 と `config.md` を合わせた | `27d355e`・`d541e5e` |
-| Medium | Codex | X3：本番で `RAILS_LOG_LEVEL=debug` を選べ、SQL のバインド値などを書く | `Platform::Logging.production_level` が `info` より細かい水準を拒み、`production.rb` がそれを通す。`debug` で本番の環境が起動しないことを、子のプロセスで確かめる。`config.md` に既定と許す値を書いた | `27d355e`・`d541e5e` |
-| Low | Codex | X4：TaggedLogging を使わない理由（行が JSON で始まらない）が事実と違う | タグがメッセージに混ざるので、文脈を `context` の項目に入れる、と直した（`logging.rb`・`config.md`） | `27d355e`・`d541e5e` |
-| Medium | Claude | C1：`ActionMailer::LogSubscriber` が送信の失敗を例外のメッセージ込みで書く | 購読を外し、構成の spec の一覧と `config.md` の表と OI-28 に足した | `27d355e`・`d541e5e` |
-| Medium | Claude | C2：要求の側のエラー通知の文脈を確かめるテストが無い | スキーマの実行の中で例外を上げ、通知の文脈に `request_id`・相関 ID・テナント・ユーザーが入ることを確かめる example を足した | `27d355e` |
-| Low | Claude | C3：`/up` の要求の行が本番で毎回出る | 購読者が `Rails::HealthController` の要求の行を書かない | `27d355e` |
-| Low | Claude | C4：`config.md` の表に `active_job.enqueued_at` が無い | 足した | `d541e5e` |
-| Low | Claude | C5：ADR 005 の「付帯情報のテナントはログの文脈にだけ」 | 「ログとエラー通知の文脈にだけ」に直した | `d541e5e` |
+| High | Codex | X1：`operationName` がハッシュ・配列だと、中の値が要求の開始の行と文脈に残る。未認証の要求でも書く | 操作名と変数のキーは、GraphQL の名前の形の文字列だけを、コントローラと購読者の両方で書く。ほかの型と形は中の値ごと落とす。未認証の要求にハッシュ、認証済みの要求に配列、変数のキーに禁止の値を入れる回帰テストを、ログの衛生の spec と購読者の spec と GraphQL の入口の spec に足した | `081e7de` |
+| High | Codex | X2：エラー通知の文脈は渡した項目だけが書き換わり、要求の `request_id`・`user_id` や別のテナントがジョブに混ざる。`:job` も実行の後に残る | `perform_now` が、エラー通知の文脈も丸ごと退避し、いまの項目を空にしてからジョブの項目（`job` を含む）を設定し、例外の経路を含めて `ensure` で丸ごと戻す。ジョブの文脈の spec は、直接の `perform_now` を executor の外で動かし、入れ子のジョブと付帯情報の無いジョブを足し、どちらの文脈も項目を絞らずに比べる。OI-30 と `config.md` を合わせた | `081e7de`・`8ff75d5` |
+| Medium | Codex | X3：本番で `RAILS_LOG_LEVEL=debug` を選べ、SQL のバインド値などを書く | `Platform::Logging.production_level` が `info` より細かい水準を拒み、`production.rb` がそれを通す。`debug` で本番の環境が起動しないことを、子のプロセスで確かめる。`config.md` に既定と許す値を書いた | `081e7de`・`8ff75d5` |
+| Low | Codex | X4：TaggedLogging を使わない理由（行が JSON で始まらない）が事実と違う | タグがメッセージに混ざるので、文脈を `context` の項目に入れる、と直した（`logging.rb`・`config.md`） | `081e7de`・`8ff75d5` |
+| Medium | Claude | C1：`ActionMailer::LogSubscriber` が送信の失敗を例外のメッセージ込みで書く | 購読を外し、構成の spec の一覧と `config.md` の表と OI-28 に足した | `081e7de`・`8ff75d5` |
+| Medium | Claude | C2：要求の側のエラー通知の文脈を確かめるテストが無い | スキーマの実行の中で例外を上げ、通知の文脈に `request_id`・相関 ID・テナント・ユーザーが入ることを確かめる example を足した | `081e7de` |
+| Low | Claude | C3：`/up` の要求の行が本番で毎回出る | 購読者が `Rails::HealthController` の要求の行を書かない | `081e7de` |
+| Low | Claude | C4：`config.md` の表に `active_job.enqueued_at` が無い | 足した | `8ff75d5` |
+| Low | Claude | C5：ADR 005 の「付帯情報のテナントはログの文脈にだけ」 | 「ログとエラー通知の文脈にだけ」に直した | `8ff75d5` |
 | Low | Claude | C6：証跡の数値が再現しない | 下の「実装の記録」の数を直し、流したコマンドを書いた | この commit |
-| Low | Claude | C7：ログの衛生の spec が、セッションの Cookie と失敗するログインを流していない | 失敗するログインを足し、ログインで受け取った Cookie の値を禁止の値に入れた | `27d355e` |
-| Low | Claude | C8：直接の `perform_now` で上がった例外は、呼び出し元が拾っても `handled: false` で通知される | OI-29 に書いた | `d541e5e` |
+| Low | Claude | C7：ログの衛生の spec が、セッションの Cookie と失敗するログインを流していない | 失敗するログインを足し、ログインで受け取った Cookie の値を禁止の値に入れた | `081e7de` |
+| Low | Claude | C8：直接の `perform_now` で上がった例外は、呼び出し元が拾っても `handled: false` で通知される | OI-29 に書いた | `8ff75d5` |
 
-Codex は直した後のブランチ（`04efb16`）を読み直し、判定は No Go のままだった。X1・X4・C1〜C8 は解消し、X2・X3 は一部が残った。残りの 3 点（Y1〜Y3）を同じブランチで直した。
+Codex は直した後のブランチ（`6d0b7df`）を読み直し、判定は No Go のままだった。X1・X4・C1〜C8 は解消し、X2・X3 は一部が残った。残りの 3 点（Y1〜Y3）を同じブランチで直した。
 
 | 重さ | 指摘 | 対応 | commit |
 |---|---|---|---|
-| Medium | Y1（X3 の残り）：環境変数の検証は、`config.log_level = :debug` の直接の指定で迂回できる | 環境変数を検証せず、`production.rb` の `config.after_initialize` で初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。子のプロセスで、`RAILS_LOG_LEVEL=debug` と、`production.rb` の後に `config.log_level = :debug` を指定した場合の両方が起動しないことを確かめる | `5118a37`・`b2fb616` |
-| Medium | Y2（X2 の残り）：既存の項目を空の値にして書き換えるので、実行の後に `job: nil` やジョブが足した項目が残る。spec の `compact` が差を隠していた | エラー通知の文脈の置き場を、項目の集合ごと置き換える。`ActiveSupport::ExecutionContext.clear` は `Current` の値と入れ子のスタックも捨てるので使わない（Rails 8.1.4 の `execution_context.rb`）。置き換えた後に引数なしの `set` で変更の通知を出す。spec は `compact` をやめて `to_h` をそのまま比べ、本体でジョブが足した項目が実行の後に残らないことも確かめる | `5118a37`・`b2fb616` |
-| Low | Y3：同じスレッドで 2 つのジョブの Fiber を交互に動かすと、エラー通知の文脈が混ざる | 直さない。Rails の既定の分離の単位はスレッドで、Solid Queue はジョブをスレッドで動かすので、いまは起きない。前提を OI-35 に `judgment` で登録し、分離の単位が `:thread` であることを確かめる example を足した | `5118a37`・`b2fb616` |
+| Medium | Y1（X3 の残り）：環境変数の検証は、`config.log_level = :debug` の直接の指定で迂回できる | 環境変数を検証せず、`production.rb` の `config.after_initialize` で初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。子のプロセスで、`RAILS_LOG_LEVEL=debug` と、`production.rb` の後に `config.log_level = :debug` を指定した場合の両方が起動しないことを確かめる | `1a5fba2`・`9b1ec65` |
+| Medium | Y2（X2 の残り）：既存の項目を空の値にして書き換えるので、実行の後に `job: nil` やジョブが足した項目が残る。spec の `compact` が差を隠していた | エラー通知の文脈の置き場を、項目の集合ごと置き換える。`ActiveSupport::ExecutionContext.clear` は `Current` の値と入れ子のスタックも捨てるので使わない（Rails 8.1.4 の `execution_context.rb`）。置き換えた後に引数なしの `set` で変更の通知を出す。spec は `compact` をやめて `to_h` をそのまま比べ、本体でジョブが足した項目が実行の後に残らないことも確かめる | `1a5fba2`・`9b1ec65` |
+| Low | Y3：同じスレッドで 2 つのジョブの Fiber を交互に動かすと、エラー通知の文脈が混ざる | 直さない。Rails の既定の分離の単位はスレッドで、Solid Queue はジョブをスレッドで動かすので、いまは起きない。前提を OI-35 に `judgment` で登録し、分離の単位が `:thread` であることを確かめる example を足した | `1a5fba2`・`9b1ec65` |
 
 Y1〜Y3 のテストを先に書き、実装の前に流した。39 examples のうち 15 が落ちた（ジョブの文脈 13 件、本番の水準 2 件）。分離の単位のガードは、いまの設定を守るので通った。直した後に壊して、次のとおり落ちることを確かめた。
 
@@ -270,7 +270,7 @@ Y1〜Y3 のテストを先に書き、実装の前に流した。39 examples の
 
 直した後の全件は 1001 examples, 0 failures だった。
 
-Codex は `32874ed` を 3 回目に読み直し、判定は No Go のままだった。Y2 は解消し、Y1・Y3 は一部が残った。残りは次の 3 点で、取りまとめ役の判断でコードを直さずに台帳に登録し、Conditional Go として先へ進めた。計画の目的は、運用で選べる設定（環境変数・`config.log_level`）で本番に debug を選べないことで、それは満たしている。
+Codex は `68482ab` を 3 回目に読み直し、判定は No Go のままだった。Y2 は解消し、Y1・Y3 は一部が残った。残りは次の 3 点で、取りまとめ役の判断でコードを直さずに台帳に登録し、Conditional Go として先へ進めた。計画の目的は、運用で選べる設定（環境変数・`config.log_level`）で本番に debug を選べないことで、それは満たしている。
 
 | 重さ | 指摘 | 対応 |
 |---|---|---|
@@ -344,7 +344,7 @@ bundle exec rspec spec/jobs/log_context_spec.rb spec/platform/logging_spec.rb sp
 | `perform_now` が、実行の前の文脈に戻さない | ジョブの文脈の spec の 10 件のうち 8 件 |
 | `perform_now` が、呼び出し元の文脈を消さずに足す | ジョブの文脈の spec の 10 件のうち 9 件 |
 | `perform_now` が、上がる例外をエラー通知に送らない | `失敗では、終了のイベントに文脈が付き、エラー通知の文脈にテナント ID が入る`（2 つの経路）、`どちらも無ければ、例外が呼び出し元へ上がり、…` |
-| `serialize` が `app_metadata` を入れない | ジョブの文脈の spec の 10 件のうち 7 件と、相関 ID の spec の 2 件（`発注の要求から購買の受け手までの全ログ行が、…`・`相関 ID の無い文脈で発行したイベントは、…`）。相関 ID の無い文脈の example を足す前に壊したときは 1 件だったので、`27d355e` で壊し直して数えた |
+| `serialize` が `app_metadata` を入れない | ジョブの文脈の spec の 10 件のうち 7 件と、相関 ID の spec の 2 件（`発注の要求から購買の受け手までの全ログ行が、…`・`相関 ID の無い文脈で発行したイベントは、…`）。相関 ID の無い文脈の example を足す前に壊したときは 1 件だったので、`081e7de` で壊し直して数えた |
 | `Contracts.publish` が文脈の因果 ID を付帯情報に入れない | `発注の要求から購買の受け手までの全ログ行が、…受け手の因果 ID は届いたイベントの ID である` |
 | ジョブの因果 ID を、届いたイベントの ID ではなく付帯情報の因果 ID にする | 同じ 1 件 |
 | 相関 ID の無い文脈で、イベントの ID を相関 ID にしない | `相関 ID の無い文脈で発行したイベントは、そのイベントから一連の処理が始まり、自分の ID を相関 ID にする` |
@@ -400,10 +400,10 @@ PR #28。どちらの系統も Go で、指摘は Low だけだった。C4 の�
 | 重さ | 系統 | 指摘 | 対応 | commit |
 |---|---|---|---|---|
 | Low | Codex | X1：`data-model.md` の「所有ロールでも消せず、表を空にもできない」は、トリガーが有効な通常の DML に限る | トリガーが止めるのは所有ロールを含む通常の DML で、トリガーを外す・表を落とす DDL はマイグレーションのレビューで止める、と書き直した | この commit |
-| Low | Codex | X2：`purge_expired_audit_logs()` が `search_path` に依存し、同じ名前の一時表を消しうる | 新しいマイグレーションで、表を `public.audit_logs` と修飾し、`SET search_path = pg_catalog, pg_temp` を付けて作り直した。同じ名前の一時表があっても監査ログの表を消す example を足し、修飾と固定を外した関数で落ちることを確かめた。`data-model.md` に書いた | `6bb6396`・この commit |
-| Low | Codex | X3：相関 ID が無いときの失敗（OI-42）を直接確かめていない | 相関 ID の文脈を消して `placePurchaseOrder` をスキーマに流し、`correlation_id` の NOT NULL の違反で、業務の行・監査の行・イベントのジョブが残らないことを確かめる example を足した。テスト DB で NOT NULL を外すと落ちることを確かめた。OI-42 の「空」を「NULL」に直した | `6bb6396`・この commit |
+| Low | Codex | X2：`purge_expired_audit_logs()` が `search_path` に依存し、同じ名前の一時表を消しうる | 新しいマイグレーションで、表を `public.audit_logs` と修飾し、`SET search_path = pg_catalog, pg_temp` を付けて作り直した。同じ名前の一時表があっても監査ログの表を消す example を足し、修飾と固定を外した関数で落ちることを確かめた。`data-model.md` に書いた | `de9d435`・この commit |
+| Low | Codex | X3：相関 ID が無いときの失敗（OI-42）を直接確かめていない | 相関 ID の文脈を消して `placePurchaseOrder` をスキーマに流し、`correlation_id` の NOT NULL の違反で、業務の行・監査の行・イベントのジョブが残らないことを確かめる example を足した。テスト DB で NOT NULL を外すと落ちることを確かめた。OI-42 の「空」を「NULL」に直した | `de9d435`・この commit |
 | Low | Claude | C1：X1 と同じ | X1 と同じ | この commit |
-| Low | Claude | C2：`delete_owned_rows` がテナントを消さなくなり、消す表を書き漏らすと行が黙って残る | 消した後に、`owner_tenant_id` を持つ表のうち残す表の外に、そのテナントの行が残れば失敗する。補助の spec に example を足し、`stock_allocation_spec.rb` から `stocks` を外すと 2 件とも落ちることを確かめた。`testing.md` に書いた | `6bb6396`・この commit |
+| Low | Claude | C2：`delete_owned_rows` がテナントを消さなくなり、消す表を書き漏らすと行が黙って残る | 消した後に、`owner_tenant_id` を持つ表のうち残す表の外に、そのテナントの行が残れば失敗する。補助の spec に example を足し、`stock_allocation_spec.rb` から `stocks` を外すと 2 件とも落ちることを確かめた。`testing.md` に書いた | `de9d435`・この commit |
 | Low | Claude | C3：受信の行の一意キーに受け手が入らず、同じテナントに受け手が 2 つあると 1 行になる | 受信の行はイベントと受け手のテナントごとに 1 行、と `graphql-schema.md`「監査ログ」に書いた。いまの配送表では、同じテナントに受け手が 2 つあるイベントは無い | この commit |
 | Low | Claude | C4：アプリのロールは過去の `occurred_at` で INSERT でき、その行はすぐ消せる | 直さず、OI-45 に `judgment` として登録した | この commit |
 
@@ -467,3 +467,149 @@ PR #28。どちらの系統も Go で、指摘は Low だけだった。C4 の�
 | OI-18 | `actor_user_id` を外部キーを張らない参照で作り、`data-model.md` の記述をそろえて閉じた |
 
 決めたことは OI-37〜OI-44 に `judgment` として登録した。実装レビューの C4 は OI-45 に登録した。
+
+## M20 GraphQL スキーマの破壊的変更の検出
+
+PR #29。1 つ目の PR（`schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat`）で、CI のステップは、1 つ目が main に入った後の 2 つ目の PR で足す（`implementation-plan.md` M20「初回の導入」）。どちらの系統も Conditional Go で、指摘はすべて同じブランチの commit で直した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Conditional Go |
+| Claude | Conditional Go |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：互換の判定に未検証の分岐がある。非推奨でない引数・入力項目の削除、型の削除で引数・入力項目・インターフェースの参照を数えること、入力の型の安全な変更、引数・入力項目の破壊的な型の変更、入力の null 可化 | 基準の SDL に引数・入力項目・インターフェースの参照を足し、9 つの fixture と example を足した。分岐ごとに壊して落ちることを確かめた（下の表） | `ded1244` |
+| Medium | Codex | X2：確定後の再登録で「受注確定」を出し直さないことを、移した先の単体で確かめていない | `part_mappings_spec.rb` の差し替えの example でイベントを捕まえ、再登録の後も「受注確定」が 1 件だけであることを確かめた。照合前の明細と未確定の受注の絞り込みを外すと落ちる | `ded1244` |
+| Low | Codex | X3：全件の件数が証跡（1100）と `handoff.md`（1103）で食い違う | 直した後の全件を流し直し、証跡と `handoff.md` の件数を、流したコマンドと対象の commit を添えてそろえた | この commit |
+| Low | Codex | X4：`lib/schema_compat.rb` に、コードの言い直しのコメントがある | `Allowance` と `report` のコメントを削った | `ded1244` |
+| High | Claude | C1：発注できない相手への応答が、message まで同じであることをどの spec も確かめていない | `ordering_spec.rb` で、全種類の失敗を `deconstruct`（message を含む）で比べる。自分自身のときだけ message を変える壊し方で落ちる | `ded1244` |
+| Medium | Claude | C2：非 null の引数・入力項目から既定値を外す変更が、危険な変更として通る | 規則 3 に足し、変更後に既定値の無い非 null の引数・入力項目なら落とす。既定値を別の値に変えるだけなら通す。fixture と `graphql-schema.md` の表を直した | `ded1244`・この commit |
+| Medium | Claude | C3：非推奨のフィールドと、その引数だけが使う入力型を同じ PR で消すと、型の削除が落ちる | 非推奨のフィールドの引数を参照に数えない。fixture と `graphql-schema.md` の表と OI-46 をそろえた | `ded1244`・この commit |
+| Medium | Claude | C4：台帳の OI-22 と証跡が、載せ直す前の commit を指している | 載せ直しの前と後の対応表で、台帳と証跡の古い SHA をすべて置き換えた（下の「SHA の置き換え」） | この commit |
+| Low | Claude | C5：証跡の層の表が載せ直す前の件数 | X3 と同じ | この commit |
+| Low | Claude | C6：`guides/bin.md` に `bin/check-schema-compat` が無い | 「コミットの前に流す検査」の表に足し、CI ではまだ流していないことを書いた | この commit |
+| Low | Claude | C7：`extra_types` を外した後も、2 つの spec が `+ schema.extra_types` と説明のコメントを残している | 両方を削った | `ded1244` |
+| Low | Claude | C8：基準の ref の先端と比べるので、載せ直していないブランチでは、基準に後から入ったフィールドが削除に見える | 基準の ref と HEAD の分岐点（`git merge-base`）の `schema.graphql` と比べる。手元のブランチと PR のマージ commit の両方の example を足した。`graphql-schema.md` に書いた | `ded1244`・この commit |
+| Low | Claude | C9：`@oneOf` の追加や `repeatable` を外す変更を比較器が出さない。union のメンバーとインターフェースの実装は非推奨にできない | 比較器の限界として `graphql-schema.md`「互換の判定」に書いた | この commit |
+
+指摘を直した後に壊して、落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| C1：自分自身への発注だけ、失敗の message を変える | `存在しない・関係の無い・失効した・付与の無い・撤回した相手と自分自身が、…` |
+| X2：照合し直しで、照合前の明細と未確定の受注の絞り込みを外す | `既にある対応の品目を差し替えても、確定した受注の明細は照合し直さず、「受注確定」を出し直さない` |
+| X1：非推奨でない引数・入力項目の削除を通す | `非推奨でない引数の削除を落とす`、`非推奨でない入力項目の削除を落とす`、型の削除の引数と入力項目の参照の 2 件 |
+| X1：型の削除の参照に引数を数えない | `型の削除は、基準でその型を受け取る非推奨でない引数があれば落とす` |
+| X1：型の削除の参照に入力項目を数えない | `型の削除は、基準でその型を受け取る非推奨でない入力項目があれば落とす` |
+| X1：型の削除の参照にインターフェースを数えない | `型の削除は、その型が実装するインターフェースを返す非推奨でないフィールドがあれば落とす（…）` |
+| X1：引数と入力項目の安全な型の変更も落とす | `引数と入力項目の型を非 null から null 可にする変更を通す` |
+| X1：引数と入力項目の破壊的な型の変更を通す | `引数の型の変更を落とす`、`入力項目の型の変更を落とす` |
+| C2：既定値を外す変更を規則 3 で見ない | `非 null の引数・入力項目から既定値を外して必須にする変更を落とす（…）` |
+| C3：非推奨のフィールドの引数も参照に数える | `型の削除は、非推奨のフィールドの引数だけが受け取る型なら、フィールドと一緒に消して通す` |
+| C8：分岐点ではなく基準の先端と比べる | `基準の先端ではなく分岐点と比べ、ブランチを切った後に基準へ入った追加を削除に数えない` |
+
+C8 の壊し方では、PR のマージ commit の example は落ちない。マージ commit では分岐点が基準の先端と同じ commit になり、どちらと比べても結果が同じだからで、この example は CI でも PR の変更だけが比べられることを確かめる。
+
+### SHA の置き換え
+
+取りまとめ役が M16・M17 の直しを取り込むために M17〜M20 のブランチを載せ直し、commit の SHA が変わった。載せ直しの前と後の対応表の 1 列目の SHA を、追跡しているファイルから `git grep` で探し、`open-items.md` と `cycle-01-task-reviews.md` の該当箇所を 2 列目の SHA に置き換えた。置き換えた後は、1 列目のどの SHA も `git grep` で見つからない。M19 を載せ直す前の SHA のような、対応表に無い古い SHA は、次の祖先の確かめで見つかる。
+
+台帳・証跡・引き継ぎ（`open-items.md`・`cycle-01-task-reviews.md`・`improvement-backlog.md`・`handoff.md`）に `` ` `` で囲んで書いた 7〜40 桁の 16 進をすべて集め、`git cat-file -e <sha>^{commit}` と `git merge-base --is-ancestor <sha> HEAD` で確かめた。27 個のすべてが HEAD の祖先の commit だった。
+
+### 実装の記録
+
+テストを先に書き、実装の前に流した。
+
+| 対象 | RED の落ち方 |
+|---|---|
+| `spec/graphql/schema_dump_spec.rb` | 1 件。`schema.graphql` が無い |
+| `spec/graphql/schema_compat_spec.rb` | `lib/schema_compat.rb` が無く、読み込みで失敗した。公開するメソッドが `NotImplementedError` を上げるだけの `lib/schema_compat.rb` を置いて流し直し、25 examples, 25 failures だった。`bin/check-schema-compat` の 3 件は、スクリプトが無い（`Errno::ENOENT`） |
+
+`spec/graphql/schema_compat_spec.rb` の実装を 1 か所ずつ壊して流し、落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| 比較器の重大度を削除の規則より先に見て、非破壊なら通す | `非推奨でない enum の値の削除を、出力にだけ使う enum でも落とす（比較器は非破壊に分類する）` |
+| 削除を、非推奨かどうかでなく比較器の重大度で決める | 上の 1 件と、非推奨の削除を通す 4 件、型の削除の 2 件、`どの変更にも当たらない行は警告に出すだけで、通る変更の結果を変えない`（8 件） |
+| 型の削除の参照に、union・インターフェースを返すフィールドを数えない | `型の削除は、その型を含む union を返す非推奨でないフィールドがあれば落とす` |
+| 型の削除の参照で、フィールドの非推奨を見ない | `型の削除は、基準でその型を返すフィールドがすべて非推奨なら通す`、`型の削除は、基準でその型を返す非推奨でないフィールドが 1 つでもあれば落とす` |
+| 非推奨のフィールドの型の変更を通す | `非推奨のフィールドでも、型の変更を落とす` |
+| 必須の引数・入力項目の追加を通す | `必須の引数の追加を落とす`、`必須の入力項目の追加を落とす` |
+| 例外の行を座標だけで照らす | `クラス名か座標の違う行は、その変更を通さず、どの変更にも当たらない行として警告に出す` |
+| 例外の行をクラス名だけで照らす | 同じ 1 件 |
+| `reason` が空の行も読む | `reason が空の行があれば、読み込みで失敗する` |
+| どの変更にも当たらない行を警告に出さない | `クラス名か座標の違う行は、…`、`どの変更にも当たらない行は警告に出すだけで、…` |
+| `bin/check-schema-compat` が、基準に `schema.graphql` が無いときに成功で終える | `基準に schema.graphql が無いときは失敗する` |
+| `bin/check-schema-compat` が、落とす変更があっても成功で終える | `落とす変更があれば失敗し、結果を標準出力と GITHUB_STEP_SUMMARY に書く` |
+| `Types::TenantType` の `name` を null 可にし、`schema.graphql` を書き直さない | `FactoryOpsSchema の書き出しと一致する（bin/rails graphql:schema:idl で書き直す）` |
+
+完了条件の 1・2 行目を流した。
+
+```sh
+bin/rails graphql:schema:idl && git diff --exit-code schema.graphql      # 差分なし、終了コード 0
+bundle exec rspec spec/graphql/schema_dump_spec.rb spec/graphql/schema_compat_spec.rb   # 39 examples, 0 failures（指摘を直した後の ded1244）
+```
+
+指摘を直した後（`ded1244`）に、`bin/check-schema-compat` を手で流した。
+
+- `bin/check-schema-compat`：`origin/main` との分岐点（`237337c`）に `schema.graphql` がまだ無いので、「…に schema.graphql が無いので比べられない」を出して終了コード 1 で終わった。
+- `BASE_REF=HEAD bin/check-schema-compat`：分岐点が `ded1244` で、「スキーマに変更は無い」を出して終了コード 0 で終わった。
+- 同じ基準で、作業中の `schema.graphql` から `Tenant.name` を消すと、`FieldRemoved` の `Tenant.name` を「落とす」とし、終了コード 1 で終わった。`schema.graphql` は複製から戻した。
+
+graphql-ruby 2.6 の `to_definition` は、`extra_types` の型をフィールドから届く型とは別にもう一度書き出し、`Tenant`・`UserError`・`PageInfo`・`BigInt` が 2 回ずつ並んだ。`extra_types` を外し、書き出しの型の集合が外す前と同じことを確かめた（OI-47）。
+
+### OI-22：単体の spec の無い分岐を単体へ移す
+
+4 つの公開 API の分岐を単体の spec に書き足し、同じ分岐を確かめていた request spec の example を 11 件削った。6 件は、ユーザーエラーへの写しか、イベントの配送のつながりだけを確かめる形に絞った（OI-49）。`testing.md`「層への配分」で request spec に残す規則（認証・セッション・認可の配線・トランザクションの単位）に当たるものは、削った example に無い。
+
+| 公開 API | 単体の spec | 削った request spec の example |
+|---|---|---|
+| `Purchasing::Ordering.place` | `packs/purchasing/spec/public/purchasing/ordering_spec.rb`（6 件） | 相手の種類ごとの `NOT_PERMITTED`、`place_orders` の撤回、明細の誤り、明細の数と品番の長さの上限、伝票番号（`purchase_orders_spec.rb`） |
+| `Sales::PurchaseOrderTranslator` | `packs/sales/spec/public/sales/purchase_order_translator_spec.rb`（6 件） | ジョブの 2 回の実行、内部の ID を運ばない 2 件（`purchase_orders_spec.rb`）。照合待ちの example は、受注側の照合の検査を外して残した |
+| `Sales::PartMappings.register` | `packs/sales/spec/public/sales/part_mappings_spec.rb`（5 件を足した） | 照合できない明細が残る受注、別の取引先の対応、失効した相手への登録（`part_mappings_spec.rb`） |
+| `Sales::Catalog.save` | `packs/sales/spec/public/sales/catalog_spec.rb`（3 件） | 公開の状態を変えない（`catalog_spec.rb`） |
+
+移した分岐は実装がすでにあるので、書いた時点で通った。代わりに、実装を 1 か所ずつ壊して、単体の spec が落ちることを確かめた。
+
+| 壊し方 | 落ちた単体の example |
+|---|---|
+| `Ordering.place` の取引関係の問い合わせを外す | `存在しない・関係の無い・失効した・付与の無い・撤回した相手と自分自身が、…`、`取引関係を失効させると、新しい発注は NOT_PERMITTED になる`（ほかに競合テスト 3 件と request spec 1 件） |
+| 明細の上限を 101 にする | `明細の数と品番の長さの上限を超えると INVALID_INPUT になり、上限ちょうどは通る` |
+| 品番の重複を見ない | `誤りのある最初の項目を INVALID_INPUT で指し、…` |
+| ACL が、照合できない明細があっても確定する | `照合できない明細があれば、受注は品番照合待ちで止まり、…`、`発注側へ返す PartMatchPending は、…`（ほかに request spec 3 件） |
+| ACL の「品番照合待ち」に受注 ID を載せる | `発注側へ返す PartMatchPending は、…`（ほかに request spec 3 件） |
+| ACL の冪等キーの確かめと、一意の違反の救済を両方外す | `同じ「発注登録」が 2 回届いても、受注は 1 件で、…`（ほかに request spec 1 件） |
+| 照合し直しで、照合できない明細が残っても確定する | `照合できない明細が残る受注は確定せず、…` |
+| 照合し直しで、取引先を絞らない | `別の取引先の同じ品番の受注は、照合し直さない` |
+| 照合し直しで、照合前の明細・未確定の受注の 3 つの絞り込みを外す | `既にある対応の品目を差し替えても、確定した受注の明細は照合し直さない` |
+| 品目の保存で、公開の状態を非公開に戻す | `公開した品目を保存しても、公開の状態を変えない` |
+| 品目の保存で、コードで引かずに毎回作る | `新しいコードなら非公開で作り、…`、`公開した品目を保存しても、…` |
+
+ACL の冪等キーの確かめ（`exists?`）だけを外したときと、照合し直しの未確定の受注の絞り込みだけを外したときは、どの example も落ちなかった。前者は受注の一意索引と `RecordNotUnique` の救済が、後者は照合前の明細の絞り込みが、同じ受注を止める。どちらも振る舞いが変わらないので、壊し方を組み合わせて落ちることを確かめた。
+
+### 層ごとの表
+
+指摘を直した後の `ded1244` で流した全件（1116 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した。
+
+```sh
+bundle exec rspec --format progress --format json --out tmp/rspec.json
+bin/test-layers tmp/rspec.json
+```
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 121 | 43.4% | 1.75s | 60% 以上 |
+| 結合 | 118 | 42.3% | 4.08s | 30% 以下 |
+| シナリオ | 40 | 14.3% | 7.71s | 10% 以下 |
+| ガード | 837 | — | 230.88s | 数えない |
+
+M19 の全件（単体 101・37.4%、結合 129・47.8%、シナリオ 40・14.8%）と比べ、OI-22 で単体が 20 件増え、結合が 11 件減った。単体の割合は 6.0 ポイント上がったが、目安の 60% には届かない。OI-24 の数え方では、目安を外れたマイルストーンを OI-22 を片付けた後から数えるので、この M20 が 1 つ目になる。
+
+### 残件の処理
+
+| ID | 処理 |
+|---|---|
+| OI-22 | 4 つの公開 API の分岐を単体へ移し、同じ分岐の request spec を削って閉じた |
+
+決めたことは OI-46〜OI-49 に `judgment` として登録した。

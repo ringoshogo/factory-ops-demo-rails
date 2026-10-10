@@ -135,26 +135,20 @@ RSpec.describe "カタログの GraphQL", type: :request do
     end
   end
 
+  # 同じコードの更新・公開の状態・入力の誤りの分岐は Sales::Catalog の spec が確かめる
   describe "saveItem" do
     before { login_as(supplier_member) }
 
-    it "新しいコードなら非公開で作り、同じコードなら更新する" do
+    it "新しいコードなら非公開で作る" do
       created = mutate("saveItem", code: "N-1", name: "新品目", unit: "個", unitPrice: 300)
-      expect(created).to match("item" => include("code" => "N-1", "taxRatePercent" => 10, "published" => false), "errors" => [])
 
-      updated = mutate("saveItem", code: "N-1", name: "改名", unit: "個", unitPrice: 350, taxRatePercent: 8)
-      expect(updated["item"]).to include("id" => created.dig("item", "id"), "name" => "改名", "unitPrice" => "350", "taxRatePercent" => 8)
+      expect(created).to match("item" => include("code" => "N-1", "unitPrice" => "300", "taxRatePercent" => 10, "published" => false),
+        "errors" => [])
     end
 
-    it "公開の状態を変えない" do
-      expect(mutate("saveItem", code: "B-1", name: "改名", unit: "個", unitPrice: 1)["item"]).to include("published" => true)
-    end
-
-    it "入力の誤りを、項目付きの INVALID_INPUT で返す" do
+    it "入力の誤りを、項目を指す INVALID_INPUT のユーザーエラーで返す" do
       expect(mutate("saveItem", code: "N-1", name: "x", unit: "個", unitPrice: 1, taxRatePercent: 5)["errors"])
         .to match([ include("code" => "INVALID_INPUT", "path" => [ "taxRatePercent" ]) ])
-      expect(mutate("saveItem", code: "", name: "x", unit: "個", unitPrice: 1)["errors"])
-        .to match([ include("code" => "INVALID_INPUT", "path" => [ "code" ]) ])
     end
   end
 end

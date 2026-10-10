@@ -13,8 +13,7 @@ RSpec.describe "視点ごとの型の到達可能性" do
   let(:root_entries) { { "viewer" => "Viewer", "buyer" => "BuyerView", "supplier" => "SupplierView" } }
 
   let(:schema) { FactoryOpsSchema }
-  # extra_types は schema.types に現れないので足す
-  let(:object_types) { (schema.types.values + schema.extra_types).uniq.select { |type| type.kind.object? && !type.introspection? } }
+  let(:object_types) { schema.types.values.select { |type| type.kind.object? && !type.introspection? } }
 
   def field_types(type)
     type.fields.values.map { |field| field.type.unwrap }
