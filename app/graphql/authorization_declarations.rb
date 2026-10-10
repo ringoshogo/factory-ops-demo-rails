@@ -30,9 +30,7 @@ module AuthorizationDeclarations
 
     # 宣言が無ければ、開発とテストでは例外で落とし、本番では拒否してエラー通知に送る
     def check_declarations!
-      missing = []
-      missing << "perspective" unless perspective
-      missing << "authorization" unless authorization_declared?
+      missing = missing_declarations
       return if missing.empty?
 
       error = MissingDeclaration.new("#{graphql_name} lacks #{missing.join(' and ')} declaration")
@@ -40,6 +38,11 @@ module AuthorizationDeclarations
 
       Rails.error.report(error)
       raise ForbiddenError
+    end
+
+    # 欠けている宣言の名前。宣言を足す基底クラスは、これを広げる
+    def missing_declarations
+      [ ("perspective" unless perspective), ("authorization" unless authorization_declared?) ].compact
     end
   end
 

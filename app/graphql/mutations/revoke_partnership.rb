@@ -3,6 +3,7 @@ module Mutations
   class RevokePartnership < BaseMutation
     perspective :supplier
     authorize_with Partnerships::PartnershipPolicy, :manage?
+    audit "partnership.revoke", target: ->(target:, **) { target }, counterparty: ->(target:, **) { target.buyer.id }
 
     argument :partnership_id, ID
     result_field :partnership, Types::PartnershipType

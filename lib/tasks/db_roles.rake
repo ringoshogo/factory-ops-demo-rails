@@ -24,6 +24,8 @@ namespace :db do
         connection.execute("REVOKE INSERT, UPDATE, DELETE ON schema_migrations, ar_internal_metadata FROM #{role}")
         # tenants は RLS を付けない表なので、書き換えを許すと他社の名前や取引用コードを変えられる
         connection.execute("REVOKE UPDATE, DELETE ON tenants FROM #{role}")
+        # 監査ログは追記だけにする。所有ロールの書き換えと削除は、表のトリガーが止める
+        connection.execute("REVOKE UPDATE, DELETE ON audit_logs FROM #{role}") if connection.data_source_exists?("audit_logs")
       end
     rescue ActiveRecord::NoDatabaseError
       next

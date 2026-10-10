@@ -177,6 +177,7 @@ RSpec.describe "GraphQL の基底クラス" do
         mutation(type, "SaveItem") do
           perspective :supplier
           authorize_with SpecPolicy, :read?
+          audit_exempt reason: "spec"
 
           define_method(:perform) do |id:, quantity: nil|
             next OperationResult.failure(:invalid_input, path: [ :lines, 0, :unit_price ]) if quantity.to_i.negative?
@@ -210,6 +211,7 @@ RSpec.describe "GraphQL の基底クラス" do
         mutation(type, "UpdateItem") do
           perspective :supplier
           authorize_with SpecPolicy, :update?
+          audit_exempt reason: "spec"
 
           define_method(:find_target) do |id:, **|
             { "visible" => { name: "visible", visible: true }, "other" => { name: "other", visible: false } }[id]

@@ -10,7 +10,7 @@ RSpec.describe "入口の行列", type: :request do
   ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
 
   # 型ごとの、応答の data からフィールドの親までの道。型の中の読む経路は、経路 2 の取引関係の一覧か発注の一覧の要素を親にする
-  def parent_paths = { "BuyerView" => %w[buyer], "SupplierView" => %w[supplier], "Query" => [], "Mutation" => [],
+  def parent_paths = { "BuyerView" => %w[buyer], "SupplierView" => %w[supplier], "Viewer" => %w[viewer], "Query" => [], "Mutation" => [],
     "SupplierPartnership" => %w[buyer suppliers], "PurchaseOrder" => %w[buyer purchaseOrders nodes] }
 
   # 相手テナントのデータを返す型。コネクションは中身の型で判定する
@@ -19,18 +19,19 @@ RSpec.describe "入口の行列", type: :request do
     type.try(:cross_tenant_read).present?
   end
 
-  # 視点の入口と Mutation のフィールド、入口の下で相手側の型を返すフィールド（読む経路）。
+  # 視点の入口と Mutation のフィールド、Viewer の下のリゾルバ、入口の下で相手側の型を返すフィールド（読む経路）。
   # 視点の入口そのもの（Query.buyer・Query.supplier）は、データを持たないので除く
   def schema_entries
     root_fields = ROOTS.filter_map { |name| FactoryOpsSchema.get_type(name) }.flat_map do |type|
       type.fields.values.reject { |field| field.type.unwrap.graphql_name.in?(%w[BuyerView SupplierView]) }
     end
+    viewer_fields = FactoryOpsSchema.get_type("Viewer").fields.values.select(&:resolver)
     nested_fields = FactoryOpsSchema.types.values
       .select { |type| type.kind.object? && type < Types::BaseObject && !type.graphql_name.in?(ROOTS) }
       .reject { |type| type < Types::BaseConnection || type < Types::BaseEdge }
       .flat_map { |type| type.fields.values.select { |field| cross_tenant?(field.type.unwrap) } }
 
-    (root_fields + nested_fields).map(&:path)
+    (root_fields + viewer_fields + nested_fields).map(&:path)
   end
 
   # 道の途中の一覧は要素ごとにたどり、たどり着いた値をすべて集める

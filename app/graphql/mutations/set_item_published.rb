@@ -3,6 +3,7 @@ module Mutations
   class SetItemPublished < BaseMutation
     perspective :supplier
     authorize_with Sales::ItemPolicy, :manage?
+    audit "item.set_published", target: ->(target:, **) { target }, counterparty: nil
 
     argument :item_id, ID
     argument :published, Boolean

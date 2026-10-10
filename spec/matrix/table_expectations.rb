@@ -3,6 +3,9 @@
 module MatrixExpectations
   OWNER_ONLY = {}.freeze
 
+  # アプリのロールに UPDATE・DELETE の権限が無い表。相手の行にも自社の行にも、書き換えは権限で拒まれる
+  APPEND_ONLY = %w[audit_logs].freeze
+
   # 表 => { 読むペルソナ => { 所有者のペルソナ => 見える件数 } }。自社の行は常に読めるので書かない。
   # 所有者以外に見せるのは読む 3 経路の表だけ（docs/architecture/context-map.md「テナントと所有」）
   TABLES = {
@@ -49,6 +52,8 @@ module MatrixExpectations
     },
     # 入荷は発注側だけが所有する「出荷計上」の写しで、受注側から読む経路は無い
     "inbound_shipments" => OWNER_ONLY,
-    "inbound_shipment_lines" => OWNER_ONLY
+    "inbound_shipment_lines" => OWNER_ONLY,
+    # 監査ログは書いたテナントだけが読む。相手テナントへの写しは作らない
+    "audit_logs" => OWNER_ONLY
   }.freeze
 end

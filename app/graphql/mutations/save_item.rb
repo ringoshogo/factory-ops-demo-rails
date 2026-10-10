@@ -3,6 +3,7 @@ module Mutations
   class SaveItem < BaseMutation
     perspective :supplier
     authorize_with Sales::ItemPolicy, :save?
+    audit "item.save", target: ->(result:, **) { result }, counterparty: nil
 
     argument :code, String
     argument :name, String

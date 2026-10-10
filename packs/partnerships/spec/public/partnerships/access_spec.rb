@@ -62,6 +62,14 @@ RSpec.describe "Partnerships::Access と Directory" do
   end
 
   describe "Directory" do
+    it "user_names は自社のユーザーの名前だけを返す" do
+      own = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, name: "受注の担当") }
+      other = Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user) }
+
+      names = Tenancy.with_tenant(supplier.id) { Partnerships::Directory.user_names(supplier_actor, [ own.id, other.id ]) }
+      expect(names).to eq(own.id => "受注の担当")
+    end
+
     # 一覧のテストの規則で、関係を 2 件作る（docs/architecture/graphql-schema.md「ページングと N+1」）
     it "for_buyer は有効な関係だけを、相手と付与ごとに返し、失効すると返さない" do
       record = partnership(permissions: %w[view_shipments view_catalog])

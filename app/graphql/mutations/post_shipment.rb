@@ -4,6 +4,9 @@ module Mutations
   class PostShipment < BaseMutation
     perspective :supplier
     authorize_with Fulfillment::ShipmentRequestPolicy, :ship?
+    # 成功の値は出荷依頼なので、計上した出荷実績を引き直す
+    audit "shipment.post", target: ->(result:, **) { Fulfillment::ShipmentRequests.shipments_for(current_user, [ result.id ]).fetch(result.id) },
+      counterparty: ->(result:, **) { result.buyer_tenant_id }
 
     argument :shipment_request_id, ID
     argument :shipped_on, GraphQL::Types::ISO8601Date

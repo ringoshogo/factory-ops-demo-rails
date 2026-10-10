@@ -2,6 +2,7 @@ module Mutations
   class GrantPermission < BaseMutation
     perspective :supplier
     authorize_with Partnerships::PartnershipPolicy, :manage?
+    audit "partnership.grant_permission", target: ->(target:, **) { target }, counterparty: ->(target:, **) { target.buyer.id }
 
     argument :partnership_id, ID
     argument :permission, Types::PartnershipPermissionType

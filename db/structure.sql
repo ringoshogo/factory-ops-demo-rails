@@ -11,6 +11,26 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: audit_logs_append_only(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.audit_logs_append_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'UPDATE' THEN
+    RAISE EXCEPTION 'audit_logs は書き換えられない';
+  ELSIF TG_OP = 'TRUNCATE' THEN
+    RAISE EXCEPTION 'audit_logs は TRUNCATE できない';
+  ELSIF OLD.occurred_at >= now() - interval '7 years' THEN
+    RAISE EXCEPTION '保存期間の中の audit_logs の行は消せない';
+  END IF;
+  RETURN OLD;
+END
+$$;
+
+
+--
 -- Name: bump_session_version(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -50,6 +70,18 @@ CREATE FUNCTION public.partnership_active(supplier uuid, buyer uuid) RETURNS boo
     LANGUAGE sql STABLE
     AS $$ SELECT EXISTS (SELECT 1 FROM partnerships p
                   WHERE p.owner_tenant_id = supplier AND p.buyer_tenant_id = buyer AND p.status = 'active') $$;
+
+
+--
+-- Name: purge_expired_audit_logs(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.purge_expired_audit_logs() RETURNS bigint
+    LANGUAGE sql
+    AS $$
+  WITH deleted AS (DELETE FROM audit_logs WHERE occurred_at < now() - interval '7 years' RETURNING 1)
+  SELECT count(*) FROM deleted
+$$;
 
 
 SET default_tablespace = '';
@@ -100,6 +132,38 @@ CREATE TABLE public.ar_internal_metadata (
 --
 
 COMMENT ON TABLE public.ar_internal_metadata IS '[基盤] DB の環境名などの記録。Rails が管理する';
+
+
+--
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_logs (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    occurred_at timestamp(6) without time zone DEFAULT now() NOT NULL,
+    actor_type character varying NOT NULL,
+    actor_user_id uuid,
+    action character varying NOT NULL,
+    target_type character varying NOT NULL,
+    target_id uuid NOT NULL,
+    counterparty_tenant_id uuid,
+    request_id character varying,
+    correlation_id character varying NOT NULL,
+    causation_id uuid,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    CONSTRAINT audit_logs_actor_type_check CHECK (((actor_type)::text = ANY (ARRAY['user'::text, 'system'::text]))),
+    CONSTRAINT audit_logs_actor_user_check CHECK ((((actor_type)::text = 'user'::text) = (actor_user_id IS NOT NULL)))
+);
+
+ALTER TABLE ONLY public.audit_logs FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE audit_logs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.audit_logs IS '[基盤] 監査ログ。相手テナントに効果が及ぶ書き込みを 1 行ずつ追記し、書き換えない';
 
 
 --
@@ -1310,6 +1374,14 @@ ALTER TABLE ONLY public.ar_internal_metadata
 
 
 --
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: customer_part_mappings customer_part_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1671,6 +1743,27 @@ CREATE INDEX index_allocations_on_owner_tenant_id_and_item_id ON public.allocati
 --
 
 CREATE UNIQUE INDEX index_allocations_on_sales_order_line_id ON public.allocations USING btree (sales_order_line_id);
+
+
+--
+-- Name: index_audit_logs_on_event_receipt; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_audit_logs_on_event_receipt ON public.audit_logs USING btree (owner_tenant_id, causation_id, action) WHERE ((action)::text = 'event.received'::text);
+
+
+--
+-- Name: index_audit_logs_on_owner_tenant_id_and_correlation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_logs_on_owner_tenant_id_and_correlation_id ON public.audit_logs USING btree (owner_tenant_id, correlation_id);
+
+
+--
+-- Name: index_audit_logs_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_audit_logs_on_owner_tenant_id_and_id ON public.audit_logs USING btree (owner_tenant_id, id);
 
 
 --
@@ -2262,6 +2355,20 @@ CREATE UNIQUE INDEX index_users_on_owner_tenant_id_and_id ON public.users USING 
 
 
 --
+-- Name: audit_logs audit_logs_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER audit_logs_append_only BEFORE DELETE OR UPDATE ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION public.audit_logs_append_only();
+
+
+--
+-- Name: audit_logs audit_logs_no_truncate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON public.audit_logs FOR EACH STATEMENT EXECUTE FUNCTION public.audit_logs_append_only();
+
+
+--
 -- Name: users users_bump_session_version; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -2362,6 +2469,14 @@ ALTER TABLE ONLY public.inbound_shipment_lines
 
 ALTER TABLE ONLY public.solid_queue_recurring_executions
     ADD CONSTRAINT fk_rails_318a5533ed FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audit_logs fk_rails_32a1dd949f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT fk_rails_32a1dd949f FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -2643,6 +2758,12 @@ ALTER TABLE ONLY public.shipments
 ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: audit_logs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: customer_part_mappings; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2671,6 +2792,13 @@ ALTER TABLE public.items ENABLE ROW LEVEL SECURITY;
 --
 
 CREATE POLICY owner_write ON public.allocations USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: audit_logs owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.audit_logs USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -2955,6 +3083,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261010000000'),
 ('20261009000000'),
 ('20261008000900'),
 ('20261008000800'),
