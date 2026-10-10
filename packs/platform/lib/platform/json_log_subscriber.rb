@@ -27,6 +27,16 @@ module Platform
       "contracts.event_handled" => %i[event_name receiver delivery_lag_ms]
     }.freeze
 
+    # GraphQL の名前の形。操作名と変数の名前は利用者が送る値なので、この形の文字列でなければ、中の値ごと書かない
+    GRAPHQL_NAME = /\A[_A-Za-z][_0-9A-Za-z]*\z/
+
+    def self.graphql_name(value)
+      value if value.is_a?(String) && GRAPHQL_NAME.match?(value)
+    end
+
+    # silence_healthcheck_path は Rails.logger を黙らせるだけで、Rails.event のイベントは止めない
+    HEALTH_CHECK = "Rails::HealthController"
+
     def initialize(io)
       @io = io
     end
@@ -35,6 +45,7 @@ module Platform
       name, payload = event.values_at(:name, :payload)
       # Rails.event はハッシュのペイロードにだけ filter_parameters を掛ける。イベントのオブジェクトは素通しになる
       raise NonHashPayload, "Rails.event のペイロードはハッシュで渡す: #{name}" unless payload.nil? || payload.is_a?(Hash)
+      return if payload&.dig(:controller) == HEALTH_CHECK
 
       line = { name: }
       if (fields = FIELDS[name])
@@ -54,8 +65,9 @@ module Platform
 
       params = payload[:params] || {}
       query, variables = params.values_at("query", "variables")
-      { operation_name: params["operationName"], query_sha256: query.is_a?(String) ? Digest::SHA256.hexdigest(query) : nil,
-        variable_keys: variables.is_a?(Hash) ? variables.keys : [] }
+      { operation_name: self.class.graphql_name(params["operationName"]),
+        query_sha256: query.is_a?(String) ? Digest::SHA256.hexdigest(query) : nil,
+        variable_keys: variables.is_a?(Hash) ? variables.keys.filter_map { self.class.graphql_name(_1) } : [] }
     end
   end
 end

@@ -32,22 +32,24 @@ class ApplicationJob < ActiveJob::Base
   # 文脈を、Active Job の計装と例外の処理の外側で設定する。開始・終了・再試行・破棄のイベントは super の中で出る。
   # ここで引数を復元しない。復元は super の中の再試行・破棄の処理の内側で行われ、先に復元すると、
   # 復元の失敗が retry_on・discard_on・after_discard を通らない。
-  # executor の外（テストや直接の perform_now）では文脈が持ち越されるので、実行の前の文脈に戻す
+  # ログとエラー通知の文脈は、呼び出し元の文脈を引き継がずにジョブの文脈に置き換え、例外の経路も含めて実行の前の文脈に戻す。
+  # executor の外（テストや直接の perform_now）と入れ子のジョブでは、戻さないと文脈が持ち越される
   def perform_now
-    previous = Rails.event.context
+    previous_event_context = Rails.event.context
+    previous_error_context = ActiveSupport::ExecutionContext.to_h
     Rails.event.clear_context
     Rails.event.set_context(log_context)
-    Rails.error.set_context(**log_context.slice(:tenant_id, :correlation_id)) do
-      super
-    rescue Exception => error
-      # ワーカーの実行器は、この区間を抜けて文脈が戻った後に例外を通知する。テナントを付けるため、ここで通知する。
-      # 同じ例外の 2 回目の通知は、エラー通知が捨てる
-      Rails.error.report(error, handled: false, source: "application.active_job")
-      raise
-    end
+    replace_error_context(job: self, **log_context.slice(:tenant_id, :correlation_id))
+    super
+  rescue Exception => error
+    # ワーカーの実行器は、文脈を戻した後に例外を通知するので、ジョブの文脈の中で通知する。
+    # 同じ例外の 2 回目の通知は、エラー通知が捨てる
+    Rails.error.report(error, handled: false, source: "application.active_job")
+    raise
   ensure
     Rails.event.clear_context
-    Rails.event.set_context(previous)
+    Rails.event.set_context(previous_event_context)
+    replace_error_context(previous_error_context)
   end
 
   around_perform do |job, block|
@@ -61,6 +63,11 @@ class ApplicationJob < ActiveJob::Base
   end
 
   private
+
+  # Rails.error.set_context は渡した項目だけを書き換えるので、いまの項目を空にしてから設定する
+  def replace_error_context(context)
+    ActiveSupport::ExecutionContext.set(**ActiveSupport::ExecutionContext.to_h.transform_values { nil }, **context)
+  end
 
   # 付帯情報の無いジョブは、ジョブ自身の項目だけを設定する。イベントのジョブは、届いたイベントの ID を因果 ID にする
   def log_context

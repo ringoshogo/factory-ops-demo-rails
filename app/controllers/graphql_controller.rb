@@ -26,15 +26,17 @@ class GraphqlController < ApplicationController
     variables.respond_to?(:to_unsafe_h) ? variables.to_unsafe_h : {}
   end
 
+  # 操作名は利用者が送る値なので、GraphQL の名前の形の文字列でなければログに書かない
   def operation_name
-    params[:operationName].presence || "anonymous"
+    name = params[:operationName]
+    name.blank? ? "anonymous" : Platform::JsonLogSubscriber.graphql_name(name)
   end
 
   # スキーマを実行する前に設定する。Rails.event の文脈は Fiber のストレージにあり、Dataloader が作る Fiber は
   # 作られた時点の値を写して持つので、Fiber の中で設定した値は親に戻らない（docs/guides/config.md「ログ」）
   def set_log_context(actor)
     context = { tenant_id: actor.tenant_id, user_id: actor.user_id }
-    Rails.event.set_context(**context, graphql_operation: operation_name)
+    Rails.event.set_context({ **context, graphql_operation: operation_name }.compact)
     Rails.error.set_context(**context)
   end
 

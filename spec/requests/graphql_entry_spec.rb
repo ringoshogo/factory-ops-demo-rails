@@ -225,5 +225,41 @@ RSpec.describe "GraphQL の入口", type: :request do
       ])
       expect(events.map { _1[:duration_ms] }).to all(be_a(Float))
     end
+
+    it "操作名が GraphQL の名前の形の文字列でなければ、ログの文脈にも操作の終わりにも書かない" do
+      contexts = []
+      allow(FactoryOpsSchema).to receive(:execute).and_wrap_original do |original, *args, **kwargs|
+        contexts << Rails.event.context
+        original.call(*args, **kwargs)
+      end
+
+      post "/graphql", params: { query: "{ viewer { id } }", operationName: { "note" => "LEAK" } }, as: :json
+
+      expect(contexts.sole).not_to have_key(:graphql_operation)
+      expect(events.sole).to include(operation_name: nil)
+    end
+  end
+
+  # 要求の例外のエラー通知に、要求とテナントとユーザーの文脈が付く（docs/guides/config.md「ログ」）
+  describe "エラー通知の文脈" do
+    let(:reported) { [] }
+    let(:error_collector) do
+      reported = self.reported
+      Class.new { define_method(:report) { |_error, context:, **| reported << context } }.new
+    end
+
+    before { Rails.error.subscribe(error_collector) }
+    after { Rails.error.unsubscribe(error_collector) }
+
+    it "スキーマの実行の中で上がった例外の通知に、request_id・相関 ID・テナント・ユーザーが入る" do
+      login_as("a@example.com")
+      during_execution { raise "失敗" }
+
+      expect { execute_graphql }.to raise_error(RuntimeError, "失敗")
+
+      context = reported.sole
+      expect(context).to include(request_id: be_a(String), tenant_id: tenant_a, user_id: user_a)
+      expect(context[:correlation_id]).to eq(context[:request_id])
+    end
   end
 end

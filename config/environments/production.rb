@@ -34,8 +34,8 @@ Rails.application.configure do
   # 1 行 1 件の JSON を標準出力に書く。要求 ID はタグではなく文脈から入る（docs/guides/config.md「ログ」）
   Platform::Logging.configure!(config, STDOUT)
 
-  # Change to "debug" to log everything (including potentially personally-identifiable information!).
-  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
+  # info より細かい水準は起動の時点で拒む（docs/guides/config.md「ログ」）
+  config.log_level = Platform::Logging.production_level(ENV.fetch("RAILS_LOG_LEVEL", "info"))
 
   # Prevent health checks from clogging up the logs.
   config.silence_healthcheck_path = "/up"

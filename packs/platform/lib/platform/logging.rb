@@ -4,9 +4,17 @@ module Platform
   # ログの書式（docs/guides/config.md「ログ」）。本番とテストの環境のファイルが configure! を呼ぶ。
   # JSON の書式は文字列の中の秘密やクエリの本文を消さないので、値を文字列のまま Rails.logger に書くフレームワークの経路を止める
   module Logging
-    # TaggedLogging で包まない。タグを文字列としてメッセージの前に付けてから書式に渡すので、行が JSON で始まらない
+    # TaggedLogging で包まない。タグを文字列としてメッセージに混ぜてから書式に渡すので、要求 ID などは文脈から context に入れる
     def self.build(io)
       ActiveSupport::Logger.new(io).tap { _1.formatter = JsonLogFormatter.new }
+    end
+
+    # 本番で許す水準。debug は SQL のバインド値や、JSON の解析に失敗した要求の本文を文字列のまま書く
+    PRODUCTION_LEVELS = %i[info warn error fatal unknown].freeze
+
+    def self.production_level(level)
+      PRODUCTION_LEVELS.find { _1.to_s == level.to_s.downcase } or
+        raise ArgumentError, "RAILS_LOG_LEVEL は #{PRODUCTION_LEVELS.join("・")} のどれかにする（#{level} は書かない値を書く）"
     end
 
     def self.configure!(config, io)
@@ -25,10 +33,13 @@ module Platform
       require "action_controller/log_subscriber"
       require "action_dispatch/log_subscriber"
       require "active_job/log_subscriber"
+      require "action_mailer/log_subscriber"
       require "solid_queue/log_subscriber"
       ActionController::LogSubscriber.detach_from :action_controller
       ActionDispatch::LogSubscriber.detach_from :action_dispatch
       ActiveJob::LogSubscriber.detach_from :active_job
+      # メールの送信の失敗を、例外のメッセージ込みで書く
+      ActionMailer::LogSubscriber.detach_from :action_mailer
       # ワーカーのスレッドで上がったジョブの例外を、メッセージ込みで書く
       SolidQueue::LogSubscriber.detach_from :solid_queue
     end

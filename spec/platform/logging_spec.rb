@@ -1,4 +1,5 @@
 require "rails_helper"
+require "open3"
 
 # ログの出口と書式（docs/guides/config.md「ログ」）。テストの環境は、本番と同じ Platform::Logging.configure! を通る。
 # 1 行のログは 1 件の JSON で、イベントごとに決めた項目だけを書き、値を文字列のまま書くフレームワークの経路を通さない
@@ -14,7 +15,8 @@ RSpec.describe "ログの出口と書式" do
 
     it "params・ジョブの引数・例外のメッセージを文字列で書くフレームワークの購読を外している" do
       expect(ActiveSupport::LogSubscriber.log_subscribers.map(&:class)).not_to include(
-        ActionController::LogSubscriber, ActionDispatch::LogSubscriber, ActiveJob::LogSubscriber, SolidQueue::LogSubscriber
+        ActionController::LogSubscriber, ActionDispatch::LogSubscriber, ActiveJob::LogSubscriber, ActionMailer::LogSubscriber,
+        SolidQueue::LogSubscriber
       )
     end
 
@@ -36,6 +38,27 @@ RSpec.describe "ログの出口と書式" do
 
     it "ジョブの引数をログに書かない" do
       expect(ApplicationJob.log_arguments?).to be(false)
+    end
+
+    # SQL のバインド値や、JSON の解析に失敗した要求の本文は debug の水準で書かれる
+    describe "本番の水準" do
+      it "info より細かい水準を拒み、info 以上を許す" do
+        expect { Platform::Logging.production_level("debug") }.to raise_error(ArgumentError, /debug/)
+        expect(%w[info warn error fatal unknown].map { Platform::Logging.production_level(_1) })
+          .to eq(%i[info warn error fatal unknown])
+      end
+
+      it "本番の環境は、RAILS_LOG_LEVEL=debug を与えると起動しない" do
+        run = ->(level) do
+          Open3.capture2e({ "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x", "RAILS_LOG_LEVEL" => level },
+            "bin/rails", "runner", "print Rails.logger.level", chdir: Rails.root.to_s)
+        end
+
+        output, status = run.call("debug")
+        expect(status).not_to be_success
+        expect(output).to include("RAILS_LOG_LEVEL")
+        expect(run.call("warn").first.lines.last).to eq("2")
+      end
     end
 
     it "購読者の例外は、テストの環境では呼び出し元まで上がる" do
@@ -120,6 +143,25 @@ RSpec.describe "ログの出口と書式" do
 
       expect(line.fetch("payload")).to eq("controller" => "GraphqlController", "action" => "execute", "format" => "JSON",
         "operation_name" => "Leak", "query_sha256" => Digest::SHA256.hexdigest(query), "variable_keys" => [ "input" ])
+    end
+
+    it "GraphQL の操作名と変数のキーは、GraphQL の名前の形の文字列だけを書く。ほかの型と形は、中の値ごと落とす" do
+      lines = [ { "leak" => "LEAK" }, [ "LEAK" ], "LEAK value", "Place_1" ].map do |name|
+        emit("action_controller.request_started", { controller: "GraphqlController", action: "execute", format: "JSON",
+          params: { "operationName" => name, "variables" => { "input" => 1, "LEAK key" => 2, "_ok" => 3 } } })
+      end
+
+      expect(lines.map { _1.dig("payload", "operation_name") }).to eq([ nil, nil, nil, "Place_1" ])
+      expect(lines.map { _1.dig("payload", "variable_keys") }).to all(eq(%w[input _ok]))
+    end
+
+    it "ヘルスチェックの要求は書かない" do
+      %w[action_controller.request_started action_controller.request_completed].each do |name|
+        subscriber.emit(name:, payload: { controller: "Rails::HealthController", action: "show" }, tags: {}, context: {},
+          timestamp: 1)
+      end
+
+      expect(io.string).to be_empty
     end
 
     it "GraphQL の変数がハッシュでなければ、キーの一覧を空にする" do

@@ -14,9 +14,12 @@ RSpec.describe "ログの衛生", type: :request do
   # どの行にも現れてはならない値
   let(:forbidden) do
     [ "leak-user@example.com", "Leak-Pw-1234", "LEAK-REASON", "leakQueryMarker", "LEAK-VARIABLE",
-      "LEAK-URL-QUERY", "LEAK-URL-VARIABLE", "LEAK-EXCEPTION", "LEAK-JOB-EXCEPTION", "leak-event@example.com" ]
+      "LEAK-URL-QUERY", "LEAK-URL-VARIABLE", "LEAK-EXCEPTION", "LEAK-JOB-EXCEPTION", "leak-event@example.com",
+      "Leak-Wrong-Pw", "LEAK-OPERATION-HASH", "LEAK-OPERATION-ARRAY", "LEAK-VARIABLE-KEY", *session_cookies ]
   end
 
+  # ログインで受け取ったセッションの Cookie の値
+  let(:session_cookies) { [] }
   let(:string_io) { StringIO.new }
   let(:event_io) { StringIO.new }
   # 本番の既定と同じ info の水準で、Rails.logger の行を集める
@@ -52,9 +55,21 @@ RSpec.describe "ログの衛生", type: :request do
 
   def lines = [ string_io, event_io ].flat_map { _1.string.lines }
 
+  def graphql_with_operation_name(operation_name)
+    post "/graphql", as: :json,
+      params: { query: "{ viewer { id } }", operationName: operation_name, variables: { "LEAK-VARIABLE-KEY" => 1 } }
+  end
+
   it "ログイン・mutation・URL の変数・失敗する要求とジョブ・イベントの配送の全行が JSON で、禁止の値を含まない" do
+    # ログインの前の要求は、セッションを読む前に操作名を書く
+    graphql_with_operation_name({ "note" => "LEAK-OPERATION-HASH" })
+    expect(response).to have_http_status(:unauthorized)
+    post "/session", params: { email: "leak-user@example.com", password: "Leak-Wrong-Pw" }, as: :json
+    expect(response).to have_http_status(:unauthorized)
     post "/session", params: { email: "leak-user@example.com", password: "Leak-Pw-1234" }, as: :json
     expect(response).to have_http_status(:no_content)
+    session_cookies << cookies["_factory_ops_session"].presence
+    graphql_with_operation_name([ "LEAK-OPERATION-ARRAY" ])
 
     adjust_stock
     expect(response.parsed_body.dig("data", "leakQueryMarker", "errors")).to eq([])
