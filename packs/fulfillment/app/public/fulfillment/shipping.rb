@@ -1,7 +1,7 @@
 module Fulfillment
   # 出荷実績の計上（docs/architecture/graphql-schema.md「mutation の一覧」postShipment）。在庫の Inventory::Allocation で
   # 引当を消費し、現在庫と引当を減らす。ロックは出荷依頼 → 出荷指示 → 在庫 → 引当の順に取り、在庫と引当は在庫が取る。
-  # 受注の取消と同時に進んでも、引当の行ロックでどちらか一方だけが成立する
+  # 受注の取消と同時に進んでも、在庫と引当の行ロックでどちらか一方だけが成立する
   # （docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
   module Shipping
     # 有効な出荷指示のある出荷依頼を全量で計上し、「出荷計上」を出す。取消済・出荷済の出荷依頼、出荷停止中の受注の出荷依頼、

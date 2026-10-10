@@ -47,6 +47,9 @@ RSpec.describe "テナントの境界", type: :request do
     "Mutation.allocateSalesOrder(input.salesOrderId)" => {
       ids: documents, reach: not_found, run: ->(id) { mutate("allocateSalesOrder", salesOrderId: id) }
     },
+    "Mutation.cancelSalesOrder(input.salesOrderId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("cancelSalesOrder", salesOrderId: id) }
+    },
     "Mutation.createShippingInstruction(input.shipmentRequestId)" => {
       ids: documents, reach: not_found,
       run: ->(id) { mutate("createShippingInstruction", shipmentRequestId: id, plannedDate: "2026-10-20") }

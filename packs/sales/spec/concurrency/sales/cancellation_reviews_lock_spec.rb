@@ -24,7 +24,8 @@ RSpec.describe Sales::CancellationReviews do
   def approve = described_class.approve(actor, cancellation_review_id: review.id)
 
   def decision_events
-    SolidQueue::Job.where(class_name: "Contracts::EventJob").map { _1.arguments.fetch("arguments").first }
+    SolidQueue::Job.where(class_name: "Contracts::EventJob").map { _1.arguments.fetch("arguments") }
+      .select { _2.fetch("supplier_tenant_id") == supplier.id }.map(&:first)
       .grep(/Cancellation(Approved|Rejected)|ShippingHoldReleased|ShipmentCancelled/)
   end
 
