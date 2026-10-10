@@ -148,6 +148,36 @@ RSpec.describe "取消依頼と審査", type: :request do
     expect(sales_order).to include("status" => "SHIPPED", "cancellationReviewPending" => false, "cancellationReviews" => [])
   end
 
+  it "受注側が取り消すと、発注が受注側により取消・出荷依頼が取消済になり、有効な出荷指示が取り消され、引当が解除される" do
+    expect(mutate("cancelSalesOrder", "salesOrder { status }", salesOrderId: @sales_order_id))
+      .to eq("salesOrder" => { "status" => "CANCELLED" }, "errors" => [])
+    expect(audit_rows(supplier, "sales_order.cancel")).to eq([ [ supplier_admin.id, "SalesOrder", @sales_order_id, buyer.id ] ])
+    deliver_enqueued_events
+
+    expect(sales_order).to include("status" => "CANCELLED", "cancellationReviews" => [],
+      "shipmentRequest" => { "status" => "CANCELLED", "instruction" => nil })
+    expect(graphql("{ supplier { stocks { nodes { onHand allocated } } } }").dig("supplier", "stocks", "nodes"))
+      .to eq([ { "onHand" => 10, "allocated" => 0 } ])
+    expect(mutate("postShipment", "shipmentRequest { status }", shipmentRequestId: @request_id, shippedOn: "2026-10-20"))
+      .to eq("shipmentRequest" => nil, "errors" => [ { "code" => "CONFLICT" } ])
+
+    login_as(buyer_member)
+    expect(purchase_order).to match("status" => "SUPPLIER_CANCELLED", "cancellationPending" => false, "cancellationRequests" => [])
+    expect(mutate("requestPurchaseOrderCancellation", "purchaseOrder { id }", purchaseOrderId: @purchase_order_id, reason: "数量の誤り"))
+      .to eq("purchaseOrder" => nil, "errors" => [ { "code" => "CONFLICT" } ])
+  end
+
+  it "審査中の受注を受注側が取り消すと CONFLICT に写り、受注と出荷依頼は変わらない" do
+    request_cancellation
+
+    expect(mutate("cancelSalesOrder", "salesOrder { status }", salesOrderId: @sales_order_id))
+      .to eq("salesOrder" => nil, "errors" => [ { "code" => "CONFLICT" } ])
+    deliver_enqueued_events
+    expect(sales_order).to include("status" => "ALLOCATED", "cancellationReviewPending" => true,
+      "shipmentRequest" => { "status" => "ON_HOLD", "instruction" => { "plannedDate" => "2026-10-20" } })
+    expect(audit_rows(supplier, "sales_order.cancel")).to eq([])
+  end
+
   it "回答待ちの依頼がある発注への依頼と、見えない審査は、ユーザーエラーに写る" do
     request_cancellation
 

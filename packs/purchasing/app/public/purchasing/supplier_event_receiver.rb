@@ -12,6 +12,7 @@ module Purchasing
       when Contracts::ShipmentPosted then receive_shipment(order, event)
       when Contracts::CancellationApproved then answer_cancellation(order, event, "approved")
       when Contracts::CancellationRejected then answer_cancellation(order, event, "rejected")
+      when Contracts::SalesOrderCancelled then order.update!(supplier_cancelled_at: Time.current) unless order.supplier_cancelled_at
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
     end

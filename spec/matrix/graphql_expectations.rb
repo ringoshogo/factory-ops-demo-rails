@@ -183,6 +183,11 @@ module MatrixExpectations
       expect: MatrixWorld::PERSONAS.index_with(:not_found).merge(granted_buyer: :value)
     },
     # supplier の審査中の審査。発注側のペルソナには、相手の受注の審査は見えない
+    "Mutation.cancelSalesOrder" => {
+      query: "mutation($input: CancelSalesOrderInput!) { cancelSalesOrder(input: $input) { salesOrder { id } errors { code } } }",
+      variables: ->(world) { { input: { salesOrderId: world.linked_order(:sales_order).id } } },
+      expect: ONLY_SUPPLIER
+    },
     "Mutation.approveCancellationReview" => {
       query: "mutation($input: ApproveCancellationReviewInput!) { approveCancellationReview(input: $input) { salesOrder { id } errors { code } } }",
       variables: ->(world) { { input: { cancellationReviewId: world.row("cancellation_reviews", :supplier).id } } },

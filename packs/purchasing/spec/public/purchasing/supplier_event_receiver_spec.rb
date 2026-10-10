@@ -102,6 +102,41 @@ RSpec.describe Purchasing::SupplierEventReceiver do
     end
   end
 
+  describe "受注取消" do
+    let(:cancelled) do
+      Contracts::SalesOrderCancelled.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
+    end
+    let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: buyer.id, name: "", email: "", role: "member", partner_code: "") }
+
+    it_behaves_like "冪等な受け手" do
+      # 受注側が、自社の都合で受注を取り消して出す
+      let(:publish_event) { -> { Tenancy.with_tenant(supplier.id) { Contracts.publish(cancelled) } } }
+      let(:written_rows) { -> { Tenancy.with_tenant(buyer.id) { Purchasing::PurchaseOrder.where.not(supplier_cancelled_at: nil).count } } }
+    end
+
+    it "発注を受注側により取消にする" do
+      Tenancy.with_tenant(buyer.id) { order.update!(accepted_at: Time.current) }
+
+      handle(cancelled)
+
+      expect(Tenancy.with_tenant(buyer.id) { Purchasing::PurchaseOrders.find(actor, order.id).status }).to eq(:supplier_cancelled)
+    end
+
+    it "2 回目の配送は、受注側により取消の時刻を書き換えない" do
+      handle(cancelled)
+      cancelled_at = Tenancy.with_tenant(buyer.id) { order.reload.supplier_cancelled_at }
+
+      handle(cancelled)
+
+      expect(Tenancy.with_tenant(buyer.id) { order.reload.supplier_cancelled_at }).to eq(cancelled_at)
+    end
+
+    it "受注側テナントが一致しない発注は書かない" do
+      expect { handle(cancelled.with(supplier_tenant_id: FactoryBot.create(:tenant).id)) }.to raise_error(ActiveRecord::RecordNotFound)
+      expect(Tenancy.with_tenant(buyer.id) { order.reload.supplier_cancelled_at }).to be_nil
+    end
+  end
+
   it "配送表に無い種類のイベントは、発注を書かずに ArgumentError で失敗する" do
     unexpected = Contracts::PurchaseOrderPlaced.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id,
       supplier_tenant_id: supplier.id, desired_delivery_on: nil, lines: [])
