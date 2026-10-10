@@ -250,6 +250,26 @@ PR #27。Codex は No Go、Claude は Conditional Go で、指摘はすべて同
 | Low | Claude | C7：ログの衛生の spec が、セッションの Cookie と失敗するログインを流していない | 失敗するログインを足し、ログインで受け取った Cookie の値を禁止の値に入れた | `27d355e` |
 | Low | Claude | C8：直接の `perform_now` で上がった例外は、呼び出し元が拾っても `handled: false` で通知される | OI-29 に書いた | `d541e5e` |
 
+Codex は直した後のブランチ（`04efb16`）を読み直し、判定は No Go のままだった。X1・X4・C1〜C8 は解消し、X2・X3 は一部が残った。残りの 3 点（Y1〜Y3）を同じブランチで直した。
+
+| 重さ | 指摘 | 対応 | commit |
+|---|---|---|---|
+| Medium | Y1（X3 の残り）：環境変数の検証は、`config.log_level = :debug` の直接の指定で迂回できる | 環境変数を検証せず、`production.rb` の `config.after_initialize` で初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。子のプロセスで、`RAILS_LOG_LEVEL=debug` と、`production.rb` の後に `config.log_level = :debug` を指定した場合の両方が起動しないことを確かめる | `5118a37`・`b2fb616` |
+| Medium | Y2（X2 の残り）：既存の項目を空の値にして書き換えるので、実行の後に `job: nil` やジョブが足した項目が残る。spec の `compact` が差を隠していた | エラー通知の文脈の置き場を、項目の集合ごと置き換える。`ActiveSupport::ExecutionContext.clear` は `Current` の値と入れ子のスタックも捨てるので使わない（Rails 8.1.4 の `execution_context.rb`）。置き換えた後に引数なしの `set` で変更の通知を出す。spec は `compact` をやめて `to_h` をそのまま比べ、本体でジョブが足した項目が実行の後に残らないことも確かめる | `5118a37`・`b2fb616` |
+| Low | Y3：同じスレッドで 2 つのジョブの Fiber を交互に動かすと、エラー通知の文脈が混ざる | 直さない。Rails の既定の分離の単位はスレッドで、Solid Queue はジョブをスレッドで動かすので、いまは起きない。前提を OI-35 に `judgment` で登録し、分離の単位が `:thread` であることを確かめる example を足した | `5118a37`・`b2fb616` |
+
+Y1〜Y3 のテストを先に書き、実装の前に流した。39 examples のうち 15 が落ちた（ジョブの文脈 13 件、本番の水準 2 件）。分離の単位のガードは、いまの設定を守るので通った。直した後に壊して、次のとおり落ちることを確かめた。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| `production.rb` が初期化の後の水準を確かめない | `本番の環境は、RAILS_LOG_LEVEL=debug でも config.log_level = :debug の直接の指定でも起動しない` |
+| 水準の確かめで `debug` を許す | `info より細かい水準のロガーを拒み、info 以上を許す` と、上の 1 件 |
+| 以前の形（環境変数だけを検証する）に戻す | 上の起動の 1 件（直接の指定で起動した） |
+| エラー通知の文脈を、既存の項目を空の値にして書き換える形に戻す | ジョブの文脈の spec の 13 件すべて |
+| テストの環境の分離の単位を `:fiber` にする | `Rails の文脈の分離の単位はスレッドである` |
+
+直した後の全件は 1001 examples, 0 failures だった。
+
 指摘のテストを先に書き、実装の前に流した。62 examples のうち 18 が落ちた（ジョブの文脈 11 件、構成と購読者 5 件、ログの衛生 1 件、GraphQL の入口の操作名 1 件）。要求の側のエラー通知の文脈（C2）は、実装がすでにあったので通った。
 
 直した後に、直した防壁を壊して落ちることを確かめた。壊したファイルは複製から戻した。
