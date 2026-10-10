@@ -361,7 +361,7 @@ type BillableItem {
   "単価 × 検収数量。税を含まない"
   amount: BigInt!
   inspectedOn: ISO8601Date!
-  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空"
+  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空。販売単価の履歴と一緒に足す（../implementation-plan.md M27）"
   priceExplanation: PriceExplanation!
 }
 

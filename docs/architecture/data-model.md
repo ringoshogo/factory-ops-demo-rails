@@ -148,7 +148,7 @@
 | `billing_terms`（請求条件） | `customer_tenant_id`→・`closing_day`（1〜28、31 は末日） | `(owner, customer_tenant_id)` 一意。締め日は 1〜28 か 31（CHECK 制約） |
 | `billable_items`（請求対象明細） | `customer_tenant_id`→・`shipment_id`→・`sales_order_line_id`→・`source_purchase_order_line_id`→・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`inspected_on`・`invoice_id`（空は未請求） | `(shipment_id, sales_order_line_id)` 一意。数量は正、単価は 0 以上、税率は 8 か 10。`invoice_id` は請求書へ複合外部キーでつなぐ |
 | `invoices` | `customer_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_at`（空は下書き）・`subtotal`・`tax_total`・`total` | `(owner, invoice_number)` 一意。下書きは取引先ごとに 1 件（部分一意索引）。請求番号は確定した請求書だけが持つ。`period_start <= period_end`。`total = subtotal + tax_total` |
-| `invoice_tax_summaries` | `invoice_id`・`tax_rate_percent`・`taxable_amount`・`tax_amount` | `(invoice_id, tax_rate_percent)` 一意 |
+| `invoice_tax_summaries` | `invoice_id`・`tax_rate_percent`・`taxable_amount`・`tax_amount` | `(invoice_id, tax_rate_percent)` 一意。税率は 8 か 10、金額は 0 以上 |
 
 受注側の担当者は、取引先と締め日を指定して締めを実行する。請求は、締めの入力と状態を次の表の上から順に確かめ、最初に当たった結果を返す。失敗はどれも何も書かない。
 

@@ -28,7 +28,7 @@ RSpec.describe "請求の読み取り" do
   # 相手テナントが自社の請求として持つ行。受注側の自社の一覧には混ざらない
   let!(:foreign) do
     Tenancy.with_tenant(customers[0].id) do
-      FactoryBot.create(:invoice).tap { FactoryBot.create(:billable_item, customer_tenant_id: supplier.id) }
+      FactoryBot.create(:invoice).tap { FactoryBot.create(:billable_item, invoice: _1, customer_tenant_id: supplier.id) }
     end
   end
 

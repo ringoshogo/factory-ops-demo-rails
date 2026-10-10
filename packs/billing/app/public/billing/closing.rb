@@ -39,7 +39,9 @@ module Billing
       Invoice.transaction(requires_new: true) do
         # 締めと同じ請求条件の行をロックして、同じ取引先の締めと直列にする
         Scope.call(actor, BillingTerm.all).lock.find_by(customer_tenant_id: invoice.customer_tenant_id)
-        invoice.lock!
+        # ロックを待つ間に、同じ下書きの別の破棄がコミットしていれば消えている
+        invoice = Scope.call(actor, Invoice.where(id: invoice.id)).lock.first
+        next OperationResult.failure(:not_found, path: [ :invoice_id ]) unless invoice
         next conflict("Issued invoice cannot be discarded") unless invoice.draft?
 
         BillableItem.where(invoice_id: invoice.id).update_all(invoice_id: nil, updated_at: Time.current)

@@ -79,13 +79,31 @@ RSpec.describe "締めの競合" do
     expect(drafts).to match_array(customers.map(&:id))
   end
 
-  it "締めの最中に届いた前の期間の検収は、締めを待たずに未請求で残り、次の締めで集まる" do
-    first, release, first_thread = hold_open(supplier.id) { close }
+  it "同じ下書きの 2 つの破棄は、後の破棄が請求条件の行ロックを待ち、先のコミットの後に NOT_FOUND になる" do
+    draft = as_supplier { close }.value
 
-    receiver_thread = in_thread(supplier.id) { Billing::SalesEventReceiver.handle(late_inspection) }
-    expect(blocked_on_lock?(receiver_thread, by: first_thread)).to be(false)
-    finish(receiver_thread)
+    first, release, first_thread = hold_open(supplier.id) { Billing::Closing.discard(actor, invoice_id: draft.id) }
+    expect(first).to be_success
+
+    second_thread = in_thread(supplier.id) { Billing::Closing.discard(actor, invoice_id: draft.id) }
+    expect(blocked_on_lock?(second_thread, by: first_thread)).to be(true)
+
     commit(release, first_thread)
+    expect(finish(second_thread).failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :invoice_id ] ] ])
+    expect(drafts).to be_empty
+    expect(as_supplier { Billing::BillableItem.where(customer_tenant_id: customers[0].id).pluck(:invoice_id) }).to eq([ nil ])
+  end
+
+  it "締めが明細を集めた後に届いた前の期間の検収は、締めを待たずに未請求で残り、次の締めで集まる" do
+    # 締めが明細を集めてから請求書に結ぶまでの間に、別の接続で「請求対象確定」を受けてコミットさせる
+    allow(Billing::Closing).to receive(:create_draft).and_wrap_original do |original, *args|
+      receiver_thread = in_thread(supplier.id) { Billing::SalesEventReceiver.handle(late_inspection) }
+      finish(receiver_thread)
+      original.call(*args)
+    end
+
+    first = as_supplier { close }
+    expect(first.value.total).to eq(132)
 
     late = as_supplier { Billing::BillableItem.find_by!(item_name: "遅れた検収") }
     expect(late.invoice_id).to be_nil
@@ -94,5 +112,16 @@ RSpec.describe "締めの競合" do
     second = as_supplier { close(closing_date: Date.new(2026, 10, 20)) }
     expect(second.value).to have_attributes(period_start: Date.new(2026, 9, 21), total: 110)
     expect(as_supplier { late.reload.invoice_id }).to eq(second.value.id)
+  end
+
+  it "締めが開いている間も、「請求対象確定」の受け手は請求条件の行ロックを待たない" do
+    first, release, first_thread = hold_open(supplier.id) { close }
+    expect(first).to be_success
+
+    receiver_thread = in_thread(supplier.id) { Billing::SalesEventReceiver.handle(late_inspection) }
+    expect(blocked_on_lock?(receiver_thread, by: first_thread)).to be(false)
+    finish(receiver_thread)
+    commit(release, first_thread)
+    expect(as_supplier { Billing::BillableItem.find_by!(item_name: "遅れた検収").invoice_id }).to be_nil
   end
 end

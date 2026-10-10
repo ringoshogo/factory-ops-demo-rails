@@ -137,7 +137,7 @@ RSpec.describe Sales::PurchasingEventReceiver do
       expect(shipped_order_value.status).to eq(:inspected)
     end
 
-    it "検収数量が正の受注明細ごとに、受注明細の写しの値で「請求対象確定」を出す。数量 0 の明細は出さない" do
+    it "検収数量が正の受注明細ごとに、受注明細の写しの値で「請求対象確定」を出し、再配送では出し直さない" do
       Tenancy.with_tenant(supplier.id) { shipped_lines[1].update!(item_name: "ナット M8", unit_price: 15, tax_rate_percent: 8) }
       lines = inspected.lines.map { _1.merge("accepted_quantity" => 2) }
       handle(inspected.with(lines:))

@@ -222,6 +222,9 @@ RSpec.describe "テナントの境界", type: :request do
         .dig("supplier", "salesOrders", "nodes").flat_map { _1["cancellationReviews"] }.sole["id"]
       login_as(buyer_admin)
       mutate!("establishPartnership", "partnership { id }", partnerCode: own_customer.partner_code)
+      # 発注側も受注側として自社の未請求明細を持つ。相手の ID で絞った一覧が、絞り込みで空になることを確かめる
+      Tenancy.with_tenant(buyer.id) { FactoryBot.create(:billable_item, customer_tenant_id: own_customer.id) }
+      expect(query("{ supplier { billableItems { nodes { id } } } }").dig("supplier", "billableItems", "nodes").size).to eq(1)
       @own_item_id = mutate!("saveItem", "item { id }", code: "OWN-1", name: "自社品目", unit: "個", unitPrice: "10").dig("item", "id")
 
       @partner_ids = {
