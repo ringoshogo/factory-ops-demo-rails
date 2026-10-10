@@ -1,6 +1,6 @@
 module Inventory
   # 品目ごとの在庫。on_hand・allocated を変えるのは move! だけで、変えるたびに在庫移動履歴を 1 行足す
-  # （docs/architecture/data-model.md「在庫」）。有効在庫が負にならないことは DB の CHECK 制約が守る
+  # （docs/architecture/data-model.md「在庫（`inventory`）」）。有効在庫が負にならないことは DB の CHECK 制約が守る
   class Stock < TenantRecord
     # 移動の種類ごとの、on_hand と allocated の増減の向き
     EFFECTS = {

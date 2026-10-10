@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 引当・解除・消費・受注明細 ID ごとの量と、入出庫の調整（docs/architecture/data-model.md「在庫」「取消と出荷の競合を止める場所」）
+# 引当・解除・消費・受注明細 ID ごとの量と、入出庫の調整（docs/architecture/data-model.md「在庫（`inventory`）」「取消と出荷の競合を止める場所」）
 RSpec.describe Inventory::Allocation do
   let(:tenant) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }

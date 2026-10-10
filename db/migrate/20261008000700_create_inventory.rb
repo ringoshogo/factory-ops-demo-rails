@@ -1,7 +1,7 @@
 class CreateInventory < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 在庫・引当・在庫移動履歴（docs/architecture/data-model.md「在庫」）。item_id・sales_order_line_id は受注の行の ID 参照
+  # 在庫・引当・在庫移動履歴（docs/architecture/data-model.md「在庫（`inventory`）」）。item_id・sales_order_line_id は受注の行の ID 参照
   def change
     create_tenant_table :stocks do |t|
       t.uuid :item_id, null: false
