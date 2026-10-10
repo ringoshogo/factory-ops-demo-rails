@@ -35,6 +35,8 @@ bin/test-layers tmp/rspec.json
 - 認可の配線：視点・型・mutation の宣言が、入口を通した要求で効く
 - トランザクションの単位：ユーザーエラーだけの応答はコミットし、トップレベルのエラーと例外はロールバックする（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道)）
 
+request spec の example を単体へ移す人は、消す example の `expect` を 1 つずつ、移し先の example に対応づける。対応先の無い `expect` が確かめていた性質（応答が同じであること、イベントが 1 件であること、など）は、移し先に `expect` を足すか、request spec に残す。移した分岐は実装がすでにあるので、書いた時点で通り、RED では抜けが見えない。対応づけた表は証跡に残す。
+
 ## 競合テスト
 
 2 つの接続から同時に操作するテスト（競合テスト）は、`concurrency` の置き場に置く。公開 API だけを使うものは `spec/concurrency` に、パッケージの非公開のモデルを使うものは `packs/<パッケージ>/spec/concurrency` に置く。パッケージの外からは、非公開の定数を参照できないからである。競合でない example は、同じ対象の example でも単体の置き場に置く。

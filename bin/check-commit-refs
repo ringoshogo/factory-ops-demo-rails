@@ -1,0 +1,58 @@
+#!/usr/bin/env ruby
+# 台帳・証跡・引き継ぎに `` ` `` で囲んで書いた commit の SHA が、HEAD の祖先の commit であることを確かめる（docs/guides/dev-cycle.md「機械で守ること」）。
+#
+#   bin/check-commit-refs              追跡している docs/plans/ の下の Markdown と docs/handoff.md を確かめる
+#   bin/check-commit-refs --root DIR   DIR をリポジトリの根として扱う
+#
+# 積み重ねたブランチを載せ直すと、前に書いた SHA はどのブランチにも無い commit を指したまま残り、根拠を引けなくなる。
+# 祖先を確かめるには履歴が要る。浅い clone では確かめずに失敗する。CI は履歴をすべて取る（fetch-depth: 0）
+require "optparse"
+require "open3"
+
+TARGETS = [ "docs/plans/", "docs/handoff.md" ].freeze
+SHA = /`(\h{7,40})`/
+
+options = { root: File.expand_path("..", __dir__) }
+OptionParser.new do |opts|
+  opts.on("--root DIR") { |v| options[:root] = v }
+end.parse!
+
+root = options[:root]
+
+def git(root, *args)
+  Open3.capture2e("git", "-C", root, *args)
+end
+
+shallow, = git(root, "rev-parse", "--is-shallow-repository")
+if shallow.strip == "true"
+  abort "履歴が浅い clone なので、SHA が HEAD の祖先かを確かめられない。履歴をすべて取ってから流す（actions/checkout の fetch-depth: 0、手元なら git fetch --unshallow）"
+end
+
+files, status = git(root, "ls-files", "-z", "--", *TARGETS)
+abort "git ls-files が失敗した" unless status.success?
+
+errors = []
+count = 0
+files.split("\0").select { |file| file.end_with?(".md") }.each do |file|
+  File.readlines(File.join(root, file), chomp: true).each_with_index do |line, index|
+    line.scan(SHA).flatten.uniq.each do |sha|
+      count += 1
+      at = "#{file}:#{index + 1}"
+      _out, found = git(root, "cat-file", "-e", "#{sha}^{commit}")
+      unless found.success?
+        errors << "#{at}: #{sha} が commit として見つからない"
+        next
+      end
+
+      _out, ancestor = git(root, "merge-base", "--is-ancestor", sha, "HEAD")
+      errors << "#{at}: #{sha} が HEAD の祖先ではない（載せ直す前の commit を指していないか）" unless ancestor.success?
+    end
+  end
+end
+
+if errors.empty?
+  puts "commit の参照を確かめた：#{count} 件"
+else
+  warn errors
+  exit 1
+end

@@ -6,6 +6,7 @@ CI.run do
   step "Style: Ruby", "bin/rubocop"
   step "Packages: packwerk", "bin/packwerk validate && bin/packwerk check"
   step "Ledgers: open items", "bin/check-open-items"
+  step "Ledgers: commit references", "bin/check-commit-refs"
 
   step "Tests: RSpec", "bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json"
   step "Tests: layers", "bin/test-layers tmp/rspec.json"

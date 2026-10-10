@@ -29,8 +29,11 @@ jobs:
     env:
       RUBOCOP_CACHE_ROOT: tmp/rubocop
     steps:
+      # 台帳と証跡の SHA が HEAD の祖先かを確かめるので、履歴をすべて取る
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -57,6 +60,10 @@ jobs:
       # 残件と改善の候補の台帳の形と、ID の参照を確かめる（docs/guides/dev-cycle.md「機械で守ること」）
       - name: Check ledgers
         run: bin/check-open-items
+
+      # 台帳・証跡・引き継ぎに書いた commit の SHA が HEAD の祖先であること（docs/guides/dev-cycle.md「機械で守ること」）
+      - name: Check commit references
+        run: bin/check-commit-refs
 
       # PR の本文に書いた OI-NN・IB-NN も台帳にあること。本文は式に直接埋め込まず、環境変数で渡す
       - name: Check ledger references in the PR body
