@@ -8,7 +8,7 @@
 
 | ファイル | 役割 | 出自 | 説明する節 |
 |---|---|---|---|
-| `boot.rb` | Bundler と bootsnap を読み込む。起動の最初に読まれる | 生成のまま | — |
+| `boot.rb` | Bundler と bootsnap を読み込む。起動の最初に読まれる | 変更 | [boot.rb で変えたこと](#bootrb-で変えたこと) |
 | `application.rb` | アプリ全体の設定 | 変更 | [起動とリクエスト](#起動とリクエスト)・[DB の接続](#db-の接続)・[ジョブ](#ジョブ)・[ログ](#ログ) |
 | `environment.rb` | `application.rb` を読み込み、アプリを初期化する | 生成のまま | — |
 | `environments/development.rb`・`test.rb`・`production.rb` | 環境ごとの設定 | 変更 | [環境ごとの設定](#環境ごとの設定)・[ログ](#ログ) |
@@ -33,6 +33,10 @@
 Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `application.rb` → `environment.rb` の順に読み、初期化の中で `environments/<環境>.rb`、`initializers/*.rb`、`routes.rb` を読む。
 
 ## 起動とリクエスト
+
+### boot.rb で変えたこと
+
+テストの環境（`RAILS_ENV=test`）では、bootsnap の命令列のキャッシュを使わない（`DISABLE_BOOTSNAP_COMPILE_CACHE`）。bootsnap は、ファイルの大きさと更新時刻（秒）が前と同じなら、キャッシュした命令列を返す。実装を壊して落ちることを確かめる手順（`guides/dev-cycle.md`「テストから書く」）では、比較の演算子を入れ替えるような大きさの変わらない壊し方をし、同じ秒のうちに複製から戻すことがあり、そのとき戻した後も壊した版が読まれる。`spec/platform/compile_cache_spec.rb` が、同じ秒に同じ大きさで書き換えたファイルを、書き換えた後の中身で読むことを確かめる。読み込みの道のキャッシュ（`load_path_cache`）は、ファイルの中身を持たないので使い続ける。開発と本番の起動は変えない。
 
 ### application.rb で変えたこと
 

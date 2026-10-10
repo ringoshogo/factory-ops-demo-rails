@@ -28,6 +28,8 @@ bin/test-layers tmp/rspec.json
 
 テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。一覧を返す公開 API の単体のテストでは、親を 2 件以上作る。1 件だと N+1 の検出が働かない（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。
 
+`audit` を宣言した mutation を足す人は、結合の spec で、成功の後にできた監査の行の対象（`target_type`・`target_id`）と相手（`counterparty_tenant_id`）を、期待する値と比べる。行の件数だけを見る example は、宣言のラムダが対象か相手を取り違えても落ちない。`spec/graphql/audit_examples_spec.rb` が、スキーマの `audit` の action ごとに、action の文字列と 2 つの列の名前が同じ spec のファイル（`spec/requests`・`spec/scenarios`・`spec/concurrency`）に現れることを確かめる。名前が現れることしか見ないので、比べ方が正しいかは実装レビューの観点 4 で見る。
+
 既存の request spec から単体へ移してよいのは、公開 API の spec と同じ業務の分岐を確かめているものだけである。次の規則は HTTP の入口でしか確かめられないので、request spec に残す。
 
 - 認証：セッションの無い要求と、世代の古いセッションの要求が 401 になる
@@ -71,6 +73,8 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 `spec/rails_helper.rb` は、`concurrency` の置き場のファイルに `:concurrency` のメタデータを、置き場から付ける（`define_derived_metadata`）。`bin/test-layers` の層の判定も、この置き場から決まる。このメタデータの example は、Bullet の N+1 の検出（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）の外にある。Bullet は検出の状態をスレッドごとに持ち、別のスレッドの読み込みが見えないからである。
 
+パッケージのコードで行ロックかアドバイザリロックを取るメソッドを足した人は、そのロックで直列になることを確かめる競合テストを書くか、競合テストを持たない理由を書く。どちらも `spec/db/lock_sites_spec.rb` の表に、メソッド（「定数.メソッド」）ごとに書く。spec は構文木からロックを取るメソッドを集め、表と食い違えば落ちる。競合テストを書いた行は、その spec が `concurrency` の置き場にあり、メソッドを呼ぶ文字列を含むことを確かめる。ロックを足しても、直列になることを確かめなければ、ロックを外しても何も落ちない。表は、どのロックを競合テストが守り、どのロックが理由だけで残るかを、実装レビューが差分で読める形にする。
+
 競合テストを書く人は、`spec/support/concurrency.rb` の補助を使い、次のように書く。
 
 1. `self.use_transactional_tests = false` にする。example ごとのトランザクションの中では、接続が 1 本に固定され、2 つの接続にならない。
@@ -106,7 +110,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 届かないときの結果は、入口の種類で決まる。
 
 - 1 件を引くフィールドは `null` になる
-- 一覧を ID で絞るフィールドは空になる
+- 一覧を ID で絞るフィールドは空になる。spec は、同じ入口を絞らずに引いた一覧が空でないことを先に確かめる。絞らない一覧も空なら、絞った一覧が空でも絞り込みを確かめたことにならないので、準備に自社の行を足す
 - 対象を引く mutation は `NOT_FOUND` になる
 - `placePurchaseOrder` は、相手の有無と取引関係を区別しない `NOT_PERMITTED` になる（[graphql-schema.md「ID と `node`」](../architecture/graphql-schema.md#id-と-node)）
 

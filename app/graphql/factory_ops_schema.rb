@@ -1,6 +1,8 @@
 class FactoryOpsSchema < GraphQL::Schema
   query Types::QueryType
   mutation Types::MutationType
+  # extra_types で型を足さない。graphql-ruby 2.6 の書き出しが同じ型を schema.graphql に 2 回書く。共通の型はフィールドから届かせる
+  # （docs/architecture/graphql-schema.md「スキーマの変更と非推奨」）
 
   # ソースはリクエストのトランザクションと同じ接続で動かす。AsyncDataloader は使わない
   # （docs/architecture/graphql-schema.md「ページングと N+1」）
