@@ -513,9 +513,9 @@ C8 の壊し方では、PR のマージ commit の example は落ちない。マ
 
 ### SHA の置き換え
 
-取りまとめ役が M16・M17 の直しを取り込むために M17〜M20 のブランチを載せ直し、commit の SHA が変わった。載せ直しの前と後の対応表の 1 列目の SHA を、追跡しているファイルから `git grep` で探し、`open-items.md` と `cycle-01-task-reviews.md` の該当箇所を 2 列目の SHA に置き換えた。置き換えた後は、1 列目のどの SHA も `git grep` で見つからない。M19 を載せ直す前の SHA のような、対応表に無い古い SHA は、次の祖先の確かめで見つかる。
+取りまとめ役が M16・M17 の直しを取り込むために M17〜M20 のブランチを載せ直し、commit の SHA が変わった。載せ直しの前と後の対応表の 1 列目の SHA を、追跡しているファイルから `git grep` で探し、`open-items.md` と `cycle-01/implementation-reviews.md` の該当箇所を 2 列目の SHA に置き換えた。置き換えた後は、1 列目のどの SHA も `git grep` で見つからない。M19 を載せ直す前の SHA のような、対応表に無い古い SHA は、次の祖先の確かめで見つかる。
 
-台帳・証跡・引き継ぎ（`open-items.md`・`cycle-01-task-reviews.md`・`improvement-backlog.md`・`handoff.md`）に `` ` `` で囲んで書いた 7〜40 桁の 16 進をすべて集め、`git cat-file -e <sha>^{commit}` と `git merge-base --is-ancestor <sha> HEAD` で確かめた。27 個のすべてが HEAD の祖先の commit だった。
+台帳・証跡・引き継ぎ（`open-items.md`・`cycle-01/implementation-reviews.md`・`improvement-backlog.md`・`handoff.md`）に `` ` `` で囲んで書いた 7〜40 桁の 16 進をすべて集め、`git cat-file -e <sha>^{commit}` と `git merge-base --is-ancestor <sha> HEAD` で確かめた。27 個のすべてが HEAD の祖先の commit だった。
 
 ### 実装の記録
 
