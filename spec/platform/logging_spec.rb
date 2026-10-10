@@ -21,7 +21,8 @@ RSpec.describe "ログの出口と書式" do
     end
 
     # 依存を上げて購読やミドルウェアが増えたら落とし、値を文字列で書くかを読んでから一覧に足す（docs/guides/config.md「止めたフレームワークの文字列のログ」）。
-    # 本番は全コードを先に読み込み、テストの環境と購読者の集合が違うので、子のプロセスで本番の環境を初期化して見る
+    # 本番は全コードを先に読み込み、テストの環境と購読者の集合が違うので、子のプロセスで本番の環境を初期化して見る。
+    # 直前の 2 つの example は、要求を流すテストの環境も同じ経路を止めていることを見る
     it "本番の環境の購読とミドルウェアの並びは、許した一覧と一致する" do
       script = <<~RUBY
         require "./config/application"
@@ -32,7 +33,7 @@ RSpec.describe "ログの出口と書式" do
           middlewares: Rails.application.middleware.map { _1.klass.to_s }
         )
       RUBY
-      env = { "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x" }
+      env = { "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x", "RAILS_LOG_LEVEL" => nil }
       output, status = Open3.capture2e(env, RbConfig.ruby, "-e", script, chdir: Rails.root.to_s)
       expect(status).to be_success, output
       production = JSON.parse(output.lines.grep(/\ASPEC_RESULT /).sole.delete_prefix("SPEC_RESULT "))

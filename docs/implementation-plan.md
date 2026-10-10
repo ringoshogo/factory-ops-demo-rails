@@ -808,7 +808,7 @@ BASE_REF=origin/main bin/check-schema-compat
 
 **作るもの**
 
-1. 止めたログの経路の調べ直し（改善の候補 IB-14）：上げた後の Rails・Solid Queue・Ruby で、値を文字列で書く購読とミドルウェアが、止めた 5 つの経路のほかに増えていないかを確かめる。購読者の一覧とミドルウェアの並びを上げる前と後で比べ、ログの衛生の spec を新しい版で流す。いまの `spec/platform/logging_spec.rb` は拒否の一覧で、新しい版で増えた購読者を捕まえないので、比べるのは購読者の一覧とミドルウェアの並びそのものである。拒否の一覧を、原則出さない許可の形に変えるかを決め、決めたことと比べた結果を `guides/config.md`「止めたフレームワークの文字列のログ」に書く（複数の案を比べたなら ADR にする）
+1. 止めたログの経路の調べ直し（改善の候補 IB-14）：上げた後の Rails・Solid Queue・Ruby で、値を文字列で書く購読とミドルウェアが、止めた 5 つの経路のほかに増えていないかを確かめる。購読者の一覧とミドルウェアの並びを上げる前と後で比べ、ログの衛生の spec を新しい版で流す。`spec/platform/logging_spec.rb` の拒否の一覧（外した購読とミドルウェアが無いことを見る example）は、新しい版で増えた購読者を捕まえないので、比べるのは購読者の一覧とミドルウェアの並びそのものである。拒否の一覧を、原則出さない許可の形に変えるかを決め、決めたことと比べた結果を `guides/config.md`「止めたフレームワークの文字列のログ」に書く（複数の案を比べたなら ADR にする）
 2. 使っていない部品を外す：`config/application.rb` の Active Storage・Action Mailbox・Action Text・Action Cable の読み込み、`config/environments/*.rb` の `active_storage.service` と Action Cable の生成時のコメント、`config/storage.yml`、`config/cable.yml`、kamal と image_processing の gem と Gemfile のその説明のコメント、Dockerfile の libvips と冒頭の Kamal の説明、`.dockerignore` の `/.kamal`。thruster（Dockerfile の起動の命令が使う）と Action Mailer（通知の送り方を `adr/007` が決める）は残す
 3. 外した部品が読み込まれないことを確かめる spec（`spec/platform/framework_loading_spec.rb`）：テストの環境の起動の後に、`ActiveStorage::Engine`・`ActionMailbox::Engine`・`ActionText::Engine`・`ActionCable::Engine` が定義されておらず、`ActionMailer::Base` が定義されていることを確かめる。外す前に書いて落ちることを見る
 4. Ruby を 3.4 の最新の patch に上げる：`.ruby-version` と Dockerfile を変える（CI は `.ruby-version` を読む）。gem は Gemfile の版の制約を変えずに `bundle update` で上げ、上げる前と後の Rails・Solid Queue の版を作業 1 の比べる対象として PR の本文に書く。上げる前に、3.3.3 で `RUBYOPT=-W:deprecated` を付けて全件を流し、警告の件数を PR の本文に書いておく

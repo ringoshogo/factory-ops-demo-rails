@@ -77,4 +77,16 @@ RSpec.describe "依存の向きの表と package.yml" do
       "." => Set["packs/purchasing", "packs/partnerships", "packs/contracts", "packs/platform", "packs/sales"]
     )
   end
+
+  it "同じパッケージの行が 2 つあれば失敗する" do
+    markdown = <<~MARKDOWN
+      #{DependencyTable::HEADER}
+      |---|---|
+      | `platform` | なし |
+      | `partnerships`・`platform` | なし |
+    MARKDOWN
+
+    expect { DependencyTable.parse(markdown, packages: %w[. packs/platform packs/partnerships]) }
+      .to raise_error(ArgumentError, /packs\/platform/)
+  end
 end
