@@ -30,7 +30,7 @@ module ScenarioHelpers
   # 登録済みのイベントのうち、最も古い 1 件だけを受け手まで流す
   def deliver_oldest_event(times: 1)
     job = enqueued_event_jobs.first
-    times.times { ActiveJob::Base.execute(job.arguments) }
+    BulletDetection.wrap { times.times { ActiveJob::Base.execute(job.arguments) } }
     job.finished!
   end
 

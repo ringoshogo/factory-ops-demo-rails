@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../support/events"
 
 # 関連を 1 件ずつ読む N+1 が、テストの失敗まで届く（docs/architecture/graphql-schema.md「ページングと N+1」）。
 # 公開 API・Dataloader のソース・/graphql への要求の 3 つの経路で、同じ N+1 が例外になることを確かめる。
@@ -64,6 +65,7 @@ RSpec.describe "N+1 の検出", type: :request, bullet: false do
       RSpec.world.example_groups.delete(group)
       example = group.examples.sole
       example.run(group.new(example.inspect_output), RSpec::Core::NullReporter)
+      @inner_metadata = example.metadata
       example.execution_result
     end
 
@@ -86,6 +88,42 @@ RSpec.describe "N+1 の検出", type: :request, bullet: false do
 
     it ":concurrency の example は包まない" do
       expect(run_inner_example(concurrency: true, &n_plus_one).status).to eq(:passed)
+    end
+
+    it "HTTP の要求を流す example（type: :request）は bullet: false を持ち、包まない" do
+      expect(run_inner_example(type: :request, &n_plus_one).status).to eq(:passed)
+      expect(@inner_metadata[:bullet]).to be(false)
+    end
+
+    # 要求ごとの検出は Bullet::Rack が要求の終わりに消すので、要求の後に流すイベントの受け手は、補助が自分で検出する
+    it "HTTP の要求を流した後でイベントを流すと、受け手の中の N+1 で落ちる" do
+      email = member.email
+      read_lines = n_plus_one
+      result = run_inner_example(type: :request) do
+        post "/session", params: { email:, password: "password" }, as: :json
+        allow(self).to receive(:enqueued_event_jobs).and_return([ instance_double(SolidQueue::Job, arguments: {}, finished!: true) ], [])
+        allow(ActiveJob::Base).to receive(:execute) { read_lines.call }
+
+        deliver_enqueued_events
+      end
+
+      expect(result.status).to eq(:failed)
+      expect(result.exception).to be_a(Bullet::Notification::UnoptimizedQueryError)
+    end
+
+    # 検証の対象を factory の後に呼べば、factory で作ったレコードも N+1 の候補になる（spec/support/bullet.rb）。
+    # 受注のモデルはパッケージの外から参照できないので、factory が返すレコードのクラスを使う
+    it "factory で作った親を、factory の後に 1 件ずつ関連を読むと落ちる" do
+      tenant_id = supplier.id
+      result = run_inner_example do
+        Tenancy.with_tenant(tenant_id) do
+          lines = FactoryBot.create_list(:sales_order_line, 2)
+          lines.first.sales_order.class.where(id: lines.map(&:sales_order_id)).each { |order| order.lines.to_a }
+        end
+      end
+
+      expect(result.status).to eq(:failed)
+      expect(result.exception.message).to match(/Sales::SalesOrder => \[:lines\]/)
     end
   end
 
@@ -126,10 +164,10 @@ RSpec.describe BulletSafelist, bullet: false do
     expect { described_class.apply!([ entry ]) }.to raise_error(ArgumentError, /reason が無い/)
   end
 
-  it "決めた項目のほかを持つ行は、例外にする" do
+  it "項目が 4 つにそろっていない行は、例外にする" do
     entry = { type: :n_plus_one_query, class_name: "BulletSpecOrder", association: :lines }
 
-    expect { described_class.apply!([ entry ]) }.to raise_error(ArgumentError, /項目が/)
+    expect { described_class.apply!([ entry ]) }.to raise_error(ArgumentError, /4 つに限る/)
   end
 
   it "reason のある行は、Bullet の許可リストに入る" do

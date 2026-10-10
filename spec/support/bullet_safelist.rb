@@ -8,7 +8,7 @@ module BulletSafelist
 
   def self.apply!(entries = ENTRIES)
     entries.each do |entry|
-      raise ArgumentError, "Bullet の許可リストの行に無い項目がある: #{entry}" unless entry.keys.sort == KEYS.sort
+      raise ArgumentError, "Bullet の許可リストの行の項目は type・class_name・association・reason の 4 つに限る: #{entry}" unless entry.keys.sort == KEYS.sort
       raise ArgumentError, "Bullet の許可リストの行に reason が無い: #{entry}" if entry[:reason].blank?
 
       Bullet.add_safelist(entry.except(:reason))
