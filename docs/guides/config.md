@@ -152,7 +152,7 @@ JSON の書式は、文字列の中の秘密やクエリの本文を消さない
 
 残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（ファイルの添付・テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
 
-`debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。`production.rb` は、環境変数 `RAILS_LOG_LEVEL` を `Platform::Logging.production_level` に通す。既定は `info` で、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`debug` を与えると、起動の時点で例外になる。
+`debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。水準は環境変数 `RAILS_LOG_LEVEL` で決め、既定は `info`、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`production.rb` は `config.after_initialize` で、初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。環境変数ではなく最終の水準を見るので、`config.log_level` を直接 `:debug` にしても起動しない。
 
 ### 構成の入口：文脈のミドルウェアとログの書式
 
@@ -192,7 +192,7 @@ bin/rails middleware | grep -A1 'Platform::RequestContext'   # 次の行が Rail
 
 Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、`Rails.event` の文脈を空にし、エラー通知の文脈を空にする。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで次の 2 つで後始末する。
 
-- `ApplicationJob#perform_now` は、実行の前の `Rails.event.context` とエラー通知の文脈（`ActiveSupport::ExecutionContext`）を丸ごと退避し、例外の経路も含めて `ensure` で丸ごと戻す。エラー通知の文脈は、`Rails.error.set_context` が渡した項目だけを書き換えるので、いまの項目を空にしてからジョブの項目（`job`・`tenant_id`・`correlation_id`）を設定する。入れ子のジョブも、抜けた後は外側のジョブの文脈に戻る。
+- `ApplicationJob#perform_now` は、実行の前の `Rails.event.context` とエラー通知の文脈（`ActiveSupport::ExecutionContext`）を丸ごと退避し、例外の経路も含めて `ensure` で丸ごと戻す。エラー通知の文脈は、`Rails.error.set_context` が渡した項目だけを書き換えるので、項目の集合ごとジョブの項目（`job`・`tenant_id`・`correlation_id`）に置き換える。`ActiveSupport::ExecutionContext.clear` は `Current` の値と入れ子のスタックも捨てるので使わない。入れ子のジョブも、抜けた後は外側のジョブの文脈に戻る。この置き換えと戻し方は、Rails が文脈をスレッドごとに持つ（`config.active_support.isolation_level` が既定の `:thread`）ことを前提にする（OI-35）。
 - `spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
 
 ### 相関 ID と因果 ID
