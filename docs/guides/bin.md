@@ -69,7 +69,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、3 つ�
 | ジョブ | 流すもの |
 |---|---|
 | `scan_ruby` | `bin/brakeman --no-pager`、`bin/bundler-audit` |
-| `lint` | `bin/rubocop -f github`、`bin/packwerk validate && bin/packwerk check`、`bin/check-open-items`（PR では本文を `--text -` で渡す）、`bin/check-commit-refs`、`bin/check-schema-compat`（PR では `BASE_REF` を `origin/<base_ref>`、main への push では push の前の先端にする）。履歴をすべて取る（`fetch-depth: 0`） |
+| `lint` | `bin/rubocop -f github`、`bin/packwerk validate && bin/packwerk check`、`bin/check-open-items`（PR では本文を `--text -` で渡す）、`bin/check-commit-refs`、`bin/check-schema-compat`（PR では `BASE_REF` を `origin/<base_ref>`、main への push では push の前の先端にする）。SHA の祖先とスキーマの互換の基準を確かめるので、履歴をすべて取る（`fetch-depth: 0`） |
 | `test` | psql で `docker/initdb/01_roles.sql`、`bin/rails db:test:prepare`、`bundle exec rspec --format progress --format json --out tmp/rspec.json`、`bin/test-layers tmp/rspec.json`、`bin/check-structure` |
 
 `test` のジョブは `bin/setup` を流さない。サービスのコンテナには初期化スクリプトを渡せないので、ロールはワークフローが psql で作る。

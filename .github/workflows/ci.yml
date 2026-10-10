@@ -29,7 +29,7 @@ jobs:
     env:
       RUBOCOP_CACHE_ROOT: tmp/rubocop
     steps:
-      # 台帳と証跡の SHA が HEAD の祖先かを確かめるので、履歴をすべて取る
+      # 台帳と証跡の SHA が HEAD の祖先かを確かめ、スキーマの互換の基準を取るので、履歴をすべて取る
       - name: Checkout code
         uses: actions/checkout@v6
         with:
@@ -66,7 +66,7 @@ jobs:
         run: bin/check-commit-refs
 
       # GraphQL のスキーマの非推奨を経ない破壊的変更を落とす（docs/architecture/graphql-schema.md「互換の判定」）。
-      # main への push では push の前の先端（github.event.before）と比べる。origin/main と比べると、分岐点が HEAD 自身になり何も比べないからである
+      # main への push では push の前の先端（github.event.before）と比べる。origin/main と比べると、分岐点が HEAD 自身になり何も比べないからである。
       - name: Check GraphQL schema compatibility
         env:
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
