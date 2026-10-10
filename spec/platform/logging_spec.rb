@@ -20,6 +20,57 @@ RSpec.describe "ログの出口と書式" do
       )
     end
 
+    # 依存を上げて購読やミドルウェアが増えたら落とし、値を文字列で書くかを読んでから一覧に足す（docs/guides/config.md「止めたフレームワークの文字列のログ」）。
+    # 本番は全コードを先に読み込み、テストの環境と購読者の集合が違うので、子のプロセスで本番の環境を初期化して見る
+    it "本番の環境の購読とミドルウェアの並びは、許した一覧と一致する" do
+      script = <<~RUBY
+        require "./config/application"
+        Rails.application.initialize!
+        puts "SPEC_RESULT " + JSON.generate(
+          log_subscribers: ActiveSupport::LogSubscriber.log_subscribers.map { _1.class.name }.uniq.sort,
+          event_subscribers: Rails.event.subscribers.map { _1[:subscriber].class.name },
+          middlewares: Rails.application.middleware.map { _1.klass.to_s }
+        )
+      RUBY
+      env = { "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x" }
+      output, status = Open3.capture2e(env, RbConfig.ruby, "-e", script, chdir: Rails.root.to_s)
+      expect(status).to be_success, output
+      production = JSON.parse(output.lines.grep(/\ASPEC_RESULT /).sole.delete_prefix("SPEC_RESULT "))
+
+      aggregate_failures do
+        expect(production.fetch("log_subscribers")).to eq(%w[
+          ActionController::StructuredEventSubscriber
+          ActionDispatch::StructuredEventSubscriber
+          ActionMailer::StructuredEventSubscriber
+          ActionView::LogSubscriber
+          ActionView::StructuredEventSubscriber
+          ActiveJob::StructuredEventSubscriber
+          ActiveRecord::LogSubscriber
+          ActiveRecord::StructuredEventSubscriber
+          ActiveStorage::LogSubscriber
+          ActiveStorage::StructuredEventSubscriber
+        ])
+        expect(production.fetch("event_subscribers")).to eq(%w[Platform::JsonLogSubscriber])
+        expect(production.fetch("middlewares")).to eq(%w[
+          Rack::Sendfile
+          ActionDispatch::Static
+          ActionDispatch::Executor
+          Rack::Runtime
+          ActionDispatch::RequestId
+          ActionDispatch::RemoteIp
+          Rails::Rack::SilenceRequest
+          Platform::RequestContext
+          ActionDispatch::ShowExceptions
+          ActionDispatch::Callbacks
+          Rack::Head
+          Rack::ConditionalGet
+          Rack::ETag
+          ActionDispatch::Cookies
+          ActionDispatch::Session::CookieStore
+        ])
+      end
+    end
+
     it "Rails.logger は、JSON の書式のロガーにだけ書き、タグを付けない" do
       expect(Rails.logger.broadcasts.map { _1.formatter.class }).to eq([ Platform::JsonLogFormatter ])
       expect(Rails.logger).not_to respond_to(:tagged)
