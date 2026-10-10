@@ -240,7 +240,7 @@ GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci
 
 | 部品 | 扱い | 理由 |
 |---|---|---|
-| Active Storage・Action Mailbox・Action Text・Action Cable | 外した。`application.rb` で読み込まず、`environments/*.rb` の `active_storage.service`、`storage.yml`・`cable.yml` も置かない | ファイルの添付・メールの受信・リッチテキスト・WebSocket の機能が無い。取り込みのファイルも Active Storage に置かない（`implementation-plan.md` M29） |
+| Active Storage・Action Mailbox・Action Text・Action Cable | 外した。`application.rb` で読み込まず、`environments/*.rb` の `active_storage.service`、`storage.yml`・`cable.yml`、保存先の `storage/` も置かない | ファイルの添付・メールの受信・リッチテキスト・WebSocket の機能が無い。取り込みのファイルも Active Storage に置かない（`implementation-plan.md` M29） |
 | image_processing の gem と、`Dockerfile` の libvips | 外した | Active Storage の画像の変換にだけ使う |
 | kamal の gem と、`.dockerignore` の `/.kamal` | 外した | Kamal でデプロイしない。デプロイ先の選び方は [decisions.md「8. 実行基盤とデータ基盤：PostgreSQL と Solid 系で始め、デプロイ先は運用人員で選ぶ」](../architecture/decisions.md#8-実行基盤とデータ基盤postgresql-と-solid-系で始めデプロイ先は運用人員で選ぶ) にある |
 | Action Mailer | 残した | 通知のメールを送る（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md)） |

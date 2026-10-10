@@ -68,7 +68,7 @@
 
 ## 次にやること
 
-再開する人は、`guides/dev-cycle.md` の流れに沿って、`implementation-plan.md` のマイルストーンを M15 から番号の順に実装する。サイクルの区切りは `dev-cycle.md`「全体の流れ」の表にあり、サイクル 01（M15〜M20）はサイクル末まで終えた。サイクル 02（M34・M35・M21〜M24）は計画レビューを終え（`plans/cycle-02/plan-review.md`）、次は M34 から実装する。M33（フロントエンド）は、流用元の `factory-ops-demo` の刷新後の画面部品を前提に計画を済ませてあり、実装は M32 の後に行う。
+再開する人は、`guides/dev-cycle.md` の流れに沿って、`implementation-plan.md` のマイルストーンを M15 から番号の順に実装する。サイクルの区切りは `dev-cycle.md`「全体の流れ」の表にあり、サイクル 01（M15〜M20）はサイクル末まで終えた。サイクル 02（M34・M35・M21〜M24）は計画レビューを終え（`plans/cycle-02/plan-review.md`）、M34 を実装した。次は M35 を実装する。M33（フロントエンド）は、流用元の `factory-ops-demo` の刷新後の画面部品を前提に計画を済ませてあり、実装は M32 の後に行う。
 
 残件は、この文書には書かず、台帳 `plans/open-items.md` だけに書く。マイルストーンに着手する前に、引当先がそのマイルストーンの行を台帳で読む。M33 の著者判断（OI-07〜OI-14）は、作者が答えるまで M33 を終えられない。
 
@@ -88,8 +88,8 @@
 ## リポジトリの状態
 
 - **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
-- **ブランチ**：M1〜M20 の 1 つ目と、サイクル 01 のサイクル末（#30）は main にマージ済み。M20 の 2 つ目は PR（`m20-schema-compat-ci`）で、main の上にある。サイクル 02 の計画レビューは PR（`cycle-02-plan`）で、その上に積んである。Dependabot の依存更新の PR が 3 本、未処理で残っている。
-- **実装**：M20 を終え、サイクル 01 のサイクル末を終えた。M20 の 2 つ目の PR で、CI の lint のジョブが `bin/check-schema-compat` を流すようになった。rspec は 1123 examples, 0 failures（サイクル末のブランチ `cycle-01-end` で `bundle exec rspec`）。次は M34（`implementation-plan.md`「マイルストーンの一覧」）。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **ブランチ**：M1〜M20 の 1 つ目と、サイクル 01 のサイクル末（#30）は main にマージ済み。M20 の 2 つ目は PR（`m20-schema-compat-ci`）で、main の上にある。サイクル 02 の計画レビューは PR（`cycle-02-plan`）で、その上に積んである。M34 は PR #33（`m34-deps`）で、さらにその上に積んである。Dependabot の依存更新の PR が 3 本、未処理で残っている。
+- **実装**：サイクル 02 の M34 を終えた。Ruby は 3.4.11 で、使っていない Rails の部品と gem を外した。実装レビューは `plans/cycle-02/implementation-reviews.md`「M34 依存の更新と使っていない部品の削除」にある。rspec は 1130 examples, 0 failures（`m34-deps` の `d3a5446` で、Ruby 3.4.11 で `bundle exec rspec`）。次は M35（`implementation-plan.md`「マイルストーンの一覧」）。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの
