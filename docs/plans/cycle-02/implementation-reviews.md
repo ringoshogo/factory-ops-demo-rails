@@ -317,3 +317,71 @@ bin/test-layers tmp/rspec.json                 # 未分類なし
 ### 残件の処理
 
 引当先が M22 の `open` は無かった。OI-62（judgment）は実装と一致し、作者の確認を待つ。実装で決めたことは OI-71 に judgment で積んだ。
+
+## M23 検収
+
+PR #37（`m23-inspection`、base は `m22-supplier-cancel`）。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの `04859d3` で直し、違和感は直すか改善の候補に移した。High 以上が無いので、読み直しには出していない。どちらの系統も、`f14de53..12b796f` の diff を読んだ。Codex はテストを流さず、依頼に書いた実行結果を前提にした。Claude は完了条件の 3 ファイルと競合テストを流した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘（C1） |
+| 境界と規約 | 指摘なし | 指摘（C2） |
+| テストの検出力 | 指摘（X1） | 指摘（C3） |
+| 参照の維持 | 指摘なし | 指摘（C4） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：`inspections_for` と `inbound_shipment_lines_for` の検収数量を、入荷を 2 件以上まとめて渡して確かめる単体の example が無い | 検収日と数量の違う 2 件の検収済の入荷と、検収の前の入荷・見えない入荷をまとめて読む `packs/purchasing/spec/public/purchasing/purchase_orders_spec.rb` を足した。キーを取り違える変更と、検収数量を明細で引かない変更で、それぞれ落ちることを確かめた | `04859d3` |
+| Low | Claude | C1：入力の確かめが 2 回目の `CONFLICT` より先にあり、検収済の入荷に誤った入力を送ると `INVALID_INPUT` になる | `CONFLICT` を入力の確かめの前に置き、検収済の入荷に空の明細を送ると `CONFLICT` になる example を足した。順を戻すと落ちる | `04859d3` |
+| Low | Claude | C2：受け手のコメントが「出荷の後という CHECK 制約」と書くが、制約は出荷済であることを求めるだけである | 「出荷済であることを求める CHECK 制約」に直した | `04859d3` |
+| Low | Claude | C3：「検収の前の出荷済の受注は、検収済にならない」は M23 のコードを通らず、実装が無くても通る | 同じ得意先の別の受注の検収完了を流し、その受注が検収済になり、この受注が出荷済のままであることを確かめる形にした | `04859d3` |
+| Low | Claude | C4：`context-map.md` と計画の M23 の節は「誤りはどれも `INVALID_INPUT`」の後に `CONFLICT` と検収日の行を並べる。`data-model.md` の 2 つの表に数量の CHECK 制約が無い | 入力の誤りと、2 回目の `CONFLICT` と、検収日を書き分けた。`receipt_inspection_lines`・`inspection_records` の行に数量が 0 以上の制約を書いた | `04859d3` |
+
+違和感は次のように扱った。
+
+- Codex：件数の上限の example は上限 + 1 だけで、上限ちょうどを受け付けることを確かめない → IB-25
+- Claude 1：受け手のコメントは冪等キーを出荷実績 ID と受注明細 ID の組と書くが、早期の戻りは出荷実績 ID だけで判定する → 全明細を同じトランザクションで書くので出荷実績 ID だけで判定することをコメントに書いた（`04859d3`）
+- Claude 2：`inspections_for`・`find_inbound_shipment`・`accepted_quantity` に単体の spec が無い → X1 の spec で `inspections_for` と `accepted_quantity` を確かめた。`find_inbound_shipment` は、見えない入荷が `NOT_FOUND` になることを S1 と行列テストが確かめる（`04859d3`）
+
+### 実装の記録
+
+完了条件の spec・競合テスト・行列テスト・S1・`spec/graphql`・`spec/contracts`・`spec/db` を実装の前に流し、989 examples, 33 failures で落ちた。公開 API を空のモジュールで、「検収完了」を定義だけで置き、表とモデルを足してから流したので、失敗は `NoMethodError`（公開 API が無い）と、`inspectInboundShipment` が無いことによる期待の不一致と、受け手の `ArgumentError`（配送表に無い種類）だった。受け手の spec の 1 件は、`let` の遅延評価でテナントが入れ子になるテストの誤りで落ちていたので、`let!` に直した。
+
+壊したファイルは複製から戻し、壊すときと戻すときに更新時刻を進めた（IB-24）。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 購買 | 数量の上限・下限・整数の確認、重複・別の入荷の明細・省略・件数の上限、2 回目の `CONFLICT` とその順、入荷の行ロック（競合テスト）、検収日、イベントの検収数量、発注の検収済の導出、検収数量と検収の一括取得 |
+| 受注 | 受け手の冪等・出荷済の確認・検収済の時刻・記録の数量と検収日・発注側テナントの条件 |
+| GraphQL | 監査の相手と対象・規則を閉じる（行列テスト） |
+
+### 確かめたこと
+
+`04859d3` で、Ruby 3.4.11 で共通の完了条件と M23 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspections_spec.rb \
+  packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb spec/requests/inspections_spec.rb   # 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1451 examples, 0 failures
+BASE_REF=origin/m22-supplier-cancel bin/check-branch-coverage   # 一覧は空
+bundle exec rspec --tag concurrency   # 2 回続けて 29 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk check                             # 違反なし
+bin/check-structure                            # 終了コード 0
+BASE_REF=origin/m22-supplier-cancel bin/check-schema-compat   # 落とす変更なし
+bin/check-open-items --due M23                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし
+```
+
+分岐の網羅率の警告は、`12b796f` と `04859d3` の後の全件の計測で、どちらも 0 件だった。
+
+### 残件の処理
+
+引当先が M23 の `open` は無かった。OI-63（judgment）は実装と一致し、作者の確認を待つ。実装で決めたことは OI-72 に judgment で積んだ。
