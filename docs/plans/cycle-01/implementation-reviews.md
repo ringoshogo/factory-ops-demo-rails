@@ -470,7 +470,7 @@ PR #28。どちらの系統も Go で、指摘は Low だけだった。C4 の�
 
 ## M20 GraphQL スキーマの破壊的変更の検出
 
-PR #29。1 つ目の PR（`schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat`）で、CI のステップは、1 つ目が main に入った後の 2 つ目の PR で足す（`implementation-plan.md` M20「初回の導入」）。どちらの系統も Conditional Go で、指摘はすべて同じブランチの commit で直した。
+M20 は 2 つの PR に分けた（`implementation-plan.md` M20「初回の導入」）。1 つ目の PR #29 は `schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat` を入れ、2 つ目の PR（`m20-schema-compat-ci`）は、1 つ目が main に入った後に CI のステップを足した。2 つ目の判定と記録は「2 つ目の PR：CI のステップ」にある。1 つ目はどちらの系統も Conditional Go で、指摘はすべて同じブランチの commit で直した。
 
 | 系統 | 判定 |
 |---|---|
@@ -608,10 +608,62 @@ bin/test-layers tmp/rspec.json
 
 M19 の全件（単体 101・37.4%、結合 129・47.8%、シナリオ 40・14.8%）と比べ、OI-22 で単体が 20 件増え、結合が 11 件減った。単体の割合は 6.0 ポイント上がったが、目安の 60% には届かない。OI-24 の数え方では、目安を外れたマイルストーンを OI-22 を片付けた後から数えるので、この M20 が 1 つ目になる。
 
+### 2 つ目の PR：CI のステップ
+
+lint のジョブと `config/ci.rb` に `bin/check-schema-compat` を足した（`ec70108`）。基準は、PR では向き先（`origin/<base_ref>`）、main への push では push の前の先端（`github.event.before`）にする。push で `origin/main` を基準にすると、分岐点が HEAD 自身になり何も比べないからである。Codex は Conditional Go、Claude は Go で、Critical と High は無かった。指摘は同じブランチの commit で直すか、台帳に積んだ。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Conditional Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（X1） | 指摘なし |
+| 正しさ | 指摘なし | 指摘（C1） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（X2） | 指摘（C2） |
+| 参照の維持 | 指摘（X3） | 指摘（C3・C4） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：共通の完了条件のうち、packwerk・全件・層の表・`structure.sql` の往復・スキーマの書き出しの結果が無い | すべて流し、下の「確かめたこと」に書いた | この commit |
+| Medium | Codex | X2：CI の配線（ステップと `BASE_REF` の式）を壊しても、どの spec も落ちない | spec で守らない判断を OI-59 に登録した。壊して落ちることは手で確かめた（下の「確かめたこと」） | `bf70626` |
+| Low | Codex | X3：checkout の既定の動き（マージ commit の checkout・全ブランチの取得）に頼る説明に、原文の参照が無い | `graphql-schema.md`「互換の判定」に `actions/checkout` の参照を足した | `bf70626` |
+| Low | Claude | C1：push の前の先端が取れない（force push で届かない）と、原因を指さないメッセージで落ちる | 落ちることを `graphql-schema.md`「互換の判定」に書いた。main への直接の push は止めているので、メッセージは変えない | `bf70626` |
+| Low | Claude | C2：X2 と同じ。手で確かめた結果を証跡に残す | X2 と同じ | この commit |
+| Low | Claude | C3：checkout の `fetch-depth: 0` のコメントと `bin.md` が、理由を SHA の祖先の検査だけにしている | 互換の基準を取ることを、ci.yml のコメントと `bin.md` の lint の行に足した | `bf70626` |
+| Low | Claude | C4：IB-05 の理由が「CI の必須の検査になる直前」のまま | 「CI の lint のジョブで流す必須の検査」に直した | `bf70626` |
+
+違和感は、Claude の 1 件（契機を足すと `github.event.before` が空になり、既定の `origin/main` で何も比べずに通る）を IB-16 に移した。Codex は「なし」だった。
+
+#### 確かめたこと
+
+作業中の `schema.graphql` から `Tenant.name` を消し、CI と同じコマンドを 2 つの基準の形で流した。`schema.graphql` は複製から戻した。
+
+| 基準 | 結果 |
+|---|---|
+| `BASE_REF=origin/main`（PR の形） | `FieldRemoved` の `Tenant.name` を「落とす」とし、終了コード 1 |
+| `BASE_REF=<HEAD の SHA>`（push の形） | 同じ 1 件を落とし、終了コード 1 |
+
+戻した後に、`bf70626` で共通の完了条件と M20 の完了条件を流した。`actionlint` は手元に無いので流していない。
+
+```sh
+bin/rubocop                                    # no offenses
+bin/packwerk validate && bin/packwerk check    # No offenses detected
+bin/rails graphql:schema:idl && git diff --exit-code schema.graphql   # 差分なし
+bundle exec rspec --format progress --format json --out tmp/rspec.json # 1123 examples, 0 failures
+bin/test-layers tmp/rspec.json                 # 単体 43.4%・結合 42.3%・シナリオ 14.3%（OI-24 の警告のまま）
+bin/check-structure                            # 終了コード 0
+BASE_REF=origin/main bin/check-schema-compat   # スキーマに変更は無い、終了コード 0
+bin/check-open-items --due M20                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+```
+
 ### 残件の処理
 
 | ID | 処理 |
 |---|---|
 | OI-22 | 4 つの公開 API の分岐を単体へ移し、同じ分岐の request spec を削って閉じた |
 
-決めたことは OI-46〜OI-49 に `judgment` として登録した。
+決めたことは OI-46〜OI-49 に `judgment` として登録した。2 つ目の PR の実装レビューの X2・C2 は OI-59 に登録した。
