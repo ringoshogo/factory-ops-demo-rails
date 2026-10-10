@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+# 基準の schema.graphql と作業中の schema.graphql を比べ、非推奨を経ない破壊的変更があれば失敗する
+# （docs/architecture/graphql-schema.md「スキーマの変更と非推奨」）。
+#
+#   bin/check-schema-compat                     基準は origin/main
+#   BASE_REF=origin/feature bin/check-schema-compat
+#
+# 判定は lib/schema_compat.rb が行い、例外の一覧は docs/graphql/breaking-changes.yml から読む。
+# 基準に schema.graphql が無いときも失敗する。比べられないまま通すと、破壊的変更を見逃すからである。
+# 結果は標準出力に書き、環境変数 GITHUB_STEP_SUMMARY があればそのファイルにも書き足す
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup"
+require "open3"
+require_relative "../lib/schema_compat"
+
+SCHEMA = "schema.graphql"
+EXCEPTIONS = "docs/graphql/breaking-changes.yml"
+
+base_ref = ENV.fetch("BASE_REF", "").then { _1.empty? ? "origin/main" : _1 }
+
+root, err, status = Open3.capture3("git", "rev-parse", "--show-toplevel")
+abort "git のリポジトリの中で流す: #{err}" unless status.success?
+root = root.strip
+
+base_sdl, _err, status = Open3.capture3("git", "show", "#{base_ref}:#{SCHEMA}", chdir: root)
+unless status.success?
+  abort "#{base_ref} に #{SCHEMA} が無いので比べられない。" \
+    "基準の ref を取得したか（CI では actions/checkout の fetch-depth: 0）、BASE_REF が正しいかを確かめる"
+end
+
+head_path = File.join(root, SCHEMA)
+abort "作業中の #{SCHEMA} が無い。bin/rails graphql:schema:idl で書き出す" unless File.exist?(head_path)
+
+exceptions_path = File.join(root, EXCEPTIONS)
+begin
+  exceptions = SchemaCompat.load_exceptions(File.exist?(exceptions_path) ? File.read(exceptions_path) : "")
+rescue SchemaCompat::InvalidExceptions => e
+  abort "#{EXCEPTIONS}: #{e.message}"
+end
+
+result = SchemaCompat.check(base_sdl:, head_sdl: File.read(head_path), exceptions:)
+report = "基準: #{base_ref}\n\n#{result.report}"
+puts report
+File.write(ENV["GITHUB_STEP_SUMMARY"], report, mode: "a") if ENV["GITHUB_STEP_SUMMARY"].to_s != ""
+exit(result.passed? ? 0 : 1)

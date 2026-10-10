@@ -1,0 +1,8 @@
+# 非推奨を経ずに通す破壊的変更の一覧。bin/check-schema-compat が読む
+# （docs/architecture/graphql-schema.md「スキーマの変更と非推奨」）。
+# 行は change（変更のクラス名）・path（座標）・reason（理由）を持つ。reason が空の行があれば読み込みで失敗する。
+#
+# - change: FieldRemoved
+#   path: PurchaseOrder.note
+#   reason: 備考に相手テナントの担当者の連絡先を返していた
+[]

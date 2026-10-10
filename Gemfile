@@ -66,4 +66,8 @@ group :development, :test do
 
   # 関連を 1 件ずつ読む N+1 を検出する。テストでは例外に、開発ではログにする [https://github.com/flyerhzm/bullet]
   gem "bullet", "~> 8.2"
+
+  # 基準と作業中の GraphQL のスキーマを比べ、変更を破壊・危険・非破壊に分ける。判定は lib/schema_compat.rb が行う
+  # [https://github.com/xuorig/graphql-schema_comparator]
+  gem "graphql-schema_comparator", "~> 1.2", require: false
 end

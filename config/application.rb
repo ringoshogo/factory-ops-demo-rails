@@ -27,8 +27,9 @@ module FactoryOpsDemoRails
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    # lib/rubocop はカスタム Cop で、rubocop の gem が無いアプリの起動では読めない
-    config.autoload_lib(ignore: %w[assets tasks rubocop])
+    # lib/rubocop はカスタム Cop で、rubocop の gem が無いアプリの起動では読めない。
+    # lib/schema_compat.rb も、開発とテストのグループにだけある graphql-schema_comparator を読むので同じ
+    config.autoload_lib(ignore: %w[assets tasks rubocop schema_compat.rb])
 
     # Configuration for the application, engines, and railties goes here.
     #

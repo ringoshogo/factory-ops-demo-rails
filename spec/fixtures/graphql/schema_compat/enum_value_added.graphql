@@ -1,0 +1,62 @@
+type Query {
+  order(id: ID!, includeDrafts: Boolean @deprecated(reason: "常に下書きを含む")): Order
+  orders(status: OrderStatus): [Order!]!
+  legacyOrder(id: ID!): LegacyOrder @deprecated(reason: "order を使う")
+  search(keyword: String!): [SearchHit!]!
+}
+
+type Mutation {
+  placeOrder(input: PlaceOrderInput!): Order
+}
+
+type Order {
+  id: ID!
+  code: String!
+  note: String
+  memo: String @deprecated(reason: "note を使う")
+  amount: Int!
+  legacyAmount: Int @deprecated(reason: "amount を使う")
+  shipment: Shipment
+  legacyShipment: Shipment @deprecated(reason: "shipment を使う")
+  stage: OrderStage!
+}
+
+type LegacyOrder {
+  id: ID!
+}
+
+type Shipment {
+  id: ID!
+}
+
+type Notice {
+  id: ID!
+}
+
+union SearchHit = Order | Notice
+
+"""
+引数で受け取る enum
+"""
+enum OrderStatus {
+  OPEN
+  CLOSED
+  ARCHIVED @deprecated(reason: "CLOSED を使う")
+}
+
+"""
+出力にだけ使う enum
+"""
+enum OrderStage {
+  DRAFT
+  PLACED
+  SHIPPED
+  CANCELLED
+  LOST @deprecated(reason: "使わない")
+}
+
+input PlaceOrderInput {
+  code: String!
+  note: String
+  priority: Int @deprecated(reason: "使わない")
+}

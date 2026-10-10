@@ -2,9 +2,6 @@ class FactoryOpsSchema < GraphQL::Schema
   query Types::QueryType
   mutation Types::MutationType
 
-  # フィールドから使われる前の共通の型も、宣言の検査（spec/graphql）の対象にする
-  extra_types Types::TenantType, Types::UserErrorType, Types::PageInfoType, GraphQL::Types::BigInt
-
   # ソースはリクエストのトランザクションと同じ接続で動かす。AsyncDataloader は使わない
   # （docs/architecture/graphql-schema.md「ページングと N+1」）
   use GraphQL::Dataloader

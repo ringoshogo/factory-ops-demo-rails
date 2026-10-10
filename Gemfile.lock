@@ -176,6 +176,10 @@ GEM
       base64
       fiber-storage
       logger
+    graphql-schema_comparator (1.2.1)
+      bundler (>= 1.14)
+      graphql (>= 1.10, < 3.0)
+      thor (>= 0.19, < 2.0)
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
     image_processing (1.14.0)
@@ -482,6 +486,7 @@ DEPENDENCIES
   debug
   factory_bot_rails
   graphql (~> 2.6)
+  graphql-schema_comparator (~> 1.2)
   image_processing (~> 1.2)
   kamal
   packs-rails (~> 0.1.0)
