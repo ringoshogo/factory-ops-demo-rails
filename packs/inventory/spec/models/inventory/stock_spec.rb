@@ -1,6 +1,7 @@
 require "rails_helper"
+require "prism"
 
-# 在庫を変える唯一の入口 Stock#move! と、有効在庫が負にならない CHECK 制約（docs/architecture/data-model.md「在庫」）
+# 在庫を変える唯一の入口 Stock#move! と、有効在庫が負にならない CHECK 制約（docs/architecture/data-model.md「在庫（`inventory`）」）
 RSpec.describe Inventory::Stock do
   let(:tenant) { FactoryBot.create(:tenant) }
 
@@ -45,6 +46,48 @@ RSpec.describe Inventory::Stock do
     expect { stock.update!(on_hand: 99) }.to raise_error(ActiveRecord::ReadOnlyRecord)
     expect { stock.update_columns(on_hand: 99) }.to raise_error(ActiveRecord::ReadOnlyRecord)
     expect(stock.reload.on_hand).to eq(10)
+  end
+
+  # readonly? はクラス単位の一括の書き込みを止めない。在庫の行は在庫のパッケージの外から参照できない（packwerk の
+  # enforce_privacy）ので、パッケージの中のコードが一括の書き込みを呼ばないことで、move! を唯一の入口に保つ。
+  # 例外は、数量 0 の行を足すだけの lock_for の insert_all である。呼び出しは Prism の構文木から拾い、
+  # コメントと文字列の中の語を呼び出しと取り違えない。SQL を直接流す書き込みは、メソッドの名前で見分けられないので対象にしない
+  describe "一括の書き込み" do
+    let(:bulk_writes) do
+      %i[update_all update_counters increment_counter decrement_counter upsert upsert_all insert insert! insert_all insert_all!]
+    end
+
+    # source の中で一括の書き込みを呼ぶ箇所を、[囲むメソッドの名前, 呼ぶメソッドの名前] の配列で返す
+    def bulk_write_calls(source)
+      calls = []
+      visit = lambda do |node, method_name|
+        method_name = node.name if node.is_a?(Prism::DefNode)
+        calls << [ method_name, node.name ] if node.is_a?(Prism::CallNode) && bulk_writes.include?(node.name)
+        node.compact_child_nodes.each { visit.call(_1, method_name) }
+      end
+      visit.call(Prism.parse(source).value, nil)
+      calls
+    end
+
+    it "在庫のパッケージのコードは、lock_for の insert_all のほかに一括の書き込みを呼ばない" do
+      root = File.expand_path("../../../app", __dir__)
+      found = Dir.glob("#{root}/**/*.rb").sort.flat_map do |path|
+        bulk_write_calls(File.read(path)).map { [ path.delete_prefix("#{root}/"), *_1 ] }
+      end
+
+      expect(found).to eq([ [ "models/inventory/stock.rb", :lock_for, :insert_all ] ])
+    end
+
+    it "検査は、文字列の補間を引数に含む呼び出しを拾い、コメントの中の語を拾わない" do
+      source = <<~'RUBY'
+        def reset(item_id)
+          Stock.where(item_id: "#{item_id}").update_all(on_hand: 0) # upsert_all
+        end
+        # Stock.insert_all([])
+      RUBY
+
+      expect(bulk_write_calls(source)).to eq([ [ :reset, :update_all ] ])
+    end
   end
 
   it "書いた移動履歴は変えられない" do

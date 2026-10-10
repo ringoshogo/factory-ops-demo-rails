@@ -14,6 +14,9 @@
 #
 # See https://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
 RSpec.configure do |config|
+  # 絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、これに当たるコマンドラインの引数が無い
+  config.fail_if_no_examples = true
+
   # rspec-expectations config goes here. You can use an alternate
   # assertion/expectation library such as wrong or the stdlib/minitest
   # assertions if you prefer.

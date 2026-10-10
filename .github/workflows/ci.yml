@@ -110,7 +110,11 @@ jobs:
         run: bin/rails db:test:prepare
 
       - name: Run tests
-        run: bundle exec rspec
+        run: bundle exec rspec --format progress --format json --out tmp/rspec.json
+
+      # 層ごとの件数・割合・時間をジョブの要約に書き、未分類のファイルがあれば落とす（docs/guides/testing.md「テストの層」）
+      - name: Report test layers
+        run: bin/test-layers tmp/rspec.json
 
       # マイグレーションの結果と、読み込み直して書き出した結果の両方が structure.sql と一致すること
       - name: Check structure.sql round-trip

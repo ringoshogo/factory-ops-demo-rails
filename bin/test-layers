@@ -1,0 +1,73 @@
+#!/usr/bin/env ruby
+# rspec の JSON の出力を読み、テストの層ごとの件数・割合・時間を表にする（docs/guides/testing.md「テストの層」）。
+#
+#   bundle exec rspec --format progress --format json --out tmp/rspec.json
+#   bin/test-layers tmp/rspec.json
+#
+# 層は config/test_layers.yml の置き場で決める。どの層の置き場にも当たらないファイルがあれば失敗する。
+# 割合が目安を外れたら GitHub の警告の注釈を出すが、失敗にはしない。
+# 表は標準出力に書き、環境変数 GITHUB_STEP_SUMMARY があればそのファイルにも書き足す
+require "json"
+require "yaml"
+
+json_path = ARGV.fetch(0) { abort "使い方: bin/test-layers tmp/rspec.json" }
+config = YAML.load_file(File.expand_path("../config/test_layers.yml", __dir__))
+layers = config.fetch("layers")
+
+def under?(dirs, file)
+  Array(dirs).any? { |dir| File.fnmatch("#{dir}/**/*", file, File::FNM_PATHNAME) }
+end
+
+# id は "./packs/sales/spec/public/sales/part_mappings_spec.rb[1:2:1]" の形。
+# file_path は、共有の example では共有の example を定義したファイルを指すので使わない
+def spec_file(example) = example.fetch("id")[/\A(?:\.\/)?([^\[]+)/, 1]
+
+grouped = Hash.new { |hash, key| hash[key] = [] }
+unclassified = []
+overlapping = []
+JSON.parse(File.read(json_path)).fetch("examples").each do |example|
+  file = spec_file(example)
+  matched = layers.select { |layer| under?(layer["paths"], file) && !under?(layer["exclude"], file) }
+  case matched.size
+  when 0 then unclassified << file
+  when 1 then grouped[matched.first.fetch("key")] << example
+  else overlapping << "#{file}（#{matched.map { _1.fetch('name') }.join('・')}）"
+  end
+end
+
+unless unclassified.empty? && overlapping.empty?
+  warn "どの層の置き場にも当たらないファイル（config/test_layers.yml に置き場を足すか、ファイルを移す）:" unless unclassified.empty?
+  unclassified.uniq.sort.each { warn "  #{_1}" }
+  warn "2 つ以上の層の置き場に当たるファイル:" unless overlapping.empty?
+  overlapping.uniq.sort.each { warn "  #{_1}" }
+  exit 1
+end
+
+def percent(ratio) = format("%.1f%%", ratio * 100)
+
+def target(layer)
+  share = layer["share"]
+  return "数えない" unless layer.fetch("counted")
+  return "—" unless share
+
+  [ ("#{(share['min'] * 100).round}% 以上" if share["min"]), ("#{(share['max'] * 100).round}% 以下" if share["max"]) ].compact.join("・")
+end
+
+counted_total = layers.select { _1.fetch("counted") }.sum { grouped[_1.fetch("key")].size }
+warnings = []
+rows = layers.map do |layer|
+  examples = grouped[layer.fetch("key")]
+  seconds = format("%.2fs", examples.sum { _1.fetch("run_time", 0) })
+  ratio = counted_total.zero? ? 0.0 : examples.size.fdiv(counted_total)
+  share = layer["share"] || {}
+  if layer.fetch("counted") && counted_total.positive? &&
+      ((share["min"] && ratio < share["min"]) || (share["max"] && ratio > share["max"]))
+    warnings << "::warning::#{layer.fetch('name')}の割合 #{percent(ratio)} が目安（#{target(layer)}）を外れた"
+  end
+  "| #{layer.fetch('name')} | #{examples.size} | #{layer.fetch('counted') ? percent(ratio) : '—'} | #{seconds} | #{target(layer)} |"
+end
+
+table = [ "## テストの層", "", "| 層 | example | 割合 | 時間 | 目安 |", "|---|---|---|---|---|", *rows, "" ].join("\n")
+puts table
+puts warnings
+File.write(ENV["GITHUB_STEP_SUMMARY"], "#{table}\n", mode: "a") if ENV["GITHUB_STEP_SUMMARY"].to_s != ""

@@ -1,7 +1,7 @@
 require "rails_helper"
 
 # 基底の型・リゾルバ・mutation が宣言の無いものを拒否し、拒否を FORBIDDEN に揃える
-# （docs/architecture/graphql-schema.md「基底クラス」「ID と node」「エラー」「ページングと N+1」）
+# （docs/architecture/graphql-schema.md「基底クラス」「ID と `node`」「エラー」「ページングと N+1」）
 RSpec.describe "GraphQL の基底クラス" do
   let(:actor) { Partnerships::Actor.new(user_id: "u1", tenant_id: "t1", name: "name", email: "a@example.com", role: "member",
     partner_code: "p1") }
@@ -244,7 +244,7 @@ RSpec.describe "GraphQL の基底クラス" do
     end
   end
 
-  describe "ID と node" do
+  describe "ID と `node`" do
     it "Query に node と nodes が無い" do
       expect(FactoryOpsSchema.query.fields.keys).not_to include("node", "nodes")
     end

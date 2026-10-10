@@ -29,7 +29,7 @@ module Mutations
     def resolve(**input)
       return to_payload(perform(**input)) unless targeted?
 
-      # 見えない対象は存在しない対象と同じく NOT_FOUND にする（docs/architecture/graphql-schema.md「ID と node」）
+      # 見えない対象は存在しない対象と同じく NOT_FOUND にする（docs/architecture/graphql-schema.md「ID と `node`」）
       target = find_target(**input)
       return to_payload(OperationResult.failure(:not_found)) unless target
 
