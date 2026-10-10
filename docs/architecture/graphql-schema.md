@@ -199,7 +199,7 @@ type ReceivedInvoiceLine {
 
 受注側の型は、自社が所有するデータだけを返す。発注側の発注・検収・受領請求書へのフィールドは無い。受注の連結元の発注 ID（`sales_orders.source_purchase_order_id`）など、相手側を指す ID 列もフィールドに出さない。
 
-以下の SDL は抜粋である。省いた型（`ShipmentRequestLine`・`ShippingInstruction`・`BillableItem`・`InvoiceTaxSummary` など）は、`data-model.md` の表の列のうち、相手側を指す ID 列を除いたものをフィールドにする。ただし `ShipmentRequest.instruction` は有効な出荷指示だけを返すので、`ShippingInstruction` は `status` をフィールドにしない。
+以下の SDL は抜粋である。省いた型（`ShipmentRequestLine`・`ShippingInstruction`・`BillingTerm`・`InvoiceTaxSummary` など）は、`data-model.md` の表の列のうち、相手側を指す ID 列を除いたものをフィールドにする。ただし `ShipmentRequest.instruction` は有効な出荷指示だけを返すので、`ShippingInstruction` は `status` をフィールドにしない。
 
 同じテナントの中で複数のコンテキストを束ねるフィールド（受注 → 出荷依頼、出荷依頼明細 → 受注明細）は、ルートパッケージで両方の公開 API を呼んで解決する。コンテキスト同士は依存しない（`context-map.md`「疎結合を守る規則」5）。
 
@@ -350,8 +350,18 @@ type ItemPrice {
 }
 
 type BillableItem {
-  # data-model.md の列（相手側を指す ID 列を除く）に加えて
-  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空"
+  id: ID!
+  customer: Tenant!
+  salesOrderLine: SalesOrderLine!
+  itemName: String!
+  unitPrice: BigInt!
+  "検収数量"
+  quantity: Int!
+  taxRatePercent: Int!
+  "単価 × 検収数量。税を含まない"
+  amount: BigInt!
+  inspectedOn: ISO8601Date!
+  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空。販売単価の履歴と一緒に足す（../implementation-plan.md M27）"
   priceExplanation: PriceExplanation!
 }
 
@@ -571,8 +581,10 @@ type AuditLog {
 | `supplier.shipmentRequests`・`ShipmentRequest.instruction`・`shipment` | `Fulfillment::ShipmentRequests` |
 | `ShipmentRequest.salesOrder`・`ShipmentRequestLine.salesOrderLine` | `Sales::SalesOrders` |
 | `supplier.billingTerms` | `Billing::Terms` |
-| `supplier.billableItems`・`Invoice.items` | `Billing::BillableItems` |
-| `supplier.invoices`・`supplier.invoice` | `Billing::Invoices` |
+| `supplier.billableItems`・`Invoice.items` | `Billing::BillableItems`（`billableItems` は未請求の明細だけを返す。取引先でないテナントで絞ると空） |
+| `supplier.invoices`・`supplier.invoice`・`Invoice.taxSummaries` | `Billing::Invoices`（集計は請求書 ID をまとめて渡す） |
+| `BillingTerm.customer`・`BillableItem.customer`・`Invoice.customer` | `Partnerships::Directory.tenants` |
+| `BillableItem.salesOrderLine` | `Sales::SalesOrders.lines_by_ids` |
 | `supplier.dashboard` | `Sales::SalesOrders.count_by_status`・`Inventory::Stocks.below_safety_stock`・`Fulfillment::ShipmentRequests.due_within`・`Billing::BillableItems.unbilled_total` |
 | `Item.unitPrice`・`Item.prices` | `Sales::ItemPrices.price_at`・`history` |
 | `BillableItem.priceExplanation` | `Sales::ItemPrices.explain`（ルートパッケージが、請求対象明細の受注明細 ID と請求書の発行時刻を渡す） |
@@ -610,9 +622,9 @@ type AuditLog {
 | `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions`（どちらも出荷依頼 ID で指定する。取消は有効な指示を取り消す。取消済・出荷済の出荷依頼と、有効な指示の重複・不在は `CONFLICT`） | なし |
 | `postShipment` | `Fulfillment::Shipping.post`（出荷依頼 ID と出荷日で指定し、有効な指示のある出荷依頼を全量で計上する。`Inventory::Allocation` で引当を消費し、`active` でない引当があれば `CONFLICT`） | 出荷計上 |
 | `adjustStock` | `Inventory::Adjustment.adjust`（入庫・出庫。出庫は有効在庫までに限り、超えれば `INVALID_INPUT`。品目は在庫が受注に依存しないので、mutation が `Sales::Catalog` で自社の品目かを確かめ、見えなければ `NOT_FOUND`） | なし |
-| `setBillingTerm` | `Billing::Terms.set` | なし |
-| `closeBillingPeriod` | `Billing::Closing.close`（下書きの請求書を作る） | なし |
-| `discardDraftInvoice` | `Billing::Closing.discard` | なし |
+| `setBillingTerm` | `Billing::Terms.set`（取引先 ID と締め日。取引先は自社が受注側の取引関係の相手に限り、それ以外は `NOT_FOUND`） | なし |
+| `closeBillingPeriod` | `Billing::Closing.close`（取引先 ID と締め日で、下書きの請求書を作る。入力と状態の結果は `data-model.md`「請求（`billing`）」） | なし |
+| `discardDraftInvoice` | `Billing::Closing.discard`（請求書 ID で指定し、消した請求書の ID を返す。発行済みは `CONFLICT`） | なし |
 | `issueInvoice` | `Billing::Closing.issue` | 請求書発行 |
 | `establishPartnership` | `Partnerships::Management.establish`（相手は発注側テナントの取引用コードで指定する。「ID と `node`」） | なし |
 | `revokePartnership` | `Partnerships::Management.revoke` | なし |

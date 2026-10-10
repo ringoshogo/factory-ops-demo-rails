@@ -1,6 +1,7 @@
 module Sales
-  # 購買からの「取消依頼」と「検収完了」の受け手（docs/architecture/context-map.md「取消の流れ」2・4、「検収と請求の流れ」2）。
-  # 受注側テナントの名義で、自社の受注に取消の審査を作って出荷へ「出荷停止」を出すか、検収数量を記録して受注を検収済にする。
+  # 購買からの「取消依頼」と「検収完了」の受け手（docs/architecture/context-map.md「取消の流れ」2・4、「検収と請求の流れ」2・3）。
+  # 受注側テナントの名義で、自社の受注に取消の審査を作って出荷へ「出荷停止」を出すか、検収数量を記録して受注を検収済にし、
+  # 請求へ「請求対象確定」を出す。
   # 取引関係の状態は見ない。「発注登録」の受け手は、受注を作る腐敗防止層（PurchaseOrderTranslator）である
   module PurchasingEventReceiver
     # 「検収完了」が、受注側の「出荷計上」より先に届いた。再配送に任せる
@@ -48,11 +49,25 @@ module Sales
       lines = order.lines.index_by(&:source_purchase_order_line_id)
       inspected_on = Date.iso8601(event.inspected_on)
       event.lines.each do |line|
-        InspectionRecord.create!(owner_tenant_id: order.owner_tenant_id, shipment_id: event.shipment_id,
+        record = InspectionRecord.create!(owner_tenant_id: order.owner_tenant_id, shipment_id: event.shipment_id,
           sales_order_line: lines.fetch(line.fetch("purchase_order_line_id")), quantity: line.fetch("accepted_quantity"), inspected_on:)
+        publish_billable(order, record)
       end
       order.update!(inspected_at: Time.current)
     end
-    private_class_method :review, :publish_rejected, :inspect_shipment
+
+    # 検収した受注明細ごとに、受注明細に写した品目名・単価・税率で「請求対象確定」を出す（context-map.md「検収と請求の流れ」3）。
+    # 検収数量が 0 の明細は請求する額が無いので出さない。検収の記録と同じトランザクションで出すので、
+    # 再配送で記録を書かずに戻るときは、このイベントも出し直さない
+    def self.publish_billable(order, record)
+      return if record.quantity.zero?
+
+      line = record.sales_order_line
+      Contracts.publish(Contracts::BillableItemConfirmed.new(supplier_tenant_id: order.owner_tenant_id,
+        buyer_tenant_id: order.customer_tenant_id, shipment_id: record.shipment_id, sales_order_line_id: line.id,
+        purchase_order_line_id: line.source_purchase_order_line_id, item_name: line.item_name, unit_price: line.unit_price.to_s,
+        tax_rate_percent: line.tax_rate_percent, quantity: record.quantity, inspected_on: record.inspected_on.iso8601))
+    end
+    private_class_method :review, :publish_rejected, :inspect_shipment, :publish_billable
   end
 end

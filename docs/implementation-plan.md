@@ -986,11 +986,11 @@ bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspections_sp
 
 **作るもの**：請求対象確定のイベントと配送表の行、受注の検収完了の受け手（M23）からの請求対象確定の発行、`billing_terms`・`billable_items`・`invoices`・`invoice_tax_summaries`、請求対象確定の受け手 `Billing::SalesEventReceiver`、`Billing::Terms`・`Billing::BillableItems`・`Billing::Closing.close`・`discard`、`supplier.billingTerms`・`supplier.billableItems`・`supplier.invoices`・`supplier.invoice`、`setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`（どれも `audit_exempt`）
 
-締めの入力と結果は次のとおりである。
+締めの入力と結果は次のとおりである。締めは、`setBillingTerm` の行を除いて上から順に確かめ、最初に当たった結果を返す。
 
 | 入力・状態 | 結果 |
 |---|---|
-| 取引先が、自社が受注側の取引関係（失効したものを含む）の相手でない | `NOT_FOUND`（`path` は取引先）。`setBillingTerm`・`supplier.billableItems` も同じ。S1 の表に行を足す |
+| 取引先が、自社が受注側の取引関係（失効したものを含む）の相手でない | `NOT_FOUND`（`path` は取引先）。`setBillingTerm` も同じ。`supplier.billableItems` は、取引先でないテナントで絞ると空になる。S1 の表に行を足す |
 | 取引先に請求条件が無い | `NOT_FOUND`（`path` は取引先） |
 | `setBillingTerm` の締め日が 1〜28・31 の外 | `INVALID_INPUT` |
 | 締め日が請求条件の締め日（31 は月末）に当たらない | `INVALID_INPUT` |
@@ -1014,7 +1014,7 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 
 - 単体（`closing_spec.rb`）：上の表の各行。税率 8% と 10% が混ざる明細で、税額が明細ごとの丸めの合計と異なる例。末日締め（31）を 2 月と 30 日の月で。締めの後に届いた前の期間の検収が次の締めで集まり、締め日より後の検収が集まらない。前の請求書の `period_end` と同じ締め日を拒む。下書きの破棄で明細が未請求に戻る
 - 単体（`sales_event_receiver_spec.rb`）：同じ請求対象確定を 2 回流しても明細が 1 件（冪等の共有テスト）
-- 単体（`purchasing_event_receiver_spec.rb` に足す）：検収完了の受け手が、検収した受注明細ごとに請求対象確定を出す
+- 単体（`purchasing_event_receiver_spec.rb` に足す）：検収完了の受け手が、検収数量が正の受注明細ごとに請求対象確定を出す。数量 0 の明細には出さない
 - 結合（`spec/requests/inspections_spec.rb` に足す）：検収 → イベントを流す → 受注側に未請求の請求対象明細ができる。`spec/requests/billing_spec.rb`：`closeBillingPeriod` と `discardDraftInvoice` の成功と失敗の写し。`invoiceNumber` を選んだ `supplier.invoice` と `supplier.invoices` が、下書きでもエラーにならず空を返す
 - 競合（`closing_lock_spec.rb`）：同じ取引先の締めを 2 つの接続で同時に走らせ、下書きが 1 件だけでき、もう一方が `CONFLICT` になる。請求条件の行ロックで待つことを確かめる
 
