@@ -245,3 +245,75 @@ bin/test-layers tmp/rspec.json                 # 未分類なし
 ### 残件の処理
 
 引当先が M21 の `open` は OI-52・OI-53・OI-65 の 3 件で、どれも閉じた。実装で決めたことは OI-67〜OI-70 に judgment で積んだ。引当先が M21 の judgment（OI-46〜51・OI-54〜57・OI-60〜61）は、作者の確認を待つ。
+
+## M22 受注側の取消と、取消と出荷の競合
+
+PR #36（`m22-supplier-cancel`、base は `m21-cancellation`）。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの `a384e2c` で直し、違和感は直すか改善の候補に移した。High 以上が無いので、読み直しには出していない。どちらの系統も、`56271cf..5fb1514` の diff を読んだ。どちらもテストを流さず、依頼に書いた実行結果を前提にした。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（X1） | 指摘（C1・C2） |
+| 参照の維持 | 指摘なし | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：品番照合待ちの受注を取り消す単体の example が無い。照合前の明細があれば `CONFLICT` にする変更を足しても落ちない | 照合前の明細を持つ受注が取り消せ、「受注取消」と「出荷取消」を出し、出荷取消が審査 ID の空と出荷可能を出していないことを運ぶ example を足した。照合前の明細を `CONFLICT` にする変更で落ちることを確かめた | `a384e2c` |
+| Low | Claude | C1：行列テストで、`approveCancellationReview` の説明のコメントの直後に `cancelSalesOrder` の行を入れたので、説明が `cancelSalesOrder` のものに見える | `cancelSalesOrder` の行に説明を付け、審査の説明を `approveCancellationReview` の直前に戻した | `a384e2c` |
+| Low | Claude | C2：X1 と同じ | X1 と同じ | `a384e2c` |
+
+違和感は次のように扱った。
+
+- Codex 1：取消と計上を直列にするのは、先に取る在庫の行ロックで、引当の行ロックだけの検出力は示していない → Claude 3 と同じ。文書の表現を直した（`a384e2c`）
+- Codex 2・3：承認の経路の競合テストが RED で通ったことと、監査の対象を `result` に変えても落ちないことは妥当 → 記録だけにした
+- Claude 1：受注側の取消と取消依頼の受け手の競合テストが、イベントのジョブをテナントで絞らずに読むので、ほかの実行のジョブで揺れうる → 受注側テナントで絞った。M21 の `cancellation_reviews_lock_spec.rb` にも同じ形があったので、同じく絞った（`a384e2c`）。テナントで絞らずにキューの表を読む競合テストは、ほかに無い
+- Claude 2：購買の受け手が受注取消で `cancelled_at` を見ない理由が書かれていない → 受注側の `CONFLICT` で 2 つの取消の時刻が並ばないことと、並べば CHECK 制約で失敗させて知らせることをコメントに書いた（`a384e2c`）
+- Claude 3：`data-model.md` は「引当の行ロックが直列にする」と書くが、最初に当たるのは在庫の行ロックである → `data-model.md`「取消と出荷の競合を止める場所」と、取消と計上の 2 つのコメントを、在庫の行 → 引当の行のロックの表現にそろえた（`a384e2c`）
+
+### 実装の記録
+
+完了条件の spec と、購買の受け手の spec・行列テスト・S1 を実装の前に流し、727 examples, 25 failures で落ちた。公開 API を空のモジュールで、受注取消のイベントを定義だけで置いてから流したので、失敗は `NoMethodError`（公開 API が無い）と、`cancelSalesOrder` が無いことによる期待の不一致と、配送表に無いイベントの `KeyError` だった。`cancel_vs_ship_spec.rb` のうち審査の承認の経路の 2 本は、M21 で承認を実装済みなので通った。受注側の取消の経路の 2 本は落ちた。
+
+壊したファイルは複製から戻した。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 受注 | 未決の審査の確認・決着した審査も数える・受注のロック（受け手との競合テスト）・失敗での巻き戻し・受注取消の宛先・受注取消を出さない・内部の取消の処理の引当の解除の確認（単体と競合テスト）・照合前の明細を `CONFLICT` にする |
+| 購買 | 受注取消の時刻の上書き |
+| GraphQL | 監査の相手・規則を閉じる（行列テスト） |
+
+監査の対象を `target` から `result` に変えても落ちない。どちらも同じ受注の値で、対象の型と ID が変わらないからである。
+
+壊した後に複製から戻したファイルを、bootsnap が壊した版のまま読み込み、行列テストが落ちた。複製を作った秒と同じ秒に壊したので、戻したファイルの更新時刻が壊した版と同じ秒になった。壊すときと戻すときに更新時刻を進めて、複製から戻した壊し方を流し直した。結果は上の表と同じである（IB-24）。
+
+### 確かめたこと
+
+`a384e2c` で、Ruby 3.4.11 で共通の完了条件と M22 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/sales/spec/public/sales/order_cancellation_spec.rb spec/requests/cancellations_spec.rb   # 0 failures
+bundle exec rspec spec/concurrency/cancel_vs_ship_spec.rb   # 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1353 examples, 0 failures
+BASE_REF=origin/m21-cancellation bin/check-branch-coverage   # 一覧は空
+bundle exec rspec --tag concurrency   # 2 回続けて 28 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk check                             # 違反なし
+bin/check-structure                            # 終了コード 0
+BASE_REF=origin/m21-cancellation bin/check-schema-compat   # 落とす変更なし
+bin/check-open-items --due M22                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし
+```
+
+分岐の網羅率の警告は、`cb3f970` の後の全件の計測で 0 件だった。
+
+### 残件の処理
+
+引当先が M22 の `open` は無かった。OI-62（judgment）は実装と一致し、作者の確認を待つ。実装で決めたことは OI-71 に judgment で積んだ。
