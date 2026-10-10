@@ -44,7 +44,10 @@ RSpec.describe "bin/check-branch-coverage" do
     commit_all("head")
   end
 
-  def arm(type, line, count) = { "type" => type, "start_line" => line, "start_column" => 2, "end_line" => line, "end_column" => 9, "count" => count }
+  def arm(type, line, count, end_line: line, condition_line: line, implicit: false)
+    { "type" => type, "start_line" => line, "start_column" => 2, "end_line" => end_line, "end_column" => 9,
+      "condition_line" => condition_line, "implicit" => implicit, "count" => count }
+  end
 
   def write_coverage(results) = write("tmp/coverage.json", JSON.generate(results))
 
@@ -76,6 +79,58 @@ RSpec.describe "bin/check-branch-coverage" do
     expect(status.exitstatus).to eq(0)
     expect(out).to include("::warning file=packs/sales/app/public/sales/c.rb,line=2::どの example も通らない分岐（then）")
     expect(out.scan("::warning").size).to eq(1)
+  end
+
+  context "複数の行にわたる if" do
+    let(:if_source) { "def a(x)\n  if x\n    1\n  end\nend\n" }
+    # 書いた側の腕は 3 行目、else の無い側は if の全体（2〜4 行目）の座標で返る
+    let(:if_arms) { [ arm("then", 3, 0, condition_line: 2), arm("else", 2, 0, end_line: 4, condition_line: 2, implicit: true) ] }
+
+    it "条件の行だけを変えても、その条件の未通過の腕を出す" do
+      repository(base_files: { "app/models/a.rb" => if_source }, head_files: { "app/models/a.rb" => if_source.sub("if x", "if x.positive?") })
+      write_coverage("app/models/a.rb" => if_arms)
+
+      out, _err, status = run_check
+
+      expect(status.exitstatus).to eq(0)
+      expect(out).to include("::warning file=app/models/a.rb,line=3::どの example も通らない分岐（then）",
+        "::warning file=app/models/a.rb,line=2::どの example も通らない分岐（else）")
+    end
+
+    it "既存の腕の中に行を足すと、その腕を出し、else の無い側は出さない" do
+      repository(base_files: { "app/models/a.rb" => if_source }, head_files: { "app/models/a.rb" => if_source.sub("    1\n", "    1\n    2\n") })
+      write_coverage("app/models/a.rb" => [ arm("then", 3, 0, end_line: 4, condition_line: 2),
+        arm("else", 2, 0, end_line: 5, condition_line: 2, implicit: true) ])
+
+      out, _err, status = run_check
+
+      expect(status.exitstatus).to eq(0)
+      expect(out).to include("::warning file=app/models/a.rb,line=3::どの example も通らない分岐（then）")
+      expect(out.scan("::warning").size).to eq(1)
+    end
+  end
+
+  it "名前を変えたファイルは、変えていない行の未通過の分岐も出す" do
+    repository(base_files: { "app/models/a.rb" => base_source }, head_files: {})
+    git("mv", "app/models/a.rb", "app/models/b.rb")
+    write("app/models/b.rb", "#{base_source}# 足した行\n")
+    commit_all("rename")
+    write_coverage("app/models/b.rb" => [ arm("then", 2, 0) ])
+
+    out, _err, status = run_check
+
+    expect(status.exitstatus).to eq(0)
+    expect(out).to include("::warning file=app/models/b.rb,line=2::どの example も通らない分岐（then）")
+  end
+
+  it "パッケージの lib/ のファイルも計測の対象として照らす" do
+    repository(base_files: { "app/models/a.rb" => base_source }, head_files: { "packs/platform/lib/platform/x.rb" => base_source })
+    write_coverage("packs/platform/lib/platform/x.rb" => [ arm("then", 2, 0) ])
+
+    out, _err, status = run_check
+
+    expect(status.exitstatus).to eq(0)
+    expect(out).to include("::warning file=packs/platform/lib/platform/x.rb,line=2::どの example も通らない分岐（then）")
   end
 
   it "差分にあって計測の結果に無いファイルを、計測なしとしてファイルごとに出す" do
@@ -124,6 +179,21 @@ RSpec.describe "bin/check-branch-coverage" do
 
     expect(status.exitstatus).to eq(0)
     expect(out).to include("::warning file=app/models/new.rb,line=2::どの example も通らない分岐（then）")
+  end
+
+  it "引用符を含む名前のファイルも、ほかのファイルの行と取り違えずに照らす" do
+    repository(base_files: { "app/models/a.rb" => base_source },
+      head_files: { "app/models/a.rb" => "#{base_source}# 足した行\n", %(app/models/q"x.rb) => base_source })
+    write(%(app/models/u"y.rb), base_source)
+    write_coverage("app/models/a.rb" => [ arm("then", 2, 0) ], %(app/models/q"x.rb) => [ arm("else", 2, 0) ],
+      %(app/models/u"y.rb) => [ arm("then", 2, 0) ])
+
+    out, err, status = run_check
+
+    expect([ err, status.exitstatus ]).to eq([ "", 0 ])
+    expect(out).to include(%(::warning file=app/models/q"x.rb,line=2::どの example も通らない分岐（else）),
+      %(::warning file=app/models/u"y.rb,line=2::どの example も通らない分岐（then）))
+    expect(out).not_to include("file=app/models/a.rb")
   end
 
   it "一覧をジョブの要約にも書く" do
@@ -205,8 +275,24 @@ RSpec.describe "bin/check-branch-coverage" do
       results = JSON.parse(File.read(File.join(@root, "tmp/coverage.json")))
       expect(results.keys).to eq([ "lib/sample.rb" ])
       expect(results.fetch("lib/sample.rb")).to eq([
-        { "type" => "then", "start_line" => 4, "start_column" => 6, "end_line" => 4, "end_column" => 10, "count" => 1 },
-        { "type" => "else", "start_line" => 6, "start_column" => 6, "end_line" => 6, "end_column" => 9, "count" => 0 }
+        { "type" => "then", "start_line" => 4, "start_column" => 6, "end_line" => 4, "end_column" => 10,
+          "condition_line" => 3, "implicit" => false, "count" => 1 },
+        { "type" => "else", "start_line" => 6, "start_column" => 6, "end_line" => 6, "end_column" => 9,
+          "condition_line" => 3, "implicit" => false, "count" => 0 }
+      ])
+    end
+
+    it "else の無い if の else の側は、条件の式全体の座標で implicit として書く" do
+      write("app/models/guard.rb", "module Guard\n  def self.call(flag)\n    if flag\n      :yes\n    end\n  end\nend\nGuard.call(true)\n")
+
+      _out, err, status = record("require #{File.join(@root, 'app/models/guard.rb').dump}\nBranchCoverage.write")
+
+      expect([ err, status.success? ]).to eq([ "", true ])
+      expect(JSON.parse(File.read(File.join(@root, "tmp/coverage.json"))).fetch("app/models/guard.rb")).to eq([
+        { "type" => "else", "start_line" => 3, "start_column" => 4, "end_line" => 5, "end_column" => 7,
+          "condition_line" => 3, "implicit" => true, "count" => 0 },
+        { "type" => "then", "start_line" => 4, "start_column" => 6, "end_line" => 4, "end_column" => 10,
+          "condition_line" => 3, "implicit" => false, "count" => 1 }
       ])
     end
 

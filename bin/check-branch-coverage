@@ -8,7 +8,8 @@
 #
 # 網羅率は example がその分岐を実行したかだけを見て、確かめたかは見ないので、失敗にはせず終了コード 0 で終わる。
 # 差分にある計測の対象のファイルが計測の結果に無ければ「計測なし」で出す。未通過なしとして扱うと、どの example も
-# 読み込まないファイルの分岐が見えなくなるからである。計測の結果が無いか読めないときは、照らせないので失敗する。
+# 読み込まないファイルの分岐が見えなくなるからである。計測の結果が無いか読めないときと、git で差分を取れないときは、
+# 照らせないので失敗する。
 # 一覧は標準出力に書き、環境変数 GITHUB_STEP_SUMMARY があればそのファイルにも書き足す
 require "json"
 require "open3"
@@ -24,33 +25,40 @@ end
 
 def target?(path) = TARGETS.any? { File.fnmatch?(_1, path, File::FNM_PATHNAME) }
 
-# 基準と作業ツリーの差分の、足した行と変えた行の番号をファイルごとに返す。名前を変えたファイルは、
-# 全行を足した行として数える（--no-renames）。照合を単純に保ち、移した先の未通過の分岐を見落とさないためである
+# 基準と作業ツリーの差分の、足した行と変えた行の番号を、計測の対象のファイルごとに返す。名前を変えたファイルは、
+# 全行を足した行として数える（--no-renames）。照合を単純に保ち、移した先の未通過の分岐を見落とさないためである。
+# ファイルの名前は NUL 区切り（-z）で取り、パッチはファイルごとに取る。パッチの見出しは、引用符や改行を含む名前を
+# 引用して書くので、見出しから名前を読むと読み違えるからである
 def changed_lines(fork_point, root:)
-  out, err, ok = git("-c", "core.quotePath=false", "diff", "--no-renames", "--no-ext-diff", "--no-color", "--unified=0",
-    "--diff-filter=d", fork_point, root:)
+  names, err, ok = git("diff", "--no-renames", "--diff-filter=d", "--name-only", "-z", fork_point, root:)
   abort "git diff に失敗した: #{err}" unless ok
 
-  lines = Hash.new { |hash, key| hash[key] = [] }
-  file = nil
-  out.each_line do |line|
-    case line
-    when %r{\A\+\+\+ b/(.+)\n?\z} then file = Regexp.last_match(1)
-    when /\A@@ -\S+ \+(\d+)(?:,(\d+))? @@/
-      start = Regexp.last_match(1).to_i
-      count = Regexp.last_match(2)&.to_i || 1
-      lines[file].concat((start...(start + count)).to_a) if file && count.positive?
+  names.split("\0").select { target?(_1) }.to_h do |path|
+    patch, err, ok = git("diff", "--no-renames", "--no-ext-diff", "--no-color", "--unified=0", fork_point, "--", ":(literal)#{path}", root:)
+    abort "git diff に失敗した: #{err}" unless ok
+
+    # ハンクの見出しは「@@ -元 +先の開始,行数 @@」で、行数が 1 のときは省かれ、0 は削除だけのハンクである
+    lines = patch.scan(/^@@ -\S+ \+(\d+)(?:,(\d+))? @@/).flat_map do |first, count|
+      first = first.to_i
+      (first...(first + (count || "1").to_i)).to_a
     end
+    [ path, lines ]
   end
-  lines
 end
 
 # まだ commit していないファイルは git diff に出ないので、全行を足した行として足す
 def untracked_lines(root:)
-  out, err, ok = git("-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard", root:)
+  names, err, ok = git("ls-files", "--others", "--exclude-standard", "-z", root:)
   abort "git ls-files に失敗した: #{err}" unless ok
 
-  out.lines(chomp: true).to_h { |path| [ path, (1..File.foreach(File.join(root, path)).count).to_a ] }
+  names.split("\0").select { target?(_1) }.to_h { |path| [ path, (1..File.foreach(File.join(root, path)).count).to_a ] }
+end
+
+# 腕に当たる行は、条件の始まる行と、腕の範囲の行である。条件だけを変えたときと、既存の腕の中に行を足したときも拾う。
+# 座標が条件の式全体と同じ腕（else の無い if の else の側など）は、範囲が書いた側の腕を含むので、条件の行だけにする
+def arm_lines(arm)
+  own = arm.fetch("implicit") ? [] : (arm.fetch("start_line")..arm.fetch("end_line")).to_a
+  [ arm.fetch("condition_line"), *own ]
 end
 
 base_ref = ENV.fetch("BASE_REF", "").then { _1.empty? ? "origin/main" : _1 }
@@ -72,7 +80,7 @@ unless ok
 end
 fork_point = fork_point.strip
 
-changes = changed_lines(fork_point, root:).merge(untracked_lines(root:)).select { |path, _| target?(path) }
+changes = changed_lines(fork_point, root:).merge(untracked_lines(root:))
 
 uncovered = []
 unmeasured = []
@@ -81,7 +89,7 @@ changes.sort.each do |path, lines|
   next unmeasured << path if arms.nil?
 
   arms.each do |arm|
-    next unless arm.fetch("count").zero? && lines.include?(arm.fetch("start_line"))
+    next unless arm.fetch("count").zero? && arm_lines(arm).intersect?(lines)
 
     uncovered << { path:, line: arm.fetch("start_line"), type: arm.fetch("type"),
                    range: "#{arm.fetch('start_line')}:#{arm.fetch('start_column')}〜#{arm.fetch('end_line')}:#{arm.fetch('end_column')}" }

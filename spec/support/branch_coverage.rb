@@ -2,8 +2,10 @@
 # bin/check-branch-coverage が、この JSON と git diff を照らす。
 #
 # 結果の形は、ルートからの相対のパスをキーにし、分岐の腕ごとに種類・開始と終わりの行と列・通過の回数を持つ配列を値にする。
+# 腕は、条件の始まる行（condition_line）と、座標が条件の式全体と同じか（implicit）も持つ。else の無い if の else の側や
+# &. の両側がそれに当たり、bin/check-branch-coverage は、その範囲の行を腕の行として数えない。
 #   { "packs/sales/app/public/sales/catalog.rb" => [ { "type" => "then", "start_line" => 37, "start_column" => 6,
-#     "end_line" => 37, "end_column" => 60, "count" => 0 }, ... ] }
+#     "end_line" => 37, "end_column" => 60, "condition_line" => 37, "implicit" => false, "count" => 0 }, ... ] }
 # 読み込まれなかったファイルはキーに出ない。分岐の無いファイルは空の配列で出る
 require "coverage"
 require "json"
@@ -42,10 +44,11 @@ module BranchCoverage
 
   # Coverage は分岐を { 条件の座標 => { 腕の座標 => 回数 } } で返す。座標は [種類, 番号, 開始の行, 開始の列, 終わりの行, 終わりの列]
   def self.arms(branches)
-    branches.values.flat_map do |targets|
+    branches.flat_map do |(_kind, _node_id, *node_range), targets|
       targets.map do |(type, _id, start_line, start_column, end_line, end_column), count|
         { "type" => type.to_s, "start_line" => start_line, "start_column" => start_column,
-          "end_line" => end_line, "end_column" => end_column, "count" => count }
+          "end_line" => end_line, "end_column" => end_column, "condition_line" => node_range.first,
+          "implicit" => [ start_line, start_column, end_line, end_column ] == node_range, "count" => count }
       end
     end.sort_by { [ _1["start_line"], _1["start_column"], _1["type"] ] }
   end
