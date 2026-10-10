@@ -276,15 +276,15 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/te
 - [`implementation-plan.md`](implementation-plan.md)「M18 構造化ログと相関 ID」「M19 監査ログ」「M30 メトリクス」「M31 SLO と障害対応の手順書」
 - [`architecture/data-model.md`](architecture/data-model.md)「監査ログ（`platform`）」、[`architecture/graphql-schema.md`](architecture/graphql-schema.md)「監査ログ」
 
-**どこで守っているか**（すべて計画）
+**どこで守っているか**（メトリクスと SLO は計画）
 - 構造化ログ：`Rails.event` を出口にした 1 行 1 件の JSON。`Contracts.publish` がイベントの付帯情報で相関 ID と因果 ID を運ぶ。個人情報と自由記述を書かない（M18）
 - 監査ログ：mutation とイベントのジョブの基底クラスが記録し、表は追記だけ（M19）
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
 
-**どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`（M31）。どれも計画である。
+**どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`（M31）。M30・M31 の spec は計画である。
 
-**状態**：計画（M18・M19・M30・M31）。
+**状態**：構造化ログ（M18）と監査ログ（M19）は実装済み。メトリクス（M30）と SLO（M31）は計画。
 
 ### 11. チーム開発
 

@@ -167,11 +167,12 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `audit_logs` | `occurred_at`・`actor_type`（`user` / `system`）・`actor_user_id`・`action`（例：`purchase_order.place`・`event.received`）・`target_type`・`target_id`・`counterparty_tenant_id`→・`request_id`・`correlation_id`・`causation_id`・`metadata`（`jsonb`） | 追記だけ。`updated_at` を持たない。イベントの受信は `(owner, causation_id, action)` 一意（部分一意索引）で、同じイベントの 2 回目の配送で増えない |
+| `audit_logs` | `occurred_at`・`actor_type`（`user` / `system`）・`actor_user_id`→・`action`（例：`purchase_order.place`・`event.received`）・`target_type`・`target_id`・`counterparty_tenant_id`→・`request_id`・`correlation_id`・`causation_id`・`metadata`（`jsonb`） | 追記だけ。`updated_at` を持たない。`actor_user_id` は `actor_type` が `user` のときだけ埋まる（CHECK 制約）。イベントの受信は `(owner, causation_id, action)` 一意（部分一意索引）で、同じイベントの 2 回目の配送で増えない |
 
 - **所有テナント**：書き込んだテナントである。mutation では操作者の所有テナント、イベントの受信では宛先テナントになる。相手テナントは `counterparty_tenant_id` に入れるだけで、相手からは見えない。
-- **追記だけにする仕組み**：アプリのロールには `SELECT`・`INSERT` だけを付与する（「RLS」）。トリガーが、すべての UPDATE と、保存期間の中の行の DELETE を拒む。所有ロールでも、保存期間の中の行は消せない。
-- **保存期間**：7 年。保存期間を過ぎた行は、所有ロールの rake タスク `audit:purge` が消す。
+- **ユーザーと相手テナントへの参照**：`actor_user_id`（取引関係の `users`）と `counterparty_tenant_id` は、コンテキストをまたぐ参照なので外部キーを張らない（「全テーブルに共通の規則」）。所有テナントの `owner_tenant_id` には、テナントの表と同じく外部キーがあるので、監査の行を持つテナントは消せない。
+- **追記だけにする仕組み**：アプリのロールには `SELECT`・`INSERT` だけを付与する（「RLS」）。トリガーが、すべての UPDATE と、保存期間の中の行の DELETE を拒む。行のトリガーは `TRUNCATE` で動かないので、`TRUNCATE` を拒む文単位のトリガーも置く。所有ロールでも、保存期間の中の行は消せず、表を空にもできない。
+- **保存期間**：7 年。保存期間を過ぎた行は、所有ロールの rake タスク `audit:purge` が、DB の関数 `purge_expired_audit_logs()` を呼んで消す。運用の担当者は、所有ロールの資格情報を持つ工程で、月に 1 回流す。Web とワーカーには資格情報が無いので流せない。保存期間は、トリガーと関数の両方に同じ値で書いてあり、変えるときは両方を同じマイグレーションで直す。
 - **`metadata` に入れないもの**：メールアドレス・氏名・自由記述。ID・コード・件数だけを入れる。
 
 ### 通知（`notifications`）
