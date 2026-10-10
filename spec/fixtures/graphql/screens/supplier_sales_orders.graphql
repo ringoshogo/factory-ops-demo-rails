@@ -1,0 +1,17 @@
+query SupplierSalesOrders($first: Int, $after: String) {
+  supplier {
+    salesOrders(first: $first, after: $after) {
+      nodes {
+        id
+        orderNo
+        orderDate
+        dueDate
+        status
+        customer { id name }
+        lines { id customerPartNumber itemName quantity allocatedQuantity unitPrice taxRatePercent }
+        shipmentRequest { id status }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

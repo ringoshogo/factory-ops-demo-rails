@@ -110,6 +110,34 @@ RSpec.describe "取引関係の GraphQL", type: :request do
     end
   end
 
+  # 取引先を 1 社選んでカタログを引く入口（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe "buyer.supplier" do
+    def supplier_of(tenant_id)
+      graphql("query($id: ID!) { buyer { supplier(supplierTenantId: $id) { supplier { name } permissions } } }", id: tenant_id)
+        .tap { expect(_1["errors"]).to be_nil }.dig("data", "buyer", "supplier")
+    end
+
+    it "取引関係のある受注側テナントで、その 1 社の関係を返す" do
+      partnership
+      other = FactoryBot.create(:tenant)
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:partnership, buyer_tenant_id: buyer.id, permissions: %w[place_orders]) }
+      login_as(buyer_admin)
+
+      expect(supplier_of(supplier.id)).to eq("supplier" => { "name" => supplier.name }, "permissions" => [ "VIEW_CATALOG" ])
+      expect(supplier_of(other.id)).to eq("supplier" => { "name" => other.name }, "permissions" => [ "PLACE_ORDERS" ])
+    end
+
+    it "取引関係の無い相手・失効した相手・存在しないテナント・自社が受注側の相手は、区別せず null" do
+      Tenancy.with_tenant(supplier.id) { FactoryBot.create(:partnership, :revoked, buyer_tenant_id: buyer.id) }
+      customer = FactoryBot.create(:tenant)
+      Tenancy.with_tenant(buyer.id) { FactoryBot.create(:partnership, buyer_tenant_id: customer.id) }
+      login_as(buyer_admin)
+
+      expect([ supplier.id, FactoryBot.create(:tenant).id, SecureRandom.uuid, customer.id, buyer.id ].map { supplier_of(_1) })
+        .to all(be_nil)
+    end
+  end
+
   describe "viewer.partnerCode" do
     it "admin には自社の取引用コードを返し、member には返さない" do
       login_as(supplier_admin)

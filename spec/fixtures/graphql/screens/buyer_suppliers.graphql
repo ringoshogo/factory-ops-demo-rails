@@ -1,0 +1,8 @@
+query BuyerSuppliers {
+  buyer {
+    suppliers {
+      supplier { id name }
+      permissions
+    }
+  }
+}

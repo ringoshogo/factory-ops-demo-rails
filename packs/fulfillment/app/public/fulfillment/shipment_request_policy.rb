@@ -23,10 +23,12 @@ module Fulfillment
     def show_to_buyer?
       return false unless record.is_a?(PartnerShipmentValue) || record.is_a?(PartnerShipmentLineValue)
 
-      # 出荷と明細ごとに評価しても、問い合わせは受注側ごとに 1 回で済ませる
-      remember([ :view_shipments, record.supplier_tenant_id ]) do
-        Partnerships::Access.permitted?(user, supplier_tenant_id: record.supplier_tenant_id, permission: :view_shipments)
+      # 出荷と明細ごとに評価しても、問い合わせは 1 回の実行で 1 回で済ませる。
+      # 受注側ごとに問い合わせると、発注の一覧の相手が多いほどクエリが増える
+      permitting = remember(:view_shipments_suppliers) do
+        Partnerships::Access.permitting_suppliers(user, permission: :view_shipments).pluck(:owner_tenant_id).to_set
       end
+      permitting.include?(record.supplier_tenant_id)
     end
   end
 end

@@ -62,15 +62,20 @@ RSpec.describe "Partnerships::Access と Directory" do
   end
 
   describe "Directory" do
-    it "for_buyer は有効な関係だけを返し、失効すると空になる" do
+    # 一覧のテストの規則で、関係を 2 件作る（docs/architecture/graphql-schema.md「ページングと N+1」）
+    it "for_buyer は有効な関係だけを、相手と付与ごとに返し、失効すると返さない" do
       record = partnership(permissions: %w[view_shipments view_catalog])
+      other = FactoryBot.create(:tenant)
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:partnership, buyer_tenant_id: buyer.id, permissions: %w[place_orders]) }
 
       buyer_view = Tenancy.with_tenant(buyer.id) { Partnerships::Directory.for_buyer(buyer_actor) }
-      expect(buyer_view.map { [ _1.supplier.name, _1.permissions ] }).to eq([ [ supplier.name, %w[view_catalog view_shipments] ] ])
+      expect(buyer_view.map { [ _1.supplier.name, _1.permissions ] })
+        .to contain_exactly([ supplier.name, %w[view_catalog view_shipments] ], [ other.name, %w[place_orders] ])
 
       Tenancy.with_tenant(supplier.id) { Partnerships::Management.revoke(supplier_actor, partnership_id: record.id) }
 
-      expect(Tenancy.with_tenant(buyer.id) { Partnerships::Directory.for_buyer(buyer_actor) }).to be_empty
+      expect(Tenancy.with_tenant(buyer.id) { Partnerships::Directory.for_buyer(buyer_actor) }.map { _1.supplier.name })
+        .to eq([ other.name ])
     end
 
     # RLS は経路 2 で相手の行も返すので、scope が所有の条件を明示していなければ、ここに相手の関係が混ざる

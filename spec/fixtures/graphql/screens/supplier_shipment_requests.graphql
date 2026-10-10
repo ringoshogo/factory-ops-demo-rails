@@ -1,0 +1,16 @@
+query SupplierShipmentRequests($first: Int, $after: String) {
+  supplier {
+    shipmentRequests(first: $first, after: $after) {
+      nodes {
+        id
+        dueDate
+        status
+        salesOrder { id orderNo }
+        customer { id name }
+        lines { id quantity }
+        instruction { id plannedDate }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

@@ -33,6 +33,12 @@ module MatrixExpectations
       query: "{ buyer { suppliers { supplier { name } } } }",
       expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :value, revoked_buyer: :empty, stranger: :empty }
     },
+    # 経路 2 の取引先を 1 社選ぶ。supplier の取引先の関係を、発注側の各ペルソナから引く
+    "BuyerView.supplier" => {
+      query: "query($id: ID!) { buyer { supplier(supplierTenantId: $id) { supplier { name } } } }",
+      variables: ->(world) { { id: world.tenants[:supplier] } },
+      expect: { supplier: :null, granted_buyer: :value, ungranted_buyer: :value, revoked_buyer: :null, stranger: :null }
+    },
     "SupplierView.items" => {
       query: "{ supplier { items { nodes { id } } } }",
       expect: EVERYONE

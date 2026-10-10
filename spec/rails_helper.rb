@@ -9,6 +9,7 @@ abort("The Rails environment is running in production mode!") if Rails.env.produ
 # return unless Rails.env.test?
 require 'rspec/rails'
 # Add additional requires below this line. Rails is not loaded until this point!
+require_relative "support/bullet"
 
 # Requires supporting ruby files with custom matchers and macros, etc, in
 # spec/support/ and its subdirectories. Files matching `spec/**/*_spec.rb` are
@@ -73,6 +74,9 @@ RSpec.configure do |config|
   # 置き場は config/test_layers.yml と同じで、file_path は "./spec/..." の形の相対パスである
   config.define_derived_metadata(file_path: %r{\A\./spec/scenarios/}) { |metadata| metadata[:scenario] = true }
   config.define_derived_metadata(file_path: %r{\A\./(?:spec|packs/[^/]+/spec)/concurrency/}) { |metadata| metadata[:concurrency] = true }
+  # HTTP の要求は Bullet::Rack が包むので、要求を流す example（type: :request）を spec/support/bullet.rb の包みから外す。
+  # 置き場では決めない。spec/requests の外にも、シナリオや行列テストのように要求を流す spec がある
+  config.define_derived_metadata(type: :request) { |metadata| metadata[:bullet] = false }
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
 end

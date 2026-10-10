@@ -1,0 +1,15 @@
+query SupplierStockMovements($first: Int, $after: String, $itemId: ID) {
+  supplier {
+    stockMovements(first: $first, after: $after, itemId: $itemId) {
+      nodes {
+        id
+        type
+        quantity
+        reason
+        createdAt
+        item { id code name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

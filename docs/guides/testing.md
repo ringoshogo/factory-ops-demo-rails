@@ -26,7 +26,7 @@ bin/test-layers tmp/rspec.json
 
 ## 層への配分
 
-テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。
+テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。一覧を返す公開 API の単体のテストでは、親を 2 件以上作る。1 件だと N+1 の検出が働かない（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。
 
 既存の request spec から単体へ移してよいのは、公開 API の spec と同じ業務の分岐を確かめているものだけである。次の規則は HTTP の入口でしか確かめられないので、request spec に残す。
 
@@ -39,7 +39,7 @@ bin/test-layers tmp/rspec.json
 
 2 つの接続から同時に操作するテスト（競合テスト）は、`concurrency` の置き場に置く。公開 API だけを使うものは `spec/concurrency` に、パッケージの非公開のモデルを使うものは `packs/<パッケージ>/spec/concurrency` に置く。パッケージの外からは、非公開の定数を参照できないからである。競合でない example は、同じ対象の example でも単体の置き場に置く。
 
-`spec/rails_helper.rb` は、`concurrency` の置き場のファイルに `:concurrency` のメタデータを、置き場から付ける（`define_derived_metadata`）。`bin/test-layers` の層の判定も、この置き場から決まる。
+`spec/rails_helper.rb` は、`concurrency` の置き場のファイルに `:concurrency` のメタデータを、置き場から付ける（`define_derived_metadata`）。`bin/test-layers` の層の判定も、この置き場から決まる。このメタデータの example は、Bullet の N+1 の検出（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）の外にある。Bullet は検出の状態をスレッドごとに持ち、別のスレッドの読み込みが見えないからである。
 
 競合テストを書く人は、`spec/support/concurrency.rb` の補助を使い、次のように書く。
 

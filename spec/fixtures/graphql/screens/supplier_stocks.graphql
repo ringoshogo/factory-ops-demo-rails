@@ -1,0 +1,15 @@
+query SupplierStocks($first: Int, $after: String) {
+  supplier {
+    stocks(first: $first, after: $after) {
+      nodes {
+        onHand
+        allocated
+        available
+        safetyStock
+        belowSafetyStock
+        item { id code name unit }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

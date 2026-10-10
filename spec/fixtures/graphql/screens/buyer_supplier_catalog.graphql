@@ -1,0 +1,11 @@
+query BuyerSupplierCatalog($supplierTenantId: ID!, $first: Int, $after: String) {
+  buyer {
+    supplier(supplierTenantId: $supplierTenantId) {
+      supplier { id name }
+      catalog(first: $first, after: $after) {
+        nodes { code name unit unitPrice taxRatePercent }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
