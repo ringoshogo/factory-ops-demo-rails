@@ -11,7 +11,8 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
   IGNORED_SQL = %w[SCHEMA TRANSACTION Tenancy].freeze
 
   # 操作名ごとに、操作者・応答の data から一覧の親までの道・入れ子ごとの各親の件数・入れ子を引くソースの公開 API とメソッドを持つ。
-  # 単数の入れ子の件数は 1 で、値があることを表す。sources に無い入れ子は、親の値に含まれていてソースを通らない
+  # 単数の入れ子の件数は 1 で、値があることを表す。sources に無い入れ子は、親の値に含まれていてソースを通らない。
+  # variables は first のほかに渡す変数を返すメソッドの名前
   SCREENS = {
     "SupplierSalesOrders" => {
       actor: :supplier_member, list: %w[supplier salesOrders nodes],
@@ -57,7 +58,7 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
       sources: {}
     },
     "BuyerSupplierCatalog" => {
-      actor: :buyer_member, list: [ "buyer", "suppliers", 0, "catalog", "nodes" ],
+      actor: :buyer_member, list: %w[buyer supplier catalog nodes], variables: :catalog_variables,
       nested: {},
       sources: {}
     },
@@ -141,11 +142,13 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     partner_supplier(%w[view_catalog place_orders])
   end
 
-  # カタログは取引先 1 つの公開品目を引くので、取引先は最初の 1 回だけ作り、親は品目にする
+  # カタログは取引先を 1 社選んで引くので、取引先は最初の 1 回だけ作り、親は品目にする
   def seed_buyer_supplier_catalog
     @catalog_supplier ||= partner_supplier(%w[view_catalog])
     Tenancy.with_tenant(@catalog_supplier.id) { FactoryBot.create(:item, :published) }
   end
+
+  def catalog_variables = { "supplierTenantId" => @catalog_supplier.id }
 
   # 経路 3 の出荷は発注ごとに 1 件（分納しない。data-model.md の shipments.shipment_request_id 一意）
   def seed_buyer_purchase_orders
@@ -176,6 +179,7 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     actor = actor_for(screen[:actor])
     text = SCREENS_DIR.join("#{name.underscore}.graphql").read
     variables = GraphQL.parse(text).definitions.sole.variables.any? { _1.name == "first" } ? { "first" => PAGE_SIZE } : {}
+    variables = variables.merge(send(screen[:variables])) if screen[:variables]
     result = nil
     count = Tenancy.with_tenant(actor.tenant_id) do
       Current.set(actor:) do
@@ -208,6 +212,41 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
 
     expect(operations.keys).to match_array(SCREENS.keys)
     expect(operations.values).to all(eq("query"))
+  end
+
+  # 選んだフィールドをたどり、リストの要素の下に置いたコネクションの道を返す。コネクションの nodes・edges もリストなので、
+  # 一覧の要素の下のコネクションも当たる
+  def self.connections_under_list(selections, owner, path = [], in_list: false)
+    selections.flat_map do |selection|
+      next connections_under_list(selection.selections, owner, path, in_list:) if selection.is_a?(GraphQL::Language::Nodes::InlineFragment)
+      raise ArgumentError, "画面の問い合わせはフラグメントを使わない: #{selection.name}" unless selection.is_a?(GraphQL::Language::Nodes::Field)
+
+      field = owner.get_field(selection.name)
+      next [] if field.nil? || selection.selections.empty?
+
+      type = field.type.unwrap
+      here = [ *path, selection.name ]
+      found = in_list && type < Types::BaseConnection ? [ here.join(".") ] : []
+      found + connections_under_list(selection.selections, type, here, in_list: in_list || field.type.list?)
+    end
+  end
+
+  def self.nested_connections(text)
+    connections_under_list(GraphQL.parse(text).definitions.sole.selections, FactoryOpsSchema.query)
+  end
+
+  it "画面の問い合わせは、一覧の中にコネクションを入れ子にしない" do
+    offenders = SCREENS_DIR.glob("*.graphql").to_h { [ _1.basename.to_s, self.class.nested_connections(_1.read) ] }
+
+    expect(offenders.reject { _2.empty? }).to eq({})
+  end
+
+  it "一覧の要素の下のコネクションを、取引先の一覧の下でも発注の一覧の下でも見つける" do
+    expect(self.class.nested_connections("{ buyer { suppliers { catalog { nodes { code } } } } }")).to eq([ "buyer.suppliers.catalog" ])
+    expect(self.class.nested_connections("{ buyer { purchaseOrders { nodes { id } } supplier(supplierTenantId: \"x\") { catalog { nodes { code } } } } }"))
+      .to eq([])
+    expect(self.class.nested_connections("{ supplier { salesOrders { nodes { lines { id } } } items { edges { node { id } } } } }"))
+      .to eq([])
   end
 
   SCREENS.each do |name, screen|

@@ -16,6 +16,13 @@ RSpec.describe "テナントの境界", type: :request do
       ids: documents, reach: nil,
       run: ->(id) { query("query($id: ID!) { buyer { purchaseOrder(id: $id) { id } } }", id:).dig("buyer", "purchaseOrder") }
     },
+    # 取引関係の無い相手と、自社のテナントは、存在しないテナントと同じ null になる
+    "BuyerView.supplier(supplierTenantId)" => {
+      ids: [ *documents, :buyer_tenant, :outsider_tenant ], reach: nil,
+      run: lambda do |id|
+        query("query($id: ID!) { buyer { supplier(supplierTenantId: $id) { supplier { id } } } }", id:).dig("buyer", "supplier")
+      end
+    },
     "SupplierView.salesOrder(id)" => {
       ids: documents, reach: nil,
       run: ->(id) { query("query($id: ID!) { supplier { salesOrder(id: $id) { id } } }", id:).dig("supplier", "salesOrder") }

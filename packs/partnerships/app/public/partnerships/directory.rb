@@ -11,6 +11,11 @@ module Partnerships
       to_values(Scope.call(actor, :as_buyer).order(id: :desc))
     end
 
+    # 経路 2 の関係を、受注側テナントで 1 件引く。関係の無い相手・失効した相手・存在しないテナントは、どれも nil になる
+    def self.for_buyer_supplier(actor, supplier_tenant_id)
+      to_values(Scope.call(actor, :as_buyer).where(owner_tenant_id: supplier_tenant_id)).first
+    end
+
     # 自社が受注側の関係を 1 件引く。見えない ID は存在しない ID と同じく nil になる
     def self.partnership(actor, id)
       to_values(Scope.call(actor, :as_supplier).where(id:)).first
