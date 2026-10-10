@@ -50,4 +50,17 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # 関連を 1 件ずつ読む N+1 を例外にする（docs/architecture/graphql-schema.md「ページングと N+1」）。
+  # Bullet.enable= はその場で ActiveRecord::Base を拡張するので、設定のブロックに直接書くと Active Record が初期化の途中で読み込まれる
+  config.after_initialize do
+    Bullet.enable = true
+    Bullet.raise = true
+    Bullet.n_plus_one_query_enable = true
+    # Bullet.raise は検出の種類を問わず例外にする。公開 API は値の組み立てに要る関連を GraphQL の選択によらず先読みするので、
+    # 使わない先読みの報告は直す対象にならない
+    Bullet.unused_eager_loading_enable = false
+    # カウンタキャッシュの列を持たない。件数は公開 API で導出する（docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）
+    Bullet.counter_cache_enable = false
+  end
 end

@@ -63,4 +63,7 @@ group :development, :test do
   # Enforce package dependencies and privacy [https://github.com/Shopify/packwerk]
   gem "packwerk", "~> 3.3", require: false
   gem "packwerk-extensions", "~> 0.4.0", require: false
+
+  # 関連を 1 件ずつ読む N+1 を検出する。テストでは例外に、開発ではログにする [https://github.com/flyerhzm/bullet]
+  gem "bullet", "~> 8.2"
 end
