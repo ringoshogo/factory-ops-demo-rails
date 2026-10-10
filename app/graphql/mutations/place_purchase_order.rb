@@ -1,6 +1,6 @@
 module Mutations
   # 相手への place_orders は Purchasing::Ordering.place が確かめ、無ければ NOT_PERMITTED。
-  # 存在しない・関係の無い・失効した・付与の無い相手を区別しない（docs/architecture/graphql-schema.md「ID と node」）
+  # 存在しない・関係の無い・失効した・付与の無い相手を区別しない（docs/architecture/graphql-schema.md「ID と `node`」）
   class PlacePurchaseOrder < BaseMutation
     perspective :buyer
     authorize_with Purchasing::PurchaseOrderPolicy, :place?

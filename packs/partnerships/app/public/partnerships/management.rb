@@ -2,7 +2,7 @@ module Partnerships
   # 受注側が取引関係を結び、失効させ、権限を付与・撤回する。役割の判定は PartnershipPolicy の規則で、呼び出す側が行う
   module Management
     # 相手は発注側テナントの取引用コードで指定する。テナントの code は推測できるので受け付けない
-    # （docs/architecture/graphql-schema.md「ID と node」）
+    # （docs/architecture/graphql-schema.md「ID と `node`」）
     def self.establish(actor, partner_code:)
       buyer = Tenant.find_by(partner_code: partner_code.to_s)
       return OperationResult.failure(:not_found, path: [ :partner_code ]) unless buyer
