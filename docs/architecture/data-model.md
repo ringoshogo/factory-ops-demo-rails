@@ -59,8 +59,6 @@
 | 4 | 出荷指示済 | 有効な出荷指示がある |
 | 5 | 出荷待ち | それ以外 |
 
-出荷停止を記録する表（`shipping_holds`）は、取消依頼と審査を作るとき（`implementation-plan.md` M21）に足す。それまで、公開 API は「出荷停止中」を導出せず、GraphQL の `ShipmentRequestStatus` も `ON_HOLD` を返さない。
-
 ## 取引関係と権限付与（`partnerships`）
 
 相手テナントのデータを読めるかどうかは、すべてここで決まる。取引関係の公開 API は、「テナント X は Y に対して操作 Z をしてよいか」に対して、有効な取引関係と権限付与があるかどうかで答える。
@@ -115,14 +113,14 @@
 |---|---|---|
 | `shipment_requests`（「出荷可能」の写し） | `sales_order_id`→・`buyer_tenant_id`→・`source_purchase_order_id`→・`due_date`・`cancelled_at` | `sales_order_id` 一意 |
 | `shipment_request_lines` | `sales_order_line_id`→・`source_purchase_order_line_id`→・`item_id`→・`quantity` | `sales_order_line_id` 一意 |
-| `shipping_holds`（出荷停止） | `sales_order_id`→・`source_cancellation_review_id`→・`released_at` | `source_cancellation_review_id` 一意。解除前の停止は受注ごとに 1 件 |
+| `shipping_holds`（出荷停止） | `sales_order_id`→・`source_cancellation_review_id`→・`released_at` | `source_cancellation_review_id` 一意。解除前の停止を受注ごとに 1 件に限らない（「イベントの届く順の入れ替わり」） |
 | `shipping_instructions`（出荷指示） | `shipment_request_id`・`planned_date`・`status`（`active` / `cancelled`） | 有効な指示は出荷依頼ごとに 1 件（部分一意索引） |
 | `shipments`（出荷実績） | `shipping_instruction_id`・`shipment_request_id`・`buyer_tenant_id`→・`source_purchase_order_id`→・`shipped_on` | `shipment_request_id` 一意（分納しない） |
 | `shipment_lines` | `shipment_id`・`shipment_request_line_id`・`source_purchase_order_line_id`→・`quantity` | `shipment_request_line_id` 一意 |
 
 出荷停止は、出荷依頼とは別のテーブルに置く。取消の審査は全量の引当より前にも始まるので、出荷依頼がまだ無い受注も止められる必要がある。
 
-出荷指示の作成・取消と出荷の計上は、出荷依頼の行をロックしてから行う。同じ出荷依頼への操作が直列になるので、有効な指示が 2 件になることも、同じ出荷依頼を 2 回計上することもない。最後の防壁は、出荷指示の部分一意索引と `shipments.shipment_request_id` の一意である。計上は有効な指示のある出荷依頼を全量で行い、出荷依頼の明細ごとに出荷明細を 1 行作る。
+出荷指示の作成・取消と出荷の計上は、出荷依頼の行をロックしてから行う。同じ出荷依頼への操作が直列になるので、有効な指示が 2 件になることも、同じ出荷依頼を 2 回計上することもない。最後の防壁は、出荷指示の部分一意索引と `shipments.shipment_request_id` の一意である。出荷停止の受け手も、出荷依頼があればその行をロックしてから停止を書き、出荷指示の作成と計上は、出荷依頼の行をロックした後に停止を読む。そのため、停止は計上と出荷指示の作成の途中に割り込まない。計上は有効な指示のある出荷依頼を全量で行い、出荷依頼の明細ごとに出荷明細を 1 行作る。
 
 `shipments` は `buyer_tenant_id` と `source_purchase_order_id` の写しを、`shipment_lines` は `source_purchase_order_line_id` の写しを持つ。発注側が自社の発注に連結した出荷を読む経路（「RLS」）で、判定と、出荷明細を自社の発注明細に結び付けることに使う。発注側は `shipment_request_lines` を読めないので、出荷明細の側に写しが要る。
 
@@ -238,10 +236,10 @@
 | 取消依頼 | 購買 → 受注 | 取消依頼 ID、発注 ID、発注側・受注側テナント、依頼の登録時刻 | `cancellation_reviews` | `source_cancellation_request_id` 一意 |
 | 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID、発注 ID、発注側・受注側テナント | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
 | 受注取消 | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
-| 出荷取消 | 受注 → 出荷 | 受注 ID、受注側テナント | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
+| 出荷取消 | 受注 → 出荷 | 受注 ID、受注側テナント、取消を承認した審査 ID（審査を経ない取消では空）、出荷可能を出したか | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
 | 出荷可能 | 受注 → 出荷 | 受注 ID、受注側・発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
 | 出荷停止 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds` | `source_cancellation_review_id` 一意 |
-| 出荷停止解除 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds.released_at` | 空のときだけ書く |
+| 出荷停止解除 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds.released_at` | 空のときだけ書く。停止の行が無ければ解除済みの行を作る |
 | 出荷計上 | 出荷 → 受注・購買 | 出荷実績 ID、受注 ID、発注 ID、受注側・発注側テナント、出荷日、明細（受注明細 ID・発注明細 ID・数量） | 受注：`shipped_at`／購買：`inbound_shipments`・明細 | 受注：空のときだけ書く／購買：`shipment_id` 一意 |
 | 検収完了 | 購買 → 受注 | 出荷実績 ID、発注 ID、発注側・受注側テナント、明細（発注明細 ID・検収数量）、検収日 | `inspection_records`・`sales_orders.inspected_at` | `(shipment_id, sales_order_line_id)` 一意 |
 | 請求対象確定 | 受注 → 請求 | 受注側・発注側テナント、出荷実績 ID、受注明細 ID・発注明細 ID、品目名・単価・税率、検収数量、検収日 | `billable_items` | `(shipment_id, sales_order_line_id)` 一意 |
@@ -252,6 +250,21 @@
 イベントのジョブは、引数とペイロードとは別に、付帯情報を直列化の最上位の項目（`"app_metadata"`）に持つ。`Contracts.publish` が、イベントごとに `event_id`（UUIDv7）・イベントの名前・相関 ID・因果 ID・発行元のテナント ID・宛先テナント ID・発行時刻を入れる。付帯情報は、ログの文脈（相関 ID でテナントをまたぐ一連の処理を引く）、監査ログのイベントの受信の行、配送の遅れの計測に使い、受け手の業務の判断には使わない。受け手が書く表の冪等キーは、上の表のとおり業務の ID で取り、`event_id` では取らない。発行元が同じ業務の出来事で 2 回発行しても、結果を 1 つにするためである。
 
 受注側から購買へ返すイベントは、宛先を決める発注側テナントと、発注を引く条件に足す受注側テナントを運ぶ。購買の受け手は、発注 ID と受注側テナントの両方が一致する自社の発注だけを更新する。
+
+### イベントの届く順の入れ替わり
+
+イベントのジョブは並行して動き、失敗したジョブは後から再配送されるので、発行した順に受け手へ届くとは限らない。受け手は、届く順が入れ替わっても、停止や伝票を取り残さないように書く。状態を時刻列から導出しても（「状態は保存せず、時刻列から導出する」）、後から届いたイベントが行を作るなら、先に届いたイベントの効果はその行に及ばないからである。
+
+受け手は、先に届くはずの行がまだ無いとき、その行を作れるかどうかで次の 2 つに分ける。
+
+| 先に届くはずの行 | 受け手がすること | 例 |
+|---|---|---|
+| イベントの値だけで、終わった状態の行を作れる | 終わった状態の行を先に作る。後から届いたイベントは、冪等キーに当たって何もしない | 「出荷停止解除」か「出荷取消」が「出荷停止」より先に届いたら、解除済みの出荷停止を作る |
+| 作れない | 例外で失敗させ、再配送に任せる | 「出荷取消」が「出荷可能」より先に届いたら失敗する。出荷依頼の明細は「出荷可能」だけが運ぶからである。「取消依頼」が「発注登録」より先に届いたときも失敗する |
+
+「出荷取消」は、受注について「出荷可能」を出したかを運ぶ。出荷依頼が無いとき、受け手が「出荷可能より先に届いた」と「出荷可能を出していない受注の取消」を区別するためである。出していない受注の出荷取消は、出荷依頼を書かずに出荷停止だけを解除する。
+
+解除前の出荷停止は、受注ごとに 1 件に限らない。前の審査の「出荷停止解除」より、次の審査の「出荷停止」が先に届くことがあるからである。出荷依頼の状況は、解除されていない出荷停止が 1 件でもあれば「出荷停止中」になる。
 
 ## RLS
 

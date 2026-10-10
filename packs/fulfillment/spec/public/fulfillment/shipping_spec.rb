@@ -67,6 +67,21 @@ RSpec.describe Fulfillment::Shipping do
     end
   end
 
+  it "解除されていない出荷停止のある受注の出荷依頼は計上せず CONFLICT で、引当も在庫も変わらない。解除すると計上できる" do
+    hold = FactoryBot.create(:shipping_hold, sales_order_id: request.sales_order_id)
+    before = [ stock, movements ]
+
+    expect(Contracts).not_to receive(:publish)
+    expect(post.failures.map(&:code)).to eq([ :conflict ])
+    expect(request.reload.shipment).to be_nil
+    expect([ stock, movements ]).to eq(before)
+    expect(Inventory::Allocation.quantities_for(actor, line_ids).values).to eq([ 3, 2 ])
+
+    RSpec::Mocks.space.proxy_for(Contracts).reset
+    hold.update!(released_at: Time.current)
+    expect(post.value.status).to eq(:shipped)
+  end
+
   it "有効な指示の無い出荷依頼と、出荷済みの出荷依頼は計上しない" do
     post
     expect(post.failures.map(&:code)).to eq([ :conflict ])

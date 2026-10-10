@@ -43,6 +43,32 @@ RSpec.describe Fulfillment::Instructions do
     expect(codes(create)).to eq([ :conflict ])
   end
 
+  describe "出荷停止" do
+    def status = Fulfillment::ShipmentRequests.find(actor, request.id).status
+
+    it "解除されていない出荷停止のある受注の出荷依頼には指示を作れず、出荷停止中になる。解除すると元の状況に戻る" do
+      create
+      hold = FactoryBot.create(:shipping_hold, sales_order_id: request.sales_order_id)
+      expect(status).to eq(:on_hold)
+
+      cancel
+      expect(status).to eq(:on_hold)
+      expect(codes(create)).to eq([ :conflict ])
+      expect(request.instructions.active.count).to eq(0)
+
+      hold.update!(released_at: Time.current)
+      expect(status).to eq(:ready)
+      expect(create.value.status).to eq(:instructed)
+    end
+
+    it "別の受注の出荷停止と、解除した出荷停止は、指示の作成を止めない" do
+      FactoryBot.create(:shipping_hold)
+      FactoryBot.create(:shipping_hold, sales_order_id: request.sales_order_id, released_at: Time.current)
+
+      expect(create.value.status).to eq(:instructed)
+    end
+  end
+
   it "有効な指示の無い出荷依頼の取消と、見えない出荷依頼は失敗する" do
     expect(codes(cancel)).to eq([ :conflict ])
     expect(codes(described_class.cancel(actor, shipment_request_id: SecureRandom.uuid))).to eq([ :not_found ])

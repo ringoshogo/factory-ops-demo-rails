@@ -5,10 +5,11 @@ module Sales
 
     def list? = true
 
-    # 受注と受注明細の値のどちらにも使う
+    # 受注・受注明細・取消の審査の値のどれにも使う
     def show? = record.owner_tenant_id == user.tenant_id
 
-    # 引当は、自社のユーザーなら役割を問わない
+    # 引当と、取消の審査の承認・却下は、自社のユーザーなら役割を問わない
     def allocate? = show?
+    def review? = show?
   end
 end

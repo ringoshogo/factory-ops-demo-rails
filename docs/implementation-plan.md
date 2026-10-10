@@ -888,7 +888,7 @@ CI の test のジョブの要約に、PR の向き先からの差分の一覧�
 - `requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`（どれも `audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）
 - 受注と発注の状況の「取消審査中」「取消依頼中」、出荷依頼の状況の「出荷停止中」の導出と `ShipmentRequestStatus` の `ON_HOLD`（OI-52）
 - 読み取り：`PurchaseOrder.cancellationPending`・`cancellationRequests`、`SalesOrder.cancellationReviewPending`・`cancellationReviews`、型 `CancellationRequest`・`CancellationReview`、enum `CancellationOutcome`（`graphql-schema.md`）と、行列テストの行。受注側は `SalesOrder.cancellationReviews` で承認と却下に使う審査 ID を得る
-- イベントの届く順の入れ替わり（OI-65）：出荷停止解除が出荷停止より先に、出荷取消が出荷可能より先に動いても、停止や出荷依頼が取り残されない受け手にする。決め方は M21 の着手のときに OI-65 で決める
+- イベントの届く順の入れ替わり（OI-65）：出荷停止解除が出荷停止より先に、出荷取消が出荷可能より先に動いても、停止や出荷依頼が取り残されない受け手にする。決め方は `data-model.md`「イベントの届く順の入れ替わり」に書いた。イベントの値だけで終わった状態の行を作れるなら先に作り（出荷停止解除・出荷取消が出荷停止より先に届いたら、解除済みの出荷停止を作る）、作れないなら例外で失敗させて再配送に任せる（出荷取消が出荷可能より先に届いたとき）。そのため出荷取消は、承認した審査 ID と、出荷可能を出したかを運ぶ
 - 付帯情報の無いイベントのジョブの扱い（OI-53）：`guides/config.md` は付帯情報の無いジョブも動くと書くが、`Contracts::EventJob` は受信の監査の行を書くときに付帯情報の項目を `fetch` するので、相手テナントからのイベントでは失敗する。イベントのジョブは付帯情報を必須とし、無ければ受け手の書き込みを戻して、付帯情報が無いことを示す専用の例外クラスで失敗させる。受信の監査の行を書けないまま受け手の書き込みだけを残すと、「相手テナントに効果が及ぶ書き込みは必ず記録される」（M19）が崩れるからである。`guides/config.md` の記述を、イベントのジョブとそれ以外のジョブに分けて直す
 
 操作と状態の組みごとの結果は次のとおりである。失敗はどれも書き込みとイベントを残さない。

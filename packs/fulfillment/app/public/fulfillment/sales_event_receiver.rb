@@ -1,10 +1,14 @@
 module Fulfillment
-  # 受注からのイベントの受け手。受注側テナントの名義で、自社の出荷依頼だけを書く
-  # （docs/architecture/data-model.md「イベントの受け口と冪等キー」）。取引関係の状態は見ない
+  # 受注からのイベントの受け手。受注側テナントの名義で、自社の出荷依頼・出荷指示・出荷停止だけを書く
+  # （docs/architecture/data-model.md「イベントの受け口と冪等キー」）。取引関係の状態は見ない。
+  # 届く順が入れ替わっても停止や出荷依頼を取り残さない（docs/architecture/data-model.md「イベントの届く順の入れ替わり」）
   module SalesEventReceiver
     def self.handle(event)
       case event
       when Contracts::SalesOrderReadyForShipment then create_request(event)
+      when Contracts::ShippingHeld then hold(event)
+      when Contracts::ShippingHoldReleased then release(event)
+      when Contracts::ShipmentCancelled then cancel(event)
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
     end
@@ -30,6 +34,50 @@ module Fulfillment
     rescue ActiveRecord::RecordNotUnique
       nil
     end
-    private_class_method :create_request
+
+    # 解除前の出荷停止を書く。冪等キーは審査 ID で、行があれば（解除が先に届いて解除済みの行があっても）何もしない。
+    # 出荷依頼があれば行をロックしてから書き、同じ出荷依頼の計上と出荷指示の作成と直列にする
+    def self.hold(event)
+      ShipmentRequest.lock.find_by(sales_order_id: event.sales_order_id)
+      ShippingHold.insert(hold_row(event.cancellation_review_id, event.sales_order_id, released_at: nil),
+        unique_by: :source_cancellation_review_id)
+    end
+
+    # 出荷停止を解除する。停止より先に届いたら、解除済みの行を先に作り、後から届く停止を何もさせない
+    def self.release(event)
+      release_hold(event.cancellation_review_id, event.sales_order_id)
+    end
+
+    # 出荷依頼を取消済にし、有効な出荷指示を取り消し、受注の出荷停止をすべて解除する。
+    # 「出荷可能」を出した受注なのに出荷依頼がまだ無ければ、出荷可能より先に届いたので失敗させ、再配送に任せる。
+    # 出荷依頼は出荷可能の値からしか作れないので、解除済みの停止のような先回りの行を作らない
+    def self.cancel(event)
+      request = ShipmentRequest.lock.find_by(sales_order_id: event.sales_order_id)
+      if request.nil? && event.ready_for_shipment
+        raise ActiveRecord::RecordNotFound, "出荷取消が出荷可能より先に届いた: #{event.sales_order_id}"
+      end
+
+      if request && !request.cancelled_at
+        request.instructions.active.lock.each { _1.update!(status: "cancelled") }
+        request.update!(cancelled_at: Time.current)
+      end
+      ShippingHold.active.where(sales_order_id: event.sales_order_id).update_all(released_at: Time.current, updated_at: Time.current)
+      release_hold(event.cancellation_review_id, event.sales_order_id) if event.cancellation_review_id
+    end
+
+    # 審査の出荷停止を解除済みにする。行が無ければ解除済みの行を作る。1 文の upsert にするのは、行を読んでから書く間に
+    # 停止が割り込んで解除前の行を作り、解除が失われることを防ぐためである。解除の時刻は最初に解除したときのまま変えない
+    def self.release_hold(cancellation_review_id, sales_order_id)
+      now = Time.current
+      ShippingHold.upsert(hold_row(cancellation_review_id, sales_order_id, released_at: now), unique_by: :source_cancellation_review_id,
+        on_duplicate: Arel.sql("released_at = COALESCE(shipping_holds.released_at, EXCLUDED.released_at), updated_at = EXCLUDED.updated_at"))
+    end
+
+    # insert と upsert は TenantRecord の保存の確認を通らないので、ここでテナントの設定を確かめる
+    def self.hold_row(cancellation_review_id, sales_order_id, released_at:)
+      Tenancy.require_tenant!
+      { owner_tenant_id: Current.tenant_id, source_cancellation_review_id: cancellation_review_id, sales_order_id:, released_at: }
+    end
+    private_class_method :create_request, :hold, :release, :cancel, :release_hold, :hold_row
   end
 end

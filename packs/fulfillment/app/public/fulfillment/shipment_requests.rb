@@ -46,10 +46,12 @@ module Fulfillment
       ids = requests.map(&:id)
       instructed = Scope.call(actor, ShippingInstruction.active.where(shipment_request_id: ids)).pluck(:shipment_request_id).to_set
       shipped = Scope.call(actor, Shipment.where(shipment_request_id: ids)).pluck(:shipment_request_id).to_set
+      held = Scope.call(actor, ShippingHold.active.where(sales_order_id: requests.map(&:sales_order_id))).pluck(:sales_order_id).to_set
       requests.map do |request|
         ShipmentRequestValue.new(id: request.id, owner_tenant_id: request.owner_tenant_id, sales_order_id: request.sales_order_id,
           buyer_tenant_id: request.buyer_tenant_id, due_date: request.due_date,
-          status: ShipmentRequestStatus.derive(request, instructed: instructed.include?(request.id), shipped: shipped.include?(request.id)))
+          status: ShipmentRequestStatus.derive(request, instructed: instructed.include?(request.id), shipped: shipped.include?(request.id),
+            held: held.include?(request.sales_order_id)))
       end
     end
 

@@ -10,6 +10,12 @@ module Contracts
       "Contracts::SalesOrderConfirmed" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
       "Contracts::PartMatchPending" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
       "Contracts::SalesOrderReadyForShipment" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
+      "Contracts::CancellationRequested" => [ Route.new(receiver: "Sales::PurchasingEventReceiver", tenant_key: "supplier_tenant_id") ],
+      "Contracts::CancellationApproved" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
+      "Contracts::CancellationRejected" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
+      "Contracts::ShippingHeld" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
+      "Contracts::ShippingHoldReleased" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
+      "Contracts::ShipmentCancelled" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
       "Contracts::ShipmentPosted" => [
         Route.new(receiver: "Sales::FulfillmentEventReceiver", tenant_key: "supplier_tenant_id"),
         Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id")

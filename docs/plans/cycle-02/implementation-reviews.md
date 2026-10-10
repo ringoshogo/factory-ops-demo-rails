@@ -173,3 +173,75 @@ CI の test のジョブの時間は、PR #33 が 7 分 26 秒、PR #34 が 9 �
 ### 残件の処理
 
 引当先が M35 の残件は無い。
+
+## M21 取消依頼と審査
+
+PR #35（`m21-cancellation`、base は `m35-branch-coverage`）。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの commit で直し、違和感は改善の候補に移した。High 以上が無いので、読み直しには出していない。どちらの系統も、`6076687` の diff を読んだ。Codex はこの環境で Ruby を動かせず、検出力を静的に評価した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（X1・X2・X3） | 指摘（C1・C2） |
+| 参照の維持 | 指摘なし | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：届く順を入れ替えた example のうち 2 本は、最後の状態だけを確かめるので、補助が `newest_first` を無視して古い順に流しても通る | 2 本を、受け手を入れ替えた順に直接呼び、先に届いたイベントが解除済みの停止を作ったことを、後のイベントの前に確かめる形にした。補助が新しい順に流すことは、補助の自己テスト（`spec/jobs/deliver_enqueued_events_spec.rb`）で確かめる。補助の `newest_first` を外すと自己テストが落ちる | `1124195` |
+| Medium | Codex | X2：付帯情報の項目ごとの example を実装の `REQUIRED_METADATA` から作るので、実装から項目を外すと、その項目を確かめる example も消える | spec に項目の一覧を書いた | `1124195` |
+| Low | Codex | X3：S1 の承認・却下の行が、実在する他社の審査 ID を入れていない | S1 の準備で 2 件目の発注に取消を依頼して審査を作り、`documents` に審査 ID を足した。ID を取るすべての入口に入れる | `1124195` |
+| Medium | Claude | C1：3 つの mutation の監査の行（対象の型・ID・相手）を確かめる example が無い。相手を取り違えても落ちない | `spec/requests/cancellations_spec.rb` の承認と却下の通しで、操作者・対象の型と ID・相手を比べた。3 つの宣言のそれぞれで、相手か対象を変えると落ちることを確かめた | `1124195` |
+| Medium | Claude | C2：文書とコメントが言う直列化（出荷停止の受け手の出荷依頼のロック、決着の読み直し、取消依頼の受け手の受注のロック）を確かめるテストが無い | `guides/testing.md`「競合テスト」の手順で 3 本を足した。停止の受け手が開いている間は計上が待ち、コミットの後に `CONFLICT` になる（`shipping_lock_spec.rb`）。同じ審査の決着 2 件は一方だけが成立し、決着のイベントは 1 回分だけ出る。承認が開いている間は取消依頼の受け手が待ち、コミットの後は取消済の受注として自動で却下する（`cancellation_reviews_lock_spec.rb`）。ロックか読み直しを外すと、それぞれ落ちる | `1124195` |
+| Low | Claude | L1：`supplier_event_receiver.rb` の `accept` の後に空行が無い | 空行を足した | `1124195` |
+
+違和感は次のように扱った。
+
+- Codex：出荷停止と計上・出荷指示の作成の排他を、逐次の実行でしか確かめていない → C2 の競合テストで確かめた（`1124195`）
+- Claude 1：出荷依頼がまだ無い受注への出荷停止は何もロックしないので、出荷可能の受け手と出荷指示の作成が割り込むと、停止中の受注に指示ができうる → IB-22
+- Claude 2：`decide` の `raise ActiveRecord::Rollback` は、いまの失敗の経路が書く前に失敗を返すので効く場面が無い → 決着の処理が書いた後に失敗を返す形に変わったときの防御として残す。証跡に書くだけにした
+- Claude 3：`deliver_enqueued_events(newest_first: true)` が逆順に流したかを、どの example も確かめていない → X1 の補助の自己テストで確かめた（`1124195`）
+- Claude 4：自動の却下は審査を残さないので、受注側の担当者には自動で却下されたことが見えない → IB-23
+- Claude 5：レビュー中に本体の作業ツリーが変わった → 取りまとめ役の指摘の直しである。レビューは commit 済みの `6076687` を対象にした
+
+### 実装の記録
+
+完了条件の 9 ファイルと購買の受け手の spec を実装の前に流し、88 examples, 63 failures で落ちた。公開 API と受け手の定数を空で置いてから流したので、失敗は `NoMethodError`（公開 API が無い）と期待の不一致で、付帯情報の spec は `NoMethodError: undefined method 'fetch' for nil` で落ちた（`MissingMetadata` を期待する形）。壊したファイルは複製から戻した。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 出荷 | 計上と出荷指示の作成の出荷停止の確認・導出表の 3 行目・解除の `COALESCE`・出荷取消の出荷可能より先に届いたときの失敗・審査の停止の解除済みの行・受注のほかの停止の解除・有効な指示の取消・審査 ID が空のときの分岐・停止の受け手の出荷依頼のロック |
+| 受注 | 自動の却下の取消済の側・受け手の冪等の確認・受け手の受注のロック・決着済みの確認・決着の読み直し・引当の解除の失敗・出荷済の確認・出荷可能を出したかの推定・取消審査中の導出 |
+| 購買 | 回答待ちの重複・受注側により取消の確認・理由の長さ・取消依頼中の導出・回答の上書き・承認だけの `cancelled_at` |
+| その他 | 付帯情報の確認・3 つの mutation の監査の対象と相手・補助の `newest_first` |
+
+受注のほかの停止もまとめて解除する `update_all` は、最初どの example も落ちなかった。次の審査を承認した出荷取消が、前の審査の解除より先に届く example を足した。
+
+### 確かめたこと
+
+`1124195` で、Ruby 3.4.11 で共通の完了条件と M21 の完了条件を流した。
+
+```sh
+bundle exec rspec <M21 の完了条件の 9 ファイル>   # 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1323 examples, 0 failures
+BASE_REF=origin/m35-branch-coverage bin/check-branch-coverage   # 一覧は空
+bundle exec rspec --tag concurrency   # 2 回続けて 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk check                             # 違反なし
+bin/check-structure                            # 終了コード 0
+BASE_REF=origin/m35-branch-coverage bin/check-schema-compat   # 落とす変更なし（ON_HOLD の追加は危険な変更として通る）
+bin/check-open-items --due M21                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし
+```
+
+分岐の網羅率の警告は、`d98b093` の前の全件の計測で 1 件（出荷取消の受け手の、審査 ID が空のときの腕）で、example を 1 件足して消した。
+
+### 残件の処理
+
+引当先が M21 の `open` は OI-52・OI-53・OI-65 の 3 件で、どれも閉じた。実装で決めたことは OI-67〜OI-70 に judgment で積んだ。引当先が M21 の judgment（OI-46〜51・OI-54〜57・OI-60〜61）は、作者の確認を待つ。

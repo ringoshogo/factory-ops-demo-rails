@@ -1,4 +1,6 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/events"
+require_relative "../../../../../spec/support/shared_examples/idempotent_receiver"
 
 # 「出荷計上」の購買の受け手（docs/architecture/data-model.md「購買（`purchasing`）」「イベントの受け口と冪等キー」）。
 # 配送表を通した重複配送は spec/contracts/shipment_posted_delivery_spec.rb が確かめる
@@ -44,6 +46,60 @@ RSpec.describe Purchasing::SupplierEventReceiver do
 
   it "受注側テナントが一致しない発注は書かない" do
     expect { handle(event.with(supplier_tenant_id: FactoryBot.create(:tenant).id)) }.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
+  describe "取消の回答" do
+    let!(:request) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:cancellation_request, purchase_order: order) } }
+    let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: buyer.id, name: "", email: "", role: "member", partner_code: "") }
+
+    def answer(klass, **overrides)
+      klass.new(cancellation_request_id: request.id, purchase_order_id: order.id, buyer_tenant_id: buyer.id,
+        supplier_tenant_id: supplier.id, **overrides)
+    end
+
+    def order_value = Tenancy.with_tenant(buyer.id) { Purchasing::PurchaseOrders.find(actor, order.id) }
+
+    it_behaves_like "冪等な受け手" do
+      # 受注側が、審査を承認して出す
+      let(:publish_event) { -> { Tenancy.with_tenant(supplier.id) { Contracts.publish(answer(Contracts::CancellationApproved)) } } }
+      let(:written_rows) do
+        -> { Tenancy.with_tenant(buyer.id) { Purchasing::CancellationRequest.where.not(outcome: nil).count + Purchasing::PurchaseOrder.where.not(cancelled_at: nil).count } }
+      end
+    end
+
+    it "取消承認で、依頼に承認を記録し、発注を取消済みにする" do
+      handle(answer(Contracts::CancellationApproved))
+
+      expect(Tenancy.with_tenant(buyer.id) { request.reload }).to have_attributes(outcome: "approved", decided_at: be_present)
+      expect(order_value).to have_attributes(status: :cancelled, cancellation_pending: false)
+    end
+
+    it "取消却下で、依頼に却下を記録し、発注は依頼の前の状況に戻る" do
+      Tenancy.with_tenant(buyer.id) { order.update!(accepted_at: Time.current) }
+
+      handle(answer(Contracts::CancellationRejected))
+
+      expect(Tenancy.with_tenant(buyer.id) { request.reload }).to have_attributes(outcome: "rejected", decided_at: be_present)
+      expect(order_value).to have_attributes(status: :accepted, cancellation_pending: false)
+    end
+
+    it "回答が記録済みの依頼には、後から届いた回答を書かない" do
+      handle(answer(Contracts::CancellationRejected))
+      decided_at = Tenancy.with_tenant(buyer.id) { request.reload.decided_at }
+
+      handle(answer(Contracts::CancellationApproved))
+
+      expect(Tenancy.with_tenant(buyer.id) { request.reload }).to have_attributes(outcome: "rejected", decided_at:)
+      expect(order_value.status).to eq(:sent)
+    end
+
+    it "別の発注の依頼 ID を運ぶ回答は、依頼を書かずに失敗する" do
+      other_request = Tenancy.with_tenant(buyer.id) { FactoryBot.create(:cancellation_request) }
+
+      expect { handle(answer(Contracts::CancellationApproved, cancellation_request_id: other_request.id)) }
+        .to raise_error(ActiveRecord::RecordNotFound)
+      expect(Tenancy.with_tenant(buyer.id) { other_request.reload.outcome }).to be_nil
+    end
   end
 
   it "配送表に無い種類のイベントは、発注を書かずに ArgumentError で失敗する" do

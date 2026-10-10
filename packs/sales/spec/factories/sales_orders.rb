@@ -34,4 +34,12 @@ FactoryBot.define do
     sequence(:customer_part_number) { |n| "PART-#{n}" }
     item { association :item, owner_tenant_id: }
   end
+
+  # 既定は審査中。発注側の取消依頼は ID で参照するだけなので、作らない
+  factory :cancellation_review, class: "Sales::CancellationReview" do
+    owner_tenant_id { Current.tenant_id }
+    sales_order { association :sales_order, owner_tenant_id: }
+    source_cancellation_request_id { SecureRandom.uuid }
+    requested_at { Time.current }
+  end
 end

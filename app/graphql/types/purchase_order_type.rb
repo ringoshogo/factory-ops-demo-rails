@@ -11,7 +11,9 @@ module Types
     field :order_date, GraphQL::Types::ISO8601Date, null: false
     field :desired_delivery_on, GraphQL::Types::ISO8601Date
     field :status, PurchaseOrderStatusType, null: false
+    field :cancellation_pending, Boolean, null: false, description: "回答待ちの取消依頼がある"
     field :lines, [ PurchaseOrderLineType ], null: false
+    field :cancellation_requests, [ CancellationRequestType ], null: false
     field :inbound_shipments, [ InboundShipmentType ], null: false
     field :supplier_shipments, resolver: Resolvers::Buyer::SupplierShipmentsResolver,
       description: "経路 3。view_shipments が無ければ空"
@@ -23,6 +25,11 @@ module Types
 
     def lines
       dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :lines_for, context[:current_user]).load(object.id)
+    end
+
+    def cancellation_requests
+      dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :cancellation_requests_for, context[:current_user])
+        .load(object.id)
     end
 
     def inbound_shipments

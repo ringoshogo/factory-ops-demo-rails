@@ -501,6 +501,9 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `setItemPublished` | `item.set_published` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
 | `registerPartMapping` | `part_mapping.register` | 成功の値の対応表の行 | 入力の `customerTenantId`（確定させる受注は、すべてこの相手の受注である） |
 | `placePurchaseOrder` | `purchase_order.place` | 成功の値の発注 | 入力の `supplierTenantId` |
+| `requestPurchaseOrderCancellation` | `purchase_order.request_cancellation` | 対象の発注 | その発注の受注側 |
+| `approveCancellationReview` | `cancellation_review.approve` | 対象の審査 | 成功の値の受注の発注側 |
+| `rejectCancellationReview` | `cancellation_review.reject` | 対象の審査 | 成功の値の受注の発注側 |
 | `postShipment` | `shipment.post` | 成功の値の出荷依頼から引いた出荷実績 | 出荷依頼の発注側 |
 
 列挙テスト（`spec/graphql/authorization_declarations_spec.rb`）は、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類と action が上の 2 つの表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation は比べない。監査の対象を変えたら、2 つの表を同じ変更で直す。
@@ -558,6 +561,7 @@ type AuditLog {
 | `supplier.items`・`Item` | `Sales::Catalog` |
 | `supplier.partMappings` | `Sales::PartMappings` |
 | `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
+| `SalesOrder.cancellationReviews` | `Sales::CancellationReviews.for_sales_orders`（受注 ID をまとめて渡す） |
 | `SalesOrder.customer` | `Partnerships::Directory.tenants` |
 | `SalesOrder.shipmentRequest` | `Fulfillment::ShipmentRequests.for_sales_orders` |
 | `supplier.stocks`・`Item.stock`・`supplier.stockMovements` | `Inventory::Stocks` |
@@ -611,7 +615,7 @@ type AuditLog {
 | `revokePartnership` | `Partnerships::Management.revoke` | なし |
 | `grantPermission`・`withdrawPermission` | `Partnerships::Management` | なし |
 
-受注側の ACL がイベントを受けて出すイベントは、上の表に載らない。ACL は、「発注登録」を受けて「受注確定」か「品番照合待ち」を、「取消依頼」を受けて「出荷停止」を（受注が出荷済みなら「取消却下」を）、「検収完了」を受けて「請求対象確定」を出す。取引関係の失効はイベントを出さない。失効の効果は、各公開 API が `Partnerships::Access` に問い合わせた時点で現れる（`context-map.md`「取引関係の失効」）。
+受注側の ACL がイベントを受けて出すイベントは、上の表に載らない。ACL は、「発注登録」を受けて「受注確定」か「品番照合待ち」を、「取消依頼」を受けて「出荷停止」を（受注が出荷済みか取消済なら「取消却下」を）、「検収完了」を受けて「請求対象確定」を出す。取引関係の失効はイベントを出さない。失効の効果は、各公開 API が `Partnerships::Access` に問い合わせた時点で現れる（`context-map.md`「取引関係の失効」）。
 
 mutation の引数と戻り値は、次の形に揃える。
 
@@ -646,6 +650,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `placePurchaseOrder` の `lines` の件数 | 100（1 ページの件数の上限と同じ） | `["lines"]` |
 | `PurchaseOrderLineInput.partNumber` の長さ | 64 文字 | `["lines", 添字, "partNumber"]` |
 | `adjustStock` の `reason` の長さ | 200 文字 | `["reason"]` |
+| `requestPurchaseOrderCancellation` の `reason` の長さ | 200 文字。空白だけの理由も `INVALID_INPUT` | `["reason"]` |
 
 ## 状況の enum
 
@@ -657,8 +662,6 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `SalesOrderStatus` | `CANCELLED`（取消済）・`INSPECTED`（検収済）・`SHIPPED`（出荷済）・`AWAITING_PART_MATCH`（品番照合待ち）・`ALLOCATED`（引当済）・`PARTIALLY_ALLOCATED`（一部引当）・`RECEIVED`（受注済） | `SalesOrder.cancellationReviewPending`（取消審査中） |
 | `ShipmentRequestStatus` | `CANCELLED`（取消済）・`SHIPPED`（出荷済）・`ON_HOLD`（出荷停止中）・`INSTRUCTED`（出荷指示済）・`READY`（出荷待ち） | — |
 | `ImportStatus` | `FAILED`（失敗）・`PARTIALLY_FAILED`（一部失敗）・`SUCCEEDED`（完了）・`APPLYING`（反映中）・`STAGING`（置き場へ写し中）・`QUEUED`（待機中） | — |
-
-`ShipmentRequestStatus` の `ON_HOLD` は、出荷停止を記録する表を足すまで、スキーマに無い（`data-model.md`「状態は保存せず、時刻列から導出する」）。値を足す変更は、互換の判定で危険な変更として通る。
 
 その他の enum は、保存された列の値をそのまま写す。
 

@@ -4,12 +4,13 @@ module Fulfillment
   # 受注の取消と同時に進んでも、引当の行ロックでどちらか一方だけが成立する
   # （docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
   module Shipping
-    # 有効な出荷指示のある出荷依頼を全量で計上し、「出荷計上」を出す。取消済・出荷済の出荷依頼、有効な指示の無い出荷依頼、
-    # active でない引当を含む出荷依頼は、何も変えず CONFLICT を返す
+    # 有効な出荷指示のある出荷依頼を全量で計上し、「出荷計上」を出す。取消済・出荷済の出荷依頼、出荷停止中の受注の出荷依頼、
+    # 有効な指示の無い出荷依頼、active でない引当を含む出荷依頼は、何も変えず CONFLICT を返す
     def self.post(actor, shipment_request_id:, shipped_on:)
       request = Scope.call(actor, ShipmentRequest.all).lock.find_by(id: shipment_request_id)
       return OperationResult.failure(:not_found, path: [ :shipment_request_id ]) unless request
       return conflict("Shipment request is cancelled or shipped") if request.cancelled_at || request.shipment
+      return conflict("Sales order is on hold") if request.held?
 
       instruction = request.instructions.active.lock.first
       return conflict("Shipment request has no active instruction") unless instruction

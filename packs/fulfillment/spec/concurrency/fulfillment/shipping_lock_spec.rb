@@ -2,7 +2,8 @@ require "rails_helper"
 require_relative "../../../../../spec/support/concurrency"
 
 # 同じ出荷依頼への計上どうしと、計上と出荷指示の取消を 2 つの接続で同時に動かしても、どちらか一方だけが成立する。
-# 出荷依頼の行ロックが同じ出荷依頼への操作を直列にする（docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
+# 出荷停止の受け手も同じ行ロックを取るので、停止は計上の途中に割り込まない。出荷依頼の行ロックが同じ出荷依頼への操作を直列にする
+# （docs/architecture/data-model.md「取消と出荷の競合を止める場所」「出荷（`fulfillment`）」）
 RSpec.describe Fulfillment::Shipping do
   self.use_transactional_tests = false
 
@@ -24,7 +25,7 @@ RSpec.describe Fulfillment::Shipping do
 
   after do
     delete_owned_rows([ supplier.id, request.buyer_tenant_id ], %w[
-      shipment_lines shipments shipping_instructions shipment_request_lines shipment_requests
+      shipment_lines shipments shipping_instructions shipping_holds shipment_request_lines shipment_requests
       stock_movements allocations stocks
     ])
   end
@@ -76,6 +77,19 @@ RSpec.describe Fulfillment::Shipping do
     expect(commit(release, canceller)).to be_success
     expect(finish(poster).failures.map(&:code)).to eq([ :conflict ])
     expect(instruction_statuses).to eq([ "cancelled" ])
+    expect(shipped).to eq([ 0, { on_hand: 10, allocated: 5 } ])
+  end
+
+  it "出荷停止の受け手がコミットするまで計上は待ち、コミットの後は CONFLICT になる" do
+    held = Contracts::ShippingHeld.new(cancellation_review_id: SecureRandom.uuid, sales_order_id: request.sales_order_id,
+      supplier_tenant_id: supplier.id)
+    _, release, holder = hold_open(supplier.id) { Fulfillment::SalesEventReceiver.handle(held) }
+
+    poster = in_thread(supplier.id) { post }
+    expect(blocked_on_lock?(poster, by: holder)).to be(true)
+
+    commit(release, holder)
+    expect(finish(poster).failures.map(&:code)).to eq([ :conflict ])
     expect(shipped).to eq([ 0, { on_hand: 10, allocated: 5 } ])
   end
 end

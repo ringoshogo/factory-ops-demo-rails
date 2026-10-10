@@ -6,7 +6,7 @@ require_relative "../support/scenarios"
 # 下の表に無い入口があれば落ちる（docs/architecture/graphql-schema.md「ID と `node`」）
 RSpec.describe "テナントの境界", type: :request do
   # 受注側の伝票の ID と、イベントで受け取った出荷実績・受注・受注明細の ID
-  documents = %i[shipment sales_order sales_order_line shipment_request item partnership]
+  documents = %i[shipment sales_order sales_order_line shipment_request item partnership cancellation_review]
   not_found = { "errors" => [ { "code" => "NOT_FOUND" } ] }
 
   # 入口（型.フィールド(引数の道)）ごとに、相手の ID を入れる引数と、入れる ID の種類と、届かないときの結果。
@@ -77,6 +77,16 @@ RSpec.describe "テナントの境界", type: :request do
       ids: %i[supplier_tenant outsider_tenant], reach: not_found,
       run: ->(id) { mutate("registerPartMapping", customerTenantId: id, customerPartNumber: "MY-BOLT", itemId: own_item_id) }
     },
+    "Mutation.requestPurchaseOrderCancellation(input.purchaseOrderId)" => {
+      ids: documents, reach: not_found,
+      run: ->(id) { mutate("requestPurchaseOrderCancellation", purchaseOrderId: id, reason: "数量の誤り") }
+    },
+    "Mutation.approveCancellationReview(input.cancellationReviewId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("approveCancellationReview", cancellationReviewId: id) }
+    },
+    "Mutation.rejectCancellationReview(input.cancellationReviewId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("rejectCancellationReview", cancellationReviewId: id) }
+    },
     # 発注は、存在しない・関係の無い・失効した・付与の無い相手を区別せず NOT_PERMITTED にする
     # （docs/architecture/graphql-schema.md「ID と `node`」）
     "Mutation.placePurchaseOrder(input.supplierTenantId)" => {
@@ -119,6 +129,7 @@ RSpec.describe "テナントの境界", type: :request do
 
   describe "相手の ID を入口に持ち込む" do
     # 2 社が取引関係を結び、発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷が届いた状態を作る。
+    # 2 件目の発注には取消を依頼し、受注側に審査中の審査を作る。
     # 発注側は、自社が受注側の取引関係と品目も持つ
     before do
       login_as(supplier_admin)
@@ -146,13 +157,24 @@ RSpec.describe "テナントの境界", type: :request do
       login_as(buyer_admin)
       expect(query("query($id: ID!) { buyer { purchaseOrder(id: $id) { status } } }", id: purchase_order_id))
         .to eq("buyer" => { "purchaseOrder" => { "status" => "INBOUND" } })
+      # 2 件目の発注に取消を依頼し、受注側に審査中の審査を作る
+      cancelling_id = mutate!("placePurchaseOrder", "purchaseOrder { id }",
+        supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 1 } ]).dig("purchaseOrder", "id")
+      deliver_enqueued_events
+      mutate!("requestPurchaseOrderCancellation", "purchaseOrder { id }", purchaseOrderId: cancelling_id, reason: "数量の誤り")
+      deliver_enqueued_events
+      login_as(supplier_admin)
+      review_id = query("{ supplier { salesOrders { nodes { cancellationReviews { id } } } } }")
+        .dig("supplier", "salesOrders", "nodes").flat_map { _1["cancellationReviews"] }.sole["id"]
+      login_as(buyer_admin)
       mutate!("establishPartnership", "partnership { id }", partnerCode: own_customer.partner_code)
       @own_item_id = mutate!("saveItem", "item { id }", code: "OWN-1", name: "自社品目", unit: "個", unitPrice: "10").dig("item", "id")
 
       @partner_ids = {
         shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
         sales_order_line: posted.fetch("lines").sole.fetch("sales_order_line_id"), shipment_request: request_id, item: item_id,
-        partnership: partnership_id, supplier_tenant: supplier.id, buyer_tenant: buyer.id, outsider_tenant: outsider.id
+        partnership: partnership_id, cancellation_review: review_id, supplier_tenant: supplier.id, buyer_tenant: buyer.id,
+        outsider_tenant: outsider.id
       }
       expect(partner_ids.values).to all(be_present)
     end

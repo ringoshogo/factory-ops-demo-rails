@@ -11,7 +11,9 @@ module Types
     field :order_date, GraphQL::Types::ISO8601Date, null: false
     field :due_date, GraphQL::Types::ISO8601Date
     field :status, SalesOrderStatusType, null: false
+    field :cancellation_review_pending, Boolean, null: false, description: "未決の取消の審査がある"
     field :lines, [ SalesOrderLineType ], null: false
+    field :cancellation_reviews, [ CancellationReviewType ], null: false, description: "承認と却下に使う審査 ID を得る"
     field :shipment_request, ShipmentRequestType, description: "全量引当で出荷可能になった後に現れる"
 
     def customer
@@ -21,6 +23,10 @@ module Types
 
     def lines
       dataloader.with(Sources::PublicApiSource, Sales::SalesOrders, :lines_for, context[:current_user]).load(object.id)
+    end
+
+    def cancellation_reviews
+      dataloader.with(Sources::PublicApiSource, Sales::CancellationReviews, :for_sales_orders, context[:current_user]).load(object.id)
     end
 
     # 受注は出荷に依存しないので、ルートパッケージで出荷の公開 API を呼ぶ

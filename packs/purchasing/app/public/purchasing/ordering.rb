@@ -1,9 +1,10 @@
 module Purchasing
-  # 発注の登録（docs/architecture/context-map.md「発注の連結と品番の照合」1、「取引関係の失効」）
+  # 発注の登録と取消依頼（docs/architecture/context-map.md「発注の連結と品番の照合」1、「取消の流れ」1、「取引関係の失効」）
   module Ordering
-    # 1 件の発注の入力の上限（docs/architecture/graphql-schema.md「mutation の一覧」）
+    # 入力の上限（docs/architecture/graphql-schema.md「mutation の一覧」）
     MAX_LINES = 100
     MAX_PART_NUMBER_LENGTH = 64
+    MAX_REASON_LENGTH = 200
 
     # lines は { part_number:, quantity: } の配列。相手への place_orders を取引関係の公開 API に問い合わせ、
     # 無ければ NOT_PERMITTED を返す。存在しない・関係の無い・失効した・付与の無い相手を区別しない。
@@ -26,6 +27,31 @@ module Purchasing
           desired_delivery_on:,
           lines: lines.map { |line| PurchaseOrderLine.new(owner_tenant_id: actor.tenant_id, **line.slice(:part_number, :quantity)) }
         ).tap { publish(_1) }
+      end
+      OperationResult.success(PurchaseOrders.find(actor, order.id))
+    end
+
+    # 回答待ちの取消依頼を登録し、「取消依頼」を出す。発注は承認の回答が届くまで有効のままである。
+    # 回答待ちの依頼がある発注と、取消済みの発注は CONFLICT。出荷済みかどうかは受注側が見て自動で却下するので、ここでは見ない
+    # （docs/architecture/context-map.md「取消の流れ」）。発注の行ロックで同じ発注への依頼を直列にし、部分一意索引が最後に守る。
+    # 取引関係の状態は見ない。連結済みの発注は、失効の後も取消を依頼できる（docs/architecture/context-map.md「取引関係の失効」）
+    def self.request_cancellation(actor, purchase_order_id:, reason:)
+      order = Scope.call(actor, :own).lock.find_by(id: purchase_order_id)
+      return OperationResult.failure(:not_found, path: [ :purchase_order_id ]) unless order
+      return invalid_input([ :reason ], "Reason can't be blank") if reason.blank?
+      return invalid_input([ :reason ], "Reason must be at most #{MAX_REASON_LENGTH} characters") if reason.length > MAX_REASON_LENGTH
+      if order.cancelled_at || order.supplier_cancelled_at
+        return OperationResult.failure(:conflict, message: "Purchase order is cancelled")
+      end
+      if order.cancellation_requests.pending.exists?
+        return OperationResult.failure(:conflict, message: "Purchase order already has a pending cancellation request")
+      end
+
+      PurchaseOrder.transaction(requires_new: true) do
+        request = order.cancellation_requests.create!(owner_tenant_id: order.owner_tenant_id, reason:)
+        Contracts.publish(Contracts::CancellationRequested.new(cancellation_request_id: request.id, purchase_order_id: order.id,
+          buyer_tenant_id: order.owner_tenant_id, supplier_tenant_id: order.supplier_tenant_id,
+          requested_at: request.created_at.iso8601(6)))
       end
       OperationResult.success(PurchaseOrders.find(actor, order.id))
     end

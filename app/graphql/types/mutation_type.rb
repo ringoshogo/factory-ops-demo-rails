@@ -12,10 +12,13 @@ module Types
     field :set_item_published, mutation: Mutations::SetItemPublished
     field :register_part_mapping, mutation: Mutations::RegisterPartMapping
     field :allocate_sales_order, mutation: Mutations::AllocateSalesOrder
+    field :approve_cancellation_review, mutation: Mutations::ApproveCancellationReview
+    field :reject_cancellation_review, mutation: Mutations::RejectCancellationReview
     field :adjust_stock, mutation: Mutations::AdjustStock
     field :create_shipping_instruction, mutation: Mutations::CreateShippingInstruction
     field :cancel_shipping_instruction, mutation: Mutations::CancelShippingInstruction
     field :post_shipment, mutation: Mutations::PostShipment
     field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
+    field :request_purchase_order_cancellation, mutation: Mutations::RequestPurchaseOrderCancellation
   end
 end
