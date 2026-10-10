@@ -195,4 +195,35 @@ RSpec.describe "GraphQL の入口", type: :request do
       expect(Tenancy.with_tenant(tenant_a) { connection.select_value("SELECT name FROM users") }).to eq("name")
     end
   end
+
+  # 操作の終わりに、操作名・結果の種類・ユーザーエラーのコードをログのイベントに出す（docs/guides/config.md「ログ」）
+  describe "操作の終わりのイベント" do
+    let(:events) { [] }
+    let(:collector) do
+      events = self.events
+      Class.new { define_method(:emit) { |event| events << event[:payload] if event[:name] == "graphql.operation_completed" } }.new
+    end
+
+    before do
+      login_as("a@example.com")
+      Rails.event.subscribe(collector)
+    end
+
+    after { Rails.event.unsubscribe(collector) }
+
+    it "成功・ユーザーエラー・トップレベルのエラーを分け、ユーザーエラーのコードを書く" do
+      post "/graphql", params: { query: "query Me { viewer { id } }", operationName: "Me" }, as: :json
+      execute_graphql(<<~GRAPHQL)
+        mutation { adjustStock(input: { itemId: "#{SecureRandom.uuid}", type: INBOUND, quantity: 1 }) { errors { code } } }
+      GRAPHQL
+      execute_graphql("{ viewer { unknownField } }")
+
+      expect(events.map { _1.except(:duration_ms) }).to eq([
+        { operation_name: "Me", result: "success", user_error_codes: [] },
+        { operation_name: "anonymous", result: "user_error", user_error_codes: [ "NOT_FOUND" ] },
+        { operation_name: "anonymous", result: "error", user_error_codes: [] }
+      ])
+      expect(events.map { _1[:duration_ms] }).to all(be_a(Float))
+    end
+  end
 end

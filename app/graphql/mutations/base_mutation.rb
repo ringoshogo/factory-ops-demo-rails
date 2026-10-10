@@ -46,6 +46,8 @@ module Mutations
     def to_payload(result)
       return { errors: [] }.merge(self.class.result_field_name => result.value) if result.success?
 
+      # 操作の終わりのログ（graphql.operation_completed）に、ユーザーエラーのコードを書く
+      (context[:user_error_codes] ||= []).concat(result.failures.map { _1.code.to_s.upcase })
       errors = result.failures.map do |failure|
         {
           code: failure.code,

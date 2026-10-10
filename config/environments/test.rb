@@ -3,6 +3,8 @@
 # your test database is "scratch space" for the test suite and is wiped
 # and recreated between test runs. Don't rely on the data there!
 
+require_relative "../../packs/platform/lib/platform/logging"
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
@@ -50,6 +52,10 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # ログの書式とミドルウェアを本番と同じにする。ミドルウェアの構成は起動の時点で決まり、spec の中から変えられないので、
+  # ログの衛生の spec が本番と同じ構成を通るには、テストの環境も同じ入口を通す（docs/guides/config.md「ログ」）
+  Platform::Logging.configure!(config, Rails.root.join("log/test.log"))
 
   # 関連を 1 件ずつ読む N+1 を例外にする（docs/architecture/graphql-schema.md「ページングと N+1」）。
   # Bullet.enable= はその場で ActiveRecord::Base を拡張するので、設定のブロックに直接書くと Active Record が初期化の途中で読み込まれる
