@@ -101,3 +101,75 @@ PR #33 の CI（lint・scan_ruby・test）は、Ruby 3.4.11 で通った。
 |---|---|
 | OI-58 | 作者の判断で `decided` 済み。表と `package.yml` の一致を確かめる spec を足した（`e89cf83`） |
 | OI-59 | M34 は CI のワークフローを変えていない（setup-ruby が `.ruby-version` を読む）ので、判断の前提は変わらない。`judgment` のまま、サイクル末の作者の確認に回す |
+
+## M35 分岐の網羅率の警告
+
+PR #34（`m35-branch-coverage`、base は `m34-deps`）。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの commit で直し、違和感は改善の候補に移した。High 以上が無いので、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘（C1） |
+| 正しさ | 指摘（X1） | 指摘（C2・C3） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（X2） | 指摘（C4） |
+| 参照の維持 | 指摘（X3） | 指摘（C5） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：`bin/check-branch-coverage` がパッチの見出しからファイルの名前を読むので、引用された名前（引用符・改行を含む）を読み違え、ハンクを直前のファイルに付ける。追跡していないファイルの名前も引用のまま開く | 名前を `-z` の NUL 区切りで取り、パッチをファイルごとに `:(literal)` のパスで取る形にした。引用符を含む名前のファイルを、追跡しているものと追跡していないものの両方で照らす example を足した。直す前の形で落ちることを確かめた | `81cacea` |
+| Low | Codex | X2：計測の部品の 3 つの example に RED が無い | 部品を spec より先に書いたことを下の「実装の記録」に書いた。検出力は、壊して落ちることで確かめた | この commit |
+| Low | Codex | X3：`guides/bin.md` の「計測の結果が無いか読めないときだけ失敗する」が、基準の ref との差分を取れないときの失敗と合わない | `guides/bin.md` とスクリプトの冒頭のコメントに、差分を取れないときも失敗すると書いた | `81cacea` |
+| Low | Claude | C1：CI の test のジョブの要約に、向き先からの差分の一覧が出ることを確かめていない | PR #34 の CI（run 38071309023）の test のジョブで、`BASE_REF: origin/m34-deps` と「基準: origin/m34-deps との分岐点 9e99274」が出たことを確かめた | この commit |
+| Medium | Claude | C2：照合が腕の始まる行だけを見るので、複数行の `if` の条件の行だけを変えた変更と、既存の腕の中に足した行を拾わない | 計測の結果に条件の始まる行（`condition_line`）と、座標が条件の式全体と同じ腕か（`implicit`）を持たせ、条件の行と腕の範囲の行を差分に当てる形にした。`else` の無い `if` の書いていない側は条件の行だけに当てる。条件の行だけを変える example、腕の中に行を足す example、`implicit` を書く example を足し、直す前の形で落ちることを確かめた。`when` の条件だけの変更は Coverage が座標を返さないので拾わず、`guides/testing.md` に書いて IB-21 に積んだ | `81cacea`・この commit |
+| Medium | Claude | C3：`packs/*/lib/**/*.rb` が計測の対象から抜け、`packs/platform/lib/` の分岐を変えても警告も計測なしも出ない | `config/branch_coverage.yml` に足し、計画の「計測の範囲」と `guides/testing.md` を合わせた。パッケージの lib/ のファイルを照らす example を足した | `81cacea` |
+| Low | Claude | C4：名前の変更を照らす example が無い | 基準のファイルを `git mv` し、移した先の変えていない行の未通過が出る example を足した。パッチをファイルごとにパスで取るので、名前の変更の検出を入れても移した先は全行を足した行になり、`--no-renames` を外してもこの example は落ちない | `81cacea` |
+| Low | Claude | C5：`guides/testing.md` の照合の説明が、条件の行だけの変更の漏れを書いていない | C2 の照合の規則に合わせて段落を書き直し、行を消しただけの変更と `when` の条件だけの変更を拾わないことを書いた | `81cacea`・この commit |
+
+違和感は次のように扱った。
+
+- Codex：CI の配線を spec で守らない判断（OI-59）が、test のジョブの分岐の網羅率のステップにも広がる → OI-59 の判断と同じ扱いにし、OI-59 のサイクル末の作者の確認に含める
+- Claude 1：パッチの見出しの `+++ b/` の読み取りが、足した行の内容や末尾にタブの付くパスで読み違える → X1 の直しで見出しを読まなくなった（`81cacea`）
+- Claude 2：追跡していないファイルを、対象で絞る前にすべて読む → X1 の直しで、対象で絞ってから読むようにした（`81cacea`）
+- Claude 3：行を消しただけの変更は警告に出ない → C5 で `guides/testing.md` に書いた
+- Claude 4：main への force push で `github.event.before` が履歴に無いと、test のジョブも落ちる → IB-20
+- Claude 5：IB-01 の状態が「起票済み」のまま → 効いたかはサイクル 02 の振り返りで警告の件数で判定するので、状態はそのときに進める
+
+### 実装の記録
+
+照合の spec は、スクリプトを書く前に流し、14 examples, 11 failures（`Errno::ENOENT`）で落ちた。計測の部品（`spec/support/branch_coverage.rb`）は spec より先に書いたので、RED の記録は無い。壊したファイルは複製から戻した。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| `bin/check-branch-coverage` | 差分の行との照合を外す・通過の回数の判定を外す・対象の絞り込みを外す・計測なしを飛ばす・追跡していないファイルを足さない・分岐点の代わりに基準の先端と比べる・ハンクの行数の省略を 0 と読む・`implicit` の扱いを外す・条件の行を当てない、のそれぞれで落ちる |
+| `spec/support/branch_coverage.rb` | 対象の絞り込みを外すと、測り始めるときに前の結果を消す処理を外すと、それぞれ落ちる |
+| 失敗の経路の 7 つの example | `NOT_FOUND` の `path` を変える、`cancelled_at || shipped_at` の片側を外す、受け手の `else raise` を外す、のそれぞれで、足した example が落ちる |
+
+失敗の経路の 8 か所の通過の回数は、PR #34 の本文の表にある。出荷指示の `cancel` の `NOT_FOUND` は、足す前から既存の example が通していた（通過の回数 1）ので、重ねて足していない。
+
+### 確かめたこと
+
+`81cacea` で、Ruby 3.4.11 で共通の完了条件と M35 の完了条件を流した。
+
+```sh
+bundle exec rspec spec/bin/check_branch_coverage_spec.rb    # 20 examples, 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1158 examples, 0 failures
+BASE_REF=origin/main bin/check-branch-coverage              # 終了コード 0、一覧は空
+bin/rubocop                                    # no offenses
+bin/packwerk validate && bin/packwerk check    # 違反なし
+bin/check-open-items --due M35                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし
+```
+
+警告の件数は 0 件で、example を足した件数も 0 件である。M35 の差分は計測の対象のファイルを変えていない。全体では、198 ファイル・382 の分岐の腕のうち 32 が未通過である（`81cacea` の全件の計測）。
+
+CI の test のジョブの時間は、PR #33 の 7 分 26 秒から、PR #34 の最初の push で 9 分 54 秒になった。
+
+### 残件の処理
+
+引当先が M35 の残件は無い。
