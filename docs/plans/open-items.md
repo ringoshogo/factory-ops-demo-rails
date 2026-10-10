@@ -6,10 +6,10 @@
 
 | ID | 状態 | 内容 | 出どころ | 引当先 | 結果 |
 |---|---|---|---|---|---|
-| OI-01 | open | `Inventory::Adjustment.adjust` が品目の存在を自分で確かめない。いまは mutation の `find_target` が自社の品目に限っているので外から届かない | M11〜M14 の実装レビュー（Low） | M16 | |
-| OI-02 | open | `Inventory::Stock#readonly?` は `update!` を止めるが、クラス単位の `update_all`・`upsert_all` を止めない。いまは使う箇所が無い | M11〜M14 の実装レビュー（Low） | M16 | |
-| OI-03 | open | 出荷の計上どうし、計上と出荷指示の取消を、2 つの接続で同時に動かすテストが無い。コードでは出荷依頼の行ロックで直列になる | M11〜M14 の実装レビュー（テストの抜け） | M16 | |
-| OI-04 | open | 「出荷可能」の受け手の重複配送を、本当に同時に届けるテストが無い（いまは `exists?` をスタブにした 1 接続のテストだけ）。レビューの一時的な 2 接続のテストでは 1 件になった | M11〜M14 の実装レビュー（テストの抜け） | M16 | |
+| OI-01 | closed | `Inventory::Adjustment.adjust` が品目の存在を自分で確かめない。いまは mutation の `find_target` が自社の品目に限っているので外から届かない | M11〜M14 の実装レビュー（Low） | M16 | テストで守った。S1 の `Mutation.adjustStock(input.itemId)` の行が、相手の品目 ID で `NOT_FOUND` になることを確かめる。mutation の `find_target` を素通しにすると落ちる（`8a0b84f`） |
+| OI-02 | closed | `Inventory::Stock#readonly?` は `update!` を止めるが、クラス単位の `update_all`・`upsert_all` を止めない。いまは使う箇所が無い | M11〜M14 の実装レビュー（Low） | M16 | テストで守った。在庫の行はパッケージの外から参照できないので、在庫のパッケージのコードが一括の書き込みを使わないことを `stock_spec.rb` で確かめる。`update_all` を足すと落ちる（`e068a71`） |
+| OI-03 | closed | 出荷の計上どうし、計上と出荷指示の取消を、2 つの接続で同時に動かすテストが無い。コードでは出荷依頼の行ロックで直列になる | M11〜M14 の実装レビュー（テストの抜け） | M16 | `packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb` に、計上どうしと、計上と出荷指示の取消の両方の順を足した（`fb1f0ec`） |
+| OI-04 | closed | 「出荷可能」の受け手の重複配送を、本当に同時に届けるテストが無い（いまは `exists?` をスタブにした 1 接続のテストだけ）。レビューの一時的な 2 接続のテストでは 1 件になった | M11〜M14 の実装レビュー（テストの抜け） | M16 | `packs/fulfillment/spec/concurrency/fulfillment/sales_event_receiver_lock_spec.rb` で、2 つの接続から同時に届け、出荷依頼が 1 件になることを確かめた（`fb1f0ec`） |
 | OI-05 | judgment | Codex が使えないときは、Claude の系統だけで判定して先へ進め、証跡に書く | 開発の回し方を決めたとき | M20 | |
 | OI-06 | blocked-user | GitHub のリポジトリを public にする時期。いまは private | `handoff.md`「決まっていないこと」 | M32 | |
 | OI-07 | blocked-user | M33 の著者判断 1：一覧は全件（上限 500 件）を読み切ってから、流用元の関数で並べ替える | `implementation-plan.md` M33「著者判断」 | M33 | |
@@ -21,7 +21,7 @@
 | OI-13 | blocked-user | M33 の著者判断 7：入荷の一覧の入口は足さず、発注一覧の「入荷予定」のタブで代える | 同上 | M33 | |
 | OI-14 | blocked-user | M33 の著者判断 8：公開の配置と、訪問者ごとのデータの分離は作らない | 同上 | M33 | |
 | OI-15 | open | `adr/007`「未確認の事項」（SendGrid の 429 の待ち時間のヘッダ、署名付き Webhook のヘッダと方式、送信の API が冪等キーを受け付けないこと）を、SendGrid の文書で確かめる | `adr/007` | M28 | |
-| OI-16 | open | コードと文書の「ID と node」の参照を、見出し「ID と `node`」（`graphql-schema.md`）の表記にそろえ、見出しの文字列で grep して当たるようにする | M15 の実装レビュー（Low の範囲外の残り） | M16 | |
+| OI-16 | closed | コードと文書の「ID と node」の参照を、見出し「ID と `node`」（`graphql-schema.md`）の表記にそろえ、見出しの文字列で grep して当たるようにする | M15 の実装レビュー（Low の範囲外の残り） | M16 | コードと spec の 5 か所を「ID と `node`」にそろえた（`39ca306`） |
 | OI-17 | open | M33 の画面 18 を、一覧の中にコネクションを入れ子にしない規則（M17）に合わせて書き直す | サイクル 01 の計画レビュー（残件の候補） | M33 | |
 | OI-18 | open | `data-model.md` の `audit_logs.actor_user_id` に「→」が無く、外部キーかどうかが曖昧。ユーザーは `platform` の外の表なので、コンテキストをまたぐ参照の規則（外部キーを張らない）に合わせて記述をそろえる | サイクル 01 の計画レビュー（残件の候補） | M19 | |
 | OI-19 | judgment | `bin/` の検査のスクリプトの spec（`spec/bin`）を、テストの層のガードに入れた。計画の層の表に無い置き場で、構造の規則を確かめる検査と同じく、対象の数に比例して増え、業務の流れを確かめないからである | M16 の実装 | M20 | |
