@@ -13,5 +13,9 @@ module Types
     field :stocks, resolver: Resolvers::Supplier::StocksResolver
     field :stock_movements, resolver: Resolvers::Supplier::StockMovementsResolver
     field :shipment_requests, resolver: Resolvers::Supplier::ShipmentRequestsResolver
+    field :billing_terms, resolver: Resolvers::Supplier::BillingTermsResolver
+    field :billable_items, resolver: Resolvers::Supplier::BillableItemsResolver, description: "未請求の請求対象明細"
+    field :invoices, resolver: Resolvers::Supplier::InvoicesResolver
+    field :invoice, resolver: Resolvers::Supplier::InvoiceResolver
   end
 end

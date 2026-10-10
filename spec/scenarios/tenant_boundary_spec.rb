@@ -6,7 +6,7 @@ require_relative "../support/scenarios"
 # 下の表に無い入口があれば落ちる（docs/architecture/graphql-schema.md「ID と `node`」）
 RSpec.describe "テナントの境界", type: :request do
   # 受注側の伝票の ID と、イベントで受け取った出荷実績・受注・受注明細の ID
-  documents = %i[shipment sales_order sales_order_line shipment_request item partnership cancellation_review]
+  documents = %i[shipment sales_order sales_order_line shipment_request item partnership cancellation_review invoice]
   not_found = { "errors" => [ { "code" => "NOT_FOUND" } ] }
 
   # 入口（型.フィールド(引数の道)）ごとに、相手の ID を入れる引数と、入れる ID の種類と、届かないときの結果。
@@ -40,6 +40,29 @@ RSpec.describe "テナントの境界", type: :request do
         query("query($id: ID) { supplier { partMappings(customerTenantId: $id) { nodes { id } } } }", id:)
           .dig("supplier", "partMappings", "nodes")
       end
+    },
+    "SupplierView.invoice(id)" => {
+      ids: documents, reach: nil,
+      run: ->(id) { query("query($id: ID!) { supplier { invoice(id: $id) { id } } }", id:).dig("supplier", "invoice") }
+    },
+    # 相手の請求対象明細は、発注側のテナントを取引先にしている
+    "SupplierView.billableItems(customerTenantId)" => {
+      ids: %i[supplier_tenant buyer_tenant], reach: [],
+      run: lambda do |id|
+        query("query($id: ID) { supplier { billableItems(customerTenantId: $id) { nodes { id } } } }", id:)
+          .dig("supplier", "billableItems", "nodes")
+      end
+    },
+    "Mutation.setBillingTerm(input.customerTenantId)" => {
+      ids: %i[supplier_tenant outsider_tenant], reach: not_found,
+      run: ->(id) { mutate("setBillingTerm", customerTenantId: id, closingDay: 31) }
+    },
+    "Mutation.closeBillingPeriod(input.customerTenantId)" => {
+      ids: %i[supplier_tenant outsider_tenant], reach: not_found,
+      run: ->(id) { mutate("closeBillingPeriod", customerTenantId: id, closingDate: Date.current.end_of_month.iso8601) }
+    },
+    "Mutation.discardDraftInvoice(input.invoiceId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("discardDraftInvoice", invoiceId: id) }
     },
     "Mutation.adjustStock(input.itemId)" => {
       ids: documents, reach: not_found, run: ->(id) { mutate("adjustStock", itemId: id, type: "INBOUND", quantity: 1) }
@@ -139,8 +162,9 @@ RSpec.describe "テナントの境界", type: :request do
   attr_reader :own_item_id, :own_inbound_id, :partner_ids
 
   describe "相手の ID を入口に持ち込む" do
-    # 2 社が取引関係を結び、発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷が届いた状態を作る。
-    # 2 件目の発注には取消を依頼し、受注側に審査中の審査を作る。
+    # 2 社が取引関係を結び、2 件の発注を発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷を届ける。
+    # 1 件目の入荷は検収せずに残し、2 件目は検収して、受注側が締めて下書きの請求書を作る。
+    # 3 件目の発注には取消を依頼し、受注側に審査中の審査を作る。
     # 発注側は、自社が受注側の取引関係と品目も持つ
     before do
       login_as(supplier_admin)
@@ -151,25 +175,43 @@ RSpec.describe "テナントの境界", type: :request do
       mutate!("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
 
       login_as(buyer_admin)
-      purchase_order_id = mutate!("placePurchaseOrder", "purchaseOrder { id }",
-        supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 4 } ]).dig("purchaseOrder", "id")
+      purchase_order_id, billed_order_id = [ 4, 2 ].map do |quantity|
+        mutate!("placePurchaseOrder", "purchaseOrder { id }",
+          supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: } ]).dig("purchaseOrder", "id")
+      end
       deliver_enqueued_events
 
       login_as(supplier_admin)
-      sales_order_id = query("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
-      mutate!("allocateSalesOrder", "salesOrder { id }", salesOrderId: sales_order_id)
+      query("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").each do |order|
+        mutate!("allocateSalesOrder", "salesOrder { id }", salesOrderId: order.fetch("id"))
+      end
       deliver_enqueued_events
-      request_id = query("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
-      mutate!("createShippingInstruction", "shipmentRequest { id }", shipmentRequestId: request_id, plannedDate: "2026-10-20")
-      mutate!("postShipment", "shipmentRequest { id }", shipmentRequestId: request_id, shippedOn: "2026-10-20")
-      posted = enqueued_payloads("Contracts::ShipmentPosted").first
+      requests = query("{ supplier { shipmentRequests { nodes { id salesOrder { id } } } } }").dig("supplier", "shipmentRequests", "nodes")
+      requests.each do |request|
+        mutate!("createShippingInstruction", "shipmentRequest { id }", shipmentRequestId: request.fetch("id"), plannedDate: "2026-10-20")
+        mutate!("postShipment", "shipmentRequest { id }", shipmentRequestId: request.fetch("id"), shippedOn: "2026-10-20")
+      end
+      posted = enqueued_payloads("Contracts::ShipmentPosted").find { _1.fetch("purchase_order_id") == purchase_order_id }
+      request_id = requests.find { _1.dig("salesOrder", "id") == posted.fetch("sales_order_id") }.fetch("id")
       deliver_enqueued_events
 
       login_as(buyer_admin)
       inbound = query("query($id: ID!) { buyer { purchaseOrder(id: $id) { status inboundShipments { id } } } }", id: purchase_order_id)
       expect(inbound.dig("buyer", "purchaseOrder", "status")).to eq("INBOUND")
       @own_inbound_id = inbound.dig("buyer", "purchaseOrder", "inboundShipments").sole.fetch("id")
-      # 2 件目の発注に取消を依頼し、受注側に審査中の審査を作る
+      billed = query("query($id: ID!) { buyer { purchaseOrder(id: $id) { inboundShipments { id lines { id shippedQuantity } } } } }",
+        id: billed_order_id).dig("buyer", "purchaseOrder", "inboundShipments").sole
+      mutate!("inspectInboundShipment", "purchaseOrder { id }", inboundShipmentId: billed.fetch("id"),
+        lines: billed.fetch("lines").map { { inboundShipmentLineId: _1.fetch("id"), acceptedQuantity: _1.fetch("shippedQuantity") } })
+      deliver_enqueued_events
+
+      login_as(supplier_admin)
+      mutate!("setBillingTerm", "billingTerm { closingDay }", customerTenantId: buyer.id, closingDay: 31)
+      invoice_id = mutate!("closeBillingPeriod", "invoice { id }", customerTenantId: buyer.id,
+        closingDate: Date.current.end_of_month.iso8601).dig("invoice", "id")
+
+      login_as(buyer_admin)
+      # 3 件目の発注に取消を依頼し、受注側に審査中の審査を作る
       cancelling_id = mutate!("placePurchaseOrder", "purchaseOrder { id }",
         supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 1 } ]).dig("purchaseOrder", "id")
       deliver_enqueued_events
@@ -185,8 +227,8 @@ RSpec.describe "テナントの境界", type: :request do
       @partner_ids = {
         shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
         sales_order_line: posted.fetch("lines").sole.fetch("sales_order_line_id"), shipment_request: request_id, item: item_id,
-        partnership: partnership_id, cancellation_review: review_id, supplier_tenant: supplier.id, buyer_tenant: buyer.id,
-        outsider_tenant: outsider.id
+        partnership: partnership_id, cancellation_review: review_id, invoice: invoice_id, supplier_tenant: supplier.id,
+        buyer_tenant: buyer.id, outsider_tenant: outsider.id
       }
       expect(partner_ids.values).to all(be_present)
     end

@@ -209,6 +209,48 @@ module MatrixExpectations
       variables: ->(world) { { input: { cancellationReviewId: world.row("cancellation_reviews", :supplier).id } } },
       expect: ONLY_SUPPLIER
     },
+    # 請求は受注側だけが所有する。どのペルソナにも自社の行だけが返る
+    "SupplierView.billingTerms" => {
+      query: "{ supplier { billingTerms { closingDay } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.billableItems" => {
+      query: "{ supplier { billableItems { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.invoices" => {
+      query: "{ supplier { invoices { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.invoice" => {
+      query: "query($id: ID!) { supplier { invoice(id: $id) { id } } }",
+      variables: ->(world) { { id: world.row("invoices", :supplier).id } },
+      expect: only(:supplier)
+    },
+    # supplier の取引先（granted_buyer）の請求条件。ほかのペルソナには取引先でないので NOT_FOUND になる
+    "Mutation.setBillingTerm" => {
+      query: "mutation($input: SetBillingTermInput!) { setBillingTerm(input: $input) { billingTerm { closingDay } errors { code } } }",
+      variables: ->(world) { { input: { customerTenantId: world.tenants[:granted_buyer], closingDay: 20 } } },
+      expect: ONLY_SUPPLIER
+    },
+    # supplier の取引先（granted_buyer）に月末締めの請求条件と、今日検収した未請求明細を足して締める
+    "Mutation.closeBillingPeriod" => {
+      query: "mutation($input: CloseBillingPeriodInput!) { closeBillingPeriod(input: $input) { invoice { id } errors { code } } }",
+      variables: lambda { |world|
+        world.as(:supplier) do
+          FactoryBot.create(:billing_term, customer_tenant_id: world.tenants[:granted_buyer], closing_day: 31)
+          FactoryBot.create(:billable_item, customer_tenant_id: world.tenants[:granted_buyer])
+        end
+        { input: { customerTenantId: world.tenants[:granted_buyer], closingDate: Date.current.end_of_month.iso8601 } }
+      },
+      expect: ONLY_SUPPLIER
+    },
+    # supplier の下書きの請求書
+    "Mutation.discardDraftInvoice" => {
+      query: "mutation($input: DiscardDraftInvoiceInput!) { discardDraftInvoice(input: $input) { discardedInvoiceId errors { code } } }",
+      variables: ->(world) { { input: { invoiceId: world.row("invoices", :supplier).id } } },
+      expect: ONLY_SUPPLIER
+    },
     # supplier への発注。place_orders の付与がある有効な取引関係の発注側だけが登録でき、
     # 付与の無い・失効した・関係の無い相手と自分自身への発注は、どれも同じ NOT_PERMITTED になる
     "Mutation.placePurchaseOrder" => {

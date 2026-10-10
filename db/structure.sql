@@ -168,6 +168,64 @@ COMMENT ON TABLE public.audit_logs IS '[基盤] 監査ログ。相手テナン�
 
 
 --
+-- Name: billable_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billable_items (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    customer_tenant_id uuid NOT NULL,
+    shipment_id uuid NOT NULL,
+    sales_order_line_id uuid NOT NULL,
+    source_purchase_order_line_id uuid NOT NULL,
+    item_name character varying NOT NULL,
+    unit_price bigint NOT NULL,
+    quantity integer NOT NULL,
+    tax_rate_percent integer NOT NULL,
+    inspected_on date NOT NULL,
+    invoice_id uuid,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT billable_items_quantity_positive CHECK ((quantity > 0)),
+    CONSTRAINT billable_items_tax_rate_percent_check CHECK ((tax_rate_percent = ANY (ARRAY[8, 10]))),
+    CONSTRAINT billable_items_unit_price_not_negative CHECK ((unit_price >= 0))
+);
+
+ALTER TABLE ONLY public.billable_items FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE billable_items; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.billable_items IS '[請求] 請求対象明細。「請求対象確定」の写しで、請求書が空なら未請求';
+
+
+--
+-- Name: billing_terms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.billing_terms (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    customer_tenant_id uuid NOT NULL,
+    closing_day integer NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT billing_terms_closing_day_check CHECK ((((closing_day >= 1) AND (closing_day <= 28)) OR (closing_day = 31)))
+);
+
+ALTER TABLE ONLY public.billing_terms FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE billing_terms; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.billing_terms IS '[請求] 請求条件。取引先ごとの締め日で、31 は月末を表す';
+
+
+--
 -- Name: cancellation_requests; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -320,6 +378,66 @@ ALTER TABLE ONLY public.inspection_records FORCE ROW LEVEL SECURITY;
 --
 
 COMMENT ON TABLE public.inspection_records IS '[受注] 検収の記録。「検収完了」の写しで、出荷実績と受注明細の組ごとに 1 行';
+
+
+--
+-- Name: invoice_tax_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invoice_tax_summaries (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    tax_rate_percent integer NOT NULL,
+    taxable_amount bigint NOT NULL,
+    tax_amount bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    invoice_id uuid NOT NULL,
+    CONSTRAINT invoice_tax_summaries_amounts_not_negative CHECK (((taxable_amount >= 0) AND (tax_amount >= 0))),
+    CONSTRAINT invoice_tax_summaries_tax_rate_percent_check CHECK ((tax_rate_percent = ANY (ARRAY[8, 10])))
+);
+
+ALTER TABLE ONLY public.invoice_tax_summaries FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE invoice_tax_summaries; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.invoice_tax_summaries IS '[請求] 請求書の税率ごとの課税対象額と、1 回だけ切り捨てた税額';
+
+
+--
+-- Name: invoices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invoices (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    customer_tenant_id uuid NOT NULL,
+    invoice_number character varying,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    issued_at timestamp(6) without time zone,
+    subtotal bigint NOT NULL,
+    tax_total bigint NOT NULL,
+    total bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT invoices_amounts_not_negative CHECK (((subtotal >= 0) AND (tax_total >= 0))),
+    CONSTRAINT invoices_number_with_issue CHECK (((issued_at IS NULL) = (invoice_number IS NULL))),
+    CONSTRAINT invoices_period_order CHECK ((period_start <= period_end)),
+    CONSTRAINT invoices_total_sum CHECK ((total = (subtotal + tax_total)))
+);
+
+ALTER TABLE ONLY public.invoices FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE invoices; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.invoices IS '[請求] 請求書。発行の時刻が空なら下書きで、請求番号は確定で振る';
 
 
 --
@@ -1537,6 +1655,22 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: billable_items billable_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billable_items
+    ADD CONSTRAINT billable_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: billing_terms billing_terms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_terms
+    ADD CONSTRAINT billing_terms_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: cancellation_requests cancellation_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1582,6 +1716,22 @@ ALTER TABLE ONLY public.inbound_shipments
 
 ALTER TABLE ONLY public.inspection_records
     ADD CONSTRAINT inspection_records_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoice_tax_summaries invoice_tax_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_tax_summaries
+    ADD CONSTRAINT invoice_tax_summaries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: invoices invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT invoices_pkey PRIMARY KEY (id);
 
 
 --
@@ -2019,6 +2169,48 @@ CREATE UNIQUE INDEX index_audit_logs_on_owner_tenant_id_and_id ON public.audit_l
 
 
 --
+-- Name: index_billable_items_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_billable_items_on_owner_tenant_id_and_id ON public.billable_items USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_billable_items_on_owner_tenant_id_and_invoice_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_billable_items_on_owner_tenant_id_and_invoice_id ON public.billable_items USING btree (owner_tenant_id, invoice_id);
+
+
+--
+-- Name: index_billable_items_on_shipment_id_and_sales_order_line_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_billable_items_on_shipment_id_and_sales_order_line_id ON public.billable_items USING btree (shipment_id, sales_order_line_id);
+
+
+--
+-- Name: index_billable_items_unbilled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_billable_items_unbilled ON public.billable_items USING btree (owner_tenant_id, customer_tenant_id, inspected_on) WHERE (invoice_id IS NULL);
+
+
+--
+-- Name: index_billing_terms_on_owner_tenant_id_and_customer_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_billing_terms_on_owner_tenant_id_and_customer_tenant_id ON public.billing_terms USING btree (owner_tenant_id, customer_tenant_id);
+
+
+--
+-- Name: index_billing_terms_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_billing_terms_on_owner_tenant_id_and_id ON public.billing_terms USING btree (owner_tenant_id, id);
+
+
+--
 -- Name: index_cancellation_requests_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2100,6 +2292,48 @@ CREATE UNIQUE INDEX index_inbound_shipments_on_shipment_id ON public.inbound_shi
 --
 
 CREATE UNIQUE INDEX index_inspection_records_on_owner_tenant_id_and_id ON public.inspection_records USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_invoice_tax_summaries_on_invoice_id_and_tax_rate_percent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoice_tax_summaries_on_invoice_id_and_tax_rate_percent ON public.invoice_tax_summaries USING btree (invoice_id, tax_rate_percent);
+
+
+--
+-- Name: index_invoice_tax_summaries_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoice_tax_summaries_on_owner_tenant_id_and_id ON public.invoice_tax_summaries USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_invoice_tax_summaries_on_owner_tenant_id_and_invoice_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_invoice_tax_summaries_on_owner_tenant_id_and_invoice_id ON public.invoice_tax_summaries USING btree (owner_tenant_id, invoice_id);
+
+
+--
+-- Name: index_invoices_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoices_on_owner_tenant_id_and_id ON public.invoices USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_invoices_on_owner_tenant_id_and_invoice_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoices_on_owner_tenant_id_and_invoice_number ON public.invoices USING btree (owner_tenant_id, invoice_number);
+
+
+--
+-- Name: index_invoices_one_draft_per_customer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoices_one_draft_per_customer ON public.invoices USING btree (owner_tenant_id, customer_tenant_id) WHERE (issued_at IS NULL);
 
 
 --
@@ -2815,6 +3049,14 @@ ALTER TABLE ONLY public.sales_order_sequences
 
 
 --
+-- Name: billable_items fk_rails_2afbdad4ce; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billable_items
+    ADD CONSTRAINT fk_rails_2afbdad4ce FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: inbound_shipment_lines fk_rails_305b73d616; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2935,6 +3177,14 @@ ALTER TABLE ONLY public.inbound_shipments
 
 
 --
+-- Name: invoice_tax_summaries fk_rails_6ddba76b9e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_tax_summaries
+    ADD CONSTRAINT fk_rails_6ddba76b9e FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: sales_order_lines fk_rails_6ea4e05c77; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3047,6 +3297,22 @@ ALTER TABLE ONLY public.stock_movements
 
 
 --
+-- Name: invoices fk_rails_ab58fa9d84; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoices
+    ADD CONSTRAINT fk_rails_ab58fa9d84 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: invoice_tax_summaries fk_rails_af4c62d5d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_tax_summaries
+    ADD CONSTRAINT fk_rails_af4c62d5d5 FOREIGN KEY (owner_tenant_id, invoice_id) REFERENCES public.invoices(owner_tenant_id, id);
+
+
+--
 -- Name: inspection_records fk_rails_b202ea7663; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3092,6 +3358,14 @@ ALTER TABLE ONLY public.cancellation_reviews
 
 ALTER TABLE ONLY public.solid_queue_batch_executions
     ADD CONSTRAINT fk_rails_bc9f981155 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: billable_items fk_rails_c30680b5e8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billable_items
+    ADD CONSTRAINT fk_rails_c30680b5e8 FOREIGN KEY (owner_tenant_id, invoice_id) REFERENCES public.invoices(owner_tenant_id, id);
 
 
 --
@@ -3183,6 +3457,14 @@ ALTER TABLE ONLY public.shipments
 
 
 --
+-- Name: billing_terms fk_rails_fb7cc884e0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.billing_terms
+    ADD CONSTRAINT fk_rails_fb7cc884e0 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: cancellation_requests fk_rails_fc77e10591; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3201,6 +3483,18 @@ ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: billable_items; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.billable_items ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: billing_terms; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.billing_terms ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: cancellation_requests; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3239,6 +3533,18 @@ ALTER TABLE public.inbound_shipments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inspection_records ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: invoice_tax_summaries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.invoice_tax_summaries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: invoices; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3256,6 +3562,20 @@ CREATE POLICY owner_write ON public.allocations USING ((owner_tenant_id = public
 --
 
 CREATE POLICY owner_write ON public.audit_logs USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: billable_items owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.billable_items USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: billing_terms owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.billing_terms USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -3298,6 +3618,20 @@ CREATE POLICY owner_write ON public.inbound_shipments USING ((owner_tenant_id = 
 --
 
 CREATE POLICY owner_write ON public.inspection_records USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: invoice_tax_summaries owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.invoice_tax_summaries USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: invoices owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.invoices USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -3600,6 +3934,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261011210000'),
 ('20261011200000'),
 ('20261011100000'),
 ('20261011000000'),

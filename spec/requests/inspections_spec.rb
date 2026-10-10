@@ -1,7 +1,7 @@
 require "rails_helper"
 require_relative "../support/events"
 
-# 発注側の検収と、受注側の検収済の通し（docs/architecture/context-map.md「検収と請求の流れ」1・2）
+# 発注側の検収と、受注側の検収済・請求対象明細の通し（docs/architecture/context-map.md「検収と請求の流れ」1〜4）
 RSpec.describe "検収", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }
@@ -98,6 +98,18 @@ RSpec.describe "検収", type: :request do
     deliver_enqueued_events
     login_as(supplier_admin)
     expect(sales_order_status).to eq("INSPECTED")
+  end
+
+  it "検収してイベントを流すと、受注側に検収数量が正の受注明細ごとの未請求の請求対象明細ができる" do
+    inspect_inbound([ { inboundShipmentLineId: @bolt_line_id, acceptedQuantity: 3 }, { inboundShipmentLineId: @nut_line_id, acceptedQuantity: 0 } ])
+    deliver_enqueued_events
+
+    login_as(supplier_admin)
+    expect(graphql("{ supplier { billableItems { nodes { itemName unitPrice quantity taxRatePercent amount inspectedOn } } } }"))
+      .to eq("supplier" => { "billableItems" => { "nodes" => [
+        { "itemName" => "BOLT", "unitPrice" => "120", "quantity" => 3, "taxRatePercent" => 10, "amount" => "360",
+          "inspectedOn" => Date.current.iso8601 }
+      ] } })
   end
 
   it "入力の誤りは INVALID_INPUT に写って誤りの明細を指し、2 回目の検収は CONFLICT に写る" do

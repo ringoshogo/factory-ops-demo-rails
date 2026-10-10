@@ -19,6 +19,9 @@ module Types
     field :create_shipping_instruction, mutation: Mutations::CreateShippingInstruction
     field :cancel_shipping_instruction, mutation: Mutations::CancelShippingInstruction
     field :post_shipment, mutation: Mutations::PostShipment
+    field :set_billing_term, mutation: Mutations::SetBillingTerm
+    field :close_billing_period, mutation: Mutations::CloseBillingPeriod
+    field :discard_draft_invoice, mutation: Mutations::DiscardDraftInvoice
     field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
     field :request_purchase_order_cancellation, mutation: Mutations::RequestPurchaseOrderCancellation
     field :inspect_inbound_shipment, mutation: Mutations::InspectInboundShipment

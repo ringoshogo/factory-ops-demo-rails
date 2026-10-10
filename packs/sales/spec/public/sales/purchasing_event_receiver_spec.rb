@@ -135,7 +135,29 @@ RSpec.describe Sales::PurchasingEventReceiver do
         [ supplier.id, shipment_id, line.id, [ 3, 0 ][index], Date.new(2026, 10, 21) ]
       end)
       expect(shipped_order_value.status).to eq(:inspected)
-      expect(published).to be_empty
+    end
+
+    it "検収数量が正の受注明細ごとに、受注明細の写しの値で「請求対象確定」を出す。数量 0 の明細は出さない" do
+      Tenancy.with_tenant(supplier.id) { shipped_lines[1].update!(item_name: "ナット M8", unit_price: 15, tax_rate_percent: 8) }
+      lines = inspected.lines.map { _1.merge("accepted_quantity" => 2) }
+      handle(inspected.with(lines:))
+
+      expect(published.map(&:to_h)).to match_array(shipped_lines.map do |line|
+        { supplier_tenant_id: supplier.id, buyer_tenant_id: buyer.id, shipment_id:, sales_order_line_id: line.id,
+          purchase_order_line_id: line.source_purchase_order_line_id, item_name: line.item_name,
+          unit_price: line.unit_price.to_s, tax_rate_percent: line.tax_rate_percent, quantity: 2, inspected_on: "2026-10-21" }
+      end)
+      expect(published.map { _1.to_h[:item_name] }).to contain_exactly("六角ボルト M8", "ナット M8")
+
+      handle(inspected)
+      expect(published.size).to eq(2)
+    end
+
+    it "数量 0 の明細には「請求対象確定」を出さない" do
+      handle(inspected)
+
+      expect(published.map { [ _1.class, _1.sales_order_line_id, _1.quantity ] })
+        .to eq([ [ Contracts::BillableItemConfirmed, shipped_lines[0].id, 3 ] ])
     end
 
     it "受注側が「出荷計上」をまだ受け取っていない（届く順が入れ替わった）なら、何も書かずに失敗し、再配送に任せる" do
