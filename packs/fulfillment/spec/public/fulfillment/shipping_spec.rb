@@ -76,6 +76,13 @@ RSpec.describe Fulfillment::Shipping do
     expect(described_class.post(actor, shipment_request_id: other.id, shipped_on: Date.current).failures.map(&:code)).to eq([ :conflict ])
   end
 
+  it "見えない出荷依頼は計上せず、出荷依頼 ID を指す NOT_FOUND を返し、在庫も変わらない" do
+    result = described_class.post(actor, shipment_request_id: SecureRandom.uuid, shipped_on: Date.current)
+
+    expect(result.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :shipment_request_id ] ] ])
+    expect(stock).to have_attributes(on_hand: 10, allocated: 5)
+  end
+
   it "ロックを出荷依頼 → 出荷指示 → 在庫（item_id 昇順）→ 引当（受注明細 ID 順）の順に取る" do
     locks = []
     callback = lambda do |*, payload|

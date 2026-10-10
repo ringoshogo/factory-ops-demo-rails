@@ -47,4 +47,11 @@ RSpec.describe Fulfillment::Instructions do
     expect(codes(cancel)).to eq([ :conflict ])
     expect(codes(described_class.cancel(actor, shipment_request_id: SecureRandom.uuid))).to eq([ :not_found ])
   end
+
+  it "見えない出荷依頼には指示を作れず、出荷依頼 ID を指す NOT_FOUND を返す" do
+    result = described_class.create(actor, shipment_request_id: SecureRandom.uuid, planned_date: Date.current)
+
+    expect(result.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :shipment_request_id ] ] ])
+    expect(Fulfillment::ShippingInstruction.count).to eq(0)
+  end
 end

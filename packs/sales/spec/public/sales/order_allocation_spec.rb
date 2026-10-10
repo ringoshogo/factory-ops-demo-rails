@@ -59,6 +59,16 @@ RSpec.describe Sales::OrderAllocation do
     expect(described_class.allocate(actor, sales_order_id: SecureRandom.uuid).failures.map(&:code)).to eq([ :not_found ])
   end
 
+  { "取消済" => :cancelled_at, "出荷済" => :shipped_at }.each do |name, column|
+    it "#{name}の受注は、有効在庫があっても引き当てず CONFLICT を返す" do
+      stock_in(5)
+      order.update!(column => Time.current)
+
+      expect(allocate.failures.map(&:code)).to eq([ :conflict ])
+      expect(allocated_quantities).to eq([ 0, 0 ])
+    end
+  end
+
   it "ロックを受注 → 受注明細（id 順）→ 在庫（item_id 昇順）→ 引当（受注明細 ID 順）の順に取る" do
     other_item = FactoryBot.create(:item)
     FactoryBot.create(:sales_order_line, :matched, sales_order: order, item_id: other_item.id)
