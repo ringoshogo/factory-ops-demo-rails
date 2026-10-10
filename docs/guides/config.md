@@ -152,7 +152,7 @@ JSON の書式は、文字列の中の秘密やクエリの本文を消さない
 
 残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（ファイルの添付・テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
 
-`debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。水準は環境変数 `RAILS_LOG_LEVEL` で決め、既定は `info`、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`production.rb` は `config.after_initialize` で、初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。環境変数ではなく最終の水準を見るので、`config.log_level` を直接 `:debug` にしても起動しない。
+`debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。水準は環境変数 `RAILS_LOG_LEVEL` で決め、既定は `info`、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`production.rb` は `config.after_initialize` で、初期化の後の `Rails.logger` の水準を `Platform::Logging.verify_production_level!` に通し、`info` より細かければ起動を止める。環境変数ではなく最終の水準を見るので、`config.log_level` を直接 `:debug` にしても起動しない。止めるのは設定からの指定だけで、初期化の後にコードで水準を変える・ロガーを差し替える経路はコードレビューで止める（OI-36）。
 
 ### 構成の入口：文脈のミドルウェアとログの書式
 
