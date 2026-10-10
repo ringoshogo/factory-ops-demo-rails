@@ -35,10 +35,12 @@ module Sales
       lines = SalesOrderLine.where(sales_order_id: orders.map(&:id)).to_a
       allocated = Inventory::Allocation.quantities_for(actor, lines.map(&:id))
       lines = lines.group_by(&:sales_order_id)
+      pending = CancellationReview.pending.where(sales_order_id: orders.map(&:id)).pluck(:sales_order_id).to_set
       orders.map do |order|
         SalesOrderValue.new(id: order.id, owner_tenant_id: order.owner_tenant_id, order_no: order.order_no,
           customer_tenant_id: order.customer_tenant_id, order_date: order.order_date, due_date: order.due_date,
-          status: SalesOrderStatus.derive(order, lines.fetch(order.id, []), allocated:))
+          status: SalesOrderStatus.derive(order, lines.fetch(order.id, []), allocated:),
+          cancellation_review_pending: pending.include?(order.id))
       end
     end
 

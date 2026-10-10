@@ -168,6 +168,62 @@ COMMENT ON TABLE public.audit_logs IS '[基盤] 監査ログ。相手テナン�
 
 
 --
+-- Name: cancellation_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cancellation_requests (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    reason character varying NOT NULL,
+    outcome character varying,
+    decided_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    purchase_order_id uuid NOT NULL,
+    CONSTRAINT cancellation_requests_decided_together CHECK (((outcome IS NULL) = (decided_at IS NULL))),
+    CONSTRAINT cancellation_requests_outcome_check CHECK (((outcome)::text = ANY (ARRAY['approved'::text, 'rejected'::text])))
+);
+
+ALTER TABLE ONLY public.cancellation_requests FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE cancellation_requests; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.cancellation_requests IS '[購買] 取消依頼。回答（承認・却下）が届くまで回答待ちで、発注ごとに 1 件まで';
+
+
+--
+-- Name: cancellation_reviews; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cancellation_reviews (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    source_cancellation_request_id uuid NOT NULL,
+    requested_at timestamp(6) without time zone NOT NULL,
+    decision character varying,
+    decided_at timestamp(6) without time zone,
+    decided_by_user_id uuid,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    sales_order_id uuid NOT NULL,
+    CONSTRAINT cancellation_reviews_decided_together CHECK (((decision IS NULL) = (decided_at IS NULL))),
+    CONSTRAINT cancellation_reviews_decision_check CHECK (((decision)::text = ANY (ARRAY['approved'::text, 'rejected'::text])))
+);
+
+ALTER TABLE ONLY public.cancellation_reviews FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE cancellation_reviews; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.cancellation_reviews IS '[受注] 取消の審査。取消依頼から作り、承認か却下で決着する';
+
+
+--
 -- Name: customer_part_mappings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -603,6 +659,30 @@ ALTER TABLE ONLY public.shipments FORCE ROW LEVEL SECURITY;
 --
 
 COMMENT ON TABLE public.shipments IS '[出荷] 出荷実績。出荷依頼を全量で計上し、発注側は自社の発注に連結した分を読む';
+
+
+--
+-- Name: shipping_holds; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.shipping_holds (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    sales_order_id uuid NOT NULL,
+    source_cancellation_review_id uuid NOT NULL,
+    released_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.shipping_holds FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE shipping_holds; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.shipping_holds IS '[出荷] 出荷停止。取消の審査ごとに 1 件で、解除するまで受注の出荷指示と計上を止める';
 
 
 --
@@ -1383,6 +1463,22 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
+-- Name: cancellation_requests cancellation_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cancellation_requests
+    ADD CONSTRAINT cancellation_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cancellation_reviews cancellation_reviews_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cancellation_reviews
+    ADD CONSTRAINT cancellation_reviews_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: customer_part_mappings customer_part_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1516,6 +1612,14 @@ ALTER TABLE ONLY public.shipment_requests
 
 ALTER TABLE ONLY public.shipments
     ADD CONSTRAINT shipments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: shipping_holds shipping_holds_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shipping_holds
+    ADD CONSTRAINT shipping_holds_pkey PRIMARY KEY (id);
 
 
 --
@@ -1677,6 +1781,13 @@ CREATE INDEX idx_on_owner_tenant_id_inbound_shipment_id_c08904320e ON public.inb
 
 
 --
+-- Name: idx_on_owner_tenant_id_purchase_order_id_5322d606d6; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_purchase_order_id_5322d606d6 ON public.cancellation_requests USING btree (owner_tenant_id, purchase_order_id);
+
+
+--
 -- Name: idx_on_owner_tenant_id_purchase_order_id_bb29b0b793; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1695,6 +1806,13 @@ CREATE INDEX idx_on_owner_tenant_id_purchase_order_id_f190365cb3 ON public.inbou
 --
 
 CREATE INDEX idx_on_owner_tenant_id_purchase_order_line_id_b4d8e1aa74 ON public.inbound_shipment_lines USING btree (owner_tenant_id, purchase_order_line_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_sales_order_id_c31f66138f; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_sales_order_id_c31f66138f ON public.cancellation_reviews USING btree (owner_tenant_id, sales_order_id);
 
 
 --
@@ -1765,6 +1883,41 @@ CREATE INDEX index_audit_logs_on_owner_tenant_id_and_correlation_id ON public.au
 --
 
 CREATE UNIQUE INDEX index_audit_logs_on_owner_tenant_id_and_id ON public.audit_logs USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_cancellation_requests_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cancellation_requests_on_owner_tenant_id_and_id ON public.cancellation_requests USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_cancellation_requests_one_pending_per_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cancellation_requests_one_pending_per_order ON public.cancellation_requests USING btree (purchase_order_id) WHERE (outcome IS NULL);
+
+
+--
+-- Name: index_cancellation_reviews_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cancellation_reviews_on_owner_tenant_id_and_id ON public.cancellation_reviews USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_cancellation_reviews_on_source_cancellation_request_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cancellation_reviews_on_source_cancellation_request_id ON public.cancellation_reviews USING btree (source_cancellation_request_id);
+
+
+--
+-- Name: index_cancellation_reviews_one_pending_per_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cancellation_reviews_one_pending_per_order ON public.cancellation_reviews USING btree (sales_order_id) WHERE (decision IS NULL);
 
 
 --
@@ -2052,6 +2205,27 @@ CREATE INDEX index_shipments_on_owner_tenant_id_and_shipping_instruction_id ON p
 --
 
 CREATE UNIQUE INDEX index_shipments_on_shipment_request_id ON public.shipments USING btree (shipment_request_id);
+
+
+--
+-- Name: index_shipping_holds_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_shipping_holds_on_owner_tenant_id_and_id ON public.shipping_holds USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_shipping_holds_on_sales_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_shipping_holds_on_sales_order_id ON public.shipping_holds USING btree (sales_order_id);
+
+
+--
+-- Name: index_shipping_holds_on_source_cancellation_review_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_shipping_holds_on_source_cancellation_review_id ON public.shipping_holds USING btree (source_cancellation_review_id);
 
 
 --
@@ -2537,6 +2711,14 @@ ALTER TABLE ONLY public.shipment_request_lines
 
 
 --
+-- Name: cancellation_requests fk_rails_5dcc742e77; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cancellation_requests
+    ADD CONSTRAINT fk_rails_5dcc742e77 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: customer_part_mappings fk_rails_68fd608b68; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2566,6 +2748,14 @@ ALTER TABLE ONLY public.inbound_shipments
 
 ALTER TABLE ONLY public.sales_order_lines
     ADD CONSTRAINT fk_rails_6ea4e05c77 FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.items(owner_tenant_id, id);
+
+
+--
+-- Name: shipping_holds fk_rails_6f14d60cf3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.shipping_holds
+    ADD CONSTRAINT fk_rails_6f14d60cf3 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -2665,6 +2855,14 @@ ALTER TABLE ONLY public.purchase_order_sequences
 
 
 --
+-- Name: cancellation_reviews fk_rails_b8e70ec0a9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cancellation_reviews
+    ADD CONSTRAINT fk_rails_b8e70ec0a9 FOREIGN KEY (owner_tenant_id, sales_order_id) REFERENCES public.sales_orders(owner_tenant_id, id);
+
+
+--
 -- Name: solid_queue_batch_executions fk_rails_bc9f981155; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2745,11 +2943,27 @@ ALTER TABLE ONLY public.partnership_grants
 
 
 --
+-- Name: cancellation_reviews fk_rails_e7fd9c56ad; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cancellation_reviews
+    ADD CONSTRAINT fk_rails_e7fd9c56ad FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: shipments fk_rails_f9cec7c937; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.shipments
     ADD CONSTRAINT fk_rails_f9cec7c937 FOREIGN KEY (owner_tenant_id, shipment_request_id) REFERENCES public.shipment_requests(owner_tenant_id, id);
+
+
+--
+-- Name: cancellation_requests fk_rails_fc77e10591; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cancellation_requests
+    ADD CONSTRAINT fk_rails_fc77e10591 FOREIGN KEY (owner_tenant_id, purchase_order_id) REFERENCES public.purchase_orders(owner_tenant_id, id);
 
 
 --
@@ -2763,6 +2977,18 @@ ALTER TABLE public.allocations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cancellation_requests; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cancellation_requests ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cancellation_reviews; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cancellation_reviews ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: customer_part_mappings; Type: ROW SECURITY; Schema: public; Owner: -
@@ -2800,6 +3026,20 @@ CREATE POLICY owner_write ON public.allocations USING ((owner_tenant_id = public
 --
 
 CREATE POLICY owner_write ON public.audit_logs USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: cancellation_requests owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.cancellation_requests USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: cancellation_reviews owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.cancellation_reviews USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -2912,6 +3152,13 @@ CREATE POLICY owner_write ON public.shipment_requests USING ((owner_tenant_id = 
 --
 
 CREATE POLICY owner_write ON public.shipments USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: shipping_holds owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.shipping_holds USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -3054,6 +3301,12 @@ ALTER TABLE public.shipment_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shipments ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: shipping_holds; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.shipping_holds ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: shipping_instructions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3084,6 +3337,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261011100000'),
 ('20261011000000'),
 ('20261010000000'),
 ('20261009000000'),

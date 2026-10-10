@@ -176,6 +176,23 @@ module MatrixExpectations
       },
       expect: ONLY_SUPPLIER
     },
+    # 連結した受注を持つ発注への取消依頼。発注を所有する granted_buyer だけが依頼でき、受注側の supplier にも見えない
+    "Mutation.requestPurchaseOrderCancellation" => {
+      query: "mutation($input: RequestPurchaseOrderCancellationInput!) { requestPurchaseOrderCancellation(input: $input) { purchaseOrder { id } errors { code } } }",
+      variables: ->(world) { { input: { purchaseOrderId: world.linked_order(:purchase_order).id, reason: "数量の誤り" } } },
+      expect: MatrixWorld::PERSONAS.index_with(:not_found).merge(granted_buyer: :value)
+    },
+    # supplier の審査中の審査。発注側のペルソナには、相手の受注の審査は見えない
+    "Mutation.approveCancellationReview" => {
+      query: "mutation($input: ApproveCancellationReviewInput!) { approveCancellationReview(input: $input) { salesOrder { id } errors { code } } }",
+      variables: ->(world) { { input: { cancellationReviewId: world.row("cancellation_reviews", :supplier).id } } },
+      expect: ONLY_SUPPLIER
+    },
+    "Mutation.rejectCancellationReview" => {
+      query: "mutation($input: RejectCancellationReviewInput!) { rejectCancellationReview(input: $input) { salesOrder { id } errors { code } } }",
+      variables: ->(world) { { input: { cancellationReviewId: world.row("cancellation_reviews", :supplier).id } } },
+      expect: ONLY_SUPPLIER
+    },
     # supplier への発注。place_orders の付与がある有効な取引関係の発注側だけが登録でき、
     # 付与の無い・失効した・関係の無い相手と自分自身への発注は、どれも同じ NOT_PERMITTED になる
     "Mutation.placePurchaseOrder" => {

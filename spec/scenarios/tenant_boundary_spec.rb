@@ -77,6 +77,16 @@ RSpec.describe "テナントの境界", type: :request do
       ids: %i[supplier_tenant outsider_tenant], reach: not_found,
       run: ->(id) { mutate("registerPartMapping", customerTenantId: id, customerPartNumber: "MY-BOLT", itemId: own_item_id) }
     },
+    "Mutation.requestPurchaseOrderCancellation(input.purchaseOrderId)" => {
+      ids: documents, reach: not_found,
+      run: ->(id) { mutate("requestPurchaseOrderCancellation", purchaseOrderId: id, reason: "数量の誤り") }
+    },
+    "Mutation.approveCancellationReview(input.cancellationReviewId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("approveCancellationReview", cancellationReviewId: id) }
+    },
+    "Mutation.rejectCancellationReview(input.cancellationReviewId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("rejectCancellationReview", cancellationReviewId: id) }
+    },
     # 発注は、存在しない・関係の無い・失効した・付与の無い相手を区別せず NOT_PERMITTED にする
     # （docs/architecture/graphql-schema.md「ID と `node`」）
     "Mutation.placePurchaseOrder(input.supplierTenantId)" => {

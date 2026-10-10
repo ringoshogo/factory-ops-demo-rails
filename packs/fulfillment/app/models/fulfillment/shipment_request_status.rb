@@ -1,11 +1,12 @@
 module Fulfillment
-  # 出荷依頼の状況を、出荷依頼の時刻列と出荷指示・出荷実績から優先順で導出する
+  # 出荷依頼の状況を、出荷依頼の時刻列と、出荷停止・出荷指示・出荷実績から優先順で導出する
   # （docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）。
-  # 出荷停止を記録する表（shipping_holds）が無いので、導出表の「出荷停止中」は導出しない
+  # held は同じ受注に解除されていない出荷停止があるかで、呼ぶ側が出荷停止の表から求めて渡す
   module ShipmentRequestStatus
-    def self.derive(request, instructed:, shipped:)
+    def self.derive(request, instructed:, shipped:, held:)
       if request.cancelled_at then :cancelled
       elsif shipped then :shipped
+      elsif held then :on_hold
       elsif instructed then :instructed
       else :ready
       end

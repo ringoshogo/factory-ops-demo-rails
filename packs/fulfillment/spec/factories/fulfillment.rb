@@ -38,4 +38,11 @@ FactoryBot.define do
     source_purchase_order_line_id { shipment_request_line.source_purchase_order_line_id }
     quantity { shipment_request_line.quantity }
   end
+
+  # 既定は解除前の停止
+  factory :shipping_hold, class: "Fulfillment::ShippingHold" do
+    owner_tenant_id { Current.tenant_id }
+    sales_order_id { SecureRandom.uuid }
+    source_cancellation_review_id { SecureRandom.uuid }
+  end
 end

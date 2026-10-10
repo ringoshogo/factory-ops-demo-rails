@@ -32,4 +32,11 @@ FactoryBot.define do
     purchase_order_line { association :purchase_order_line, owner_tenant_id:, purchase_order: inbound_shipment.purchase_order }
     shipped_quantity { purchase_order_line.quantity }
   end
+
+  # 既定は回答待ち
+  factory :cancellation_request, class: "Purchasing::CancellationRequest" do
+    owner_tenant_id { Current.tenant_id }
+    purchase_order { association :purchase_order, owner_tenant_id: }
+    reason { "数量の誤り" }
+  end
 end

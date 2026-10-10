@@ -4,6 +4,12 @@ module Contracts
   class EventJob < ApplicationJob
     class OutsidePublish < StandardError; end
     class TenantMismatch < StandardError; end
+    class MissingMetadata < StandardError; end
+
+    # 受信の監査の行と配送の遅れの計測に使う付帯情報の項目。Contracts.publish がすべて入れる。
+    # 無いジョブは受け手を動かさずに失敗させる。受け手の書き込みだけを残すと、相手テナントに効果が及ぶ書き込みが記録されない
+    # （docs/guides/config.md「ログ」）
+    REQUIRED_METADATA = %w[event_id event_name correlation_id source_tenant_id published_at].freeze
 
     PUBLISHING = :contracts_event_job_publishing
     private_constant :PUBLISHING
@@ -29,6 +35,9 @@ module Contracts
 
     def perform(event_name, payload, _receiver, tenant_id)
       started_at = Time.current
+      missing = REQUIRED_METADATA - (app_metadata || {}).keys
+      raise MissingMetadata, "付帯情報に #{missing.join('・')} が無い" if missing.any?
+
       route.receiver.constantize.handle(event_name.constantize.from_payload(payload))
       record_receipt(tenant_id)
       Rails.event.notify("contracts.event_handled", event_name:, receiver: route.receiver,
@@ -64,10 +73,9 @@ module Contracts
         source_tenant_id:, correlation_id: app_metadata.fetch("correlation_id"))
     end
 
-    # 配送の遅れ。発行時刻は付帯情報にあり、付帯情報の無いジョブでは測れない
+    # 配送の遅れ。発行時刻は付帯情報にある
     def delivery_lag_ms(started_at)
-      published_at = app_metadata&.dig("published_at") or return nil
-      ((started_at - Time.iso8601(published_at)) * 1000).round
+      ((started_at - Time.iso8601(app_metadata.fetch("published_at"))) * 1000).round
     end
 
     def route

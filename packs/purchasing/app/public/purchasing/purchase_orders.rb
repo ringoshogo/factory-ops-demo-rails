@@ -21,6 +21,12 @@ module Purchasing
       PurchaseOrderLine.where(id: line_ids, purchase_order_id: Scope.call(actor, :own).select(:id)).to_h { [ _1.id, to_line_value(_1) ] }
     end
 
+    # 発注 ID ごとの取消依頼。古い順に並べる
+    def self.cancellation_requests_for(actor, order_ids)
+      requests = CancellationRequest.where(purchase_order_id: Scope.call(actor, :own).where(id: order_ids).select(:id)).order(:id)
+      order_ids.index_with { [] }.merge(requests.map { to_cancellation_request_value(_1) }.group_by(&:purchase_order_id))
+    end
+
     # 発注 ID ごとの入荷（「出荷計上」の写し）
     def self.inbound_shipments_for(actor, order_ids)
       shipments = InboundShipment.where(purchase_order_id: Scope.call(actor, :own).where(id: order_ids).select(:id)).order(:id)
@@ -38,16 +44,22 @@ module Purchasing
     def self.to_values(orders)
       orders = orders.to_a
       inbound = InboundShipment.where(purchase_order_id: orders.map(&:id)).distinct.pluck(:purchase_order_id).to_set
+      pending = CancellationRequest.pending.where(purchase_order_id: orders.map(&:id)).pluck(:purchase_order_id).to_set
       orders.map do |order|
         PurchaseOrderValue.new(id: order.id, owner_tenant_id: order.owner_tenant_id, order_no: order.order_no,
           supplier_tenant_id: order.supplier_tenant_id, order_date: order.order_date,
-          desired_delivery_on: order.desired_delivery_on, status: PurchaseOrderStatus.derive(order, inbound: inbound.include?(order.id)))
+          desired_delivery_on: order.desired_delivery_on, status: PurchaseOrderStatus.derive(order, inbound: inbound.include?(order.id)),
+          cancellation_pending: pending.include?(order.id))
       end
+    end
+
+    def self.to_cancellation_request_value(request)
+      to_record_value(CancellationRequestValue, request).with(outcome: request.outcome&.to_sym)
     end
 
     def self.to_line_value(line) = to_record_value(PurchaseOrderLineValue, line)
 
     def self.to_record_value(klass, record) = klass.new(**record.slice(*klass.members.map(&:to_s)).symbolize_keys)
-    private_class_method :to_values, :to_line_value, :to_record_value
+    private_class_method :to_values, :to_cancellation_request_value, :to_line_value, :to_record_value
   end
 end
