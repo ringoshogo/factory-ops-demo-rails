@@ -53,7 +53,7 @@ RSpec.describe "取消と出荷の計上の競合" do
   end
 
   # 審査は「取消依頼」の受け手で作る。受け手が出した「出荷停止」は流さない。停止は業務の手順で、
-  # このテストは手順をすり抜けた同時の操作を引当の行ロックが止めることを確かめるからである
+  # このテストは手順をすり抜けた同時の操作を、在庫の行 → 引当の行の順に取る行ロックが止めることを確かめるからである
   def open_review
     Tenancy.with_tenant(supplier.id) do
       Sales::PurchasingEventReceiver.handle(Contracts::CancellationRequested.new(cancellation_request_id: SecureRandom.uuid,

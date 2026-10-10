@@ -226,6 +226,9 @@ RSpec.describe "テナントの境界", type: :request do
       Tenancy.with_tenant(buyer.id) { FactoryBot.create(:billable_item, customer_tenant_id: own_customer.id) }
       expect(query("{ supplier { billableItems { nodes { id } } } }").dig("supplier", "billableItems", "nodes").size).to eq(1)
       @own_item_id = mutate!("saveItem", "item { id }", code: "OWN-1", name: "自社品目", unit: "個", unitPrice: "10").dig("item", "id")
+      # 絞らない在庫の移動履歴と品番の対応表が、自社の行を返すようにする
+      mutate!("adjustStock", "stock { onHand }", itemId: own_item_id, type: "INBOUND", quantity: 1)
+      mutate!("registerPartMapping", "partMapping { id }", customerTenantId: own_customer.id, customerPartNumber: "OWN-PART", itemId: own_item_id)
 
       @partner_ids = {
         shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
@@ -238,6 +241,11 @@ RSpec.describe "テナントの境界", type: :request do
 
     boundary.each do |entry, row|
       it "発注側のユーザーが #{entry} に相手の ID を入れても、相手のデータに届かない" do
+        # 一覧を ID で絞る入口は、絞らない一覧が自社の行を返すことを先に確かめる。絞らない一覧も空なら、
+        # 絞った一覧が空でも、絞り込みが相手の行を落としたことにならない
+        if row.fetch(:reach) == []
+          expect(instance_exec(nil, &row.fetch(:run))).to be_present, "#{entry} を絞らずに引いた一覧が空。自社の行を準備に足す"
+        end
         results = row.fetch(:ids).index_with { |kind| instance_exec(partner_ids.fetch(kind), &row.fetch(:run)) }
 
         expect(results).to eq(row.fetch(:ids).index_with { row.fetch(:reach) })

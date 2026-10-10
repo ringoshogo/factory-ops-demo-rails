@@ -3,6 +3,8 @@ require_relative "../packs/platform/lib/platform/request_context"
 
 require "rails"
 # Pick the frameworks you want:
+# Active Storage・Action Mailbox・Action Text・Action Cable は読み込まない。読み込まれた部品があると、読む人がそれを使える前提で
+# 設計する。足すときは docs/guides/config.md「使っていない機能の設定」の表を直す
 require "active_model/railtie"
 require "active_job/railtie"
 require "active_record/railtie"

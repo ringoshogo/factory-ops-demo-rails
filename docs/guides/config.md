@@ -8,7 +8,7 @@
 
 | ファイル | 役割 | 出自 | 説明する節 |
 |---|---|---|---|
-| `boot.rb` | Bundler と bootsnap を読み込む。起動の最初に読まれる | 生成のまま | — |
+| `boot.rb` | Bundler と bootsnap を読み込む。起動の最初に読まれる | 変更 | [boot.rb で変えたこと](#bootrb-で変えたこと) |
 | `application.rb` | アプリ全体の設定 | 変更 | [起動とリクエスト](#起動とリクエスト)・[DB の接続](#db-の接続)・[ジョブ](#ジョブ)・[ログ](#ログ) |
 | `environment.rb` | `application.rb` を読み込み、アプリを初期化する | 生成のまま | — |
 | `environments/development.rb`・`test.rb`・`production.rb` | 環境ごとの設定 | 変更 | [環境ごとの設定](#環境ごとの設定)・[ログ](#ログ) |
@@ -33,6 +33,10 @@
 Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `application.rb` → `environment.rb` の順に読み、初期化の中で `environments/<環境>.rb`、`initializers/*.rb`、`routes.rb` を読む。
 
 ## 起動とリクエスト
+
+### boot.rb で変えたこと
+
+テストの環境（`RAILS_ENV=test`）では、bootsnap の命令列のキャッシュを使わない（`DISABLE_BOOTSNAP_COMPILE_CACHE`）。bootsnap は、ファイルの大きさと更新時刻（秒）が前と同じなら、キャッシュした命令列を返す。実装を壊して落ちることを確かめる手順（`guides/dev-cycle.md`「テストから書く」）では、比較の演算子を入れ替えるような大きさの変わらない壊し方をし、同じ秒のうちに複製から戻すことがあり、そのとき戻した後も壊した版が読まれる。`spec/platform/compile_cache_spec.rb` が、同じ秒に同じ大きさで書き換えたファイルを、書き換えた後の中身で読むことを確かめる。読み込みの道のキャッシュ（`load_path_cache`）は、ファイルの中身を持たないので使い続ける。開発と本番の起動は変えない。
 
 ### application.rb で変えたこと
 
@@ -216,7 +220,7 @@ grep <相関 ID> log/events.log
 
 ## 環境ごとの設定
 
-`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）を足したほかは生成のままである。本デモの読み方で知っておくとよいのは次の 2 つ。
+`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）を消したほかは生成のままである。本デモの読み方で知っておくとよいのは次の 2 つ。
 
 - **`test.rb` の `eager_load = ENV["CI"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。
 - **`production.rb` に Solid Queue の `connects_to` が無い**：[ジョブ](#ジョブ) のとおり、意図して書いていない。
@@ -237,6 +241,8 @@ grep <相関 ID> log/events.log
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
+
+ワークフローのステップと契機ごとの `BASE_REF` の式、`config/ci.rb` の工程は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
 
 ## 使っていない機能の設定
 

@@ -60,7 +60,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -90,6 +90,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M22 | 受注側の取消と、取消と出荷の競合 | 同時に進んだ取消と出荷のどちらか一方だけが成立する |
 | M23 | 検収 | 検収数量が出荷数量を超えず、検収が受注側へ 1 回だけ届く |
 | M24 | 請求の締め | 締めが取引先ごとに直列になり、税が請求書・税率ごとに 1 回だけ丸められる |
+| M36 | 行列テストの世界の作り方と、テストの検出力の小さな穴 | 行列テストの時間が表の数に比例し、競合テストの後始末の呼び忘れが落ちる |
 | M25 | 請求書の発行と受領請求書 | 確定した請求書が変わらず、写しが発注側に 1 回だけ届く |
 | M26 | ダッシュボードと失効の通し試験 | 失効の後も連結済みの取引が請求まで進む |
 | M27 | 販売単価のバイテンポラル履歴 | 現在の単価の有効期間が重ならず、単価の行が書き換わらない |
@@ -113,6 +114,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M20 | M5 | スキーマを書き出す |
 | M34 | M18・M20 | 依存の更新で、M18 のログの衛生の spec が止めた経路を確かめる。M20 の 2 つ目の PR（CI の互換の検査）の後に CI の設定を変える |
 | M35 | M34 | 分岐の網羅率を、上げた後の Ruby で測る |
+| M36 | M24 | 行列テストの世界に、M24 までの表と入口がそろっている |
 | M21〜M26 | M15〜M20・M34・M35 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる。上げた Ruby で書き、足した分岐の未通過を警告で見る |
 | M27 | M19・M20・M25 | 単価の変更を監査する。請求書の説明が発行済みの請求書を使う |
 | M28 | M18・M25 | 送信の失敗をログに出す。確実な通知の呼び出し元が「請求書発行」の受け手である |
@@ -923,9 +925,9 @@ bundle exec rspec packs/purchasing/spec/public/purchasing/cancellation_requests_
 
 ## M22 受注側の取消と、取消と出荷の競合
 
-**目的**：受注側は審査なしで取り消せる。同時に進んだ取消と出荷計上は、引当の行ロックでどちらか一方だけが成立する。
+**目的**：受注側は審査なしで取り消せる。同時に進んだ取消と出荷計上は、在庫の行 → 引当の行の順に取る行ロックでどちらか一方だけが成立する。
 
-**作るもの**：`Sales::OrderCancellation.cancel`（M21 の受注の内部の取消の処理を使う）、受注取消のイベントと購買の受け手（`supplier_cancelled_at`）、`cancelSalesOrder`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）。出荷取消のイベントと出荷の受け手は M21 のものを使う。審査の承認（M21）と受注側の取消は同じ受注の内部の取消の処理を通るので、下の競合テストが両方の経路の引当の行ロックを確かめる。
+**作るもの**：`Sales::OrderCancellation.cancel`（M21 の受注の内部の取消の処理を使う）、受注取消のイベントと購買の受け手（`supplier_cancelled_at`）、`cancelSalesOrder`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）。出荷取消のイベントと出荷の受け手は M21 のものを使う。審査の承認（M21）と受注側の取消は同じ受注の内部の取消の処理を通るので、下の競合テストが両方の経路の在庫の行と引当の行のロックを確かめる。
 
 受注側の取消の結果は次のとおりである。
 
@@ -1022,11 +1024,50 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 
 **文書に残すこと**：締めの入力と結果の表と、請求書の期間の決め方と、請求番号を確定で振ることを `data-model.md`「請求（`billing`）」に書く。
 
+## M36 行列テストの世界の作り方と、テストの検出力の小さな穴
+
+**目的**：表と入口を足すたびに 2 乗で伸びる行列テストの時間を、守る性質を弱めずに表の数に比例する時間へ戻す。あわせて、サイクル 02 の改善の探索で採用した 3 つの小さな穴（競合テストの後始末の呼び忘れ、request spec の補助の複製、上限ちょうどの example）を閉じる。どれも業務の振る舞いを変えない。
+
+**作るもの**
+
+1. 行列テストの世界をファイルごとに 1 回作る（IB-27）：`spec/matrix/table_matrix_spec.rb` と `spec/matrix/graphql_matrix_spec.rb` の `let(:world) { MatrixWorld.new }` を、`before(:context)` で接続を固定（`ActiveRecord::ConnectionPool#pin_connection!`）して外側のトランザクションの中で世界を作り、`after(:context)` で巻き戻して固定を外す形にする。準備か example が失敗しても、外側のトランザクションと接続の固定を必ず外す。各 example は、いまと同じく rspec-rails の savepoint の中で動いて巻き戻る。`after(:context)` で `unpin_connection!` が偽を返したら（世界のトランザクションが途中でコミットされたか、外で巻き戻った）失敗させ、行列の spec が別の接続でコミットしないことを機械で守る。`pin_connection!` は Rails の公開の文書に無いメソッドなので、依存していることと、使えなくなったときの移り先（判断の裏返る条件）を `guides/testing.md` に書く。世界のオブジェクト（関連を読み込んだ AR のインスタンス）を example の間で使い回すので、example が世界のオブジェクトを書き換えないことと、テナントの設定（`Tenancy`）が example の外へ漏れないことを確かめる
+2. 競合テストの後始末の呼び忘れを落とすガード（IB-26）：`delete_owned_rows` が正常に終わった後に印を立て、example ごとに印を初期化する。設定の `config.after(:example)` で、`:concurrency` の example に印が無ければ失敗させる。後始末を外した競合テストがコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われるので、呼び忘れは離れた example の失敗になる。`:concurrency` の外でトランザクションを使わない spec（`packs/sales/spec/public/sales/sales_order_policy_spec.rb`・`spec/db/tenant_table_spec.rb`・`spec/platform/tenancy_session_spec.rb`）は自前で後始末するので、ガードの外にあることを補助のコメントに列挙する。ガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/concurrency_helpers_spec.rb` は本文で `delete_owned_rows` を呼ぶので、印は `after` があることそのものではなく、後始末が終わったことを示す
+3. request spec の補助を `spec/support/request_helpers.rb` に寄せる（IB-09）：`login_as(user)` と、応答をそのまま返す `graphql_body` を置き、`type: :request` と `ScenarioHelpers` に取り込む。トップレベルのエラーが無いことを確かめて `data` を返す形は、`ScenarioHelpers#query` を同じモジュールへ移して使う。`type: :request` の行列と Bullet の spec で名前がぶつからないことを確かめる。`spec/requests/supplier_shipments_spec.rb` の確かめてから本文を返す形と、`graphql_entry_spec.rb` のメールを取る `login_as` は残す。`mutate` は寄せない
+4. 上限ちょうどの example（IB-25）：検収の明細の件数（異なる有効な明細 100 件で成功する）と、在庫の調整の理由の長さ（200 文字で成功し、201 文字で `INVALID_INPUT` になり書き込みが無い）の example を足す。在庫の調整には単体の spec が無いので、`packs/inventory/spec/public/inventory/adjustment_spec.rb` を足す。入力は定数から作らず、仕様の値（100・200）で書く。検収の上限の定数は発注の定数の別名なので、検収の example は比較の `>` を `>=` に壊すと落ちることで確かめる。上限 + 1 と上限ちょうどの両方を仕様の値で書く規則は、規則の変更として M29（取り込みのファイルの大きさの上限）で試し（IB-25 は `試行中`）、効いたら `guides/testing.md`「層への配分」に書く
+
+実装者は、作るもの 1 を最初に行う。変える前の形と、RLS を外したときに落ちる集合を比べるためである。3 は機械的な置き換えなので最後にし、差分を分ける。
+
+**判断**：世界をファイルごとに作るのに gem（test-prof の `before_all`）を使うか
+
+- **既定の推奨**：使わない。test-prof の `before_all` も同じ `pin_connection!` を包んだもので、要るのは 2 ファイルの外側のトランザクションと接続の固定だけである
+- **裏返る条件**：`pin_connection!` が Rails の更新で使えなくなるか、同じ形を 3 つ以上のファイルで使うことになった → test-prof の `before_all` に移す
+- **撤退コスト**：小さい。`let(:world)` に戻すだけで済む
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/matrix                       # 0 failures。行列の 2 ファイルが合計 30 秒以下（手元）
+bundle exec rspec spec/matrix --order rand          # シードを 3 つ変えて 0 failures
+bundle exec rspec spec/concurrency/concurrency_helpers_spec.rb spec/requests spec/scenarios
+bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspections_spec.rb packs/inventory/spec/public/inventory/adjustment_spec.rb   # 在庫の調整の単体の spec は、このマイルストーンで足す
+test "$(git grep -h "def login_as(user)" -- spec | wc -l)" -eq 1   # spec/support/request_helpers.rb の 1 か所
+```
+
+- 行列：テナントの表 1 つの RLS を外すと、表の行列で変える前と同じ example の集合が落ちる。入口の行列でも、認可の確かめを 1 つ外すと、変える前と同じ集合が落ちる。example の中で行を足しても、次の example とファイルの終わりの後に残らない
+- 後始末のガード：`after` を持たない競合テストの内側の example が落ちる（`spec/platform/bullet_spec.rb` の内側の example group を走らせる型）。ガードを外すと、その example が落ちなくなる
+- 補助：寄せる前と後で、各 request spec の返り値とエラーの確かめ方が同じである
+- 上限：上限の定数を 1 つ下げると、上限ちょうどの example が落ちる
+- CI の test のジョブの Run tests を PR の CI で 3 回以上流し、中央値が 4 分以下であることを記録する。あわせて、全件の分岐の計測ありとなしの時間を 1 回ずつ測って証跡に書く（IB-01 の費用の確かめ）
+
+**実装する文書の節**：`guides/testing.md`「行列テストとの分担」「競合テスト」「層への配分」
+
+**文書に残すこと**：行列テストの世界をファイルごとに作ることと、行列の spec では別の接続を使わず世界のオブジェクトを書き換えないことを `guides/testing.md`「行列テストとの分担」に書く。後始末のガードを「競合テスト」の 5 に書く。
+
 ## M25 請求書の発行と受領請求書
 
 **目的**：確定した請求書と明細は変わらない。写しは発注側の名義で 1 回だけ作られる。
 
-**作るもの**：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`
+**作るもの**：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。締め日が今日より後の締めを許すか（OI-77）を作者の判断を受けて決め、決めた条件を `closing_spec.rb` の example で確かめる
 
 **完了条件**：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でないテスト。確定後の変更が拒否されるテスト。同じ請求書発行を 2 回流しても写しが 1 件のテスト。`total = subtotal + tax_total` の CHECK 制約のテスト。重要シナリオ S5（`spec/scenarios/billing_amounts_spec.rb`）が通る。
 
@@ -1041,6 +1082,7 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 - `supplier.dashboard`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API）
 - `spec/scenarios/revocation_spec.rb`（重要シナリオ S2）：発注 → 受注確定 → 失効 → 経路 1〜3 が空・新しい発注が `NOT_PERMITTED` → 引当・出荷・検収・締め・発行がそのまま進み、発注側に受領請求書が届く
 - 画面の問い合わせごとの複雑度のテスト（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧から読む
+- 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合テスト（OI-79）。停止中の受注に有効な出荷指示ができるなら、受け手を直列にする
 
 **完了条件**：上の 2 つのテストが通る。全マイルストーンの共通の完了条件が通る。
 
@@ -1164,6 +1206,8 @@ bin/rubocop
 - **既定の推奨**：`import_files.content`（`bytea`）に置く。テナントの表なので RLS が掛かる。Active Storage を使うと、その表（`active_storage_blobs` など）にテナント列と RLS を足すことになる。
 - **裏返る条件**：ファイルの上限を 10 MB より大きくする → オブジェクトストレージに置き、鍵だけを `import_files` に持つ。読み出しはストレージから 1 行ずつにする。
 - **撤退コスト**：小さい。置き場を読む箇所は `stage` の 1 か所である。
+
+上限の検査（ファイルの大きさの上限）は、上限 + 1 で拒否し、上限ちょうどで受け付ける両方の example を、仕様の値で書く。サイクル 02 の改善の探索で採用した規則の試行で、このマイルストーンで効いたかを判定する（IB-25）。上限ちょうどの大きさのファイルを毎回作らずに済むよう、上限を設定で差し替えられる形にするかを実装の前に決める。
 
 **完了条件**
 

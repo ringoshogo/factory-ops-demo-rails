@@ -68,7 +68,7 @@
 
 ## 次にやること
 
-再開する人は、`guides/dev-cycle.md` の流れに沿って、`implementation-plan.md` のマイルストーンを M15 から番号の順に実装する。サイクルの区切りは `dev-cycle.md`「全体の流れ」の表にあり、サイクル 01（M15〜M20）はサイクル末まで終えた。サイクル 02（M34・M35・M21〜M24）は計画レビューを終え（`plans/cycle-02/plan-review.md`）、M34・M35・M21〜M24 を実装した。次はサイクル 02 のサイクル末（`guides/cycle-end.md`）を回す。M33（フロントエンド）は、流用元の `factory-ops-demo` の刷新後の画面部品を前提に計画を済ませてあり、実装は M32 の後に行う。
+再開する人は、`guides/dev-cycle.md` の流れに沿って、`implementation-plan.md` のマイルストーンを M15 から番号の順に実装する。サイクルの区切りは `dev-cycle.md`「全体の流れ」の表にあり、サイクル 01（M15〜M20）はサイクル末まで終えた。サイクル 02（M34・M35・M21〜M24）はサイクル末まで終えた（`plans/cycle-02/`）。次はサイクル 03（M36・M25・M26・M27〜M29）の計画レビュー（`guides/dev-cycle.md`「1. 計画レビュー」）で、M36（行列テストの世界の作り方）から実装する。作者の判断を待つ問い（役割の制限 OI-71〜OI-73、SDL の `filter` OI-78、未来の締め日 OI-77）は、サイクル 02 の棚卸し（`plans/cycle-02/inventory.md`）の冒頭にある。M33（フロントエンド）は、流用元の `factory-ops-demo` の刷新後の画面部品を前提に計画を済ませてあり、実装は M32 の後に行う。
 
 残件は、この文書には書かず、台帳 `plans/open-items.md` だけに書く。マイルストーンに着手する前に、引当先がそのマイルストーンの行を台帳で読む。M33 の著者判断（OI-07〜OI-14）は、作者が答えるまで M33 を終えられない。
 
@@ -88,8 +88,8 @@
 ## リポジトリの状態
 
 - **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
-- **ブランチ**：M1〜M20 の 1 つ目と、サイクル 01 のサイクル末（#30）は main にマージ済み。M20 の 2 つ目は PR（`m20-schema-compat-ci`）で、main の上にある。サイクル 02 の計画レビューは PR（`cycle-02-plan`）で、その上に積んである。M34 は PR #33（`m34-deps`）で、さらにその上に積んである。M35 は PR #34（`m35-branch-coverage`）で、その上に積んである。M21 は PR #35（`m21-cancellation`）で、さらにその上に積んである。M22 は PR #36（`m22-supplier-cancel`）で、その上に積んである。M23 は PR #37（`m23-inspection`）で、さらにその上に積んである。M24 は PR #38（`m24-billing-close`）で、その上に積んである。Dependabot の依存更新の PR が 3 本、未処理で残っている。
-- **実装**：サイクル 02 の M24 を終え、サイクル 02 のマイルストーンをすべて実装した。受注側は取引先と締め日を指定して締め、締め日以前に検収された未請求明細を集めた下書きの請求書を作り、破棄できる。締めは請求条件の行ロックで取引先ごとに直列になり、税は請求書・税率ごとに 1 回だけ切り捨てる（`architecture/data-model.md`「請求（`billing`）」）。実装レビューは `plans/cycle-02/implementation-reviews.md`「M24 請求の締め」にある。rspec は 1635 examples, 0 failures（`m24-billing-close` の `081d7cc` で、Ruby 3.4.11 で `COVERAGE=1 bundle exec rspec`）。次はサイクル 02 のサイクル末。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **ブランチ**：M1〜M20、サイクル 01 のサイクル末（#30）、サイクル 02 の計画レビューと M34・M35・M21〜M24（#31〜#38）は main にマージ済み。サイクル 02 のサイクル末は PR（`cycle-02-end`）で、main の上にある。Dependabot の依存更新の PR が 3 本、未処理で残っている。
+- **実装**：サイクル 02 のマイルストーンをすべて実装し、サイクル末を終えた。サイクル末で、監査の行を比べる example・ロックを取るメソッドの競合テスト・S1 の一覧の対照を確かめる検査と、テストの環境で bootsnap の命令列のキャッシュを止める設定を足した（`plans/cycle-02/recurrence.md`）。受注側は取引先と締め日を指定して締め、締め日以前に検収された未請求明細を集めた下書きの請求書を作り、破棄できる。締めは請求条件の行ロックで取引先ごとに直列になり、税は請求書・税率ごとに 1 回だけ切り捨てる（`architecture/data-model.md`「請求（`billing`）」）。実装レビューは `plans/cycle-02/implementation-reviews.md`「M24 請求の締め」にある。rspec は 1688 examples, 0 failures（`cycle-02-end` の `a991ff7` で、Ruby 3.4.11 で `COVERAGE=1 bundle exec rspec`）。次はサイクル 03 の計画レビュー。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの
