@@ -297,6 +297,32 @@ COMMENT ON TABLE public.inbound_shipments IS '[購買] 入荷。受注側の「�
 
 
 --
+-- Name: inspection_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inspection_records (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    shipment_id uuid NOT NULL,
+    quantity integer NOT NULL,
+    inspected_on date NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    sales_order_line_id uuid NOT NULL,
+    CONSTRAINT inspection_records_quantity_not_negative CHECK ((quantity >= 0))
+);
+
+ALTER TABLE ONLY public.inspection_records FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE inspection_records; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.inspection_records IS '[受注] 検収の記録。「検収完了」の写しで、出荷実績と受注明細の組ごとに 1 行';
+
+
+--
 -- Name: items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -453,6 +479,54 @@ ALTER TABLE ONLY public.purchase_orders FORCE ROW LEVEL SECURITY;
 --
 
 COMMENT ON TABLE public.purchase_orders IS '[購買] 発注の見出し。状況は時刻列と入荷・検収から導出する';
+
+
+--
+-- Name: receipt_inspection_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.receipt_inspection_lines (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    accepted_quantity integer NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    receipt_inspection_id uuid NOT NULL,
+    inbound_shipment_line_id uuid NOT NULL,
+    CONSTRAINT receipt_inspection_lines_accepted_quantity_not_negative CHECK ((accepted_quantity >= 0))
+);
+
+ALTER TABLE ONLY public.receipt_inspection_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE receipt_inspection_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.receipt_inspection_lines IS '[購買] 入荷検収の明細。入荷の明細ごとの検収数量を持つ';
+
+
+--
+-- Name: receipt_inspections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.receipt_inspections (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    inspected_on date NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    inbound_shipment_id uuid NOT NULL
+);
+
+ALTER TABLE ONLY public.receipt_inspections FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE receipt_inspections; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.receipt_inspections IS '[購買] 入荷検収。入荷 1 件に 1 回で、検収日を持つ';
 
 
 --
@@ -1503,6 +1577,14 @@ ALTER TABLE ONLY public.inbound_shipments
 
 
 --
+-- Name: inspection_records inspection_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inspection_records
+    ADD CONSTRAINT inspection_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: items items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1548,6 +1630,22 @@ ALTER TABLE ONLY public.purchase_order_sequences
 
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT purchase_orders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: receipt_inspection_lines receipt_inspection_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspection_lines
+    ADD CONSTRAINT receipt_inspection_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: receipt_inspections receipt_inspections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspections
+    ADD CONSTRAINT receipt_inspections_pkey PRIMARY KEY (id);
 
 
 --
@@ -1781,6 +1879,20 @@ CREATE INDEX idx_on_owner_tenant_id_inbound_shipment_id_c08904320e ON public.inb
 
 
 --
+-- Name: idx_on_owner_tenant_id_inbound_shipment_id_e7a94798c9; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_inbound_shipment_id_e7a94798c9 ON public.receipt_inspections USING btree (owner_tenant_id, inbound_shipment_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_inbound_shipment_line_id_ef3f0177ce; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_inbound_shipment_line_id_ef3f0177ce ON public.receipt_inspection_lines USING btree (owner_tenant_id, inbound_shipment_line_id);
+
+
+--
 -- Name: idx_on_owner_tenant_id_purchase_order_id_5322d606d6; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1809,10 +1921,24 @@ CREATE INDEX idx_on_owner_tenant_id_purchase_order_line_id_b4d8e1aa74 ON public.
 
 
 --
+-- Name: idx_on_owner_tenant_id_receipt_inspection_id_239b33d8d0; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_receipt_inspection_id_239b33d8d0 ON public.receipt_inspection_lines USING btree (owner_tenant_id, receipt_inspection_id);
+
+
+--
 -- Name: idx_on_owner_tenant_id_sales_order_id_c31f66138f; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_on_owner_tenant_id_sales_order_id_c31f66138f ON public.cancellation_reviews USING btree (owner_tenant_id, sales_order_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_sales_order_line_id_b7ce289602; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_sales_order_line_id_b7ce289602 ON public.inspection_records USING btree (owner_tenant_id, sales_order_line_id);
 
 
 --
@@ -1841,6 +1967,13 @@ CREATE INDEX idx_on_owner_tenant_id_shipment_request_line_id_7e3e49cc79 ON publi
 --
 
 CREATE UNIQUE INDEX idx_on_purchase_order_id_part_number_bda45e1f84 ON public.purchase_order_lines USING btree (purchase_order_id, part_number);
+
+
+--
+-- Name: idx_on_shipment_id_sales_order_line_id_a4548e8998; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_shipment_id_sales_order_line_id_a4548e8998 ON public.inspection_records USING btree (shipment_id, sales_order_line_id);
 
 
 --
@@ -1963,6 +2096,13 @@ CREATE UNIQUE INDEX index_inbound_shipments_on_shipment_id ON public.inbound_shi
 
 
 --
+-- Name: index_inspection_records_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_inspection_records_on_owner_tenant_id_and_id ON public.inspection_records USING btree (owner_tenant_id, id);
+
+
+--
 -- Name: index_items_on_owner_tenant_id_and_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2058,6 +2198,34 @@ CREATE UNIQUE INDEX index_purchase_orders_on_owner_tenant_id_and_order_no ON pub
 --
 
 CREATE INDEX index_purchase_orders_on_supplier_tenant_id ON public.purchase_orders USING btree (supplier_tenant_id);
+
+
+--
+-- Name: index_receipt_inspection_lines_on_inbound_shipment_line_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_receipt_inspection_lines_on_inbound_shipment_line_id ON public.receipt_inspection_lines USING btree (inbound_shipment_line_id);
+
+
+--
+-- Name: index_receipt_inspection_lines_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_receipt_inspection_lines_on_owner_tenant_id_and_id ON public.receipt_inspection_lines USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_receipt_inspections_on_inbound_shipment_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_receipt_inspections_on_inbound_shipment_id ON public.receipt_inspections USING btree (inbound_shipment_id);
+
+
+--
+-- Name: index_receipt_inspections_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_receipt_inspections_on_owner_tenant_id_and_id ON public.receipt_inspections USING btree (owner_tenant_id, id);
 
 
 --
@@ -2551,6 +2719,14 @@ CREATE TRIGGER users_bump_session_version BEFORE UPDATE OF password_digest ON pu
 
 
 --
+-- Name: receipt_inspections fk_rails_074565fb39; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspections
+    ADD CONSTRAINT fk_rails_074565fb39 FOREIGN KEY (owner_tenant_id, inbound_shipment_id) REFERENCES public.inbound_shipments(owner_tenant_id, id);
+
+
+--
 -- Name: stocks fk_rails_08def19f32; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2612,6 +2788,14 @@ ALTER TABLE ONLY public.inbound_shipments
 
 ALTER TABLE ONLY public.allocations
     ADD CONSTRAINT fk_rails_24278b0998 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: inspection_records fk_rails_24af91df8a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inspection_records
+    ADD CONSTRAINT fk_rails_24af91df8a FOREIGN KEY (owner_tenant_id, sales_order_line_id) REFERENCES public.sales_order_lines(owner_tenant_id, id);
 
 
 --
@@ -2719,6 +2903,14 @@ ALTER TABLE ONLY public.cancellation_requests
 
 
 --
+-- Name: receipt_inspection_lines fk_rails_645673c657; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspection_lines
+    ADD CONSTRAINT fk_rails_645673c657 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: customer_part_mappings fk_rails_68fd608b68; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2759,6 +2951,14 @@ ALTER TABLE ONLY public.shipping_holds
 
 
 --
+-- Name: receipt_inspection_lines fk_rails_75c613fa4a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspection_lines
+    ADD CONSTRAINT fk_rails_75c613fa4a FOREIGN KEY (owner_tenant_id, inbound_shipment_line_id) REFERENCES public.inbound_shipment_lines(owner_tenant_id, id);
+
+
+--
 -- Name: shipping_instructions fk_rails_7b67c8f9e5; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2791,6 +2991,14 @@ ALTER TABLE ONLY public.purchase_order_lines
 
 
 --
+-- Name: receipt_inspection_lines fk_rails_85084004d9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspection_lines
+    ADD CONSTRAINT fk_rails_85084004d9 FOREIGN KEY (owner_tenant_id, receipt_inspection_id) REFERENCES public.receipt_inspections(owner_tenant_id, id);
+
+
+--
 -- Name: shipment_lines fk_rails_8d83f67036; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2804,6 +3012,14 @@ ALTER TABLE ONLY public.shipment_lines
 
 ALTER TABLE ONLY public.shipping_instructions
     ADD CONSTRAINT fk_rails_9036b71040 FOREIGN KEY (owner_tenant_id, shipment_request_id) REFERENCES public.shipment_requests(owner_tenant_id, id);
+
+
+--
+-- Name: receipt_inspections fk_rails_9a67a5dfff; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.receipt_inspections
+    ADD CONSTRAINT fk_rails_9a67a5dfff FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -2828,6 +3044,14 @@ ALTER TABLE ONLY public.shipment_lines
 
 ALTER TABLE ONLY public.stock_movements
     ADD CONSTRAINT fk_rails_a7f7ea137e FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: inspection_records fk_rails_b202ea7663; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inspection_records
+    ADD CONSTRAINT fk_rails_b202ea7663 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3009,6 +3233,12 @@ ALTER TABLE public.inbound_shipment_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inbound_shipments ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: inspection_records; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inspection_records ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3064,6 +3294,13 @@ CREATE POLICY owner_write ON public.inbound_shipments USING ((owner_tenant_id = 
 
 
 --
+-- Name: inspection_records owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.inspection_records USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
 -- Name: items owner_write; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3103,6 +3340,20 @@ CREATE POLICY owner_write ON public.purchase_order_sequences USING ((owner_tenan
 --
 
 CREATE POLICY owner_write ON public.purchase_orders USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: receipt_inspection_lines owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.receipt_inspection_lines USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: receipt_inspections owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.receipt_inspections USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -3259,6 +3510,18 @@ ALTER TABLE public.purchase_order_sequences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.purchase_orders ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: receipt_inspection_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.receipt_inspection_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: receipt_inspections; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.receipt_inspections ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: sales_order_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3337,6 +3600,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261011200000'),
 ('20261011100000'),
 ('20261011000000'),
 ('20261010000000'),

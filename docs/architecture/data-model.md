@@ -91,7 +91,7 @@
 | `sales_order_sequences`（受注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
 | `sales_order_lines` | `source_purchase_order_line_id`→・`customer_part_number`・`item_id`・`item_name`・`unit_price`・`priced_on`（単価を引いた有効日）・`tax_rate_percent`・`quantity` | `source_purchase_order_line_id` 一意。数量は正。照合前は `item_id` と写しの 4 列がすべて空、照合後はすべて埋まる |
 | `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引） |
-| `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意 |
+| `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意。数量は 0 以上 |
 
 販売単価は、有効期間と記録期間の 2 つの時間軸で持つ（`../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md`）。担当者が単価を変える操作は、改定の予約と訂正の 2 つだけで、どちらも現在の行の記録期間を閉じて新しい行を足す。行は書き換えない。単価を引く公開 API は `Sales::ItemPrices.price_at` の 1 つで、有効日と記録時点を取る。カタログは今日の単価を、受注の照合は受注日の単価を、いまの記録時点で引き、受注明細には単価と一緒にその有効日（`priced_on`）を写す。
 
@@ -135,7 +135,7 @@
 | `inbound_shipments`（「出荷計上」の写し） | `purchase_order_id`・`shipment_id`→・`shipped_on` | `shipment_id` 一意 |
 | `inbound_shipment_lines` | `purchase_order_line_id`・`shipped_quantity` | `(inbound_shipment_id, purchase_order_line_id)` 一意 |
 | `receipt_inspections`（入荷検収） | `inbound_shipment_id`・`inspected_on` | `inbound_shipment_id` 一意（入荷 1 件に 1 回） |
-| `receipt_inspection_lines` | `inbound_shipment_line_id`・`accepted_quantity` | `inbound_shipment_line_id` 一意。検収数量は出荷数量以下（登録時にアプリで確かめる） |
+| `receipt_inspection_lines` | `inbound_shipment_line_id`・`accepted_quantity` | `inbound_shipment_line_id` 一意。検収数量は 0 以上（CHECK 制約）で、出荷数量以下（登録時にアプリで確かめる） |
 | `received_invoices`（「請求書発行」の写し） | `invoice_id`→・`supplier_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_on`・`subtotal`・`tax_total`・`total` | `invoice_id` 一意。`total = subtotal + tax_total` |
 | `received_invoice_lines` | `purchase_order_line_id`・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`amount` | — |
 
@@ -260,7 +260,7 @@
 | 先に届くはずの行 | 受け手がすること | 例 |
 |---|---|---|
 | イベントの値だけで、終わった状態の行を作れる | 終わった状態の行を先に作る。後から届いたイベントは、冪等キーに当たって何もしない | 「出荷停止解除」か「出荷取消」が「出荷停止」より先に届いたら、解除済みの出荷停止を作る |
-| 作れない | 例外で失敗させ、再配送に任せる | 「出荷取消」が「出荷可能」より先に届いたら失敗する。出荷依頼の明細は「出荷可能」だけが運ぶからである。「取消依頼」が「発注登録」より先に届いたときも失敗する |
+| 作れない | 例外で失敗させ、再配送に任せる | 「出荷取消」が「出荷可能」より先に届いたら失敗する。出荷依頼の明細は「出荷可能」だけが運ぶからである。「取消依頼」が「発注登録」より先に届いたときも失敗する。「検収完了」が受注側の「出荷計上」より先に届いたときも失敗する。検収は出荷の後なので、受注に出荷の時刻が無いまま検収済にはしない |
 
 「出荷取消」は、受注について「出荷可能」を出したかを運ぶ。出荷依頼が無いとき、受け手が「出荷可能より先に届いた」と「出荷可能を出していない受注の取消」を区別するためである。出していない受注の出荷取消は、出荷依頼を書かずに出荷停止だけを解除する。
 

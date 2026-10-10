@@ -954,25 +954,25 @@ bundle exec rspec spec/concurrency/cancel_vs_ship_spec.rb
 
 **目的**：検収数量は出荷数量を超えない。検収は入荷 1 件に 1 回で、受注側へ 1 回だけ届く。
 
-**作るもの**：`receipt_inspections`・明細、`inspection_records`、`Purchasing::ReceiptInspection.record`、検収完了のイベントと配送表の行、検収完了の受け手（M21 の `Sales::PurchasingEventReceiver` に足す）、受注の「検収済」と発注の「検収済」、`inspectInboundShipment`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）、`InboundShipment.inspection`・`InboundShipmentLine.acceptedQuantity`
+**作るもの**：`receipt_inspections`・明細、`inspection_records`、`Purchasing::ReceiptInspections.record`、検収完了のイベントと配送表の行、検収完了の受け手（M21 の `Sales::PurchasingEventReceiver` に足す）、受注の「検収済」と発注の「検収済」、`inspectInboundShipment`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）、`InboundShipment.inspection`・`InboundShipmentLine.acceptedQuantity`
 
 請求対象確定のイベントは M23 では足さない。受け手（M24）の無いイベントを配送表に載せると、配送表の spec（`spec/contracts/subscriptions_spec.rb`）が受け手の無い行で落ち、載せないと `Contracts.publish` が配送表に無いイベントで失敗するからである。イベント・配送表の行・受注の受け手からの発行・請求の受け手は、M24 で同時に足す。
 
-検収の入力は次のとおりである。誤りはどれも `INVALID_INPUT` で、`path` に誤りの明細を示す。
+検収の入力と結果は次のとおりである。入力の誤りは `INVALID_INPUT` で、`path` に誤りの明細を示す。
 
-- 入荷の全明細を 1 回で出す。明細の省略、同じ明細の重複、別の入荷の明細は誤りにする
+- 入荷の全明細を 1 回で出す。明細の省略、同じ明細の重複、別の入荷の明細は入力の誤りにする
 - 検収数量は 0 以上・出荷数量以下の整数にする。0 は全量の不合格を表す
-- 同じ入荷への 2 回目の検収は `CONFLICT` にし、検収完了を出さない
+- 同じ入荷への 2 回目の検収は、入力を確かめる前に `CONFLICT` にし、検収完了を出さない
 - 検収日は、検収を登録した日（自社の日付）にする
 
 **完了条件**
 
 ```sh
-bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspection_spec.rb \
+bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspections_spec.rb \
   packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb spec/requests/inspections_spec.rb
 ```
 
-- 単体（`receipt_inspection_spec.rb`）：上の入力の各誤り。出荷数量を超える検収が `INVALID_INPUT` になる。2 回目の検収が `CONFLICT` で、検収完了のジョブが 1 件のままである。検収の後に発注が「検収済」になる
+- 単体（`receipt_inspections_spec.rb`）：上の入力の各誤り。出荷数量を超える検収が `INVALID_INPUT` になる。2 回目の検収が `CONFLICT` で、検収完了のジョブが 1 件のままである。検収の後に発注が「検収済」になる
 - 単体（`purchasing_event_receiver_spec.rb`）：検収完了で受注が「検収済」になる（分納しないので、出荷実績は受注ごとに 1 件で、1 回目の検収完了がすべての出荷実績の検収になる）。検収の前の受注は「検収済」にならない。同じ検収完了を 2 回流しても `inspection_records` が増えない（冪等の共有テスト）
 - 結合（`spec/requests/inspections_spec.rb`）：`inspectInboundShipment` → イベントを流す → 受注が「検収済」
 

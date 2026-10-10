@@ -33,6 +33,20 @@ FactoryBot.define do
     shipped_quantity { purchase_order_line.quantity }
   end
 
+  factory :receipt_inspection, class: "Purchasing::ReceiptInspection" do
+    owner_tenant_id { Current.tenant_id }
+    inbound_shipment { association :inbound_shipment, owner_tenant_id: }
+    inspected_on { Date.current }
+  end
+
+  # 検収の入荷の明細を検収する
+  factory :receipt_inspection_line, class: "Purchasing::ReceiptInspectionLine" do
+    owner_tenant_id { Current.tenant_id }
+    receipt_inspection { association :receipt_inspection, owner_tenant_id: }
+    inbound_shipment_line { association :inbound_shipment_line, owner_tenant_id:, inbound_shipment: receipt_inspection.inbound_shipment }
+    accepted_quantity { inbound_shipment_line.shipped_quantity }
+  end
+
   # 既定は回答待ち
   factory :cancellation_request, class: "Purchasing::CancellationRequest" do
     owner_tenant_id { Current.tenant_id }

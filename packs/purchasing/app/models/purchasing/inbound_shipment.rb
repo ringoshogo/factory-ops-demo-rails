@@ -3,5 +3,6 @@ module Purchasing
   class InboundShipment < TenantRecord
     belongs_to :purchase_order, inverse_of: :inbound_shipments
     has_many :lines, -> { order(:id) }, class_name: "Purchasing::InboundShipmentLine", inverse_of: :inbound_shipment
+    has_one :inspection, class_name: "Purchasing::ReceiptInspection", inverse_of: :inbound_shipment
   end
 end
