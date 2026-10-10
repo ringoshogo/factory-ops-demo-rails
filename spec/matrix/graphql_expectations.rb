@@ -182,12 +182,13 @@ module MatrixExpectations
       variables: ->(world) { { input: { purchaseOrderId: world.linked_order(:purchase_order).id, reason: "数量の誤り" } } },
       expect: MatrixWorld::PERSONAS.index_with(:not_found).merge(granted_buyer: :value)
     },
-    # supplier の審査中の審査。発注側のペルソナには、相手の受注の審査は見えない
+    # 発注に連結した受注。受注側の supplier だけが取り消せる
     "Mutation.cancelSalesOrder" => {
       query: "mutation($input: CancelSalesOrderInput!) { cancelSalesOrder(input: $input) { salesOrder { id } errors { code } } }",
       variables: ->(world) { { input: { salesOrderId: world.linked_order(:sales_order).id } } },
       expect: ONLY_SUPPLIER
     },
+    # supplier の審査中の審査。発注側のペルソナには、相手の受注の審査は見えない
     "Mutation.approveCancellationReview" => {
       query: "mutation($input: ApproveCancellationReviewInput!) { approveCancellationReview(input: $input) { salesOrder { id } errors { code } } }",
       variables: ->(world) { { input: { cancellationReviewId: world.row("cancellation_reviews", :supplier).id } } },

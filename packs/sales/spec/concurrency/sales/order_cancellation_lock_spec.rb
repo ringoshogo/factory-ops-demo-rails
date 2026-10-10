@@ -28,8 +28,11 @@ RSpec.describe Sales::OrderCancellation do
       requested_at: Time.current.iso8601(6)))
   end
 
+  # この example の受注側が出したイベントの名前。キューの表はテナントの表ではなく、並行して流れたほかの spec のジョブも見えるので、
+  # ペイロードの受注側テナントで絞る
   def events(pattern)
-    SolidQueue::Job.where(class_name: "Contracts::EventJob").map { _1.arguments.fetch("arguments").first }.grep(pattern)
+    SolidQueue::Job.where(class_name: "Contracts::EventJob").map { _1.arguments.fetch("arguments") }
+      .select { _2.fetch("supplier_tenant_id") == supplier.id }.map(&:first).grep(pattern)
   end
 
   def reviews_and_cancelled_at

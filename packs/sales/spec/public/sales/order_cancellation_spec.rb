@@ -59,6 +59,16 @@ RSpec.describe Sales::OrderCancellation do
     expect(stock).to have_attributes(on_hand: 4, allocated: 0)
   end
 
+  it "品番照合待ちの受注は、引当が無いまま取り消せ、出荷可能を出していないことを運ぶ" do
+    awaiting = FactoryBot.create(:sales_order, customer_tenant_id: buyer.id)
+    FactoryBot.create(:sales_order_line, sales_order: awaiting)
+
+    expect(cancel(awaiting.id).value).to have_attributes(id: awaiting.id, status: :cancelled)
+    expect(published.map(&:class)).to contain_exactly(Contracts::SalesOrderCancelled, Contracts::ShipmentCancelled)
+    expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) })
+      .to have_attributes(sales_order_id: awaiting.id, cancellation_review_id: nil, ready_for_shipment: false)
+  end
+
   it "決着した審査だけがある受注は取り消せる" do
     FactoryBot.create(:cancellation_review, sales_order: order, decision: "rejected", decided_at: 1.day.ago)
 

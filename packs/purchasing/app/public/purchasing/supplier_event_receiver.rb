@@ -12,6 +12,8 @@ module Purchasing
       when Contracts::ShipmentPosted then receive_shipment(order, event)
       when Contracts::CancellationApproved then answer_cancellation(order, event, "approved")
       when Contracts::CancellationRejected then answer_cancellation(order, event, "rejected")
+      # cancelled_at は見ない。受注側は審査中と承認済みの受注の取消を CONFLICT にするので、2 つの取消の時刻は並ばない。
+      # 並べば CHECK 制約で失敗し、再配送でも直らないので、受け手で片方を捨てずに失敗で知らせる
       when Contracts::SalesOrderCancelled then order.update!(supplier_cancelled_at: Time.current) unless order.supplier_cancelled_at
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
