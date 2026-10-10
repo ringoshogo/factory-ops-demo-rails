@@ -673,14 +673,21 @@ enum UserErrorCode {
 
 明細・権限付与・取引関係・請求条件のように、親ごとの件数が小さい集まりは、コネクションにせずリストで返す。
 
-返すオブジェクトごとに評価する型の規則（「基底クラス」）も、オブジェクトの数だけクエリを出してはならない。規則がオブジェクトによらない問い合わせ（`Sales::ItemPolicy#show_to_buyer?` の、受注側ごとの `view_catalog` の問い合わせ）をするときは、`ApplicationPolicy#remember` に包む。`Types::BaseObject` は、1 回の実行の間だけ使うハッシュを `request_memo` として policy に渡し、`remember` はそこに答えを覚える。覚えた答えは同じ実行の中でしか使わないので、次のリクエストは失効や撤回を必ず見る。書き込みの前の判定（発注の登録の `place_orders`）は、覚えた答えを使わず、公開 API の中で毎回問い合わせる。
+返すオブジェクトごとに評価する型の規則（「基底クラス」）も、オブジェクトの数だけクエリを出してはならない。規則がオブジェクトによらない問い合わせ（`Sales::ItemPolicy#show_to_buyer?` の、受注側ごとの `view_catalog` の問い合わせ）をするときは、`ApplicationPolicy#remember` に包む。一覧の要素ごとに相手が変わる規則は、相手ごとに覚えても相手の数だけ問い合わせが出るので、相手の集合を 1 回で引いて覚える（`Fulfillment::ShipmentRequestPolicy#show_to_buyer?` は、`view_shipments` を与えている受注側の集合を覚え、発注の一覧の出荷ごとにそこから引く）。`Types::BaseObject` は、1 回の実行の間だけ使うハッシュを `request_memo` として policy に渡し、`remember` はそこに答えを覚える。覚えた答えは同じ実行の中でしか使わないので、次のリクエストは失効や撤回を必ず見る。書き込みの前の判定（発注の登録の `place_orders`）は、覚えた答えを使わず、公開 API の中で毎回問い合わせる。
 
 別のコンテキストの値や子の値を引くフィールドは、`GraphQL::Dataloader` のソースを通して公開 API を呼ぶ。公開 API は、そのために操作者と ID の配列を受け取り、ID ごとの値のハッシュを返す一括取得のメソッドを持つ（例：`Sales::SalesOrders.lines_for(actor, order_ids)`）。1 件ずつ引くメソッドを、入れ子のフィールドから呼ばない。ソースは `Sources::PublicApiSource` の 1 つで、公開 API のモジュール・メソッド名・操作者を引数に取り、操作者を公開 API にそのまま渡す。
 
 N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
 
-- **公開 API の中の N+1**：Bullet をテストで有効にし、関連を 1 件ずつ読むと例外にする。Bullet は検出の状態をスレッド変数に置くので、Dataloader のソースの Fiber の中の読み込みも見える。
-- **フィールドの N+1**：GraphQL の型は AR のレコードではなく公開 API の値を受け取るので、親ごとに公開 API を呼ぶ N+1 は Bullet に見えない。画面の問い合わせごとに、親が 1 件と 20 件のときの SQL の件数が同じであることを、クエリ数の予算のテストで確かめる。
+- **公開 API の中の N+1**：Bullet をテストで有効にし、関連を 1 件ずつ読むと例外にする。Bullet は検出の状態をスレッド変数に置くので、Dataloader のソースの Fiber の中の読み込みも見える。`spec/support/bullet.rb` が各 example を `Bullet.profile` で包み、`spec/requests` の example は Bullet のミドルウェアが要求ごとに包む。競合テスト（`:concurrency`）は別のスレッドで操作し、Bullet に見えないので包まない。
+- **フィールドの N+1**：GraphQL の型は AR のレコードではなく公開 API の値を受け取るので、親ごとに公開 API を呼ぶ N+1 は Bullet に見えない。画面の問い合わせごとに、親が 1 件と 20 件のときの SQL の件数が同じであることを、クエリ数の予算のテスト（`spec/graphql/query_budget_spec.rb`）で確かめる。
+
+どちらの検査も、テストのデータが N+1 を出せなければ素通りする。テストを書く人は、次の 2 つを守る。
+
+- **一覧のテストは、親を 2 件以上作る**：Bullet は、1 回の読み込みで 1 件しか返らなかったレコードを N+1 の候補にしない。一覧を返す公開 API のテストでは、親を 2 件以上作り、それぞれの関連を読む値を確かめる。準備のデータは factory で作る。Bullet は作ったレコードも候補から外すので、`spec/support/bullet.rb` は factory が動く間だけ検出を止めている。公開 API を呼んで準備したレコードは、候補にならない。
+- **画面の問い合わせは、一覧の中にコネクションを入れ子にしない**：一覧の要素の下にコネクションを置くと、親ごとにページングの問い合わせが出る。コネクションは、親を 1 つに決めてから引く。画面の問い合わせは、操作名を付けて 1 ファイル 1 つで `spec/fixtures/graphql/screens` に置き、クエリ数の予算のテストの表に、操作者・一覧の親・入れ子の件数を足す。表に無いファイルがあると、そのテストが落ちる。
+
+> 取引先を 1 つ選んで引く入口がまだ無いので、`BuyerSupplierCatalog` は取引先の一覧（`buyer.suppliers`）の下でカタログを引く。クエリ数の予算のテストは、取引先を 1 件にして、カタログの品目を親として数える（`../plans/open-items.md` OI-25）。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 

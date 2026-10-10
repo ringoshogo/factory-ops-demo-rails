@@ -128,3 +128,58 @@ S1 は、ID を取る入口を 16 個集め、入口ごとに 1 つの example �
 | OI-16 | 参照を見出しの表記にそろえ、閉じた |
 
 決めたことは OI-19〜OI-21・OI-24 に `judgment` として、単体の spec が無い分岐は OI-22 に `open` として登録した。OI-23 は実装レビューで判断を改めて閉じた。
+
+## M17 N+1 の検出
+
+実装レビューを受ける前の記録である。各系統の判定と、指摘ごとの対応は、レビューを受けた後に書く。
+
+| 系統 | 判定 |
+|---|---|
+| Codex |  |
+| Claude |  |
+
+### 実装の記録
+
+テストから書いた順に、落ちた example と、実装を壊して落ちた example を残す。壊した実装は複製から戻した。
+
+| 対象 | RED／壊し方 | 落ちた example |
+|---|---|---|
+| Bullet の設定 | 設定の前（gem だけを入れた状態） | `spec/platform/bullet_spec.rb` の 3 つの経路（`公開 API を直接呼ぶと、例外になる`・`Dataloader のソースの中で読んでも、例外になる`・`/graphql への要求は、Bullet のミドルウェアが例外にする`）。どれも「nothing was raised」（4 examples, 3 failures） |
+| Bullet の設定 | `Bullet.raise = false` にする | 上の 3 つの経路と `メタデータの無い example は、example の後に例外で落ちる` |
+| 自動の包み | `Bullet.profile` を `start_request` と `end_request` だけの包みにする | `メタデータの無い example は、example の後に例外で落ちる` |
+| 自動の包み | `bullet: false` を見ない | `bullet: false の example は包まない`、`:concurrency の example は包まない`、`検出の外で factory を使っても、検出を始めない` |
+| 自動の包み | `:concurrency` を見ない | `:concurrency の example は包まない` |
+| factory の間の停止（OI-26） | 購読を外す | `factory で作ったレコードは、関連の factory で作ったものも含めて、N+1 の候補から外れない` |
+| 許可リスト | `reason` の確かめを外す | `reason の無い行は、読み込みの時点で例外にする` |
+| クエリ数の予算 | 書いた時点（既存の N+1、下の 1） | `BuyerPurchaseOrders 一覧の親が 1 件と 20 件で、SQL の件数が同じ`（8 件と 27 件） |
+| クエリ数の予算 | `Types::SalesOrderType#customer` を、ソースを通さず公開 API を親ごとに呼ぶ形にする | `SupplierSalesOrders 一覧の親が 1 件と 20 件で、SQL の件数が同じ` |
+| クエリ数の予算の負例 | `SupplierSalesOrders` の準備で、20 件の受注が同じ得意先を指すようにする | `SupplierSalesOrders customer のソースが公開 API をキーごとに呼ぶと、1 件と 20 件で SQL の件数が違う（負例）` |
+| 品番の対応表の登録 | 書いた時点（既存の N+1、下の 2。factory の間の停止を入れた後） | `照合待ちの受注が 2 件あると、登録で両方の明細を照合して確定し、受注ごとに「受注確定」を出す`（`Sales::PartMatching.confirm` の `order.lines` で `UnoptimizedQueryError`） |
+
+Dataloader を外したときに予算が落ちることは、予算の spec の負例が、入れ子ごとに毎回確かめる。負例は、`Sources::PublicApiSource` の作成を包み、対象の公開 API とメソッドの組のソースだけ、`fetch` をキー 1 つずつの呼び出しに差し替える。
+
+`spec/graphql/query_budget_spec.rb` と `spec/platform/bullet_spec.rb` を 3 回続けて流し、3 回とも 39 examples, 0 failures だった。
+
+### 見つけて直した N+1
+
+| | 場所 | 中身 | 直し方 |
+|---|---|---|---|
+| 1 | `Fulfillment::ShipmentRequestPolicy#show_to_buyer?` | 経路 3 の出荷ごとの認可が、`view_shipments` の付与を受注側ごとに問い合わせていた。答えは受注側ごとに覚えるので、発注の一覧の相手が 20 社なら 20 回問い合わせる | 付与を与えている受注側の集合を、1 回の実行で 1 回だけ引いて覚える |
+| 2 | `Sales::PartMappings.rematch` | 照合待ちの受注ごとに明細をロックして引き、確定する受注では `PartMatching.confirm` が `order.lines` で明細を引き直していた | 全受注の明細を受注 → 明細の順に 1 回でロックして引き、確定には引いた明細を渡す |
+
+既存の一覧のテストは、親を 2 件以上作る規則に合わせた（`Partnerships::Directory.for_buyer` の spec、`Fulfillment::PartnerShipments` の spec）。
+
+### 層ごとの表
+
+全件（941 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した（OI-24）。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 94 | 39.7% | 1.23s | 60% 以上 |
+| 結合 | 107 | 45.1% | 4.54s | 30% 以下 |
+| シナリオ | 36 | 15.2% | 5.69s | 10% 以下 |
+| ガード | 704 | — | 215.40s | 数えない |
+
+### 残件の処理
+
+引当先が M17 の残件は無かった。決めたことは OI-25〜OI-27 に `judgment` として登録した。
