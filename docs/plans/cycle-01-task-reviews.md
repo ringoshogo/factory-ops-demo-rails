@@ -131,12 +131,44 @@ S1 は、ID を取る入口を 16 個集め、入口ごとに 1 つの example �
 
 ## M17 N+1 の検出
 
-実装レビューを受ける前の記録である。各系統の判定と、指摘ごとの対応は、レビューを受けた後に書く。
+PR #26。Codex は No Go、Claude は Conditional Go で、指摘はすべて同じブランチの commit で直した。
 
 | 系統 | 判定 |
 |---|---|
-| Codex |  |
-| Claude |  |
+| Codex | No Go |
+| Claude | Conditional Go |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex | X1：HTTP の要求を流すシナリオで、最初の要求の後の直接の呼び出し（イベントの配送）が Bullet の検出の外になる。`Bullet::Rack` が外の包みの検出を上書きして消す | `bullet: false` を置き場ではなく `type: :request` から付け、イベントを流す補助（`deliver_enqueued_events`・`deliver_oldest_event`）が検出の外なら自分で `Bullet.profile` を始めるようにした。要求の後に流したイベントの受け手の N+1 が落ちる example を足した | `0cbcc9a` |
+| Medium | Codex | X2：`BuyerSupplierCatalog` が取引先の一覧の下でコネクションを引き、予算のテストは取引先 1 件に固定して増加を隠している | 取引先を 1 社選ぶ `buyer.supplier(supplierTenantId:)` を足し、`BuyerSupplierCatalog` をそれで引く形にした。S1 の表・行列テスト・request spec に行を足し、取引関係の無い相手・失効・存在しない ID・自社のテナントが `null` になることを確かめた。一覧の要素の下のコネクションを落とす検査を足し、OI-25 を閉じた | `b1c5bca`・`9e715f0` |
+| Medium | Codex | X3：`rematch` の一括取得を受注ごとの取得に戻しても、spec が落ちない。関連の読み込みでないので Bullet にも見えない | 登録の間に流れる明細の取得の SQL を数え、受注 3 件で 1 回であることを確かめる example を足した | `7975269` |
+| Low | Codex | 補足：OI-26 に検証の対象を factory の後に呼ぶことを書き、factory の後の N+1 が例外になる負例を足す。OI-27 に合わせて計画を直す。一括取得の退行を Bullet で捕まえられないことを記録に書く | OI-26 と `graphql-schema.md` に書き、負例を足した。計画の予算の変数の行を直した。記録は下の「実装の記録」に書いた | `0cbcc9a`・`9e715f0` |
+| Medium | Claude | C1：`spec/requests` の外で HTTP を流す spec（シナリオ・行列テスト）が二重に包まれ、最初の要求の後で外の検出が消える | X1 と同じ。`graphql-schema.md` と計画の記述を「HTTP の要求を流す example（`type: :request`）」に直した | `0cbcc9a`・`9e715f0` |
+| Low | Claude | C2：`BuyerSupplierCatalog` が規則に反し、規則を守らせる検査も無い | X2 と同じ | `b1c5bca` |
+| Low | Claude | C3：`rails_helper` の除外を消しても何も落ちない | `type: :request の example は bullet: false を持ち、包まない` を足した | `0cbcc9a` |
+| Low | Claude | C4：`testing.md` から、一覧のテストで親を 2 件以上作る規則への参照が無い | 「層への配分」に 1 文と参照を足した | `9e715f0` |
+| Low | Claude | C5：許可リストのエラー文が、項目が多すぎる場合を言わない | 「項目は type・class_name・association・reason の 4 つに限る」にした | `0cbcc9a` |
+
+指摘を直した後に、直した防壁を壊して落ちることを確かめた。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| `spec/rails_helper.rb` の `type: :request` からの `bullet: false` を外す | `HTTP の要求を流す example（type: :request）は bullet: false を持ち、包まない` |
+| イベントを流す補助の検出（`BulletDetection.wrap`）を外す | `HTTP の要求を流した後でイベントを流すと、受け手の中の N+1 で落ちる` |
+| factory の間の停止を外す | `factory で作った親を、factory の後に 1 件ずつ関連を読むと落ちる`、`factory で作ったレコードは、…N+1 の候補から外れない` |
+| `Partnerships::Directory.for_buyer_supplier` の受注側テナントの条件を外す | `buyer.supplier 取引関係のある受注側テナントで、その 1 社の関係を返す`、`発注側のユーザーが BuyerView.supplier(supplierTenantId) に相手の ID を入れても、相手のデータに届かない` |
+| `BuyerSupplierCatalog` を取引先の一覧の下で引く形に戻す | `画面の問い合わせは、一覧の中にコネクションを入れ子にしない` |
+| `rematch` の明細を受注ごとに引く | `照合し直す受注の明細は、受注の数によらず 1 回で引く` |
+
+直した後の全件は 955 examples, 0 failures で、層ごとの表は次のとおり。未分類のファイルは無く、3 つの層が目安を外れて警告を出した（OI-24）。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 95 | 39.4% | 1.23s | 60% 以上 |
+| 結合 | 109 | 45.2% | 4.97s | 30% 以下 |
+| シナリオ | 37 | 15.4% | 6.00s | 10% 以下 |
+| ガード | 714 | — | 220.62s | 数えない |
 
 ### 実装の記録
 
@@ -155,6 +187,8 @@ S1 は、ID を取る入口を 16 個集め、入口ごとに 1 つの example �
 | クエリ数の予算 | `Types::SalesOrderType#customer` を、ソースを通さず公開 API を親ごとに呼ぶ形にする | `SupplierSalesOrders 一覧の親が 1 件と 20 件で、SQL の件数が同じ` |
 | クエリ数の予算の負例 | `SupplierSalesOrders` の準備で、20 件の受注が同じ得意先を指すようにする | `SupplierSalesOrders customer のソースが公開 API をキーごとに呼ぶと、1 件と 20 件で SQL の件数が違う（負例）` |
 | 品番の対応表の登録 | 書いた時点（既存の N+1、下の 2。factory の間の停止を入れた後） | `照合待ちの受注が 2 件あると、登録で両方の明細を照合して確定し、受注ごとに「受注確定」を出す`（`Sales::PartMatching.confirm` の `order.lines` で `UnoptimizedQueryError`） |
+
+Bullet が見るのは関連の読み込みだけである。公開 API の中で親ごとに `where` で子を引き直すクエリは、Bullet にも、画面の問い合わせを通らない経路ではクエリ数の予算にも見えない。`rematch` の一括取得の退行は、実装レビューの指摘（X3）の後に、SQL を数える spec で守った。
 
 Dataloader を外したときに予算が落ちることは、予算の spec の負例が、入れ子ごとに毎回確かめる。負例は、`Sources::PublicApiSource` の作成を包み、対象の公開 API とメソッドの組のソースだけ、`fetch` をキー 1 つずつの呼び出しに差し替える。
 
@@ -182,4 +216,4 @@ Dataloader を外したときに予算が落ちることは、予算の spec の
 
 ### 残件の処理
 
-引当先が M17 の残件は無かった。決めたことは OI-25〜OI-27 に `judgment` として登録した。
+引当先が M17 の残件は無かった。決めたことは OI-25〜OI-27 に `judgment` として登録した。OI-25 は実装レビューの指摘（X2）で入口を足して閉じた。
