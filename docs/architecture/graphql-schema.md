@@ -742,4 +742,33 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 1. 消すものに `deprecation_reason:` を付け、代わりのフィールドを同じ変更で足す。この変更を main にマージする。
 2. 消す変更は、別の PR で行う。フロントエンド（`../implementation-plan.md` M33）の公開の後は、非推奨を main に入れてから 30 日以上たってから消す。公開まではクライアントが無いので、日数の条件を置かない。
 
-`bin/check-schema-compat` が、main の `schema.graphql` と比べて、非推奨を経ない破壊的変更を CI で落とす。非推奨を経られない変更（秘密を漏らすフィールドを即座に消す、など）だけは、`docs/graphql/breaking-changes.yml` に変更と理由を書いて通す。
+型の変更と必須の引数・入力項目の追加は、その場では行わない。新しい型か引数を持つフィールドを代わりに足し、古いフィールドを 1・2 の順で消す。非推奨のフィールドの型をその場で変えても、下の判定は通さない。
+
+### 互換の判定
+
+スキーマを変えた実装者は、PR を出す前に `bin/check-schema-compat` を流す。スクリプトは、基準（環境変数 `BASE_REF`、既定は `origin/main`）の `schema.graphql` と作業中の `schema.graphql` を比べ、落とす変更が 1 つでもあれば失敗する。基準に `schema.graphql` が無いときも、比べられないので失敗する。結果の一覧は標準出力に書き、`$GITHUB_STEP_SUMMARY` があればそこにも書く。
+
+判定は `lib/schema_compat.rb` が、graphql-schema_comparator が返す変更ごとに行う。変更は、比較器の変更のクラス名（`FieldRemoved` など）と座標（変更の `path`。`PurchaseOrder.lines`・`Query.order.id` の形）で識別する。規則は上から当て、先に当たった規則で決める。
+
+| 順 | 変更 | 通すもの |
+|---|---|---|
+| 1 | 削除（`FieldRemoved`・`FieldArgumentRemoved`・`InputFieldRemoved`・`EnumValueRemoved`・`TypeRemoved`） | 消えた要素が、基準のスキーマで `@deprecated` だったもの。`TypeRemoved` は、基準のスキーマでその型を返すか受け取るフィールド・引数・入力項目がすべて非推奨だったもの。union とインターフェースを返すフィールドは、その型を返しうるので数える |
+| 2 | 型の変更（`FieldTypeChanged`・`FieldArgumentTypeChanged`・`InputFieldTypeChanged`） | 比較器が非破壊に分類するもの（出力の型を null 可から非 null にする、入力の型を非 null から null 可にする） |
+| 3 | 必須の引数・入力項目の追加（`FieldArgumentAdded`・`InputFieldAdded` のうち比較器が破壊に分類するもの） | 無い |
+| 4 | 上に当たらない変更 | 非破壊の変更と危険な変更（enum の値の追加など）。破壊的変更は落とす |
+
+削除は、比較器の重大度（`breaking?`・`non_breaking?`）より先に見る。比較器は、出力にだけ使う enum の値の削除を非破壊に分類するので、重大度を先に見ると非推奨を経ない削除が通る。
+
+### 例外の一覧
+
+非推奨を経られない変更（秘密を漏らすフィールドを即座に消す、など）は、実装者が `docs/graphql/breaking-changes.yml` に行を足して通す。1〜4 で落とした変更は、同じクラス名と座標の行があるときだけ通る。
+
+```yaml
+- change: FieldRemoved          # 比較器の変更のクラス名
+  path: PurchaseOrder.note      # 座標
+  reason: 備考に相手テナントの担当者の連絡先を返していた
+```
+
+- `reason` が空の行があれば、一覧の読み込みで失敗する。
+- クラス名か座標が違う行は、その変更を通さない。
+- 比べた変更のどれにも当たらない行は、警告として一覧に出る。行の変更が main に入った後は、どの PR でも当たらなくなるので、実装者は気付いた PR で行を消す。

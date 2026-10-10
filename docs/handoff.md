@@ -89,7 +89,7 @@
 
 - **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
 - **ブランチ**：M1〜M14 は main にマージ済み。Dependabot の依存更新の PR が 3 本、未処理で残っている。
-- **実装**：M19 まで終えた。rspec は 1065 examples, 0 failures。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **実装**：M20 の 1 つ目の PR まで終えた。rspec は 1100 examples, 0 failures。M20 の 2 つ目の PR（CI の lint のジョブで `bin/check-schema-compat` を流すステップ）は、1 つ目が main に入るのを待っている。基準の main に `schema.graphql` が入るまで、比べられないからである（`implementation-plan.md` M20「初回の導入」）。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの

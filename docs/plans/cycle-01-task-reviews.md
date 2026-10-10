@@ -467,3 +467,108 @@ PR #28。どちらの系統も Go で、指摘は Low だけだった。C4 の�
 | OI-18 | `actor_user_id` を外部キーを張らない参照で作り、`data-model.md` の記述をそろえて閉じた |
 
 決めたことは OI-37〜OI-44 に `judgment` として登録した。実装レビューの C4 は OI-45 に登録した。
+
+## M20 GraphQL スキーマの破壊的変更の検出
+
+1 つ目の PR（`schema.graphql`・書き出しの検査・互換の判定と spec・`bin/check-schema-compat`）。CI のステップは、1 つ目が main に入った後の 2 つ目の PR で足す（`implementation-plan.md` M20「初回の導入」）。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | |
+| Claude | |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+
+### 実装の記録
+
+テストを先に書き、実装の前に流した。
+
+| 対象 | RED の落ち方 |
+|---|---|
+| `spec/graphql/schema_dump_spec.rb` | 1 件。`schema.graphql` が無い |
+| `spec/graphql/schema_compat_spec.rb` | `lib/schema_compat.rb` が無く、読み込みで失敗した。公開するメソッドが `NotImplementedError` を上げるだけの `lib/schema_compat.rb` を置いて流し直し、25 examples, 25 failures だった。`bin/check-schema-compat` の 3 件は、スクリプトが無い（`Errno::ENOENT`） |
+
+`spec/graphql/schema_compat_spec.rb` の実装を 1 か所ずつ壊して流し、落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| 比較器の重大度を削除の規則より先に見て、非破壊なら通す | `非推奨でない enum の値の削除を、出力にだけ使う enum でも落とす（比較器は非破壊に分類する）` |
+| 削除を、非推奨かどうかでなく比較器の重大度で決める | 上の 1 件と、非推奨の削除を通す 4 件、型の削除の 2 件、`どの変更にも当たらない行は警告に出すだけで、通る変更の結果を変えない`（8 件） |
+| 型の削除の参照に、union・インターフェースを返すフィールドを数えない | `型の削除は、その型を含む union を返す非推奨でないフィールドがあれば落とす` |
+| 型の削除の参照で、フィールドの非推奨を見ない | `型の削除は、基準でその型を返すフィールドがすべて非推奨なら通す`、`型の削除は、基準でその型を返す非推奨でないフィールドが 1 つでもあれば落とす` |
+| 非推奨のフィールドの型の変更を通す | `非推奨のフィールドでも、型の変更を落とす` |
+| 必須の引数・入力項目の追加を通す | `必須の引数の追加を落とす`、`必須の入力項目の追加を落とす` |
+| 例外の行を座標だけで照らす | `クラス名か座標の違う行は、その変更を通さず、どの変更にも当たらない行として警告に出す` |
+| 例外の行をクラス名だけで照らす | 同じ 1 件 |
+| `reason` が空の行も読む | `reason が空の行があれば、読み込みで失敗する` |
+| どの変更にも当たらない行を警告に出さない | `クラス名か座標の違う行は、…`、`どの変更にも当たらない行は警告に出すだけで、…` |
+| `bin/check-schema-compat` が、基準に `schema.graphql` が無いときに成功で終える | `基準に schema.graphql が無いときは失敗する` |
+| `bin/check-schema-compat` が、落とす変更があっても成功で終える | `落とす変更があれば失敗し、結果を標準出力と GITHUB_STEP_SUMMARY に書く` |
+| `Types::TenantType` の `name` を null 可にし、`schema.graphql` を書き直さない | `FactoryOpsSchema の書き出しと一致する（bin/rails graphql:schema:idl で書き直す）` |
+
+完了条件の 1・2 行目を流した。
+
+```sh
+bin/rails graphql:schema:idl && git diff --exit-code schema.graphql      # 差分なし、終了コード 0
+bundle exec rspec spec/graphql/schema_dump_spec.rb spec/graphql/schema_compat_spec.rb   # 26 examples, 0 failures
+```
+
+`bin/check-schema-compat` は、基準の `origin/main` に `schema.graphql` がまだ無いので、`origin/main に schema.graphql が無いので比べられない。…` を出して終了コード 1 で終わった。この PR の実装の commit（`c59f7a2`）を基準にした `BASE_REF=HEAD bin/check-schema-compat` は「スキーマに変更は無い」で終了コード 0 だった。同じ基準で、作業中の `schema.graphql` から `Tenant.name` を消すと、`FieldRemoved` の `Tenant.name` を「落とす」として終了コード 1 で終わった。`schema.graphql` は複製から戻した。
+
+graphql-ruby 2.6 の `to_definition` は、`extra_types` の型をフィールドから届く型とは別にもう一度書き出し、`Tenant`・`UserError`・`PageInfo`・`BigInt` が 2 回ずつ並んだ。`extra_types` を外し、書き出しの型の集合が外す前と同じことを確かめた（OI-47）。
+
+### OI-22：単体の spec の無い分岐を単体へ移す
+
+4 つの公開 API の分岐を単体の spec に書き足し、同じ分岐を確かめていた request spec の example を 11 件削った。6 件は、ユーザーエラーへの写しか、イベントの配送のつながりだけを確かめる形に絞った（OI-49）。`testing.md`「層への配分」で request spec に残す規則（認証・セッション・認可の配線・トランザクションの単位）に当たるものは、削った example に無い。
+
+| 公開 API | 単体の spec | 削った request spec の example |
+|---|---|---|
+| `Purchasing::Ordering.place` | `packs/purchasing/spec/public/purchasing/ordering_spec.rb`（6 件） | 相手の種類ごとの `NOT_PERMITTED`、`place_orders` の撤回、明細の誤り、明細の数と品番の長さの上限、伝票番号（`purchase_orders_spec.rb`） |
+| `Sales::PurchaseOrderTranslator` | `packs/sales/spec/public/sales/purchase_order_translator_spec.rb`（6 件） | ジョブの 2 回の実行、内部の ID を運ばない 2 件（`purchase_orders_spec.rb`）。照合待ちの example は、受注側の照合の検査を外して残した |
+| `Sales::PartMappings.register` | `packs/sales/spec/public/sales/part_mappings_spec.rb`（5 件を足した） | 照合できない明細が残る受注、別の取引先の対応、失効した相手への登録（`part_mappings_spec.rb`） |
+| `Sales::Catalog.save` | `packs/sales/spec/public/sales/catalog_spec.rb`（3 件） | 公開の状態を変えない（`catalog_spec.rb`） |
+
+移した分岐は実装がすでにあるので、書いた時点で通った。代わりに、実装を 1 か所ずつ壊して、単体の spec が落ちることを確かめた。
+
+| 壊し方 | 落ちた単体の example |
+|---|---|
+| `Ordering.place` の取引関係の問い合わせを外す | `存在しない・関係の無い・失効した・付与の無い・撤回した相手と自分自身が、…`、`取引関係を失効させると、新しい発注は NOT_PERMITTED になる`（ほかに競合テスト 3 件と request spec 1 件） |
+| 明細の上限を 101 にする | `明細の数と品番の長さの上限を超えると INVALID_INPUT になり、上限ちょうどは通る` |
+| 品番の重複を見ない | `誤りのある最初の項目を INVALID_INPUT で指し、…` |
+| ACL が、照合できない明細があっても確定する | `照合できない明細があれば、受注は品番照合待ちで止まり、…`、`発注側へ返す PartMatchPending は、…`（ほかに request spec 3 件） |
+| ACL の「品番照合待ち」に受注 ID を載せる | `発注側へ返す PartMatchPending は、…`（ほかに request spec 3 件） |
+| ACL の冪等キーの確かめと、一意の違反の救済を両方外す | `同じ「発注登録」が 2 回届いても、受注は 1 件で、…`（ほかに request spec 1 件） |
+| 照合し直しで、照合できない明細が残っても確定する | `照合できない明細が残る受注は確定せず、…` |
+| 照合し直しで、取引先を絞らない | `別の取引先の同じ品番の受注は、照合し直さない` |
+| 照合し直しで、照合前の明細・未確定の受注の 3 つの絞り込みを外す | `既にある対応の品目を差し替えても、確定した受注の明細は照合し直さない` |
+| 品目の保存で、公開の状態を非公開に戻す | `公開した品目を保存しても、公開の状態を変えない` |
+| 品目の保存で、コードで引かずに毎回作る | `新しいコードなら非公開で作り、…`、`公開した品目を保存しても、…` |
+
+ACL の冪等キーの確かめ（`exists?`）だけを外したときと、照合し直しの未確定の受注の絞り込みだけを外したときは、どの example も落ちなかった。前者は受注の一意索引と `RecordNotUnique` の救済が、後者は照合前の明細の絞り込みが、同じ受注を止める。どちらも振る舞いが変わらないので、壊し方を組み合わせて落ちることを確かめた。
+
+### 層ごとの表
+
+全件（1100 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した。
+
+```sh
+bundle exec rspec --format progress --format json --out tmp/rspec.json
+bin/test-layers tmp/rspec.json
+```
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 121 | 43.4% | 1.79s | 60% 以上 |
+| 結合 | 118 | 42.3% | 4.60s | 30% 以下 |
+| シナリオ | 40 | 14.3% | 7.04s | 10% 以下 |
+| ガード | 821 | — | 230.50s | 数えない |
+
+M19 の全件（単体 101・37.4%、結合 129・47.8%、シナリオ 40・14.8%）と比べ、OI-22 で単体が 20 件増え、結合が 11 件減った。単体の割合は 6.0 ポイント上がったが、目安の 60% には届かない。OI-24 の数え方では、目安を外れたマイルストーンを OI-22 を片付けた後から数えるので、この M20 が 1 つ目になる。
+
+### 残件の処理
+
+| ID | 処理 |
+|---|---|
+| OI-22 | 4 つの公開 API の分岐を単体へ移し、同じ分岐の request spec を削って閉じた |
+
+決めたことは OI-46〜OI-49 に `judgment` として登録した。
