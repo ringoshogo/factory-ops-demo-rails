@@ -150,6 +150,13 @@ PR #26。Codex は No Go、Claude は Conditional Go で、指摘はすべて同
 | Low | Claude | C4：`testing.md` から、一覧のテストで親を 2 件以上作る規則への参照が無い | 「層への配分」に 1 文と参照を足した | `9e715f0` |
 | Low | Claude | C5：許可リストのエラー文が、項目が多すぎる場合を言わない | 「項目は type・class_name・association・reason の 4 つに限る」にした | `0cbcc9a` |
 
+Codex は直した後の差分を読み直し、上の指摘はすべて解消したとして Conditional Go にした。読み直しで出た指摘も同じブランチで直した。
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X4：`BulletDetection.wrap` は、factory の間の `Bullet.pause` で `Bullet.start?` が偽になるのを検出の外と取り違え、`Bullet.profile` を始める。その `end_request` が外側の収集の状態を消し、再開した後の N+1 が見えない | 検出の中かどうかを、収集の状態（`Bullet.notification_collector`）の有無で見分けるようにした。止めている間に呼んでも収集の状態が残り、再開した後の N+1 が落ちる example を足した。直す前はこの example が「collector が nil」で落ちた | `d04b779` |
+| Low | Codex | 入れ子の検査の負例に、コネクションの `nodes`・`edges.node` の下のコネクションが無い | いまのスキーマにはその形の型が無いので、spec の中で小さなスキーマを作り、`orders.nodes.items` と `orders.edges.node.items` を見つけることを確かめた。コネクションの判定を `Types::BaseConnection` から `GraphQL::Types::Relay::ConnectionBehaviors` を持つ型に広げた（エッジの型と、ふつうの型が持つ `edge_type` には当たらない） | `d04b779` |
+
 指摘を直した後に、直した防壁を壊して落ちることを確かめた。
 
 | 壊し方 | 落ちた example |
@@ -160,15 +167,16 @@ PR #26。Codex は No Go、Claude は Conditional Go で、指摘はすべて同
 | `Partnerships::Directory.for_buyer_supplier` の受注側テナントの条件を外す | `buyer.supplier 取引関係のある受注側テナントで、その 1 社の関係を返す`、`発注側のユーザーが BuyerView.supplier(supplierTenantId) に相手の ID を入れても、相手のデータに届かない` |
 | `BuyerSupplierCatalog` を取引先の一覧の下で引く形に戻す | `画面の問い合わせは、一覧の中にコネクションを入れ子にしない` |
 | `rematch` の明細を受注ごとに引く | `照合し直す受注の明細は、受注の数によらず 1 回で引く` |
+| `BulletDetection.wrap` を、検出の有無を見ずにそのまま動かす形にする | `HTTP の要求を流した後でイベントを流すと、受け手の中の N+1 で落ちる`、`検出の外で呼ぶと、ブロックの間だけ検出を始める` |
 
-直した後の全件は 955 examples, 0 failures で、層ごとの表は次のとおり。未分類のファイルは無く、3 つの層が目安を外れて警告を出した（OI-24）。
+直した後の全件は 958 examples, 0 failures で、層ごとの表は次のとおり。未分類のファイルは無く、3 つの層が目安を外れて警告を出した（OI-24）。
 
 | 層 | example | 割合 | 時間 | 目安 |
 |---|---|---|---|---|
-| 単体 | 95 | 39.4% | 1.23s | 60% 以上 |
-| 結合 | 109 | 45.2% | 4.97s | 30% 以下 |
-| シナリオ | 37 | 15.4% | 6.00s | 10% 以下 |
-| ガード | 714 | — | 220.62s | 数えない |
+| 単体 | 95 | 39.4% | 1.36s | 60% 以上 |
+| 結合 | 109 | 45.2% | 4.49s | 30% 以下 |
+| シナリオ | 37 | 15.4% | 6.23s | 10% 以下 |
+| ガード | 717 | — | 210.01s | 数えない |
 
 ### 実装の記録
 
