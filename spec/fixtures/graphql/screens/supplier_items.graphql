@@ -1,0 +1,17 @@
+query SupplierItems($first: Int, $after: String) {
+  supplier {
+    items(first: $first, after: $after) {
+      nodes {
+        id
+        code
+        name
+        unit
+        unitPrice
+        taxRatePercent
+        published
+        stock { onHand allocated available safetyStock belowSafetyStock }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+query BuyerPurchaseOrders($first: Int, $after: String) {
+  buyer {
+    purchaseOrders(first: $first, after: $after) {
+      nodes {
+        id
+        orderNo
+        orderDate
+        desiredDeliveryOn
+        status
+        supplier { id name }
+        lines { id partNumber quantity confirmedItemName confirmedUnitPrice }
+        inboundShipments { id shippedOn }
+        supplierShipments { shippedOn }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
