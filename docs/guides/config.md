@@ -115,7 +115,7 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 ログの出口は 2 つある。
 
 - **`Rails.event`**：Rails 8.1 は、コントローラ・ジョブの計装を構造化イベント（`action_controller.request_started`・`active_job.completed` など）として `Rails.event` に出す。イベントをログに書く購読者は付属しないので、`initializers/event_log.rb` が `Platform::JsonLogSubscriber`（`packs/platform/lib/platform/`）を登録する。購読者は 1 件のイベントを `name`・`payload`・`tags`・`context`・`timestamp` の 1 行にし、本番では標準出力に、開発とテストでは `log/events.log` に書く。
-- **`Rails.logger`**：本番とテストでは、`Platform::JsonLogFormatter` を付けたロガーにし、残る文字列の行も JSON にして、同じ文脈を `context` に入れる。ロガーは `ActiveSupport::TaggedLogging` で包まない。TaggedLogging はタグを文字列としてメッセージの前に付けてから書式に渡すので、行が JSON で始まらない。
+- **`Rails.logger`**：本番とテストでは、`Platform::JsonLogFormatter` を付けたロガーにし、残る文字列の行も JSON にして、同じ文脈を `context` に入れる。ロガーは `ActiveSupport::TaggedLogging` で包まない。TaggedLogging はタグを文字列としてメッセージに混ぜてから書式に渡すので、要求 ID などはタグにせず、文脈から `context` の項目に入れる。
 
 ### イベントごとに書く項目
 
@@ -123,13 +123,14 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 
 | イベント | 書く項目 | 書かないもの |
 |---|---|---|
-| `action_controller.request_started` | `controller`・`action`・`format` | `params`。`GraphqlController` の要求は、`operation_name`、`query` の SHA-256 の要約（`query_sha256`）、`variables` のキーの一覧（`variable_keys`）に置き換える |
+| `action_controller.request_started` | `controller`・`action`・`format` | `params`。`GraphqlController` の要求は、`operation_name`、`query` の SHA-256 の要約（`query_sha256`）、`variables` のキーの一覧（`variable_keys`）に置き換える。操作名と変数のキーは利用者が送る値なので、GraphQL の名前の形（`/\A[_A-Za-z][_0-9A-Za-z]*\z/`）の文字列だけを書き、ハッシュ・配列などは中の値ごと落とす |
 | `action_controller.request_completed` | `controller`・`action`・`status`・`duration_ms` などの数値 | — |
 | `action_controller.rescue_from_handled` | `exception_class` | 例外のメッセージとバックトレース。メッセージは DB のエラーの詳細などに入力の値を含む |
-| `active_job.enqueued`・`started`・`completed`・`retry_scheduled`・`retry_stopped`・`discarded` | `job_class`・`job_id`・`queue`・時間・`exception_class` | ジョブの引数と、例外のメッセージとバックトレース。`ApplicationJob.log_arguments = false` にし、購読者も落とす |
+| `active_job.enqueued`・`enqueued_at`・`started`・`completed`・`retry_scheduled`・`retry_stopped`・`discarded` | `job_class`・`job_id`・`queue`・時間・`exception_class` | ジョブの引数と、例外のメッセージとバックトレース。`ApplicationJob.log_arguments = false` にし、購読者も落とす |
 | `graphql.operation_completed`（アプリが出す） | `operation_name`・`result`（`success`・`user_error`・`error`）・`user_error_codes`・`duration_ms` | — |
 | `contracts.event_handled`（アプリが出す） | `event_name`・`receiver`・`delivery_lag_ms`（受け手の始まりの時刻 − 発行時刻） | — |
 | 上の表に無いイベント | 無し（`name`・`context`・`timestamp` だけを書く） | `payload` と `tags` |
+| ヘルスチェック（`Rails::HealthController`）の要求の開始と終わり | 行を書かない | 全体。`silence_healthcheck_path` は `Rails.logger` を黙らせるだけで、`Rails.event` を止めない |
 
 アプリが出すイベントのペイロードには、ID・コード・件数・時間だけを入れ、メールアドレス・氏名・自由記述（取消の理由・在庫調整の理由）を入れない。`filter_parameters` に `name` を足すと `item_name`・`operation_name` まで消えるので、氏名はこの規則で守る。
 
@@ -139,16 +140,19 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 
 ### 止めたフレームワークの文字列のログ
 
-JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4 と Solid Queue 1.7 で止めた経路は次の 4 つで、本番とテストだけで止める。
+JSON の書式は、文字列の中の秘密やクエリの本文を消さない。そこで、値を文字列のまま `Rails.logger` に書くフレームワークの経路を、書式に頼らず止める。Rails 8.1.4 と Solid Queue 1.7 で止めた経路は次の 5 つで、本番とテストだけで止める。
 
 | 経路 | 書いていたもの | 止め方 |
 |---|---|---|
 | `ActionController::LogSubscriber`・`ActionDispatch::LogSubscriber`・`ActiveJob::LogSubscriber` | 構造化イベントと同じ内容を、params・ジョブの引数・例外のメッセージ込みの文字列で | `config.after_initialize` で購読を外す |
+| `ActionMailer::LogSubscriber` | メールの送信の失敗を、例外のメッセージ込みで | 同上 |
 | `SolidQueue::LogSubscriber` | ワーカーのスレッドで上がったジョブの例外を、メッセージ込みで（`Error in thread`）。ワーカーの起動と停止の行も、この購読が書く | 同上。ジョブの失敗は `active_job.completed` の `exception_class` とエラー通知に残る |
 | `Rails::Rack::Logger` | 要求の開始の行に `request.filtered_path`。`filter_parameters` は名前で隠すだけなので、URL の `query`・`variables` の値が残る | ミドルウェアから外す。外して失う `request.action_dispatch` の計装は、Rails 8.1.4 の中に購読者が無い |
 | `ActionDispatch::DebugExceptions` | 捕まえた例外のメッセージとバックトレース（`fatal`） | ミドルウェアから外す。本番ではこれが唯一の役目である。例外は `ActionDispatch::Executor` がエラー通知に送り、ログには `action_controller.request_completed` の状態コードが残る |
 
-残る文字列のログの経路は、`debug` の水準のもの（SQL・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（メール・ファイルの添付・テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。本番の水準は `info` なので、`debug` の行は書かれない。
+残る文字列のログの経路は、`debug` の水準のもの（SQL とそのバインド値・JSON の解析に失敗した要求の本文など）と、本デモが使わない機能（ファイルの添付・テンプレートの描画・ホストの制限・リダイレクト・ストリーミング）のものである。
+
+`debug` の行は値を文字列のまま書くので、本番では水準を `info` より細かくできない。`production.rb` は、環境変数 `RAILS_LOG_LEVEL` を `Platform::Logging.production_level` に通す。既定は `info` で、許す値は `info`・`warn`・`error`・`fatal`・`unknown` である。`debug` を与えると、起動の時点で例外になる。
 
 ### 構成の入口：文脈のミドルウェアとログの書式
 
@@ -172,7 +176,7 @@ bin/rails middleware | grep -A1 'Platform::RequestContext'   # 次の行が Rail
 | 項目 | 設定する場所 |
 |---|---|
 | `request_id`・`correlation_id`（要求） | `Platform::RequestContext`。利用者の要求は一連の処理の始まりなので、`request_id` を相関 ID にする |
-| `tenant_id`・`user_id`・`graphql_operation` | `GraphqlController`（認証の後、スキーマを実行する前）。操作名が無ければ `anonymous` |
+| `tenant_id`・`user_id`・`graphql_operation` | `GraphqlController`（認証の後、スキーマを実行する前）。操作名が無ければ `anonymous`、GraphQL の名前の形でなければ書かない |
 | `job_id`・`job_class`・`queue`・`tenant_id`・`correlation_id` | `ApplicationJob#perform_now`（ジョブの付帯情報から） |
 | `event_id`・`event_name`・`causation_id` | `ApplicationJob#perform_now`（`Contracts::EventJob` の付帯情報から。因果 ID は届いたイベントの `event_id`） |
 
@@ -180,7 +184,7 @@ bin/rails middleware | grep -A1 'Platform::RequestContext'   # 次の行が Rail
 
 - **要求**：Rails 8.1.4 は、`action_controller.request_started` を `before_action` より前の `process_action` の入口で出す。そこで `Platform::RequestContext` を、`ActionDispatch::RequestId` の後、`ActionDispatch::Executor` の内側に置く。セッションはこの位置より内側で読まれるので、`request_started` に付くのは `request_id` と相関 ID だけで、`tenant_id`・`user_id`・`graphql_operation` は `request_completed` から付く。
 - **GraphQL**：`GraphqlController` は、スキーマを実行する前に文脈を設定する。`Rails.event` の文脈は Fiber のストレージにあり、Dataloader が作る Fiber は作られた時点の値を写して持つ。Fiber の中で設定した値は、親に戻らない。
-- **ジョブ**：`active_job.started` は perform のコールバックより前に、`active_job.completed`・`retry_scheduled`・`discarded` は `perform_now` の計装の中で出る。そこで `ApplicationJob` は `perform_now` を上書きし、`super` の前に文脈を設定する。ワーカー（`ActiveJob::Base.execute` から `perform_now`）と直接の `perform_now` の両方がここを通る。呼び出し元の文脈は引き継がず、ジョブの文脈に置き換える。文脈の値は、引数ではなくジョブの付帯情報から読み、ここで引数を復元しない。Rails 8.1.4 は、引数の復元を `super` の中の、再試行・破棄の処理と計装の内側で行う。先に復元すると、復元の失敗（`ActiveJob::DeserializationError`）が `retry_on`・`discard_on`・`after_discard` を通らず、`active_job.completed` も出ない。
+- **ジョブ**：`active_job.started` は perform のコールバックより前に、`active_job.completed`・`retry_scheduled`・`discarded` は `perform_now` の計装の中で出る。そこで `ApplicationJob` は `perform_now` を上書きし、`super` の前に文脈を設定する。ワーカー（`ActiveJob::Base.execute` から `perform_now`）と直接の `perform_now` の両方がここを通る。呼び出し元の文脈は、ログとエラー通知のどちらも引き継がず、ジョブの文脈に置き換える。文脈の値は、引数ではなくジョブの付帯情報から読み、ここで引数を復元しない。Rails 8.1.4 は、引数の復元を `super` の中の、再試行・破棄の処理と計装の内側で行う。先に復元すると、復元の失敗（`ActiveJob::DeserializationError`）が `retry_on`・`discard_on`・`after_discard` を通らず、`active_job.completed` も出ない。
 
 ワーカーの実行器は、`perform_now` を抜けて文脈が戻った後に例外をエラー通知に送る。そこで `ApplicationJob#perform_now` は、呼び出し元へ上がる例外を、ジョブの文脈の中でエラー通知に送ってから上げる。エラー通知は同じ例外の 2 回目の通知を捨てる。
 
@@ -188,7 +192,7 @@ bin/rails middleware | grep -A1 'Platform::RequestContext'   # 次の行が Rail
 
 Rails は、executor で包まれた処理（Web の要求と、ワーカーが動かすジョブ）の終わりに、`Rails.event` の文脈を空にし、エラー通知の文脈を空にする。テストの example と、`perform_now` で直接動かすジョブは executor で包まれないので、文脈が次の処理へ持ち越される。そこで次の 2 つで後始末する。
 
-- `ApplicationJob#perform_now` は、実行の前の `Rails.event.context` を退避して `ensure` で戻し、エラー通知の文脈は `Rails.error.set_context(...) { super }` のブロックの形で設定する（ブロックを抜けると前の値に戻る）。
+- `ApplicationJob#perform_now` は、実行の前の `Rails.event.context` とエラー通知の文脈（`ActiveSupport::ExecutionContext`）を丸ごと退避し、例外の経路も含めて `ensure` で丸ごと戻す。エラー通知の文脈は、`Rails.error.set_context` が渡した項目だけを書き換えるので、いまの項目を空にしてからジョブの項目（`job`・`tenant_id`・`correlation_id`）を設定する。入れ子のジョブも、抜けた後は外側のジョブの文脈に戻る。
 - `spec/support/log_context.rb` は、各 example の後で `Rails.event.clear_context` と `ActiveSupport::ExecutionContext.clear` を呼ぶ。
 
 ### 相関 ID と因果 ID
