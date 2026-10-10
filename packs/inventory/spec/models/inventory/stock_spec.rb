@@ -47,6 +47,21 @@ RSpec.describe Inventory::Stock do
     expect(stock.reload.on_hand).to eq(10)
   end
 
+  # readonly? はクラス単位の一括の書き込みを止めない。在庫の行は在庫のパッケージの外から参照できない（packwerk の
+  # enforce_privacy）ので、パッケージの中のコードが一括の書き込みを使わないことで、move! を唯一の入口に保つ。
+  # 例外は、数量 0 の行を足すだけの lock_for の insert_all である
+  it "在庫のパッケージのコードは、move! を通らない一括の書き込みを使わない" do
+    bulk_writes = /\b(?:update_all|update_counters|(?:increment|decrement)_counter|upsert(?:_all)?|insert(?:_all)?!?)\b/
+    root = File.expand_path("../../../app", __dir__)
+    found = Dir.glob("#{root}/**/*.rb").flat_map do |path|
+      File.readlines(path).filter_map.with_index(1) do |line, lineno|
+        "#{path.delete_prefix("#{root}/")}:#{lineno}: #{line[bulk_writes]}" if line.sub(/#.*/, "").match?(bulk_writes)
+      end
+    end
+
+    expect(found.map { _1.sub(/:\d+:/, ":") }).to eq([ "models/inventory/stock.rb: insert_all" ])
+  end
+
   it "書いた移動履歴は変えられない" do
     stock.move!("inbound", 1)
     movement = Inventory::StockMovement.last
