@@ -504,6 +504,7 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `requestPurchaseOrderCancellation` | `purchase_order.request_cancellation` | 対象の発注 | その発注の受注側 |
 | `approveCancellationReview` | `cancellation_review.approve` | 対象の審査 | 成功の値の受注の発注側 |
 | `rejectCancellationReview` | `cancellation_review.reject` | 対象の審査 | 成功の値の受注の発注側 |
+| `cancelSalesOrder` | `sales_order.cancel` | 対象の受注 | その受注の発注側 |
 | `postShipment` | `shipment.post` | 成功の値の出荷依頼から引いた出荷実績 | 出荷依頼の発注側 |
 
 列挙テスト（`spec/graphql/authorization_declarations_spec.rb`）は、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類と action が上の 2 つの表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation は比べない。監査の対象を変えたら、2 つの表を同じ変更で直す。
@@ -601,7 +602,7 @@ type AuditLog {
 | `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類。同じファイルの 2 回目は `CONFLICT`） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
-| `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する） | 受注取消・出荷取消 |
+| `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する。出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は `CONFLICT`） | 受注取消・出荷取消 |
 | `approveCancellationReview` | `Sales::CancellationReviews.approve`（引当を解除する） | 取消承認・出荷取消 |
 | `rejectCancellationReview` | `Sales::CancellationReviews.reject` | 取消却下・出荷停止解除 |
 | `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions`（どちらも出荷依頼 ID で指定する。取消は有効な指示を取り消す。取消済・出荷済の出荷依頼と、有効な指示の重複・不在は `CONFLICT`） | なし |
