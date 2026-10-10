@@ -1,7 +1,8 @@
 # テストの層と置き場（docs/guides/testing.md「テストの層」）。bin/test-layers が読む。
 # example の層は、rspec の JSON の id のファイルの部分が、どの層の paths の下にあるかで決める。
 # exclude の下にあるファイルはその層に入れない。1 つのファイルが 2 つの層に当たると、bin/test-layers は失敗する。
-# share は単体・結合・シナリオの 3 つの層の example の数に対する割合の目安。counted が false の層は割合に数えない
+# share は単体・結合・シナリオの 3 つの層の example の数に対する割合の上限か下限で、外れたら警告を出す。
+# 見直すべき大きな偏りだけを拾う値にする。counted が false の層は割合に数えない
 layers:
   - key: unit
     name: 単体
@@ -10,16 +11,12 @@ layers:
     exclude:
       - packs/*/spec/concurrency
     counted: true
-    share:
-      min: 0.6
   - key: integration
     name: 結合
     paths:
       - spec/requests
       - spec/contracts
     counted: true
-    share:
-      max: 0.3
   - key: scenario
     name: シナリオ
     paths:
@@ -28,7 +25,7 @@ layers:
       - packs/*/spec/concurrency
     counted: true
     share:
-      max: 0.1
+      max: 0.5
   - key: guard
     name: ガード
     paths:

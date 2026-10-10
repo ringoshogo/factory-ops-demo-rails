@@ -518,7 +518,7 @@ bundle exec rspec spec/rubocop   # Cop が悪い例を落とし、良い例を�
 **判断**：層の割合を CI の失敗にするか
 
 - **既定の推奨**：報告と警告にとどめ、未分類のファイルだけを失敗にする。割合は機能の種類で揺れる（GraphQL の入口だけを足すマイルストーンでは結合が増える）。未分類を止めれば、数え方は崩れない。
-- **裏返る条件**：3 マイルストーン続けて目安を外れる → 単体の割合の下限を失敗の条件に変える。続けて外れた数の数え始めは OI-24 にある。
+- **裏返る条件**：シナリオの割合が 50% を超え、見直しても下げられない → 層の分け方と置き場を見直す。割合を失敗の条件にはしない。割合に合わせてテストを書き足すと、テストが業務の分岐ではなく数に引かれるからである（OI-24）。
 - **撤退コスト**：小さい。`bin/test-layers` の終了コードを変えるだけで済む。
 
 > 手で書いた example の数（行列テストのように生成する分を除く）は、M14 の時点で、単体（`packs/*/spec`）が約 90、結合（`spec/requests`・`spec/contracts`）が約 90 だった。
@@ -808,25 +808,34 @@ BASE_REF=origin/main bin/check-schema-compat
 
 **作るもの**
 
-1. 止めたログの経路の調べ直し（改善の候補 IB-14）：上げた後の Rails・Solid Queue・Ruby で、値を文字列で書く購読とミドルウェアが、止めた 5 つの経路のほかに増えていないかを確かめる。購読者の一覧とミドルウェアの並びを上げる前と後で比べ、ログの衛生の spec を新しい版で流す。拒否の一覧を、原則出さない許可の形に変えるかを「判断」に書く
-2. 使っていない部品を外す：`config/application.rb` の Active Storage・Action Mailbox・Action Text・Action Cable の読み込み、`config/environments/*.rb` の `active_storage.service`、`config/storage.yml`、`config/cable.yml`、kamal と image_processing の gem、Dockerfile の libvips。thruster（Dockerfile の起動の命令が使う）と Action Mailer（通知の送り方を `adr/007` が決める）は残す
-3. Ruby を 3.4 の最新の patch に上げる：`.ruby-version` と Dockerfile を変える（CI は `.ruby-version` を読む）。上げる前に、3.3.3 で `RUBYOPT=-W:deprecated` を付けて全件を流し、警告の件数を取っておく
+1. 止めたログの経路の調べ直し（改善の候補 IB-14）：上げた後の Rails・Solid Queue・Ruby で、値を文字列で書く購読とミドルウェアが、止めた 5 つの経路のほかに増えていないかを確かめる。購読者の一覧とミドルウェアの並びを上げる前と後で比べ、ログの衛生の spec を新しい版で流す。いまの `spec/platform/logging_spec.rb` は拒否の一覧で、新しい版で増えた購読者を捕まえないので、比べるのは購読者の一覧とミドルウェアの並びそのものである。拒否の一覧を、原則出さない許可の形に変えるかを決め、決めたことと比べた結果を `guides/config.md`「止めたフレームワークの文字列のログ」に書く（複数の案を比べたなら ADR にする）
+2. 使っていない部品を外す：`config/application.rb` の Active Storage・Action Mailbox・Action Text・Action Cable の読み込み、`config/environments/*.rb` の `active_storage.service` と Action Cable の生成時のコメント、`config/storage.yml`、`config/cable.yml`、kamal と image_processing の gem と Gemfile のその説明のコメント、Dockerfile の libvips と冒頭の Kamal の説明、`.dockerignore` の `/.kamal`。thruster（Dockerfile の起動の命令が使う）と Action Mailer（通知の送り方を `adr/007` が決める）は残す
+3. 外した部品が読み込まれないことを確かめる spec（`spec/platform/framework_loading_spec.rb`）：テストの環境の起動の後に、`ActiveStorage::Engine`・`ActionMailbox::Engine`・`ActionText::Engine`・`ActionCable::Engine` が定義されておらず、`ActionMailer::Base` が定義されていることを確かめる。外す前に書いて落ちることを見る
+4. Ruby を 3.4 の最新の patch に上げる：`.ruby-version` と Dockerfile を変える（CI は `.ruby-version` を読む）。gem は Gemfile の版の制約を変えずに `bundle update` で上げ、上げる前と後の Rails・Solid Queue の版を作業 1 の比べる対象として PR の本文に書く。上げる前に、3.3.3 で `RUBYOPT=-W:deprecated` を付けて全件を流し、警告の件数を PR の本文に書いておく
+5. Ruby の版を書いた文書を、上げた版に直す：この文書の「環境」の表と `handoff.md`「開発環境」
+6. 依存の向きの表と `package.yml` の一致を確かめる spec（`spec/packwerk/dependency_table_spec.rb`）：`context-map.md`「疎結合を守る規則」の依存の向きの表を読み、ルートパッケージと `packs/*` の各 `package.yml` の `dependencies` と、パッケージの集合と依存先の集合が一致することを確かめる。表の括弧の注記（`PublishedCatalog` だけ）は依存先の名前から外して比べ、注記の範囲は `spec/packwerk/purchasing_uses_only_published_catalog_spec.rb` に任せる。表の「すべて」は、ルートパッケージ以外のすべてのパッケージとして読む。表はこの計画レビューでいまの `package.yml` に合わせたので、書いた時点で通る。表の行の依存先を 1 つ消すと落ち、`package.yml` に依存を 1 つ足すと落ちることを確かめてから戻す（OI-58）
 
 **判断**：Ruby を 3.4 へ直接上げるか
 
-- **既定の推奨**：直接上げる。文字列を比べる spec に `Hash#inspect` の表記に頼るものは無く、変える場所は `.ruby-version` と Dockerfile だけである
-- **裏返る条件**：3.4 で全件が通らない gem があり、すぐに直せない → 3.3 系の最新の patch にとどめ、3.4 は 3.3 系の保守が終わる前に別に上げる
-- **撤退コスト**：小さい。`.ruby-version` と Dockerfile を戻すだけで済む
+- **既定の推奨**：直接上げる。文字列を比べる spec に `Hash#inspect` の表記に頼るものは無く、変える設定は `.ruby-version` と Dockerfile だけである（版を書いた文書は作るもの 5 で直す）
+- **裏返る条件**：3.4 で全件が通らない gem があり、すぐに直せない → 3.3 系の最新の patch にとどめ、3.4 は 3.3 系の保守が終わる前に別に上げる。とどめたときも作るもの 5 の文書を、とどめた版に直す
+- **撤退コスト**：小さい。`.ruby-version` と Dockerfile と作るもの 5 の文書を戻すだけで済む
 
 **完了条件**
 
 ```sh
+bundle exec rspec spec/platform/framework_loading_spec.rb spec/packwerk/dependency_table_spec.rb
 bundle exec rspec                                                # 全件。本番の環境の起動は spec/platform/logging_spec.rb の子のプロセスが確かめる
-RUBYOPT=-W:deprecated bundle exec rspec 2>&1 | grep -c "warning:"   # 上げる前の件数を超えない
-git grep -nE "active_storage|action_mailbox|action_text|action_cable|image_processing|kamal" -- config app Gemfile Dockerfile   # 0 件
+RUBYOPT=-W:deprecated bundle exec rspec 2> tmp/deprecated.log    # 終了コード 0
+test "$(grep -cE "^$PWD/(app|packs|lib|config|bin)/[^:]+:[0-9]+: warning:" tmp/deprecated.log || true)" -le <上げる前の件数>
+git grep -nE "active_storage|action_mailbox|action_text|action_cable|image_processing|kamal" -- config app Gemfile Dockerfile; test $? -eq 1   # 一致が 0 件（git grep の 1）。実行の誤り（128）は落とす
+test "$(ruby -e 'print RUBY_VERSION')" = "$(cat .ruby-version)"
+bin/bundler-audit
 ```
 
-`ruby -v` が `.ruby-version` と同じ版で、`bundle outdated --only-explicit` に、保守の終わった版の gem が無い。
+比べる警告は、リポジトリのコード（spec を除く）から出たものに限る。Ruby 3.4 は `-W:deprecated` で文字列の書き換えの警告（chilled string）を新しく出し、gem の中から出る警告まで数えると、上げる前と後の件数を比べられないからである。`RUBYOPT` は子のプロセスにも引き継がれるので、子の標準エラーが空であることを確かめる spec が警告で落ちたら、その spec の子のプロセスの環境から `RUBYOPT` を外す。上げる前の件数も同じ数え方で取る。
+
+保守の続く Ruby かどうかは、コマンドで判定しない。上げた版の保守の状態（ruby-lang.org の「Ruby の各ブランチのメンテナンス状況」）を、PR の本文に引く。
 
 **実装する文書の節**：`guides/config.md`「application.rb で変えたこと」「使っていない機能の設定」「止めたフレームワークの文字列のログ」、`README.md`「開発環境」
 
@@ -834,15 +843,16 @@ git grep -nE "active_storage|action_mailbox|action_text|action_cable|image_proce
 
 ## M35 分岐の網羅率の警告
 
-**目的**：PR が足した行の分岐のうち、どの example も通らないものを、実装レビューの前に一覧にする。確かめる example の抜け（サイクル 01 で 4 件）を、レビューだけに頼らずに見つける。網羅率は「実行したか」だけを見て「確かめたか」は見ないので、失敗にはせず警告にとどめる。
+**目的**：PR が足した行の分岐のうち、どの example も通らないものを、実装レビューの前に一覧にする。確かめる example の抜け（サイクル 01 で 4 件）のうち、分岐を一度も通らなかったものを、レビューだけに頼らずに見つける。網羅率は「実行したか」だけを見て「確かめたか」は見ない。通った分岐の別の入力（サイクル 01 の M20 の X1）も拾わない。そのため失敗にはせず警告にとどめる。
 
 **作るもの**
 
-- 計測：`spec/spec_helper.rb` は、環境変数 `COVERAGE=1` のときだけ、標準の `Coverage` で行と分岐を数え、結果を `tmp/coverage.json` に書く。gem は足さない
-- `bin/check-branch-coverage`：`tmp/coverage.json` と、基準の ref（`BASE_REF`、既定は `origin/main`）と HEAD の分岐点からの `git diff` を照らし、足した行か変えた行にある分岐のうち、どの example も通らないものを一覧にする。標準出力と `$GITHUB_STEP_SUMMARY` に書き、行ごとに GitHub の警告の注釈を出す。終了コードは 0 にする
-- CI：test のジョブを履歴をすべて取る形（`fetch-depth: 0`）にし、`COVERAGE=1` で rspec を流してから `bin/check-branch-coverage` を流す。`config/ci.rb` にも足す
-- いま通っていない公開 API の失敗の経路 7 か所の example：出荷の指示（`Fulfillment::Instructions`）と計上（`Fulfillment::Shipping`）の `NOT_FOUND`、受注の引当（`Sales::OrderAllocation`）の取消済・出荷済の `CONFLICT`、品目の保存（`Sales::Catalog`）の `NOT_FOUND`、イベントの受け手 3 つ（`Purchasing::SupplierEventReceiver`・`Sales::FulfillmentEventReceiver`・`Fulfillment::SalesEventReceiver`）の想定外のイベント
-- `spec/bin/check_branch_coverage_spec.rb`：小さな計測の結果と差分を渡し、足した行の未通過の分岐だけを一覧にし、足していない行の未通過と、通った分岐を出さないことを確かめる
+- 計測：`spec/spec_helper.rb` は、環境変数 `COVERAGE=1` のときだけ、ファイルの先頭（Rails とアプリを読み込む前）で標準の `Coverage` を行と分岐で始め、rspec の終わりに結果を `tmp/coverage.json` に書く。gem は足さない。結果は、計測の対象のファイルごとに、分岐の座標（種類・開始の行と列・終わりの行と列）と通過の回数の組を配列で持つ
+- 計測の範囲：計測の対象は、rspec のプロセスが読み込んだ `app/`・`packs/*/app/`・`lib/` の Ruby のファイルである。子のプロセス（`spec/platform/logging_spec.rb` の本番の起動、`spec/bin` が流す `bin/` のスクリプト）は測らない。`bin/` のスクリプトと `config/`・`db/` は対象の外にする
+- `bin/check-branch-coverage`：`tmp/coverage.json` と、基準の ref（`BASE_REF`、既定は `origin/main`）と HEAD の分岐点からの `git diff` を照らし、計測の対象のファイルの足した行か変えた行にある分岐のうち、どの example も通らないものを一覧にする。差分にある計測の対象のファイルが計測の結果に無いとき（どの example も読み込まなかった）は、「計測なし」としてファイルごとに一覧に出し、未通過なしとして扱わない。標準出力と `$GITHUB_STEP_SUMMARY` に書き、行ごとに GitHub の警告の注釈を出す。終了コードは 0 にする。`tmp/coverage.json` が無いか読めないときは、終了コード 1 で失敗する
+- CI：test のジョブを履歴をすべて取る形（`fetch-depth: 0`）にし、既存の rspec のステップを `COVERAGE=1` で流す形に置き換えて（2 回流さない）から `bin/check-branch-coverage` を流す。基準は、lint のジョブの `bin/check-schema-compat` と同じ式で契機ごとに決める。PR では向き先（`origin/<base_ref>`）、main への push では push の前の先端（`github.event.before`）である。`origin/main` を既定のまま使うと、main への push では分岐点が HEAD 自身になって差分が空になり、積み重ねた PR では main からの累積の差分になるからである。`config/ci.rb` にも足す
+- いま通っていない公開 API の失敗の経路 8 か所の example：出荷の指示（`Fulfillment::Instructions`）の `create` と `cancel` の `NOT_FOUND`（2 か所）、計上（`Fulfillment::Shipping.post`）の `NOT_FOUND`（1 か所）、受注の引当（`Sales::OrderAllocation.allocate`）の取消済・出荷済の `CONFLICT`（1 つの `if` で、取消済と出荷済の 2 つの example を書く）、品目の保存（`Sales::Catalog`）の `NOT_FOUND`（1 か所）、イベントの受け手 3 つ（`Purchasing::SupplierEventReceiver`・`Sales::FulfillmentEventReceiver`・`Fulfillment::SalesEventReceiver`）の想定外のイベント（3 か所）
+- `spec/bin/check_branch_coverage_spec.rb`：小さな計測の結果と差分を渡し、次を確かめる。足した行の未通過の分岐だけを一覧にする。足していない行の未通過と、通った分岐を出さない。差分にあって計測の結果に無いファイルを「計測なし」で出す。計測の対象の外のファイル（`bin/`・`config/`）を出さない。`tmp/coverage.json` が無ければ失敗する。あわせて、計測の結果を書く部分を、既知の未通過の分岐を持つ fixture で流し、その分岐の座標が結果に出ることを確かめる。全件を `COVERAGE=1` で流している間は同じプロセスで `Coverage` を始め直せないので、この部分は子のプロセスで流す
 
 **判断**：計測と照合に gem（SimpleCov と undercover）を使うか
 
@@ -854,62 +864,171 @@ git grep -nE "active_storage|action_mailbox|action_text|action_cable|image_proce
 
 ```sh
 bundle exec rspec spec/bin/check_branch_coverage_spec.rb
-COVERAGE=1 bundle exec rspec && bin/check-branch-coverage   # 終了コード 0。公開 API の失敗の経路 7 か所は一覧に出ない
+COVERAGE=1 bundle exec rspec && BASE_REF=origin/main bin/check-branch-coverage   # 終了コード 0
 ```
 
-サイクル 01 の M20 の実装レビューで出た互換の判定の未検証の分岐（X1）について、直す前の commit（`ded1244` の親）を作業ツリーの外に取り出し、`COVERAGE=1` で `spec/graphql/schema_compat_spec.rb` を流して `bin/check-branch-coverage` を当てると、その分岐が警告に出る。
+公開 API の失敗の経路 8 か所は、M35 の差分に無い（足すのは spec だけ）ので、警告の一覧では確かめられない。`tmp/coverage.json` で、8 か所の分岐の通過の回数が 1 以上であることを確かめ、PR の本文に書く。
+
+CI の test のジョブの要約に、PR の向き先からの差分の一覧が出る（M35 の PR 自身で確かめる）。
 
 **実装する文書の節**：`guides/testing.md`（分岐の網羅率の警告の読み方を足す）、`guides/bin.md`
 
-**文書に残すこと**：警告が出たときに、example を足すか、足さない理由を PR の本文に書くことを `guides/testing.md` に書く。次のサイクルの振り返りで、警告の件数と、そのうち example を足した件数を数える。
+**文書に残すこと**：警告が出たときに、example を足すか、足さない理由を PR の本文に書くことを `guides/testing.md` に書く。警告が拾わないもの（通った分岐の別の入力、確かめの抜け、子のプロセス）も同じ節に書く。次のサイクルの振り返りで、警告の件数と、そのうち example を足した件数を数える。
 
 ## M21 取消依頼と審査
 
 **目的**：発注側の取消は、受注側の承認でだけ成立する。審査中は出荷の指示と計上が止まる。
 
-**作るもの**：`cancellation_requests`・`cancellation_reviews`・`shipping_holds`、取消依頼・出荷停止・出荷停止解除・取消承認・取消却下・出荷取消のイベント、出荷済みの受注への取消依頼の自動却下、`requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`、受注と発注の状況の「取消審査中」「取消依頼中」、出荷依頼の状況の「出荷停止中」の導出と `ShipmentRequestStatus` の `ON_HOLD`
+**作るもの**
 
-**完了条件**：依頼 → 停止 → 承認 → 発注が「取消済み」・出荷依頼が「取消済」の通しのテスト。依頼 → 却下 → 発注が元の状況に戻る通しのテスト。審査中の出荷の計上が拒否されるテスト。出荷依頼の状況の導出表の 3 行目（解除されていない出荷停止があれば「出荷停止中」）と、出荷停止を解除した後に元の状況へ戻ることを確かめる、出荷依頼の状況の spec の example。
+- `cancellation_requests`・`cancellation_reviews`・`shipping_holds`、取消依頼・出荷停止・出荷停止解除・取消承認・取消却下・出荷取消のイベントと配送表の行
+- 購買：`Purchasing::Ordering.request_cancellation`（`graphql-schema.md`「mutation の一覧」）、取消承認・取消却下の受け手（`Purchasing::SupplierEventReceiver` に足す）
+- 受注：取消依頼の受け手 `Sales::PurchasingEventReceiver`（審査を作り、出荷停止を出す。出荷済みなら審査を作らずに自動で却下する）、`Sales::CancellationReviews.approve`・`reject`。承認は、引当の解除と受注の `cancelled_at` を同じトランザクションで行う受注の内部の取消の処理を使う。この処理は M22 の受注側の取消も使う
+- 出荷：出荷停止・出荷停止解除・出荷取消の受け手（`Fulfillment::SalesEventReceiver` に足す）。出荷取消は、出荷依頼の `cancelled_at`・有効な出荷指示の取消・出荷停止の解除を行う。`Fulfillment::Instructions` と `Fulfillment::Shipping.post` は、解除されていない出荷停止のある受注で `CONFLICT` を返す
+- `requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`（どれも `audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）
+- 受注と発注の状況の「取消審査中」「取消依頼中」、出荷依頼の状況の「出荷停止中」の導出と `ShipmentRequestStatus` の `ON_HOLD`（OI-52）
+- 読み取り：`PurchaseOrder.cancellationPending`・`cancellationRequests`、`SalesOrder.cancellationReviewPending`・`cancellationReviews`、型 `CancellationRequest`・`CancellationReview`、enum `CancellationOutcome`（`graphql-schema.md`）と、行列テストの行。受注側は `SalesOrder.cancellationReviews` で承認と却下に使う審査 ID を得る
+- イベントの届く順の入れ替わり（OI-65）：出荷停止解除が出荷停止より先に、出荷取消が出荷可能より先に動いても、停止や出荷依頼が取り残されない受け手にする。決め方は M21 の着手のときに OI-65 で決める
+- 付帯情報の無いイベントのジョブの扱い（OI-53）：`guides/config.md` は付帯情報の無いジョブも動くと書くが、`Contracts::EventJob` は受信の監査の行を書くときに付帯情報の項目を `fetch` するので、相手テナントからのイベントでは失敗する。イベントのジョブは付帯情報を必須とし、無ければ受け手の書き込みを戻して、付帯情報が無いことを示す専用の例外クラスで失敗させる。受信の監査の行を書けないまま受け手の書き込みだけを残すと、「相手テナントに効果が及ぶ書き込みは必ず記録される」（M19）が崩れるからである。`guides/config.md` の記述を、イベントのジョブとそれ以外のジョブに分けて直す
 
-**実装する文書の節**：`context-map.md`「取消の流れ」1〜4、`data-model.md`「出荷（`fulfillment`）」の出荷停止
+操作と状態の組みごとの結果は次のとおりである。失敗はどれも書き込みとイベントを残さない。
+
+| 操作 | 状態 | 結果 |
+|---|---|---|
+| 取消依頼 | 回答待ちの取消依頼がある | `CONFLICT` |
+| 取消依頼 | 発注が「取消済み」か「受注側により取消」 | `CONFLICT` |
+| 取消依頼 | それ以外（出荷済みかどうかは購買では見ない） | 依頼を登録し、取消依頼を出す |
+| 取消依頼の受け手 | 受注が出荷済みか取消済 | 審査を作らずに取消却下を出す（自動却下） |
+| 取消依頼の受け手 | 受注がまだ無い（発注登録より先に届いた） | 例外で失敗し、再配送に任せる。既存の受け手（`find_by!`）と同じ |
+| 承認・却下 | 審査が決着済み | `CONFLICT` |
+| 承認 | 引当が消費済み（出荷の計上が先に成立した） | `CONFLICT`。担当者は却下する |
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/purchasing/spec/public/purchasing/cancellation_requests_spec.rb \
+  packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb packs/sales/spec/public/sales/cancellation_reviews_spec.rb \
+  packs/fulfillment/spec/public/fulfillment/instructions_spec.rb packs/fulfillment/spec/public/fulfillment/shipping_spec.rb \
+  packs/fulfillment/spec/models/fulfillment/shipment_request_status_spec.rb packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb \
+  spec/requests/cancellations_spec.rb spec/jobs/event_job_metadata_spec.rb
+```
+
+- 単体（`packs/*/spec/public`）：上の表の各行。出荷停止中の出荷指示の作成と計上が `CONFLICT` になる。出荷依頼の状況の導出表の 3 行目（解除されていない出荷停止があれば「出荷停止中」）と、出荷停止を解除した後に元の状況へ戻ること。新しい受け手に冪等の共有テスト（M7）を当てる。届く順を入れ替えた example（OI-65）
+- 結合（`spec/requests/cancellations_spec.rb`）：依頼 → 停止 → 承認 → 発注が「取消済み」・出荷依頼が「取消済」の通し。依頼 → 却下 → 発注が元の状況に戻り、出荷停止が解除される通し。出荷済みの受注への依頼が自動で却下される通し
+- `spec/jobs/event_job_metadata_spec.rb`：付帯情報（`app_metadata`）の無い形で直列化したイベントのジョブを `ActiveJob::Base.execute` に流すと、受け手の書き込みが残らずに、専用の例外クラスで失敗する（OI-53）。いまも `nil` への `fetch` で失敗して書き込みは戻るので、例外クラスで確かめないと実装の前から通る
+
+**実装する文書の節**：`context-map.md`「取消の流れ」1〜4、`data-model.md`「出荷（`fulfillment`）」の出荷停止、`data-model.md`「状態は保存せず、時刻列から導出する」、`guides/config.md`「ログ」の付帯情報
+
+**文書に残すこと**：操作と状態の組みごとの結果の表を `context-map.md`「取消の流れ」に書く。付帯情報の無いイベントのジョブの扱いを `guides/config.md` に書く。
 
 ## M22 受注側の取消と、取消と出荷の競合
 
 **目的**：受注側は審査なしで取り消せる。同時に進んだ取消と出荷計上は、引当の行ロックでどちらか一方だけが成立する。
 
-**作るもの**：`Sales::OrderCancellation.cancel`、受注取消のイベントと購買の受け手（`supplier_cancelled_at`）、`cancelSalesOrder`
+**作るもの**：`Sales::OrderCancellation.cancel`（M21 の受注の内部の取消の処理を使う）、受注取消のイベントと購買の受け手（`supplier_cancelled_at`）、`cancelSalesOrder`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）。出荷取消のイベントと出荷の受け手は M21 のものを使う。審査の承認（M21）と受注側の取消は同じ受注の内部の取消の処理を通るので、下の競合テストが両方の経路の引当の行ロックを確かめる。
 
-**完了条件**：`spec/concurrency/cancel_vs_ship_spec.rb`（重要シナリオ S4 の取消）：2 つの接続で取消と計上を同時に走らせ、どちらか一方だけが成立することを繰り返して確かめる。このテストはトランザクションで包まない設定で動かし、作った行を後で消す。
+受注側の取消の結果は次のとおりである。
+
+| 状態 | 結果 |
+|---|---|
+| 受注が出荷済みか取消済 | `CONFLICT` |
+| 未決の取消の審査がある | `CONFLICT`。担当者は審査を承認して取り消す。審査中に受注側の取消を許すと、後から届く審査の決着と発注の 2 つの取消の時刻（`cancelled_at`・`supplier_cancelled_at`）が両立しうるからである |
+| 引当が消費済み（計上が先に成立した） | `CONFLICT` |
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/sales/spec/public/sales/order_cancellation_spec.rb spec/requests/cancellations_spec.rb
+bundle exec rspec spec/concurrency/cancel_vs_ship_spec.rb
+```
+
+- 単体（`order_cancellation_spec.rb`）：上の表の各行。取消で引当が解除され、受注取消と出荷取消が出る
+- 結合（`spec/requests/cancellations_spec.rb` に足す）：`cancelSalesOrder` → イベントを流す → 発注が「受注側により取消」、出荷依頼が「取消済」、有効な出荷指示が取り消される。M21 の承認の通しとは別の example にする
+- `spec/concurrency/cancel_vs_ship_spec.rb`（重要シナリオ S4 の取消）：2 つの接続で `Sales::OrderCancellation.cancel` と `Fulfillment::Shipping.post` を同時に走らせ、どちらか一方だけが成立することを、どちらが先にロックを取る順でも確かめる。このテストはトランザクションで包まない設定で動かし、作った行を後で消す。M21 では `Sales::OrderCancellation.cancel` が無いので、このテストは M22 で最初に落ちる
 
 **実装する文書の節**：`context-map.md`「取消の流れ」の受注側の取消、`data-model.md`「取消と出荷の競合を止める場所」
+
+**文書に残すこと**：審査中は受注側の取消を `CONFLICT` にすることを `context-map.md`「取消の流れ」に書く。
 
 ## M23 検収
 
 **目的**：検収数量は出荷数量を超えない。検収は入荷 1 件に 1 回で、受注側へ 1 回だけ届く。
 
-**作るもの**：`receipt_inspections`・明細、`inspection_records`、`Purchasing::ReceiptInspection.record`、検収完了と請求対象確定のイベント（請求対象確定の受け手は M24）、受注の「検収済」、`inspectInboundShipment`、`InboundShipment.inspection`・`InboundShipmentLine.acceptedQuantity`
+**作るもの**：`receipt_inspections`・明細、`inspection_records`、`Purchasing::ReceiptInspection.record`、検収完了のイベントと配送表の行、検収完了の受け手（M21 の `Sales::PurchasingEventReceiver` に足す）、受注の「検収済」と発注の「検収済」、`inspectInboundShipment`（`audit`。action・対象・相手の行を `graphql-schema.md`「監査ログ」の表に足す）、`InboundShipment.inspection`・`InboundShipmentLine.acceptedQuantity`
 
-**完了条件**：出荷数量を超える検収が `INVALID_INPUT` になるテスト。すべての出荷実績が検収されたときだけ受注が「検収済」になるテスト。
+請求対象確定のイベントは M23 では足さない。受け手（M24）の無いイベントを配送表に載せると、配送表の spec（`spec/contracts/subscriptions_spec.rb`）が受け手の無い行で落ち、載せないと `Contracts.publish` が配送表に無いイベントで失敗するからである。イベント・配送表の行・受注の受け手からの発行・請求の受け手は、M24 で同時に足す。
 
-**実装する文書の節**：`context-map.md`「検収と請求の流れ」1〜3、`data-model.md`「購買（`purchasing`）」「受注（`sales`）」の検収の表
+検収の入力は次のとおりである。誤りはどれも `INVALID_INPUT` で、`path` に誤りの明細を示す。
+
+- 入荷の全明細を 1 回で出す。明細の省略、同じ明細の重複、別の入荷の明細は誤りにする
+- 検収数量は 0 以上・出荷数量以下の整数にする。0 は全量の不合格を表す
+- 同じ入荷への 2 回目の検収は `CONFLICT` にし、検収完了を出さない
+- 検収日は、検収を登録した日（自社の日付）にする
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspection_spec.rb \
+  packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb spec/requests/inspections_spec.rb
+```
+
+- 単体（`receipt_inspection_spec.rb`）：上の入力の各誤り。出荷数量を超える検収が `INVALID_INPUT` になる。2 回目の検収が `CONFLICT` で、検収完了のジョブが 1 件のままである。検収の後に発注が「検収済」になる
+- 単体（`purchasing_event_receiver_spec.rb`）：検収完了で受注が「検収済」になる（分納しないので、出荷実績は受注ごとに 1 件で、1 回目の検収完了がすべての出荷実績の検収になる）。検収の前の受注は「検収済」にならない。同じ検収完了を 2 回流しても `inspection_records` が増えない（冪等の共有テスト）
+- 結合（`spec/requests/inspections_spec.rb`）：`inspectInboundShipment` → イベントを流す → 受注が「検収済」
+
+**実装する文書の節**：`context-map.md`「検収と請求の流れ」1・2、`data-model.md`「購買（`purchasing`）」「受注（`sales`）」の検収の表
+
+**文書に残すこと**：検収の入力の規則を `context-map.md`「検収と請求の流れ」に書く。
 
 ## M24 請求の締め
 
 **目的**：締めは取引先ごとに直列になる。消費税は請求書・税率ごとに 1 回だけ切り捨てる。前の期間の遅れた検収も次の締めで拾う。
 
-**作るもの**：`billing_terms`・`billable_items`・`invoices`・`invoice_tax_summaries`、請求対象確定の受け手、`Billing::Terms`・`Billing::BillableItems`・`Billing::Closing.close`・`discard`、`supplier.billingTerms`・`supplier.billableItems`・`supplier.invoices`・`supplier.invoice`、`setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`
+**作るもの**：請求対象確定のイベントと配送表の行、受注の検収完了の受け手（M23）からの請求対象確定の発行、`billing_terms`・`billable_items`・`invoices`・`invoice_tax_summaries`、請求対象確定の受け手 `Billing::SalesEventReceiver`、`Billing::Terms`・`Billing::BillableItems`・`Billing::Closing.close`・`discard`、`supplier.billingTerms`・`supplier.billableItems`・`supplier.invoices`・`supplier.invoice`、`setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`（どれも `audit_exempt`）
 
-**完了条件**：税率 8% と 10% が混ざる明細で、税額が明細ごとの丸めの合計と異なる例を含むテスト。末日締め（31）のテスト。下書きの破棄で明細が未請求に戻るテスト。
+締めの入力と結果は次のとおりである。
 
-**実装する文書の節**：`data-model.md`「請求（`billing`）」、`context-map.md`「検収と請求の流れ」4・5 と請求書の組み立ての規則
+| 入力・状態 | 結果 |
+|---|---|
+| 取引先が、自社が受注側の取引関係（失効したものを含む）の相手でない | `NOT_FOUND`（`path` は取引先）。`setBillingTerm`・`supplier.billableItems` も同じ。S1 の表に行を足す |
+| 取引先に請求条件が無い | `NOT_FOUND`（`path` は取引先） |
+| `setBillingTerm` の締め日が 1〜28・31 の外 | `INVALID_INPUT` |
+| 締め日が請求条件の締め日（31 は月末）に当たらない | `INVALID_INPUT` |
+| 取引先に下書きの請求書がある | `CONFLICT` |
+| 締め日が、同じ取引先の前の請求書（下書きを除く）の `period_end` 以前 | `INVALID_INPUT`。期間が逆転するか重なるからである |
+| 締め日以前に検収された未請求明細が 0 件 | `CONFLICT`。請求書を作らない |
+| それ以外 | 締め日以前に検収された未請求明細をすべて集めて下書きを作る |
+| 発行済みの請求書を破棄する | `CONFLICT` |
+
+請求番号は、下書きでは振らず、確定（M25 の `issue`）で振る。破棄した下書きで欠番を作らないためである。採番の表（`invoice_sequences`）は M25 で足し、M24 の下書きは `invoice_number` を空にする。そのため `Invoice.invoiceNumber` は null を許す型（`String`）にする（`graphql-schema.md`）。
+
+請求書の期間は、`period_end` を指定した締め日、`period_start` を同じ取引先の前の請求書（下書きを除く）の `period_end` の翌日にする。前の請求書が無ければ、集めた明細の最も古い検収日にする。遅れて届いた前の期間の検収は、検収日が `period_start` より前でも集める。期間は請求書の表示のためのもので、集める明細は検収日が締め日以前かどうかだけで決まる。
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/billing/spec/public/billing/closing_spec.rb packs/billing/spec/public/billing/sales_event_receiver_spec.rb \
+  packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb spec/requests/inspections_spec.rb spec/requests/billing_spec.rb
+bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
+```
+
+- 単体（`closing_spec.rb`）：上の表の各行。税率 8% と 10% が混ざる明細で、税額が明細ごとの丸めの合計と異なる例。末日締め（31）を 2 月と 30 日の月で。締めの後に届いた前の期間の検収が次の締めで集まり、締め日より後の検収が集まらない。前の請求書の `period_end` と同じ締め日を拒む。下書きの破棄で明細が未請求に戻る
+- 単体（`sales_event_receiver_spec.rb`）：同じ請求対象確定を 2 回流しても明細が 1 件（冪等の共有テスト）
+- 単体（`purchasing_event_receiver_spec.rb` に足す）：検収完了の受け手が、検収した受注明細ごとに請求対象確定を出す
+- 結合（`spec/requests/inspections_spec.rb` に足す）：検収 → イベントを流す → 受注側に未請求の請求対象明細ができる。`spec/requests/billing_spec.rb`：`closeBillingPeriod` と `discardDraftInvoice` の成功と失敗の写し。`invoiceNumber` を選んだ `supplier.invoice` と `supplier.invoices` が、下書きでもエラーにならず空を返す
+- 競合（`closing_lock_spec.rb`）：同じ取引先の締めを 2 つの接続で同時に走らせ、下書きが 1 件だけでき、もう一方が `CONFLICT` になる。請求条件の行ロックで待つことを確かめる
+
+**実装する文書の節**：`data-model.md`「請求（`billing`）」、`context-map.md`「検収と請求の流れ」3〜5 と請求書の組み立ての規則
+
+**文書に残すこと**：締めの入力と結果の表と、請求書の期間の決め方と、請求番号を確定で振ることを `data-model.md`「請求（`billing`）」に書く。
 
 ## M25 請求書の発行と受領請求書
 
 **目的**：確定した請求書と明細は変わらない。写しは発注側の名義で 1 回だけ作られる。
 
-**作るもの**：`Billing::Closing.issue`、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`
+**作るもの**：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`
 
-**完了条件**：確定後の変更が拒否されるテスト。同じ請求書発行を 2 回流しても写しが 1 件のテスト。`total = subtotal + tax_total` の CHECK 制約のテスト。重要シナリオ S5（`spec/scenarios/billing_amounts_spec.rb`）が通る。
+**完了条件**：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でないテスト。確定後の変更が拒否されるテスト。同じ請求書発行を 2 回流しても写しが 1 件のテスト。`total = subtotal + tax_total` の CHECK 制約のテスト。重要シナリオ S5（`spec/scenarios/billing_amounts_spec.rb`）が通る。
 
 **実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6、`data-model.md`「購買（`purchasing`）」の受領請求書
 
@@ -971,7 +1090,7 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
 
 **作るもの**
 
-- パッケージ `packs/notifications`（`Notifications::`）。依存先は `platform`・`partnerships`（宛先のメールアドレスを自社の `users` から引く）。`sales`・`purchasing` の依存先に `notifications` を足す（`context-map.md`「疎結合を守る規則」）。表は `email_deliveries` と `webhook_inbox_events`（`data-model.md`「通知（`notifications`）」）。
+- パッケージ `packs/notifications`（`Notifications::`）。依存先は `platform`・`partnerships`（宛先のメールアドレスを自社の `users` から引く）。`sales`・`purchasing` の依存先に `notifications` を足す。`context-map.md`「疎結合を守る規則」の依存の向きの表に `notifications` の行（`platform`・`partnerships`）を足し、`sales`・`purchasing` の行の依存先に `notifications` を足す。表は `email_deliveries` と `webhook_inbox_events`（`data-model.md`「通知（`notifications`）」）。
 - `ExternalEffectJob`（`packs/platform`）と、`Notifications::CriticalDeliveryJob`・`BestEffortMailJob`・`ProcessInboxJob`（`adr/007` 決定 4〜6）。
 - 公開 API `Notifications::Email.deliver_critical`・`deliver_best_effort` と、通知の種類の登録 `Notifications::Catalog`。種類は 2 つにする。
   - `received_invoice`（確実）：購買の「請求書発行」の受け手が、受領請求書を書くのと同じトランザクションで、自社の `admin` へ送る。
@@ -1013,7 +1132,7 @@ bin/rubocop
 
 **作るもの**
 
-- パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
+- パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。`context-map.md`「疎結合を守る規則」の依存の向きの表に、この行を足す。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
 - ファイルの受け取り：`POST /imports/files`（`ImportFilesController`、ルートパッケージ）が `multipart/form-data` の CSV を受け取り、`import_files` に書いて ID を返す。ファイルを置くだけで、業務の表には何も起きない。10 MB を超えるファイルは受け付けない。セッションで認証し、`Origin` ヘッダが許可した origin と一致しなければ拒む。`GraphqlController` の `application/json` の制限に代わる CSRF 対策である。
 - 取り込みの開始：mutation `startImport(fileId, kind)` が `imports` の行を書き、ジョブを登録する。業務の表に効果が及ぶのはここからなので、監査はこの mutation の宣言で行う。
 - ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }`、`tenant_transaction :per_chunk`。

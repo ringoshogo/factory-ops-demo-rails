@@ -6,11 +6,11 @@
 
 テストを書く人は、ファイルを足すとき、どの層の置き場に置くかを次の表で決める。置き場の正本は `config/test_layers.yml` で、表を変えるときは両方を同じ変更で直す。
 
-| 層 | 置き場 | 確かめること | 件数の目安 |
+| 層 | 置き場 | 確かめること | 割合の警告 |
 |---|---|---|---|
-| 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | 60% 以上 |
-| 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | 30% 以下 |
-| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト | 10% 以下 |
+| 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | — |
+| 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | — |
+| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト | 50% を超えたら |
 | ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/platform`・`spec/rubocop`・`spec/bin` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制）と、`bin/` の検査のスクリプト | 数えない |
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
@@ -22,7 +22,7 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json
 ```
 
-`bin/test-layers` は、example の層を JSON の `id`（`./packs/sales/spec/public/sales/catalog_spec.rb[1:2:1]` の形）のファイルの部分で決める。`file_path` は、共有の example（`it_behaves_like`）では共有の example を定義したファイルを指すので使わない。どの層の置き場にも当たらないファイルがあれば失敗する。割合が目安を外れたときは GitHub の警告の注釈（`::warning::`）を出すが、失敗にはしない。割合は機能の種類で揺れ、未分類さえ止めれば数え方は崩れないからである。目安を 3 マイルストーン続けて外れたら、単体の割合の下限を失敗の条件に変える（`implementation-plan.md` M16「判断」）。続けて外れた数は、単体の spec の無い業務の分岐を単体に書き足した後（OI-22）から数える（OI-24）。
+`bin/test-layers` は、example の層を JSON の `id`（`./packs/sales/spec/public/sales/catalog_spec.rb[1:2:1]` の形）のファイルの部分で決める。`file_path` は、共有の example（`it_behaves_like`）では共有の example を定義したファイルを指すので使わない。どの層の置き場にも当たらないファイルがあれば失敗する。割合は報告するだけで、テストを割合に合わせて書き足したり移したりしない。割合は機能の種類で揺れ、未分類さえ止めれば数え方は崩れないからである。警告の注釈（`::warning::`）は、見直すべき大きな偏り（シナリオが 50% を超える）にだけ出し、失敗にはしない。単体を厚くすることは、割合ではなく、業務の分岐を足した PR がその分岐の単体の spec を足しているかを実装レビューで見て守る（`dev-cycle.md`「実装レビュー」の観点 4）。
 
 ## 層への配分
 
