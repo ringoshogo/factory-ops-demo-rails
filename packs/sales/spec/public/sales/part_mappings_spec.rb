@@ -65,15 +65,17 @@ RSpec.describe Sales::PartMappings do
     expect(events.map(&:class)).to eq([ Contracts::SalesOrderConfirmed ])
   end
 
-  it "既にある対応の品目を差し替えても、確定した受注の明細は照合し直さない" do
+  it "既にある対応の品目を差し替えても、確定した受注の明細は照合し直さず、「受注確定」を出し直さない" do
     nut = FactoryBot.create(:item, name: "六角ナット M8", unit_price: 30)
     order = order_with_lines("MY-BOLT")
+    events = capture_published
     register
 
     result = register(item_id: nut.id)
 
     expect(result.value.item_id).to eq(nut.id)
     expect(item_names_of(order)).to eq([ "六角ボルト M8" ])
+    expect(events.map(&:class)).to eq([ Contracts::SalesOrderConfirmed ])
   end
 
   it "別の取引先の同じ品番の受注は、照合し直さない" do

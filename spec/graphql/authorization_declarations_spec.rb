@@ -7,8 +7,7 @@ RSpec.describe "GraphQL の認可の宣言" do
   exempt_types = %w[Query Mutation Viewer BuyerView SupplierView Tenant UserError PageInfo]
 
   let(:schema) { FactoryOpsSchema }
-  # extra_types は schema.types に現れないので足す
-  let(:types) { (schema.types.values + schema.extra_types).uniq.reject(&:introspection?) }
+  let(:types) { schema.types.values.reject(&:introspection?) }
   let(:object_types) { types.select { |type| type.kind.object? } }
   let(:generated_bases) { [ Types::BasePayload, Types::BaseConnection, Types::BaseEdge ] }
   let(:fields) { object_types.flat_map { |type| type.fields.values } }

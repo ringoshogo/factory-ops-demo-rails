@@ -58,9 +58,10 @@ RSpec.describe Purchasing::Ordering do
         "自分自身" => buyer.id
       }
 
-      targets.each do |label, supplier_tenant_id|
-        expect(place(supplier_tenant_id:).failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_permitted, [ :supplier_tenant_id ] ] ]), label
-      end
+      # message を含めて比べる。どれか 1 つでも応答が違えば、その違いで相手の有無や関係を推測できる
+      failures = targets.transform_values { |supplier_tenant_id| place(supplier_tenant_id:).failures.map(&:deconstruct) }
+
+      expect(failures).to eq(targets.transform_values { [ [ :not_permitted, [ :supplier_tenant_id ], nil ] ] })
       expect(purchase_order_count).to eq(0)
       expect(published).to be_empty
     end

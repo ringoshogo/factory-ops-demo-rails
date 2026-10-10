@@ -14,15 +14,15 @@ module SchemaCompat
   TYPE_CHANGES = %w[FieldTypeChanged FieldArgumentTypeChanged InputFieldTypeChanged].freeze
   # 比較器は、既定値の無い非 null の引数・入力項目の追加だけを破壊に分類する
   ADDITIONS = %w[FieldArgumentAdded InputFieldAdded].freeze
+  # 比較器は既定値の変更をすべて危険に分類するが、非 null の引数・入力項目から既定値を外す変更は必須の追加と同じく既存の問い合わせを壊す
+  DEFAULT_CHANGES = %w[FieldArgumentDefaultChanged InputFieldDefaultChanged].freeze
 
-  # 例外の一覧の 1 行。change は変更のクラス名、path は座標
   Allowance = Data.define(:change, :path, :reason)
   Verdict = Data.define(:change, :path, :message, :passed, :reason)
 
   Result = Data.define(:verdicts, :unmatched_exceptions) do
     def passed? = verdicts.all?(&:passed)
 
-    # 標準出力と GitHub のジョブの要約に書く Markdown
     def report
       lines = [ "## GraphQL スキーマの互換", "" ]
       if verdicts.empty?
@@ -89,14 +89,18 @@ module SchemaCompat
       judge_removal(name, change, base)
     elsif TYPE_CHANGES.include?(name)
       change.non_breaking? ? [ true, "クライアントを壊さない型の変更" ] : [ false, "型の変更は非推奨を経ても通さない" ]
-    elsif ADDITIONS.include?(name) && change.breaking?
-      [ false, "必須の引数・入力項目の追加は非推奨を経ても通さない" ]
+    elsif (ADDITIONS.include?(name) && change.breaking?) || (DEFAULT_CHANGES.include?(name) && required?(default_target(change)))
+      [ false, "必須の引数・入力項目の追加と、既定値を外して必須にする変更は、非推奨を経ても通さない" ]
     elsif change.breaking?
       [ false, "破壊的変更" ]
     else
       [ true, change.dangerous? ? "危険な変更" : "非破壊の変更" ]
     end
   end
+
+  def default_target(change) = change.respond_to?(:new_argument) ? change.new_argument : change.new_field
+
+  def required?(argument) = argument.type.non_null? && !argument.default_value?
 
   def judge_removal(name, change, base)
     if name == "TypeRemoved"
@@ -115,7 +119,8 @@ module SchemaCompat
   end
 
   # 基準のスキーマで、型 type_name を返すか受け取る、非推奨でないフィールド・引数・入力項目の座標。
-  # union とインターフェースを返すフィールドは、その型を返しうるので参照に数える
+  # union とインターフェースを返すフィールドは、その型を返しうるので参照に数える。
+  # 非推奨のフィールドの引数は、フィールドと一緒に消せるので数えない
   def live_references(base, type_name)
     returns = ->(type) do
       unwrapped = type.unwrap
@@ -127,7 +132,9 @@ module SchemaCompat
       case owner.kind.name
       when "OBJECT", "INTERFACE"
         owner.fields.values.flat_map do |field|
-          own = returns.(field.type) && !field.deprecation_reason ? [ field.path ] : []
+          next [] if field.deprecation_reason
+
+          own = returns.(field.type) ? [ field.path ] : []
           own + field.arguments.values.select { |arg| arg.type.unwrap.graphql_name == type_name && !arg.deprecation_reason }.map(&:path)
         end
       when "INPUT_OBJECT"

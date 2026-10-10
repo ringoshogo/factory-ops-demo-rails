@@ -32,6 +32,14 @@ RSpec.describe SchemaCompat do
       expect(verdicts("input_enum_value_removed")).to eq([ [ "EnumValueRemoved", "OrderStatus.CLOSED", false ] ])
     end
 
+    it "非推奨でない引数の削除を落とす" do
+      expect(verdicts("argument_removed")).to eq([ [ "FieldArgumentRemoved", "Query.orders.status", false ] ])
+    end
+
+    it "非推奨でない入力項目の削除を落とす" do
+      expect(verdicts("input_field_removed")).to eq([ [ "InputFieldRemoved", "PlaceOrderInput.note", false ] ])
+    end
+
     it "非推奨のフィールドの削除を通す（比較器は破壊に分類する）" do
       expect(verdicts("deprecated_field_removed")).to eq([ [ "FieldRemoved", "Order.memo", true ] ])
       expect(check("deprecated_field_removed")).to be_passed
@@ -59,6 +67,13 @@ RSpec.describe SchemaCompat do
       )
     end
 
+    it "型の削除は、非推奨のフィールドの引数だけが受け取る型なら、フィールドと一緒に消して通す" do
+      expect(verdicts("type_removed_with_deprecated_field_argument")).to contain_exactly(
+        [ "FieldRemoved", "Query.legacySearch", true ],
+        [ "TypeRemoved", "LegacyFilter", true ]
+      )
+    end
+
     it "型の削除は、基準でその型を返す非推奨でないフィールドが 1 つでもあれば落とす" do
       result = check("type_removed_with_live_reference")
 
@@ -70,6 +85,33 @@ RSpec.describe SchemaCompat do
       reason = result.verdicts.find { _1.change == "TypeRemoved" }.reason
       expect(reason).to include("Order.shipment")
       expect(reason).not_to include("Order.legacyShipment")
+    end
+
+    it "型の削除は、基準でその型を受け取る非推奨でない引数があれば落とす" do
+      result = check("type_removed_with_argument_reference")
+
+      expect(result.verdicts.map { [ _1.change, _1.path, _1.passed ] }).to contain_exactly(
+        [ "FieldArgumentRemoved", "Query.orders.filter", false ],
+        [ "TypeRemoved", "OrderFilter", false ]
+      )
+      expect(result.verdicts.find { _1.change == "TypeRemoved" }.reason).to include("Query.orders.filter")
+    end
+
+    it "型の削除は、基準でその型を受け取る非推奨でない入力項目があれば落とす" do
+      result = check("type_removed_with_input_field_reference")
+
+      expect(result.verdicts.map { [ _1.change, _1.path, _1.passed ] }).to contain_exactly(
+        [ "InputFieldRemoved", "PlaceOrderInput.price", false ],
+        [ "TypeRemoved", "Money", false ]
+      )
+      expect(result.verdicts.find { _1.change == "TypeRemoved" }.reason).to include("PlaceOrderInput.price")
+    end
+
+    it "型の削除は、その型が実装するインターフェースを返す非推奨でないフィールドがあれば落とす（比較器は型の削除だけを出す）" do
+      result = check("interface_member_type_removed")
+
+      expect(result.verdicts.map { [ _1.change, _1.path, _1.passed ] }).to eq([ [ "TypeRemoved", "Invoice", false ] ])
+      expect(result.verdicts.first.reason).to include("Query.documents")
     end
 
     it "型の削除は、その型を含む union を返す非推奨でないフィールドがあれば落とす" do
@@ -95,15 +137,44 @@ RSpec.describe SchemaCompat do
     it "出力の型を null 可から非 null にする変更を通す" do
       expect(verdicts("output_made_non_null")).to eq([ [ "FieldTypeChanged", "Order.note", true ] ])
     end
+
+    it "引数の型の変更を落とす" do
+      expect(verdicts("argument_type_changed")).to eq([ [ "FieldArgumentTypeChanged", "Query.search.keyword", false ] ])
+    end
+
+    it "入力項目の型の変更を落とす" do
+      expect(verdicts("input_field_type_changed")).to eq([ [ "InputFieldTypeChanged", "PlaceOrderInput.code", false ] ])
+    end
+
+    it "引数と入力項目の型を非 null から null 可にする変更を通す" do
+      expect(verdicts("inputs_made_nullable")).to contain_exactly(
+        [ "FieldArgumentTypeChanged", "Query.order.id", true ],
+        [ "InputFieldTypeChanged", "PlaceOrderInput.code", true ]
+      )
+    end
   end
 
   describe "必須の引数・入力項目の追加を落とす" do
     it "必須の引数の追加を落とす" do
-      expect(verdicts("required_argument_added")).to eq([ [ "FieldArgumentAdded", "Query.orders.limit", false ] ])
+      expect(verdicts("required_argument_added")).to eq([ [ "FieldArgumentAdded", "Query.orders.region", false ] ])
     end
 
     it "必須の入力項目の追加を落とす" do
       expect(verdicts("required_input_field_added")).to eq([ [ "InputFieldAdded", "PlaceOrderInput.dueOn", false ] ])
+    end
+
+    it "非 null の引数・入力項目から既定値を外して必須にする変更を落とす（比較器は危険に分類する）" do
+      expect(verdicts("required_defaults_removed")).to contain_exactly(
+        [ "FieldArgumentDefaultChanged", "Query.orders.first", false ],
+        [ "InputFieldDefaultChanged", "PlaceOrderInput.quantity", false ]
+      )
+    end
+
+    it "既定値を別の値に変えるだけの変更は、危険な変更として通す" do
+      expect(verdicts("required_defaults_changed")).to contain_exactly(
+        [ "FieldArgumentDefaultChanged", "Query.orders.first", true ],
+        [ "InputFieldDefaultChanged", "PlaceOrderInput.quantity", true ]
+      )
     end
   end
 
@@ -209,6 +280,22 @@ RSpec.describe SchemaCompat do
 
     def run_script(env = {}) = Open3.capture3({ "BASE_REF" => "main", "GITHUB_STEP_SUMMARY" => nil }.merge(env), script, chdir: @repo)
 
+    def commit_all(message)
+      git("add", "-A")
+      git("commit", "-q", "-m", message)
+    end
+
+    # main に出力の enum の値 CANCELLED を足し、feature ではそれを知らずに Order.note を消す
+    def diverge
+      commit_base("schema.graphql" => base)
+      git("checkout", "-q", "-b", "feature")
+      write("schema.graphql", head("field_removed"))
+      commit_all("feature")
+      git("checkout", "-q", "main")
+      write("schema.graphql", head("enum_value_added"))
+      commit_all("main")
+    end
+
     it "基準に schema.graphql が無いときは失敗する" do
       commit_base({})
       write("schema.graphql", base)
@@ -216,7 +303,33 @@ RSpec.describe SchemaCompat do
       out, err, status = run_script
 
       expect(status.success?).to be(false)
-      expect(out + err).to include("main に schema.graphql が無い")
+      expect(out + err).to include("main との分岐点").and include("に schema.graphql が無い")
+    end
+
+    it "基準の先端ではなく分岐点と比べ、ブランチを切った後に基準へ入った追加を削除に数えない" do
+      diverge
+      git("checkout", "-q", "feature")
+
+      out, _err, status = run_script
+
+      expect(status.success?).to be(false)
+      expect(out).to include("Order.note")
+      expect(out).not_to include("OrderStage.CANCELLED")
+    end
+
+    it "PR のマージ commit（CI の checkout）でも、基準の先端に入った変更を数えず、PR の変更だけを比べる" do
+      diverge
+      git("checkout", "-q", "--detach", "main")
+      git("merge", "-q", "--no-ff", "-m", "merge", "feature")
+      merged = File.read(File.join(@repo, "schema.graphql"))
+      expect(merged).to include("CANCELLED")
+      expect(merged).not_to include("  note: String\n  memo")
+
+      out, _err, status = run_script
+
+      expect(status.success?).to be(false)
+      expect(out).to include("Order.note")
+      expect(out).not_to include("OrderStage.CANCELLED")
     end
 
     it "落とす変更があれば失敗し、結果を標準出力と GITHUB_STEP_SUMMARY に書く" do

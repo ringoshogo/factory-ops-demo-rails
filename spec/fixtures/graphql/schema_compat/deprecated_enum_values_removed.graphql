@@ -1,8 +1,10 @@
 type Query {
   order(id: ID!, includeDrafts: Boolean @deprecated(reason: "常に下書きを含む")): Order
-  orders(status: OrderStatus): [Order!]!
+  orders(status: OrderStatus, filter: OrderFilter, first: Int! = 20): [Order!]!
   legacyOrder(id: ID!): LegacyOrder @deprecated(reason: "order を使う")
+  legacySearch(filter: LegacyFilter): [Order!]! @deprecated(reason: "orders を使う")
   search(keyword: String!): [SearchHit!]!
+  documents: [Document!]!
 }
 
 type Mutation {
@@ -35,6 +37,14 @@ type Notice {
 
 union SearchHit = Order | Notice
 
+interface Document {
+  id: ID!
+}
+
+type Invoice implements Document {
+  id: ID!
+}
+
 """
 引数で受け取る enum
 """
@@ -56,4 +66,18 @@ input PlaceOrderInput {
   code: String!
   note: String
   priority: Int @deprecated(reason: "使わない")
+  quantity: Int! = 1
+  price: Money
+}
+
+input Money {
+  amount: Int!
+}
+
+input OrderFilter {
+  code: String
+}
+
+input LegacyFilter {
+  code: String
 }
