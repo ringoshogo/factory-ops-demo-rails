@@ -1,6 +1,7 @@
 require "rails_helper"
 
-# カタログの GraphQL の入口（docs/implementation-plan.md M9 の完了条件、docs/architecture/graphql-schema.md「発注側の視点」「認可」）
+# カタログの GraphQL の入口。発注側は経路 1 で取引先の公開品目だけを読み、受注側の一覧には自社の品目だけが出る
+# （docs/architecture/graphql-schema.md「発注側の視点」「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
 RSpec.describe "カタログの GraphQL", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }

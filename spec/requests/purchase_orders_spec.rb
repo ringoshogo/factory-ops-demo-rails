@@ -2,7 +2,8 @@ require "rails_helper"
 require_relative "../support/events"
 require_relative "../support/shared_examples/idempotent_receiver"
 
-# 発注登録と受注の連結（docs/implementation-plan.md M10 の完了条件、docs/architecture/context-map.md「発注の連結と品番の照合」）
+# 発注登録と受注の連結。1 つの発注から受注が 1 件だけでき、照合の結果が発注の状況に写る。
+# 発注できない相手は、理由を区別せず同じ NOT_PERMITTED にする（docs/architecture/context-map.md「発注の連結と品番の照合」）
 RSpec.describe "発注登録と受注の連結", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant, name: "青嵐精機工業") }
   let!(:buyer) { FactoryBot.create(:tenant, name: "組立メーカー") }

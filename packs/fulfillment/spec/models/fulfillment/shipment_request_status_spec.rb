@@ -1,6 +1,8 @@
 require "rails_helper"
 
-# 導出表の行ごとに 1 つ（docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）。「出荷停止中」は M15 で足す
+# 出荷依頼の状況が導出表の優先順に従う。導出表の行ごとに 1 つ。
+# 出荷停止を記録する表（shipping_holds）が無く、「出荷停止中」は導出しないので確かめない
+# （docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）
 RSpec.describe Fulfillment::ShipmentRequestStatus do
   # モデルを作るだけでもテナントの設定が要る
   around { |example| Tenancy.with_tenant(FactoryBot.create(:tenant).id) { example.run } }

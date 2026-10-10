@@ -1,7 +1,8 @@
 require "rails_helper"
 require_relative "../support/events"
 
-# 品番の対応表と照合のやり直し（docs/implementation-plan.md M11 の完了条件、docs/architecture/context-map.md「発注の連結と品番の照合」5）
+# 品番の対応表と照合のやり直し。対応表に登録すると、その取引先の照合待ちの受注を照合し直し、全明細が照合できた受注だけを確定する
+# （docs/architecture/context-map.md「発注の連結と品番の照合」手順 5）
 RSpec.describe "品番の対応表と照合のやり直し", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant, name: "青嵐精機工業") }
   let!(:buyer) { FactoryBot.create(:tenant, name: "組立メーカー") }
