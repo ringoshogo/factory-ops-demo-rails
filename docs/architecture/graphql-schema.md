@@ -506,6 +506,7 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `rejectCancellationReview` | `cancellation_review.reject` | 対象の審査 | 成功の値の受注の発注側 |
 | `cancelSalesOrder` | `sales_order.cancel` | 対象の受注 | その受注の発注側 |
 | `postShipment` | `shipment.post` | 成功の値の出荷依頼から引いた出荷実績 | 出荷依頼の発注側 |
+| `inspectInboundShipment` | `inbound_shipment.inspect` | 対象の入荷 | 成功の値の発注の受注側 |
 
 列挙テスト（`spec/graphql/authorization_declarations_spec.rb`）は、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類と action が上の 2 つの表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation は比べない。監査の対象を変えたら、2 つの表を同じ変更で直す。
 
@@ -550,6 +551,7 @@ type AuditLog {
 | `SupplierPartnership.catalog` | `Sales::PublishedCatalog.items` |
 | `buyer.purchaseOrders`・`buyer.purchaseOrder` | `Purchasing::PurchaseOrders` |
 | `PurchaseOrder.lines`・`cancellationRequests`・`inboundShipments` | `Purchasing::PurchaseOrders`（発注 ID をまとめて渡す） |
+| `InboundShipment.lines`・`inspection` | `Purchasing::PurchaseOrders.inbound_shipment_lines_for`・`inspections_for`（入荷 ID をまとめて渡す。検収数量は入荷の明細の値に含める） |
 | `PurchaseOrder.supplierShipments` | `Fulfillment::PartnerShipments.for_purchase_orders` |
 | `buyer.receivedInvoices`・`buyer.receivedInvoice` | `Purchasing::ReceivedInvoices` |
 | `PurchaseOrder.supplier`・`ReceivedInvoice.supplier` | `Partnerships::Directory.tenants` |
@@ -590,7 +592,7 @@ type AuditLog {
 |---|---|---|
 | `placePurchaseOrder` | `Purchasing::Ordering.place`（`Partnerships::Access` で `place_orders` を確かめる） | 発注登録 |
 | `requestPurchaseOrderCancellation` | `Purchasing::Ordering.request_cancellation` | 取消依頼 |
-| `inspectInboundShipment` | `Purchasing::ReceiptInspection.record` | 検収完了 |
+| `inspectInboundShipment` | `Purchasing::ReceiptInspections.record`（入荷の全明細を 1 回で検収する。入力の規則は `context-map.md`「検収と請求の流れ」。同じ入荷への 2 回目は `CONFLICT`） | 検収完了 |
 
 **受注側**
 
@@ -652,6 +654,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `PurchaseOrderLineInput.partNumber` の長さ | 64 文字 | `["lines", 添字, "partNumber"]` |
 | `adjustStock` の `reason` の長さ | 200 文字 | `["reason"]` |
 | `requestPurchaseOrderCancellation` の `reason` の長さ | 200 文字。空白だけの理由も `INVALID_INPUT` | `["reason"]` |
+| `inspectInboundShipment` の `lines` の件数 | 100（発注の明細の上限と同じなので、入荷の全明細は必ず収まる） | `["lines"]` |
 
 ## 状況の enum
 
