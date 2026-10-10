@@ -387,3 +387,83 @@ bundle exec rspec spec/platform/logging_spec.rb spec/jobs spec/contracts spec/re
 ### 残件の処理
 
 引当先が M18 の残件は無かった。決めたことは OI-28〜OI-34 に `judgment` として登録した。
+
+## M19 監査ログ
+
+PR #28。どちらの系統も Go で、指摘は Low だけだった。C4 のほかは同じブランチの commit で直した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Low | Codex | X1：`data-model.md` の「所有ロールでも消せず、表を空にもできない」は、トリガーが有効な通常の DML に限る | トリガーが止めるのは所有ロールを含む通常の DML で、トリガーを外す・表を落とす DDL はマイグレーションのレビューで止める、と書き直した | この commit |
+| Low | Codex | X2：`purge_expired_audit_logs()` が `search_path` に依存し、同じ名前の一時表を消しうる | 新しいマイグレーションで、表を `public.audit_logs` と修飾し、`SET search_path = pg_catalog, pg_temp` を付けて作り直した。同じ名前の一時表があっても監査ログの表を消す example を足し、修飾と固定を外した関数で落ちることを確かめた。`data-model.md` に書いた | `6bb6396`・この commit |
+| Low | Codex | X3：相関 ID が無いときの失敗（OI-42）を直接確かめていない | 相関 ID の文脈を消して `placePurchaseOrder` をスキーマに流し、`correlation_id` の NOT NULL の違反で、業務の行・監査の行・イベントのジョブが残らないことを確かめる example を足した。テスト DB で NOT NULL を外すと落ちることを確かめた。OI-42 の「空」を「NULL」に直した | `6bb6396`・この commit |
+| Low | Claude | C1：X1 と同じ | X1 と同じ | この commit |
+| Low | Claude | C2：`delete_owned_rows` がテナントを消さなくなり、消す表を書き漏らすと行が黙って残る | 消した後に、`owner_tenant_id` を持つ表のうち残す表の外に、そのテナントの行が残れば失敗する。補助の spec に example を足し、`stock_allocation_spec.rb` から `stocks` を外すと 2 件とも落ちることを確かめた。`testing.md` に書いた | `6bb6396`・この commit |
+| Low | Claude | C3：受信の行の一意キーに受け手が入らず、同じテナントに受け手が 2 つあると 1 行になる | 受信の行はイベントと受け手のテナントごとに 1 行、と `graphql-schema.md`「監査ログ」に書いた。いまの配送表では、同じテナントに受け手が 2 つあるイベントは無い | この commit |
+| Low | Claude | C4：アプリのロールは過去の `occurred_at` で INSERT でき、その行はすぐ消せる | 直さず、OI-45 に `judgment` として登録した | この commit |
+
+### 実装の記録
+
+テストを先に書き、実装の前に流した。680 examples のうち 54 が落ちた。落ちなかった example は、既存の行列テスト・列挙テストと、足した到達可能性の検査（`Viewer からたどれる型は shared だけ`）である。到達可能性の検査は、`Viewer` に型を返すフィールドがまだ無いので、書いた時点で通った。下の壊し方で落ちることを確かめた。
+
+| 対象 | RED の落ち方 |
+|---|---|
+| `spec/db/audit_logs_spec.rb` | 9 件すべて。表と関数が無い |
+| `spec/requests/audit_spec.rb` | 11 件すべて。`AuditLog` が無い（NameError）、`viewer.auditLogs` が無い |
+| `spec/graphql/authorization_declarations_spec.rb` | 監査の宣言の 5 件。`audit_declared?` などの宣言のメソッドが無く、宣言の無い mutation が例外にならない |
+| `spec/matrix/graphql_matrix_spec.rb` | 6 件。`Viewer.auditLogs` が無い |
+| `spec/matrix/table_matrix_spec.rb` | 22 件。`audit_logs` が無い |
+| `spec/concurrency/post_shipment_audit_spec.rb` | 1 件。ただし落ちた理由は、テストが応答から要求 ID を取る書き方の誤り（`response.request_id`）だった。直した後の、実装の前の落ち方は記録していない。下の 1 つ目の壊し方で落ちることを確かめた |
+
+実装を壊して、落ちることを確かめた。壊したファイルは複製から戻し、DB は戻した後にトリガーの名前と権限を `pg_trigger`・`has_table_privilege` で確かめた。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| 基底 mutation が、失敗した操作にも監査の行を書く | `NOT_PERMITTED では行ができない`、`2. 先が成功し後がユーザーエラーなら、…`、`後の計上は先の計上のコミットを待って CONFLICT になり、監査の行は先の要求の 1 行だけになる` |
+| 欠けた宣言に `audit` を数えない | `監査の宣言の無い mutation は、開発とテストで例外になる` |
+| `adjustStock` を `audit` にする | `宣言の種類（audit か audit_exempt）が、表の行と一致する`、`audit の mutation の action が、表の行と一致する` |
+| `graphql-schema.md` の 2 つの表から `postShipment` を消す | `スキーマにある mutation は、すべて監査の宣言を持ち、表に行がある` と、上の 2 件 |
+| `postShipment` の対象を、出荷実績ではなく成功の値の出荷依頼にする | `audit の mutation は、宣言した対象と相手で 1 行ずつ書く` |
+| 同じテナントの中のイベントの受信も書く | `6. 受注側に「発注登録」、発注側に「受注確定」の受信の行ができ、…` |
+| 受信の行を `ON CONFLICT DO NOTHING` で書かない | 同じ 1 件 |
+| `Platform::AuditLogPolicy#index?` を常に真にする | `member には FORBIDDEN を返す` |
+| `Platform::AuditLogPolicy` の scope の所有テナントの条件を外す | `scope は RLS に任せず、所有テナントの条件を持つ` |
+| 時刻の絞り込みを `occurredTo` を含む範囲にする | `時刻は occurred_from 以上・occurred_to 未満で絞る` |
+| `AuditLog` の型を `supplier` にする | `Viewer からたどれる型は shared だけ`、`shared の型のフィールドは、スカラー・enum・shared の型だけを返す` |
+| 入口の行列の入口から、`Viewer` の下のリゾルバを外す | `入口のフィールドと mutation すべてに期待値があり、無いフィールドの期待値は無い` |
+| テスト DB で `TRUNCATE` を拒むトリガーを外す | `TRUNCATE はトリガーで拒まれる` |
+| テスト DB で行のトリガーを外す | `UPDATE はトリガーで拒まれる`、`保存期間の中の行の DELETE はトリガーで拒まれる` |
+| テスト DB でアプリのロールに `audit_logs` の UPDATE・DELETE を付与する | アプリのロールの 3 件と、表の行列の `audit_logs` の UPDATE・DELETE と名義の書き換えの 10 件 |
+| 競合テストの後始末で、テナントを消す | `後始末はテナントを残し、…`、`後の計上は先の計上のコミットを待って …`（監査の行の外部キーで `DELETE FROM tenants` が落ちる） |
+| factory の `tenant` の `code` を `sequence` に戻し、テナントが残った DB に `--tag concurrency` を流す | 18 examples のうち 15 件（`index_tenants_on_code` の一意の違反） |
+| factory の `user` の `email` を `sequence` に戻し、`--tag concurrency` を 2 回流す | 1 回目は 0 failures、2 回目に `後の計上は先の計上のコミットを待って …` |
+
+`--tag concurrency` は、監査の行とテナントが残った同じテスト DB に、続けて 2 回流して、2 回とも 18 examples, 0 failures だった。
+
+計画の完了条件の 1 つ目（`spec/db/audit_logs_spec.rb spec/requests/audit_spec.rb spec/graphql spec/matrix`）は 680 examples, 0 failures だった。`audit:purge` は spec から流さず（OI-43）、開発とテストの DB で手で流して「0 行を消した」を見た。マイグレーションは開発の DB で巻き戻し、関数が消えることと、流し直して `structure.sql` が変わらないことを確かめた。
+
+後始末でテナントを消す壊し方は、後始末のトランザクションごと戻るので、その example のイベントのジョブ 2 件がテスト DB に残った。残ったジョブは、ジョブを全件で数える request spec を、戻した実装でも落とした。次に流した `postShipment` の対象の壊し方で 9 件が落ち、そこで気付いた。ジョブを所有ロールで消してから、その壊し方を流し直した（上の表の 1 件）。
+
+### 層ごとの表
+
+実装レビューの指摘を直した後の全件（1065 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した（OI-24）。`--tag concurrency` は、同じテスト DB に続けて 2 回流して、2 回とも 19 examples, 0 failures だった。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 101 | 37.4% | 1.28s | 60% 以上 |
+| 結合 | 129 | 47.8% | 5.22s | 30% 以下 |
+| シナリオ | 40 | 14.8% | 6.78s | 10% 以下 |
+| ガード | 795 | — | 227.20s | 数えない |
+
+### 残件の処理
+
+| ID | 処理 |
+|---|---|
+| OI-18 | `actor_user_id` を外部キーを張らない参照で作り、`data-model.md` の記述をそろえて閉じた |
+
+決めたことは OI-37〜OI-44 に `judgment` として登録した。実装レビューの C4 は OI-45 に登録した。

@@ -4,6 +4,7 @@ module Mutations
   class PlacePurchaseOrder < BaseMutation
     perspective :buyer
     authorize_with Purchasing::PurchaseOrderPolicy, :place?
+    audit "purchase_order.place", target: ->(result:, **) { result }, counterparty: ->(input:, **) { input[:supplier_tenant_id] }
 
     argument :supplier_tenant_id, ID
     argument :desired_delivery_on, GraphQL::Types::ISO8601Date, required: false

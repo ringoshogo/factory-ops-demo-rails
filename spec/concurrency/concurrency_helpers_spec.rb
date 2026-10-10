@@ -50,6 +50,23 @@ RSpec.describe ConcurrencyHelpers do
     expect { commit(release, holder) }.to raise_error("コミットの後の失敗")
   end
 
+  # 監査の行は所有ロールでも消せないので、それが指すテナントとユーザーも残す（docs/guides/testing.md「競合テスト」）
+  it "後始末はテナントを残し、テナント・ユーザー・監査の行の表を渡すと失敗する" do
+    delete_owned_rows([ tenant.id ], [])
+    expect(ApplicationRecord.lease_connection.select_value("SELECT count(*) FROM tenants WHERE id = $1", "Spec", [ tenant.id ])).to eq(1)
+
+    %w[tenants users audit_logs].each do |table|
+      expect { delete_owned_rows([ tenant.id ], [ table ]) }.to raise_error(ArgumentError, /#{table}/)
+    end
+  end
+
+  it "後始末は、渡されなかった表にそのテナントの行が残れば失敗する" do
+    Tenancy.with_tenant(tenant.id) { FactoryBot.create(:stock) }
+
+    expect { delete_owned_rows([ tenant.id ], []) }.to raise_error(/stocks に行が残った/)
+    delete_owned_rows([ tenant.id ], %w[stocks])
+  end
+
   it "後始末は、コミットさせていないトランザクションを閉じ、スレッドを終わらせる" do
     _, _release, holder = hold_open(tenant.id) { nil }
     stopped = release_queue

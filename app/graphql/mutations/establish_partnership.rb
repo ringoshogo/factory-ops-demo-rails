@@ -3,6 +3,7 @@ module Mutations
   class EstablishPartnership < BaseMutation
     perspective :supplier
     authorize_with Partnerships::PartnershipPolicy, :establish?
+    audit "partnership.establish", target: ->(result:, **) { result }, counterparty: ->(result:, **) { result.buyer.id }
 
     argument :partner_code, String
     result_field :partnership, Types::PartnershipType

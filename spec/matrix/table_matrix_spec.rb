@@ -28,7 +28,13 @@ RSpec.describe "表の行列" do
     expect(missing).to be_empty
   end
 
+  it "書き換えの権限を外した表は、テナントの表である" do
+    expect(MatrixExpectations::APPEND_ONLY - MatrixWorld.tenant_tables).to be_empty
+  end
+
   MatrixExpectations::TABLES.each do |table, reads|
+    append_only = MatrixExpectations::APPEND_ONLY.include?(table)
+
     describe table do
       let(:quoted_table) { connection.quote_table_name(table) }
 
@@ -60,9 +66,16 @@ RSpec.describe "表の行列" do
         it "#{persona} の UPDATE・DELETE は相手の行に届かない" do
           others.each do |other|
             id = world.row(table, other).id
-            world.as(persona) do
-              expect(connection.exec_update("UPDATE #{quoted_table} SET id = id WHERE id = $1", "Matrix", [ id ])).to eq(0)
-              expect(connection.exec_delete("DELETE FROM #{quoted_table} WHERE id = $1", "Matrix", [ id ])).to eq(0)
+            if append_only
+              expect { world.as(persona) { connection.exec_update("UPDATE #{quoted_table} SET id = id WHERE id = $1", "Matrix", [ id ]) } }
+                .to raise_error(ActiveRecord::StatementInvalid, /permission denied/)
+              expect { world.as(persona) { connection.exec_delete("DELETE FROM #{quoted_table} WHERE id = $1", "Matrix", [ id ]) } }
+                .to raise_error(ActiveRecord::StatementInvalid, /permission denied/)
+            else
+              world.as(persona) do
+                expect(connection.exec_update("UPDATE #{quoted_table} SET id = id WHERE id = $1", "Matrix", [ id ])).to eq(0)
+                expect(connection.exec_delete("DELETE FROM #{quoted_table} WHERE id = $1", "Matrix", [ id ])).to eq(0)
+              end
             end
             expect(world.as(other) { owner_of_row(id) }).to eq(world.tenants[other])
           end
@@ -76,7 +89,7 @@ RSpec.describe "表の行列" do
                 connection.exec_update("UPDATE #{quoted_table} SET owner_tenant_id = $1 WHERE id = $2", "Matrix",
                   [ world.tenants[other], id ])
               end
-            }.to raise_error(ActiveRecord::StatementInvalid, /row-level security/)
+            }.to raise_error(ActiveRecord::StatementInvalid, append_only ? /permission denied/ : /row-level security/)
           end
         end
       end

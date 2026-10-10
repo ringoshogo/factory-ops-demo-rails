@@ -37,15 +37,17 @@ RSpec.describe "GraphQL の認可の宣言" do
     expect(exempt.map(&:graphql_name)).to match_array(exempt_types)
   end
 
-  it "リゾルバと mutation はすべて基底クラスから作られ、buyer か supplier と規則を宣言している" do
-    resolvers = fields.filter_map(&:resolver).uniq
-    violations = resolvers.reject do |resolver|
+  # Viewer の下のリゾルバは、視点を問わない自社のデータを返すので shared を宣言する
+  it "リゾルバと mutation はすべて基底クラスから作られ、視点（Viewer の下は shared、他は buyer か supplier）と規則を宣言している" do
+    violations = fields.select(&:resolver).reject do |field|
+      resolver = field.resolver
+      perspectives = field.owner.graphql_name == "Viewer" ? %i[shared] : %i[buyer supplier]
       (resolver < Resolvers::BaseResolver || resolver < Mutations::BaseMutation) &&
-        %i[buyer supplier].include?(resolver.perspective) &&
+        perspectives.include?(resolver.perspective) &&
         resolver.authorization_policy && resolver.authorization_rule
     end
 
-    expect(describe_violations(violations)).to be_empty
+    expect(violations.map(&:path)).to be_empty
   end
 
   it "視点の入口のフィールドは、すべてその視点を宣言したリゾルバで書く" do
@@ -62,5 +64,58 @@ RSpec.describe "GraphQL の認可の宣言" do
     violations = schema.mutation&.fields&.values.to_a.reject { |field| field.resolver&.<(Mutations::BaseMutation) }
 
     expect(violations.map(&:path)).to be_empty
+  end
+
+  # 監査の宣言（docs/architecture/graphql-schema.md「監査ログ」）。表は後で作る mutation も載せるので、
+  # スキーマにある mutation だけを表と比べる。スキーマにあって表に無い mutation は落とす
+  describe "監査の宣言" do
+    let(:audit_section) do
+      Rails.root.join("docs/architecture/graphql-schema.md").read[/^### 監査ログ\n.*?(?=^##)/m] or raise "「監査ログ」の節が無い"
+    end
+    # 表の行を、先頭の列の値 => 残りの列の配列にする。header は表の見出しの行の先頭の列
+    def table_rows(section, header)
+      table = section[/^\| #{header} \|.*?(?=\n\n|\z)/m] or raise "見出しが「#{header}」の表が無い"
+      table.lines.drop(2).to_h do |line|
+        cells = line.strip.delete_prefix("|").delete_suffix("|").split("|").map { _1.strip.delete("`") }
+        [ cells.first, cells.drop(1) ]
+      end
+    end
+    let(:declared_kinds) do
+      table_rows(audit_section, "宣言").flat_map { |kind, (names)| names.split("・").map { [ _1, kind ] } }.to_h
+    end
+    let(:declared_actions) { table_rows(audit_section, "mutation").transform_values(&:first) }
+    let(:mutations) { schema.mutation.fields.values.to_h { [ _1.name, _1.resolver ] } }
+
+    it "スキーマにある mutation は、すべて監査の宣言を持ち、表に行がある" do
+      expect(mutations.reject { |_name, mutation| mutation.audit_declared? }.keys).to be_empty
+      expect(mutations.keys - declared_kinds.keys).to be_empty
+    end
+
+    it "宣言の種類（audit か audit_exempt）が、表の行と一致する" do
+      kinds = mutations.transform_values { _1.audit_action ? "audit" : "audit_exempt" }
+
+      expect(kinds).to eq(declared_kinds.slice(*mutations.keys))
+    end
+
+    it "audit の mutation の action が、表の行と一致する" do
+      actions = mutations.filter_map { |name, mutation| [ name, mutation.audit_action ] if mutation.audit_action }.to_h
+
+      expect(actions).to eq(declared_actions.slice(*mutations.keys))
+    end
+
+    it "audit_exempt の mutation は、理由を書いている" do
+      expect(mutations.values.reject(&:audit_action).map(&:audit_exempt_reason)).to all(be_present)
+    end
+
+    it "監査の宣言の無い mutation は、開発とテストで例外になる" do
+      mutation = Class.new(Mutations::BaseMutation) do
+        graphql_name "Undeclared"
+        perspective :supplier
+        authorize_with Sales::ItemPolicy, :save?
+      end
+
+      expect { mutation.check_declarations! }
+        .to raise_error(AuthorizationDeclarations::MissingDeclaration, "Undeclared lacks audit declaration")
+    end
   end
 end

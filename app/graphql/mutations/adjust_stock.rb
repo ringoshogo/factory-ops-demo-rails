@@ -3,6 +3,7 @@ module Mutations
   class AdjustStock < BaseMutation
     perspective :supplier
     authorize_with Inventory::StockPolicy, :adjust?
+    audit_exempt reason: "効果が自社の中で閉じる"
 
     argument :item_id, ID
     argument :type, Types::StockAdjustmentType

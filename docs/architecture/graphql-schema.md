@@ -43,7 +43,7 @@ type Query {
 |---|---|---|
 | `buyer` | 発注側の視点の型。購買が所有するデータと、相手テナントを読む 3 経路の型 | `PurchaseOrder`・`InboundShipment`・`ReceivedInvoice`・`SupplierShipment` |
 | `supplier` | 受注側の視点の型。受注・在庫・出荷・請求・取引関係が所有するデータの型 | `SalesOrder`・`Item`・`PartMapping`・`Stock`・`Shipment`・`Invoice`・`Partnership` |
-| `shared` | 視点を問わない葉の型。スカラーと enum と他の `shared` の型だけをフィールドに持つ | `Tenant`（ID と名前だけ）・`UserError`・`PageInfo` |
+| `shared` | 視点を問わない葉の型。スカラーと enum と他の `shared` の型だけをフィールドに持つ | `Tenant`（ID と名前だけ）・`UserError`・`PageInfo`・`AuditLog` |
 | `root` | ルートの型。視点の入口と `viewer`、または mutation を束ねる | `Query`・`Mutation` |
 
 mutation の戻り値・コネクション・エッジの型は視点を宣言しない。mutation の戻り値の型は mutation の視点を、コネクションとエッジの型は中身の型の視点を、基底クラス（`Types::BasePayload`・`Types::BaseConnection`・`Types::BaseEdge`）が返す。
@@ -465,22 +465,50 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 ### 監査ログ
 
-mutation の実装者は、認可の宣言と並べて、監査の宣言を必ず書く。`audit "<操作>"` か `audit_exempt reason:` のどちらかで、宣言が無ければ認可の宣言と同じく拒否する。基底 mutation は、操作が成功したときだけ、同じトランザクションで監査ログに 1 行を書く（`data-model.md`「監査ログ（`platform`）」）。イベントの受信は、`Contracts::EventJob` が `event.received` として書く。
+監査ログには、相手テナントに効果が及ぶ書き込みを記録する（`decisions.md` 2 章「監査」）。相手テナントへのイベントを出す操作、相手から見えるデータ（カタログ・取引関係）を変える操作、相手の操作で自社のデータが変わったこと（イベントの受信）がこれに当たる。本デモで書き込みが起きる入口は mutation とイベントのジョブの 2 つだけなので、記録はその 2 つの基底クラスが行い、個々の操作で手書きしない。
 
-`audit` にするのは、相手テナントに効果が及ぶ mutation である。相手テナントへのイベントを出すもの、相手から見えるデータ（カタログ・取引関係）を変えるものがこれに当たる。
+mutation の実装者は、認可の宣言と並べて、監査の宣言を必ず書く。宣言は次の 2 つのどちらかで、宣言が無ければ認可の宣言と同じく、開発とテストでは例外、本番では拒否する。
+
+- `audit "<action>", target: ..., counterparty: ...`：相手テナントに効果が及ぶ mutation。`target:` と `counterparty:` はラムダで、`perform` が成功の値を返した後に、成功の値（`result:`）・`find_target` で引いた対象（`target:`）・入力（`input:`）を受け取って評価する。`target:` は公開 API の値を返し、行の対象の型の名前は値のクラス名（`PartnershipValue` なら `Partnership`）から取る。複数の相手に効果が及ぶ操作は、相手を列挙せず `counterparty: nil` にする。
+- `audit_exempt reason:`：効果が自社の中で閉じる mutation。同じテナントの中で受け渡すイベント（`allocateSalesOrder` が出す「出荷可能」など）しか出さない操作も、相手テナントに効果が及ばないのでこちらにする。
+
+基底 mutation は、`perform` が成功の値を返したときだけ、リクエストのトランザクションの中で 1 行を書く。1 回の操作で書く行は 1 行である。行とトランザクションの関係は、「1 回のリクエストがたどる道」の閉じ方のとおりになる。
+
+- **ユーザーエラー**：失敗を返した公開 API は、自分のセーブポイントまで書き込みを戻している。基底 mutation は監査の行を書かない。リクエストはコミットされるので、同じリクエストで先に成功した mutation の業務の行と監査の行は残る。
+- **トップレベルのエラーと例外**：`GraphqlController` がリクエスト全体を戻す。先に成功した mutation の業務の行・監査の行・イベントのジョブも一緒に戻る。監査の行の INSERT が失敗したときも、例外として全体が戻る。
+
+イベントの受信は、`Contracts::EventJob` が、受け手の `handle` を終えた後、同じトランザクションで `event.received` として 1 行書く。書くのは、付帯情報の発行元のテナントと宛先テナントが違うときだけである。操作者は `system`、対象はイベントの名前と `event_id`、因果 ID は `event_id`、相手テナントは発行元のテナントになる。受信の行は、イベントと受け手のテナントごとに 1 行である。同じイベントの 2 回目の配送では書かず、同じテナントに受け手が 2 つあっても、先に終えた受け手の 1 行だけになる（`data-model.md`「監査ログ（`platform`）」の一意索引）。受け手が例外を投げれば、受け手の書き込みと一緒に戻る。
+
+宣言の種類は次の表のとおりである。後のマイルストーンで作る mutation も載せている。
 
 | 宣言 | mutation |
 |---|---|
 | `audit` | `establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission`・`saveItem`・`setItemPublished`・`scheduleItemPrice`・`correctItemPrice`・`startImport`・`registerPartMapping`・`placePurchaseOrder`・`requestPurchaseOrderCancellation`・`approveCancellationReview`・`rejectCancellationReview`・`cancelSalesOrder`・`postShipment`・`inspectInboundShipment`・`issueInvoice` |
-| `audit_exempt` | `allocateSalesOrder`・`adjustStock`・`createShippingInstruction`・`cancelShippingInstruction`・`setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`（理由はどれも「効果が自社の中で閉じる」） |
+| `audit_exempt` | `allocateSalesOrder`・`adjustStock`・`createShippingInstruction`・`cancelShippingInstruction`・`setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice` |
 
-`registerPartMapping` は、照合待ちの受注を確定させて「受注確定」を出すので `audit` にする。`allocateSalesOrder` が出す「出荷可能」は、同じテナントの出荷へのイベントなので `audit_exempt` にする。列挙テストが、この表と宣言の一致を確かめる。
+`audit_exempt` の理由は、どれも「効果が自社の中で閉じる」である。`registerPartMapping` は、照合待ちの受注を確定させて「受注確定」を出すので `audit` にする。
 
-監査ログは、自社の `admin` が `viewer.auditLogs` で読む。`member` には `FORBIDDEN` を返す。型 `AuditLog` は `shared` で、伝票の型へのフィールドを持たず、対象を型の名前と ID の文字列で示す。
+`audit` の mutation が書く行は、次の表のとおりである。mutation を作る人は、この表に行を足してから宣言を書く。
+
+| mutation | action | 対象 | 相手 |
+|---|---|---|---|
+| `establishPartnership` | `partnership.establish` | 成功の値の取引関係 | その取引関係の発注側 |
+| `revokePartnership` | `partnership.revoke` | 対象の取引関係 | その取引関係の発注側 |
+| `grantPermission` | `partnership.grant_permission` | 対象の取引関係 | その取引関係の発注側 |
+| `withdrawPermission` | `partnership.withdraw_permission` | 対象の取引関係 | その取引関係の発注側 |
+| `saveItem` | `item.save` | 成功の値の品目 | 空（カタログを見る全相手に及ぶ） |
+| `setItemPublished` | `item.set_published` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
+| `registerPartMapping` | `part_mapping.register` | 成功の値の対応表の行 | 入力の `customerTenantId`（確定させる受注は、すべてこの相手の受注である） |
+| `placePurchaseOrder` | `purchase_order.place` | 成功の値の発注 | 入力の `supplierTenantId` |
+| `postShipment` | `shipment.post` | 成功の値の出荷依頼から引いた出荷実績 | 出荷依頼の発注側 |
+
+列挙テスト（`spec/graphql/authorization_declarations_spec.rb`）は、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類と action が上の 2 つの表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation は比べない。監査の対象を変えたら、2 つの表を同じ変更で直す。
+
+監査ログは、自社の `admin` が `viewer.auditLogs` で読む。`member` には `FORBIDDEN` を返す。リゾルバは `Viewer` の下にあるので、視点に `shared` を宣言する。型 `AuditLog` は `shared` で、伝票の型へのフィールドを持たず、対象を型の名前と ID の文字列で示す。相手テナントが書いた受信の行は相手のものなので、自社からは見えない。絞り込みの時刻は、`occurredFrom` 以上・`occurredTo` 未満である。
 
 ```graphql
 type Viewer {
-  # 既存のフィールドに加えて
+  # ユーザーのフィールドに加えて
   "admin だけ。新しいものから"
   auditLogs(first: Int, after: String, filter: AuditLogFilter): AuditLogConnection!
 }
@@ -542,6 +570,7 @@ type AuditLog {
 | `BillableItem.priceExplanation` | `Sales::ItemPrices.explain`（ルートパッケージが、請求対象明細の受注明細 ID と請求書の発行時刻を渡す） |
 | `supplier.imports`・`supplier.import`・`Import.rowErrors` | `Imports::Runs` |
 | `viewer.auditLogs` | `Platform::AuditLogs`（「監査ログ」） |
+| `AuditLog.actorName`・`AuditLog.counterparty` | `Partnerships::Directory.user_names`・`tenants` |
 
 ダッシュボードは、factory-ops-demo の画面と同じく、複数のコンテキストの集計を 1 つの型に束ねる読み取り専用のクエリである。
 

@@ -84,6 +84,15 @@ RSpec.describe "視点ごとの型の到達可能性" do
     end
   end
 
+  # Viewer は視点を問わずに開く入口なので、どちらかの視点の型へたどれると、相手側の型への道になる
+  it "Viewer からたどれる型は shared だけ" do
+    violations = reachable_from([ schema.get_type("Viewer") ])
+      .reject { |type| type.try(:perspective) == :shared }
+      .map { |type| "#{type.graphql_name} (#{type.try(:perspective).inspect})" }
+
+    expect(violations).to be_empty
+  end
+
   it "shared の型のフィールドは、スカラー・enum・shared の型だけを返す" do
     violations = object_types.select { |type| type.try(:perspective) == :shared }.flat_map do |type|
       type.fields.values

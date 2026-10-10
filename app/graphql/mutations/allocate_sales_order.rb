@@ -4,6 +4,7 @@ module Mutations
   class AllocateSalesOrder < BaseMutation
     perspective :supplier
     authorize_with Sales::SalesOrderPolicy, :allocate?
+    audit_exempt reason: "効果が自社の中で閉じる。「出荷可能」は同じテナントの出荷へのイベントである"
 
     argument :sales_order_id, ID
     result_field :sales_order, Types::SalesOrderType

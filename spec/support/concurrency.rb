@@ -2,8 +2,11 @@ require_relative "owner_connection"
 
 # 2 つの接続で同時に操作する競合テストの補助（docs/guides/testing.md「競合テスト」）。
 # 例ごとのトランザクションの中では接続が 1 本に固定されるので、使う側は use_transactional_tests を false にし、
-# 作った行を example の後で delete_owned_rows で消す
+# 作った業務の行を example の後で delete_owned_rows で消す。テナント・ユーザー・監査の行は残す
 module ConcurrencyHelpers
+  # 監査の行と、監査の行が指しうる行の表。監査の行は消せず、指す先も消さない
+  KEPT_TABLES = %w[tenants users audit_logs].freeze
+
   # スレッドの終わりと、ロックの待ちを待つ上限の秒数
   WAIT_SECONDS = 10
 
@@ -102,9 +105,13 @@ module ConcurrencyHelpers
   end
 
   # スレッドをすべて終わらせてから、tables の行のうち tenant_ids のテナントが所有する行と、そのテナントを宛先にした
-  # イベントのジョブと、テナントを消す。所有ロールの接続で消すのは、アプリのロールでは RLS が他のテナントの行を隠すから
-  # である。tables は子の表から先に並べる
+  # イベントのジョブを消す。所有ロールの接続で消すのは、アプリのロールでは RLS が他のテナントの行を隠すからである。
+  # tables は子の表から先に並べる。テナントとユーザーは、監査の行が指すので消さない（KEPT_TABLES）。
+  # 消した後に、KEPT_TABLES の外でそのテナントの行が残る表があれば、tables の書き漏らしなので失敗する
   def delete_owned_rows(tenant_ids, tables)
+    kept = tables & KEPT_TABLES
+    raise ArgumentError, "#{kept.join('・')} の行は消さない（監査の行が指す）" if kept.any?
+
     finish_concurrent_threads
     connection = OwnerConnection.lease_connection
     ids = tenant_ids.map { connection.quote(_1) }.join(", ")
@@ -116,11 +123,21 @@ module ConcurrencyHelpers
           WHERE class_name = 'Contracts::EventJob' AND arguments LIKE #{connection.quote("%#{tenant_id}%")}
         SQL
       end
-      connection.execute("DELETE FROM tenants WHERE id IN (#{ids})")
     end
+    left = (owned_tables(connection) - KEPT_TABLES).select do |table|
+      connection.select_value("SELECT EXISTS (SELECT 1 FROM #{table} WHERE owner_tenant_id IN (#{ids}))")
+    end
+    raise "#{left.join('・')} に行が残った。delete_owned_rows に渡す表を足す" if left.any?
   end
 
   private
+
+  def owned_tables(connection)
+    connection.select_values(<<~SQL)
+      SELECT table_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'owner_tenant_id' ORDER BY table_name
+    SQL
+  end
 
   def current_backend_pid = ApplicationRecord.lease_connection.select_value("SELECT pg_backend_pid()")
   def concurrency_threads = (@concurrency_threads ||= [])

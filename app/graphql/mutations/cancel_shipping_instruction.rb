@@ -3,6 +3,7 @@ module Mutations
   class CancelShippingInstruction < BaseMutation
     perspective :supplier
     authorize_with Fulfillment::ShipmentRequestPolicy, :instruct?
+    audit_exempt reason: "効果が自社の中で閉じる"
 
     argument :shipment_request_id, ID
     result_field :shipment_request, Types::ShipmentRequestType

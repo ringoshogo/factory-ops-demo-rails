@@ -24,6 +24,11 @@ module MatrixExpectations
       query: "{ viewer { id } }",
       expect: EVERYONE
     },
+    # 自社の監査ログ。世界のペルソナは admin で、どのペルソナにも自社の行だけが返る
+    "Viewer.auditLogs" => {
+      query: "{ viewer { auditLogs { nodes { action } } } }",
+      expect: EVERYONE
+    },
     "SupplierView.partnerships" => {
       query: "{ supplier { partnerships { id } } }",
       expect: EVERYONE

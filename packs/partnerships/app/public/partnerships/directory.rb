@@ -33,6 +33,14 @@ module Partnerships
       Tenant.where(id: ids).to_h { [ _1.id, TenantSummary.new(id: _1.id, name: _1.name) ] }
     end
 
+    # 自社のユーザーの ID ごとの名前。監査ログの操作者を示すのに使う。
+    # Tenancy.with_tenant の中で呼ぶ。RLS の下で引くので、別テナントのユーザーは含まない
+    def self.user_names(actor, ids)
+      raise ArgumentError, "actor is required" unless actor.is_a?(Actor)
+
+      User.where(id: ids).pluck(:id, :name).to_h
+    end
+
     def self.to_values(relation)
       partnerships = relation.to_a
       permissions = PartnershipGrant.where(partnership_id: partnerships.map(&:id))

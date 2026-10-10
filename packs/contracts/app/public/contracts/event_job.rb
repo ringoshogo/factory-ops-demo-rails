@@ -27,9 +27,10 @@ module Contracts
       end
     end
 
-    def perform(event_name, payload, _receiver, _tenant_id)
+    def perform(event_name, payload, _receiver, tenant_id)
       started_at = Time.current
       route.receiver.constantize.handle(event_name.constantize.from_payload(payload))
+      record_receipt(tenant_id)
       Rails.event.notify("contracts.event_handled", event_name:, receiver: route.receiver,
         delivery_lag_ms: delivery_lag_ms(started_at))
     end
@@ -52,6 +53,16 @@ module Contracts
     end
 
     private
+
+    # 相手テナントが発行したイベントの受信を、受け手の書き込みと同じトランザクションで監査ログに書く
+    # （docs/architecture/graphql-schema.md「監査ログ」）。同じテナントの中で受け渡すイベントは、相手に効果が及ばないので書かない
+    def record_receipt(tenant_id)
+      source_tenant_id = app_metadata.fetch("source_tenant_id")
+      return if source_tenant_id == tenant_id
+
+      AuditLog.record_receipt!(event_id: app_metadata.fetch("event_id"), event_name: app_metadata.fetch("event_name"),
+        source_tenant_id:, correlation_id: app_metadata.fetch("correlation_id"))
+    end
 
     # 配送の遅れ。発行時刻は付帯情報にあり、付帯情報の無いジョブでは測れない
     def delivery_lag_ms(started_at)

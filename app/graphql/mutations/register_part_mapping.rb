@@ -4,6 +4,8 @@ module Mutations
   class RegisterPartMapping < BaseMutation
     perspective :supplier
     authorize_with Sales::PartMappingPolicy, :register?
+    # 確定させる照合待ちの受注は、すべてこの取引先の受注である
+    audit "part_mapping.register", target: ->(result:, **) { result }, counterparty: ->(input:, **) { input[:customer_tenant_id] }
 
     argument :customer_tenant_id, ID
     argument :customer_part_number, String
