@@ -52,7 +52,7 @@
 | ログ | `Rails.event` を出口にした 1 行 1 件の JSON。相関 ID と因果 ID をイベントの付帯情報で運び、テナントをまたぐ一連の処理を引けるようにする。ペイロードに個人情報と自由記述を入れない | `implementation-plan.md` M18、`guides/config.md`「ログ」 |
 | 監査ログ | 相手テナントに効果が及ぶ書き込みを、mutation とイベントのジョブの基底クラスが記録する。追記だけで、自社の `admin` が `viewer.auditLogs` で読む | `implementation-plan.md` M19、`architecture/data-model.md`「監査ログ（`platform`）」 |
 | テストの層とシナリオ | 単体を厚くし、層ごとの件数を CI で報告する。壊れると事故になる 5 つの流れ（S1〜S5）を、専用のシナリオテストにする。N+1 は Bullet とクエリ数の予算で落とす | `guides/testing.md`、`implementation-plan.md` M17 |
-| GraphQL のスキーマの変更 | `schema.graphql` を commit し、非推奨を経ない破壊的変更を `bin/check-schema-compat` で落とす。CI で流すのは M20 の 2 つ目の PR から | `architecture/graphql-schema.md`「スキーマの変更と非推奨」 |
+| GraphQL のスキーマの変更 | `schema.graphql` を commit し、非推奨を経ない破壊的変更を、CI の lint のジョブで `bin/check-schema-compat` が落とす | `architecture/graphql-schema.md`「スキーマの変更と非推奨」 |
 | メトリクス | Yabeda と Prometheus。値は `Rails.event` から作り、ラベルにテナントとユーザーを入れない | `implementation-plan.md` M30 |
 | コードのコメント | いまの振る舞いと理由だけを書き、経緯・マイルストーンの番号・予定を書かない。Cop で止める | `guides/comments.md` |
 | 拡張の進め方 | 横断の仕組み（M15〜M20）を業務の残り（M21〜M26）より先に入れる。監査ログの保存期間（7 年）と SLO の値は仮置きのまま進め、値より決め方と測り方を示す。発注側に単価の改定予定は見せない。取り込みは失敗した行だけを報告し、正常な行は反映する | ユーザー判断、`implementation-plan.md` |
@@ -88,8 +88,8 @@
 ## リポジトリの状態
 
 - **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
-- **ブランチ**：M1〜M15 は main にマージ済み。M16〜M20 の 1 つ目は積み重ねた PR（#25〜#29）で、その上にサイクル 01 のサイクル末の PR（`cycle-01-end`）を積んでいる。Dependabot の依存更新の PR が 3 本、未処理で残っている。
-- **実装**：M20 の 1 つ目の PR まで終え、サイクル 01 のサイクル末を終えた。rspec は 1123 examples, 0 failures（サイクル末のブランチ `cycle-01-end` で `bundle exec rspec`）。M20 の 2 つ目の PR（CI の lint のジョブで `bin/check-schema-compat` を流すステップ）は、1 つ目が main に入るのを待っている。基準の main に `schema.graphql` が入るまで、比べられないからである（`implementation-plan.md` M20「初回の導入」）。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **ブランチ**：M1〜M20 の 1 つ目と、サイクル 01 のサイクル末（#30）は main にマージ済み。M20 の 2 つ目は PR（`m20-schema-compat-ci`）で、main の上にある。Dependabot の依存更新の PR が 3 本、未処理で残っている。
+- **実装**：M20 を終え、サイクル 01 のサイクル末を終えた。M20 の 2 つ目の PR で、CI の lint のジョブが `bin/check-schema-compat` を流すようになった。rspec は 1123 examples, 0 failures（サイクル末のブランチ `cycle-01-end` で `bundle exec rspec`）。次は M34（`implementation-plan.md`「マイルストーンの一覧」）。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの

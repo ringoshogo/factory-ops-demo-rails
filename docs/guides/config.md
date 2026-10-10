@@ -225,6 +225,7 @@ grep <相関 ID> log/events.log
 | Packages: packwerk | — | `bin/packwerk validate && bin/packwerk check` | 依存の向きと公開 API の限定を強制する（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md)） |
 | Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | Ledgers: commit references | — | `bin/check-commit-refs` | 台帳・証跡・引き継ぎに書いた SHA が HEAD の祖先かを確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
+| GraphQL: schema compatibility | — | `bin/check-schema-compat` | `origin/main` との分岐点からの、非推奨を経ない破壊的変更を止める（[graphql-schema.md「互換の判定」](../architecture/graphql-schema.md#互換の判定)） |
 | Tests | `bin/rails test` | `bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json` | テストに RSpec を使う。層ごとの件数を数えるため、JSON の出力も書く |
 | Tests: layers | — | `bin/test-layers tmp/rspec.json` | テストの層ごとの件数・割合・時間を報告し、未分類のファイルを止める（[testing.md「テストの層」](testing.md#テストの層)） |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
