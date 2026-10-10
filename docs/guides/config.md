@@ -80,7 +80,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 - `bin/rails db:migrate` などの DB のタスクは、`owner` の設定でだけ流れる。
 - `db:rollback` と `db:migrate:up`・`down`・`redo` は、設定ごとに回らず `primary` の接続で流れる。`lib/tasks/db_roles.rake` が、これらを所有ロールの接続に切り替える。
 - 表を作るタスクの後に、同じ rake ファイルの `db:grant_app_role` がアプリのロールへ権限を付与する。
-- 本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。デプロイの担当者は、所有ロールの資格情報をマイグレーションの工程にだけ渡す（[bin.md「bin/docker-entrypoint で変えたこと」](bin.md#bindocker-entrypoint-で変えたこと)）。
+- 本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。所有ロールの資格情報を渡す工程は [data-model.md「RLS」](../architecture/data-model.md#rls) にある。
 
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
 

@@ -282,7 +282,7 @@ $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 
 `app.tenant_id` が未設定なら、この関数は空を返し、どの行にも一致しない。テナントの設定を忘れたクエリは、例外ではなく 0 行になる。例外にする役目はアプリ側の基底クラス `TenantRecord`（`packs/platform`）が受け持つ（`decisions.md` 2 章）。テナントの表のモデルはすべてこれを継承し、`Current.tenant_id` が空のままリレーションを作るか保存すると `Tenancy::MissingTenant` になる。`TenantRecord` は既定スコープをメソッドで定義して設定を確かめるが、条件は足さない。所有テナントの条件を既定で付けると、相手の行を読むたびに `unscoped` が要るからである。
 
-`tenants`、Solid Queue の表、`webhook_inbox_events` を除く全テーブルに、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
+所有テナント列を持つ全テーブル（「テナントの持ち方」）に、同じポリシーを 1 つ付ける。Solid Queue の表には RLS を付けず、アプリの DB ロールに参照・書き込みの権限を与える。ワーカーはテナントを設定せずにキューを読むからである。
 
 ```sql
 ALTER TABLE items ENABLE ROW LEVEL SECURITY;

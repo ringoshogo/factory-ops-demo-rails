@@ -41,7 +41,7 @@
 | ファイル | すること | 出自 | 動機 |
 |---|---|---|---|
 | `bin/rubocop` | `.rubocop.yml` を明示して RuboCop を動かす。`.rubocop.yml` は rubocop-rails-omakase を継承し、カスタム Cop `FactoryOps/EventJobEnqueue`・`FactoryOps/NoHistoryComment`（`lib/rubocop/cop/`）を足している | Rails 生成 | `EventJobEnqueue` は [ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3、`NoHistoryComment` は [comments.md「機械で止めるもの」](comments.md#機械で止めるもの) |
-| `bin/packwerk` | packwerk の入口。`validate` で設定の整合を、`check` で依存とプライバシーの違反を調べる | Bundler 生成（M2 で追加） | [ADR 002](../adr/002-packwerkを初日からCIで強制する.md)、[packs-and-packwerk.md](packs-and-packwerk.md) |
+| `bin/packwerk` | packwerk の入口。`validate` で設定の整合を、`check` で依存とプライバシーの違反を調べる | Bundler 生成 | [ADR 002](../adr/002-packwerkを初日からCIで強制する.md)、[packs-and-packwerk.md](packs-and-packwerk.md) |
 | `bin/check-structure` | `db/structure.sql` が、マイグレーションを流した結果とも、読み込み直して書き出した結果とも一致することを確かめる | 本デモで書いたもの | [ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) |
 | `bin/check-open-items` | 残件と改善の候補の 2 つの台帳の形と、追跡しているファイルに書いた `OI-NN`・`IB-NN` が台帳にあることを確かめる。`--due M<番号>` を付けると、引当先がそのマイルストーンの `open` と `blocked-user` が残っていれば失敗する。`--text` で PR の本文も確かめる | 本デモで書いたもの | [dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること) |
 | `bin/check-commit-refs` | 台帳・証跡（`docs/plans/` の下の Markdown）と `docs/handoff.md` に `` ` `` で囲んで書いた commit の SHA が、HEAD の祖先の commit であることを確かめる。履歴が浅い clone では確かめずに失敗するので、手元の浅い clone では `git fetch --unshallow` してから流す | 本デモで書いたもの | [dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること) |
@@ -82,13 +82,13 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、3 つ�
 |---|---|---|
 | `bin/docker-entrypoint` | 受け取ったコマンドをそのまま `exec` する | Rails 生成（変更あり） |
 | `bin/thrust` | Thruster（Puma の前に立つ HTTP プロキシ。圧縮・キャッシュ・X-Sendfile を受け持つ）を起動し、その後ろで `bin/rails server` を動かす | Rails 生成 |
-| `bin/jobs` | Solid Queue の dispatcher・worker・scheduler を起動する。設定は `config/queue.yml` と `config/recurring.yml` | Solid Queue 生成（M7 で追加） |
+| `bin/jobs` | Solid Queue の dispatcher・worker・scheduler を起動する。設定は `config/queue.yml` と `config/recurring.yml` | Solid Queue 生成 |
 
 ### bin/docker-entrypoint で変えたこと
 
 生成されたままの `bin/docker-entrypoint` は、コマンドが `./bin/rails server` なら、起動の前に `bin/rails db:prepare` を流す。本デモはこの分岐を消した。
 
-DB のタスクには所有ロールの資格情報（`DB_OWNER_USER`・`DB_OWNER_PASSWORD`）が要る。所有ロールは `BYPASSRLS` を持つので、その資格情報を持つプロセスは RLS の外で全テナントを読み書きできる。そのため、デプロイの担当者は資格情報を Web のプロセスに渡さない。Web のコンテナで `db:prepare` を流すと、資格情報が無いので止まる。マイグレーションは、資格情報を渡した別の工程で `bin/rails db:prepare` を流す（[data-model.md「RLS」](../architecture/data-model.md#rls)）。
+DB のタスクには所有ロールの資格情報が要り、デプロイの担当者はそれを Web のプロセスに渡さない（理由は [data-model.md「RLS」](../architecture/data-model.md#rls)）。Web のコンテナで `db:prepare` を流すと、資格情報が無いので止まる。マイグレーションは、資格情報を渡した別の工程で `bin/rails db:prepare` を流す。
 
 ### bin/jobs が接続するロール
 
