@@ -49,7 +49,7 @@
 | マイルストーンの順 | 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20：コメントの規約・テストの層・N+1 の検出・構造化ログ・監査ログ・スキーマの差分検査）を入れる。見せどころ（M27〜M31：バイテンポラル・非同期の型・取り込み・メトリクス・SLO）は業務機能の後に足す | `implementation-plan.md`「マイルストーンの一覧」 |
 | 販売単価 | 有効期間（`daterange`）と記録期間（`tstzrange`）の 2 軸で持つ。現在の行の有効期間の重なりを排他制約で止め、行は書き換えない。受注は受注日の単価を写す | `adr/006` |
 | 非同期処理の型 | ジョブを失ったときに誰も気づけない処理だけを、トランザクションの中で登録する。型は記録してから処理する A-1 イベント・A-2 確実な外部送信・A-3 inbox・A-4 再開できる長時間のジョブと、記録しない B-1 撃ちっぱなし。外部への作用の重複は C-1〜C-3 から選ぶ。outbox は置かない。外部への作用は `ExternalEffectJob` を継承し、登録口を 1 つにする。テストと開発で本物の SendGrid を呼ばない | `adr/007` |
-| ログ | `Rails.event` を出口にした 1 行 1 件の JSON。相関 ID と因果 ID をイベントの付帯情報で運び、テナントをまたぐ一連の処理を引けるようにする。ペイロードに個人情報と自由記述を入れない | `implementation-plan.md` M18 |
+| ログ | `Rails.event` を出口にした 1 行 1 件の JSON。相関 ID と因果 ID をイベントの付帯情報で運び、テナントをまたぐ一連の処理を引けるようにする。ペイロードに個人情報と自由記述を入れない | `implementation-plan.md` M18、`guides/config.md`「ログ」 |
 | 監査ログ | 相手テナントに効果が及ぶ書き込みを、mutation とイベントのジョブの基底クラスが記録する。追記だけで、自社の `admin` が `viewer.auditLogs` で読む | `implementation-plan.md` M19、`architecture/data-model.md`「監査ログ（`platform`）」 |
 | テストの層とシナリオ | 単体を厚くし、層ごとの件数を CI で報告する。壊れると事故になる 5 つの流れ（S1〜S5）を、専用のシナリオテストにする。N+1 は Bullet とクエリ数の予算で落とす | `guides/testing.md`、`implementation-plan.md` M17 |
 | GraphQL のスキーマの変更 | `schema.graphql` を commit し、非推奨を経ない破壊的変更を CI で落とす | `architecture/graphql-schema.md`「スキーマの変更と非推奨」 |
@@ -89,7 +89,7 @@
 
 - **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
 - **ブランチ**：M1〜M14 は main にマージ済み。Dependabot の依存更新の PR が 3 本、未処理で残っている。
-- **実装**：M17 まで終えた。rspec は 958 examples, 0 failures。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **実装**：M18 まで終えた。rspec は 991 examples, 0 failures。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの

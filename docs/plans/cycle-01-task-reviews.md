@@ -225,3 +225,87 @@ Dataloader を外したときに予算が落ちることは、予算の spec の
 ### 残件の処理
 
 引当先が M17 の残件は無かった。決めたことは OI-25〜OI-27 に `judgment` として登録した。OI-25 は実装レビューの指摘（X2）で入口を足して閉じた。
+
+## M18 構造化ログと相関 ID
+
+実装レビューの前。判定と指摘は、レビューを受けた後に書く。
+
+| 系統 | 判定 |
+|---|---|
+| Codex |  |
+| Claude |  |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+
+### 実装の記録
+
+テストを先に書き、実装の前に流した。33 examples のうち 32 が落ちた。通った 1 件（`購読者の例外は、テストの環境では呼び出し元まで上がる`）は、Rails が `consider_all_requests_local` から決める既定値を、変えていないことを守るガードである。実装の後、4 つの spec は 33 examples, 0 failures になった。
+
+| 対象 | RED の落ち方 |
+|---|---|
+| `spec/platform/logging_spec.rb` | 20 件のうち 19 件。`Platform::RequestContext`・`Platform::JsonLogFormatter`・`Platform::JsonLogSubscriber`・`Platform::Logging` が無い（NameError）、ミドルウェアに `Rails::Rack::Logger` と `ActionDispatch::DebugExceptions` が残る、文字列のログの購読が付いている、`log_arguments` が真 |
+| `spec/jobs/log_context_spec.rb` | 10 件すべて。イベントと本体の文脈にジョブの項目と付帯情報が無い、エラー通知にテナント ID が付かない、登録し直したジョブに `app_metadata` が無い |
+| `spec/contracts/correlation_spec.rb` | 2 件すべて。行に相関 ID が無い |
+| `spec/requests/log_hygiene_spec.rb` | 1 件。購読者が無い |
+
+実装を壊して、落ちることを確かめた。壊したファイルは複製から戻した。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| `Platform::Logging.configure!` が `Rails::Rack::Logger` を外さない | `文脈のミドルウェアは要求 ID を付けた後にあり、要求の開始と例外を文字列で書くミドルウェアは無い`、`ログイン・mutation・URL の変数・失敗する要求とジョブ・イベントの配送の全行が JSON で、禁止の値を含まない` |
+| `ActionDispatch::DebugExceptions` を外さない | 同じ 2 件 |
+| `ActionController`・`ActionDispatch`・`ActiveJob` の `LogSubscriber` を外さない | `params・ジョブの引数・例外のメッセージを文字列で書くフレームワークの購読を外している`、ログの衛生の 1 件 |
+| `SolidQueue::LogSubscriber` を外さない | 同じ 2 件 |
+| 購読者が表で項目を絞らず、ペイロードをすべて書く | `要求の開始は params を書かない` など、購読者の 6 件とログの衛生の 1 件 |
+| GraphQL のクエリの本文を、要約せずに書く | `GraphQL の要求の開始は、操作名・クエリの SHA-256 の要約・変数のキーの一覧に置き換える`、ログの衛生の 1 件 |
+| ハッシュでないペイロードを例外にしない | `ハッシュでないペイロードは例外にする。…`、`イベントのオブジェクトを Rails.event.notify に渡すと、呼び出し元で例外になる` |
+| 表に無いイベントもペイロードを書く | `表に無いイベントは、name・context・timestamp だけを書く` |
+| `ApplicationJob.log_arguments = false` を消す | `ジョブの引数をログに書かない` |
+| 書式が例外のメッセージを書く | `例外を渡されたら、メッセージを書かずにクラス名だけを書く` |
+| `Platform::RequestContext` が相関 ID を設定しない | 相関 ID の spec の 2 件 |
+| `GraphqlController` が、スキーマを実行した後に文脈を設定する | `要求の開始の行には request_id と相関 ID が付き、テナントとユーザーと操作名はスキーマの実行の中の行から付く` |
+| ジョブの文脈を、`perform_now` ではなく `around_perform` で設定する | ジョブの文脈の spec の 9 件すべてと、相関 ID の spec の 1 件 |
+| `perform_now` が、`super` の前に引数を復元する | 引数の復元に失敗するジョブの 3 件（`discard_on では、…`・`retry_on では、…`・`どちらも無ければ、…`） |
+| `perform_now` が、実行の前の文脈に戻さない | ジョブの文脈の spec の 8 件 |
+| `perform_now` が、呼び出し元の文脈を消さずに足す | ジョブの文脈の spec の 9 件 |
+| `perform_now` が、上がる例外をエラー通知に送らない | `失敗では、終了のイベントに文脈が付き、エラー通知の文脈にテナント ID が入る`（2 つの経路）、`どちらも無ければ、例外が呼び出し元へ上がり、…` |
+| `serialize` が `app_metadata` を入れない | ジョブの文脈の spec の 7 件と、相関 ID の spec の 1 件 |
+| `Contracts.publish` が文脈の因果 ID を付帯情報に入れない | `発注の要求から購買の受け手までの全ログ行が、…受け手の因果 ID は届いたイベントの ID である` |
+| ジョブの因果 ID を、届いたイベントの ID ではなく付帯情報の因果 ID にする | 同じ 1 件 |
+| 相関 ID の無い文脈で、イベントの ID を相関 ID にしない | `相関 ID の無い文脈で発行したイベントは、そのイベントから一連の処理が始まり、自分の ID を相関 ID にする` |
+| `contracts.event_handled` を出さない | 相関 ID の spec の 1 件と、ログの衛生の 1 件 |
+| `BaseMutation` がユーザーエラーのコードを集めない | `成功・ユーザーエラー・トップレベルのエラーを分け、ユーザーエラーのコードを書く` |
+| `spec/support/log_context.rb` を読み込まない | `example の中で設定したログとエラー通知の文脈は、次の example へ持ち越されない` |
+| 購読者が `log/events.log` のパス（`Pathname`）に `write` する | `Rails.event のイベントを、log/events.log の末尾に 1 行ずつ足す` |
+
+壊して落ちなかったものは、テストを直してから壊し直した。
+
+- ジョブの文脈を `around_perform` で設定しても、失敗と再試行の example は通った。`around_perform` で設定した文脈は戻されずに `active_job.completed` まで残るからである。失敗と再試行でも `active_job.started` の文脈を確かめるようにした。
+- `ActionDispatch::DebugExceptions` を外さなくても、ログの衛生の spec は通った。テストの環境は rescue できない例外を、`DebugExceptions` が書く前に送出し直すからである。失敗する要求を rescue できる例外にした（OI-33）。
+- `SolidQueue::LogSubscriber` を外さなくても、ログの衛生の spec は通った。ワーカーのスレッドを通らないからである。ワーカーと同じ `thread_error` の通知を出すようにした（OI-28）。
+
+RED の後に足した example（`spec/platform/logging_spec.rb` の後始末と `log/events.log` の 2 件、`spec/contracts/correlation_spec.rb` の相関 ID の無い文脈の 1 件、`spec/requests/graphql_entry_spec.rb` の操作の終わりのイベントの 1 件）は、実装の後に書いたので RED が無い。上の表の壊し方で落ちることを確かめた。
+
+計画の手での確認は、次のとおりだった。
+
+- `bin/rails middleware | grep -A1 'Platform::RequestContext'` は、開発の環境で次の行が `Rails::Rack::Logger` だった。本番の環境（`RAILS_ENV=production`）では `Rails::Rack::SilenceRequest` の後にあり、`Rails::Rack::Logger` と `ActionDispatch::DebugExceptions` は無かった。
+- 開発の環境で `bin/dev` と `bin/jobs` を動かし、発注を 1 件登録して `grep <相関 ID> log/events.log` を流した。要求の `action_controller.request_started`・`active_job.enqueued`・`graphql.operation_completed`・`action_controller.request_completed` と、受注側テナントの「発注登録」の配送（`active_job.started`・`contracts.event_handled`・`active_job.completed`）と、発注側テナントの「受注確定」の配送が、同じ相関 ID で並んだ。受け手の行の因果 ID は、それぞれが受け取ったイベントの `event_id` だった。
+- 最初の確認では、`log/events.log` に 1 行しか残らなかった。購読者が書き込み先の `Pathname` を IO とみなし、`Pathname#write` が書くたびにファイルを作り直していた。購読者は IO だけを受け取り、`initializers/event_log.rb` が追記で開くようにし、追記を確かめる example を足した。
+
+ジョブの文脈・相関 ID・ログの衛生・ログの構成・GraphQL の入口の spec を 5 回続けて流し、5 回とも 93 examples, 0 failures だった。
+
+### 層ごとの表
+
+全件（991 examples, 0 failures）の出力を `bin/test-layers` に渡した結果。未分類のファイルは無い。3 つの層が目安を外れ、警告を出した（OI-24）。
+
+| 層 | example | 割合 | 時間 | 目安 |
+|---|---|---|---|---|
+| 単体 | 95 | 38.6% | 1.26s | 60% 以上 |
+| 結合 | 114 | 46.3% | 5.04s | 30% 以下 |
+| シナリオ | 37 | 15.0% | 6.02s | 10% 以下 |
+| ガード | 745 | — | 217.57s | 数えない |
+
+### 残件の処理
+
+引当先が M18 の残件は無かった。決めたことは OI-28〜OI-34 に `judgment` として登録した。
