@@ -324,7 +324,8 @@ type Shipment {
 
 type Invoice {
   id: ID!
-  invoiceNumber: String!
+  "確定で振る。下書きは空"
+  invoiceNumber: String
   customer: Tenant!
   periodStart: ISO8601Date!
   periodEnd: ISO8601Date!

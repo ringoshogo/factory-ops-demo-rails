@@ -228,23 +228,23 @@
 
 発行元は、業務データを書くのと同じトランザクションの中で、イベントをジョブとして登録する。キューの表（`solid_queue_*`）は業務データと同じ DB にあり、テナントの表ではない（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
 
-イベントの受け手は、ペイロードが示す宛先テナントを `Current` に設定して処理する。宛先テナントを示す項目は、配送表 `Contracts::Subscriptions` に受け手ごとに書く。受け手が書くのは自社のテーブルだけである。重複して届いても結果が変わらないように、受け手ごとに冪等キーを決める。
+イベントの受け手は、ペイロードが示す宛先テナントを `Current` に設定して処理する。宛先テナントを示す項目は、配送表 `Contracts::Subscriptions` に受け手ごとに書く。どのイベントも、宛先テナントを示す項目を運ぶ（`Contracts.publish` がペイロードから宛先を引く）。受け手が書くのは自社のテーブルだけである。重複して届いても結果が変わらないように、受け手ごとに冪等キーを決める。
 
 | イベント | 発行元 → 受け手 | 運ぶ値 | 受け手が書く表 | 冪等キー |
 |---|---|---|---|---|
 | 発注登録 | 購買 → 受注 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・自社品番・数量）、希望納期 | `sales_orders`・`sales_order_lines` | `source_purchase_order_id` 一意 |
 | 品番照合待ち | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.awaiting_match_at` | 空のときだけ書く |
 | 受注確定 | 受注 → 購買 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・品目名・単価） | `purchase_orders.accepted_at`・明細の写し | 空のときだけ書く |
-| 取消依頼 | 購買 → 受注 | 取消依頼 ID、発注 ID、依頼の登録時刻 | `cancellation_reviews` | `source_cancellation_request_id` 一意 |
-| 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
-| 受注取消 | 受注 → 購買 | 発注 ID | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
-| 出荷取消 | 受注 → 出荷 | 受注 ID | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
+| 取消依頼 | 購買 → 受注 | 取消依頼 ID、発注 ID、発注側・受注側テナント、依頼の登録時刻 | `cancellation_reviews` | `source_cancellation_request_id` 一意 |
+| 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID、発注 ID、発注側・受注側テナント | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
+| 受注取消 | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
+| 出荷取消 | 受注 → 出荷 | 受注 ID、受注側テナント | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
 | 出荷可能 | 受注 → 出荷 | 受注 ID、受注側・発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
-| 出荷停止 | 受注 → 出荷 | 審査 ID、受注 ID | `shipping_holds` | `source_cancellation_review_id` 一意 |
-| 出荷停止解除 | 受注 → 出荷 | 審査 ID | `shipping_holds.released_at` | 空のときだけ書く |
+| 出荷停止 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds` | `source_cancellation_review_id` 一意 |
+| 出荷停止解除 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds.released_at` | 空のときだけ書く |
 | 出荷計上 | 出荷 → 受注・購買 | 出荷実績 ID、受注 ID、発注 ID、受注側・発注側テナント、出荷日、明細（受注明細 ID・発注明細 ID・数量） | 受注：`shipped_at`／購買：`inbound_shipments`・明細 | 受注：空のときだけ書く／購買：`shipment_id` 一意 |
-| 検収完了 | 購買 → 受注 | 出荷実績 ID、発注 ID、明細（発注明細 ID・検収数量）、検収日 | `inspection_records`・`sales_orders.inspected_at` | `(shipment_id, sales_order_line_id)` 一意 |
-| 請求対象確定 | 受注 → 請求 | 発注側テナント、出荷実績 ID、受注明細 ID・発注明細 ID、品目名・単価・税率、検収数量、検収日 | `billable_items` | `(shipment_id, sales_order_line_id)` 一意 |
+| 検収完了 | 購買 → 受注 | 出荷実績 ID、発注 ID、発注側・受注側テナント、明細（発注明細 ID・検収数量）、検収日 | `inspection_records`・`sales_orders.inspected_at` | `(shipment_id, sales_order_line_id)` 一意 |
+| 請求対象確定 | 受注 → 請求 | 受注側・発注側テナント、出荷実績 ID、受注明細 ID・発注明細 ID、品目名・単価・税率、検収数量、検収日 | `billable_items` | `(shipment_id, sales_order_line_id)` 一意 |
 | 請求書発行 | 請求 → 購買 | 請求書 ID、受注側・発注側テナント、請求番号、締め期間、発行日、金額、明細（発注明細 ID・品目名・単価・数量・税率・金額） | `received_invoices`・明細 | `invoice_id` 一意 |
 
 「出荷計上」は受注と購買の両方へ同じ値を運ぶ。購買は、受注 ID と受注明細 ID を保存しない。

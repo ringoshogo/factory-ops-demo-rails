@@ -39,9 +39,9 @@ RSpec.describe "bin/test-layers" do
     out, err, status = run_layers(examples)
 
     expect([ err, status.success? ]).to eq([ "", true ])
-    expect(out).to include("| 単体 | 7 | 70.0% | 0.70s | 60% 以上 |")
-    expect(out).to include("| 結合 | 2 | 20.0% | 0.75s | 30% 以下 |")
-    expect(out).to include("| シナリオ | 1 | 10.0% | 2.00s | 10% 以下 |")
+    expect(out).to include("| 単体 | 7 | 70.0% | 0.70s | — |")
+    expect(out).to include("| 結合 | 2 | 20.0% | 0.75s | — |")
+    expect(out).to include("| シナリオ | 1 | 10.0% | 2.00s | 50% 以下 |")
     expect(out).to include("| ガード | 2 | — | 0.20s | 数えない |")
     expect(out).not_to include("::warning::")
   end
@@ -70,13 +70,23 @@ RSpec.describe "bin/test-layers" do
   end
 
   it "割合が目安を外れたら警告の注釈を出し、失敗にはしない" do
-    examples = [ *units(5), *Array.new(5) { |i| example_at("./spec/requests/catalog_spec.rb[1:#{i + 1}]") } ]
+    examples = [ *units(4), *Array.new(6) { |i| example_at("./spec/scenarios/tenant_boundary_spec.rb[1:#{i + 1}]") } ]
 
     out, _err, status = run_layers(examples)
 
     expect(status.success?).to be(true)
-    expect(out).to include("::warning::単体の割合 50.0% が目安（60% 以上）を外れた",
-      "::warning::結合の割合 50.0% が目安（30% 以下）を外れた")
+    expect(out).to include("::warning::シナリオの割合 60.0% が目安（50% 以下）を外れた")
+    expect(out.scan("::warning::").size).to eq(1)
+  end
+
+  it "目安を持たない層は、割合が偏っても警告を出さない" do
+    examples = [ *units(1), *Array.new(9) { |i| example_at("./spec/requests/catalog_spec.rb[1:#{i + 1}]") } ]
+
+    out, _err, status = run_layers(examples)
+
+    expect(status.success?).to be(true)
+    expect(out).to include("| 結合 | 9 | 90.0% |")
+    expect(out).not_to include("::warning::")
   end
 
   it "GITHUB_STEP_SUMMARY があれば、同じ表を書き足す" do
