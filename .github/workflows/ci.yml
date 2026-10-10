@@ -106,8 +106,11 @@ jobs:
           sudo apt-get install --no-install-recommends -y postgresql-client-18
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
 
+      # 分岐の網羅率の警告が、基準の ref との分岐点からの差分を取るので、履歴をすべて取る
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -123,8 +126,19 @@ jobs:
       - name: Prepare database
         run: bin/rails db:test:prepare
 
+      # 分岐の通過を測りながら流す（docs/guides/testing.md「分岐の網羅率の警告」）。計測のために全件をもう 1 回流さない
       - name: Run tests
+        env:
+          COVERAGE: "1"
         run: bundle exec rspec --format progress --format json --out tmp/rspec.json
+
+      # PR が足した行のうち、どの example も通らない分岐を警告の注釈とジョブの要約に出す。失敗にはしない。
+      # 基準は lint のジョブの互換の検査と同じ式で決める。origin/main のままだと、main への push では差分が空になり、
+      # 積み重ねた PR では main からの累積の差分になるからである
+      - name: Report uncovered branches
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: bin/check-branch-coverage
 
       # 層ごとの件数・割合・時間をジョブの要約に書き、未分類のファイルがあれば落とす（docs/guides/testing.md「テストの層」）
       - name: Report test layers

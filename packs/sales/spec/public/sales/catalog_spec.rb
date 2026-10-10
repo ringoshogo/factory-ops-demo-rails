@@ -36,4 +36,10 @@ RSpec.describe Sales::Catalog do
     expect(failure.(save(code: ""))).to eq([ [ :invalid_input, [ :code ] ] ])
     expect(described_class.items(actor, first: 10, after: nil).values).to be_empty
   end
+
+  it "見えない品目の公開の状態は変えられず、品目 ID を指す NOT_FOUND を返す" do
+    result = described_class.set_published(actor, item_id: SecureRandom.uuid, published: true)
+
+    expect(result.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :item_id ] ] ])
+  end
 end

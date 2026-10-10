@@ -45,4 +45,13 @@ RSpec.describe Purchasing::SupplierEventReceiver do
   it "受注側テナントが一致しない発注は書かない" do
     expect { handle(event.with(supplier_tenant_id: FactoryBot.create(:tenant).id)) }.to raise_error(ActiveRecord::RecordNotFound)
   end
+
+  it "配送表に無い種類のイベントは、発注を書かずに ArgumentError で失敗する" do
+    unexpected = Contracts::PurchaseOrderPlaced.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id,
+      supplier_tenant_id: supplier.id, desired_delivery_on: nil, lines: [])
+
+    expect { handle(unexpected) }.to raise_error(ArgumentError, "unexpected event: Contracts::PurchaseOrderPlaced")
+    expect(Tenancy.with_tenant(buyer.id) { order.reload.slice(:accepted_at, :awaiting_match_at).values }).to eq([ nil, nil ])
+    expect(Tenancy.with_tenant(buyer.id) { Purchasing::InboundShipment.count }).to eq(0)
+  end
 end

@@ -24,6 +24,7 @@
 | `queue.yml` | Solid Queue のワーカーの設定 | 追加（生成器のまま） | [ジョブ](#ジョブ) |
 | `recurring.yml` | Solid Queue の定期実行 | 追加（生成器のまま） | [ジョブ](#ジョブ) |
 | `test_layers.yml` | テストの層ごとの置き場と、割合の目安。`bin/test-layers` が読む | 追加 | [testing.md「テストの層」](testing.md#テストの層) |
+| `branch_coverage.yml` | 分岐の網羅率の計測の対象。`spec/support/branch_coverage.rb` と `bin/check-branch-coverage` が読む | 追加 | [testing.md「分岐の網羅率の警告」](testing.md#分岐の網羅率の警告) |
 | `ci.rb` | `bin/ci` が流す工程 | 変更 | [CI の工程](#ci-の工程) |
 | `bundler-audit.yml` | `bin/bundler-audit` が無視する CVE | 生成のまま | — |
 | `credentials.yml.enc` | 暗号化した秘密情報 | 生成のまま | [使っていない機能の設定](#使っていない機能の設定) |
@@ -228,7 +229,8 @@ grep <相関 ID> log/events.log
 | Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | Ledgers: commit references | — | `bin/check-commit-refs` | 台帳・証跡・引き継ぎに書いた SHA が HEAD の祖先かを確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | GraphQL: schema compatibility | — | `bin/check-schema-compat` | `origin/main` との分岐点からの、非推奨を経ない破壊的変更を止める（[graphql-schema.md「互換の判定」](../architecture/graphql-schema.md#互換の判定)） |
-| Tests | `bin/rails test` | `bin/rails db:test:prepare && bundle exec rspec --format progress --format json --out tmp/rspec.json` | テストに RSpec を使う。層ごとの件数を数えるため、JSON の出力も書く |
+| Tests | `bin/rails test` | `bin/rails db:test:prepare && COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json` | テストに RSpec を使う。層ごとの件数を数えるため、JSON の出力も書く。分岐の網羅率を同じ実行で測る |
+| Tests: branch coverage | — | `bin/check-branch-coverage` | `origin/main` との分岐点からの差分の、どの example も通らない分岐を警告にする（[testing.md「分岐の網羅率の警告」](testing.md#分岐の網羅率の警告)） |
 | Tests: layers | — | `bin/test-layers tmp/rspec.json` | テストの層ごとの件数・割合・時間を報告し、未分類のファイルを止める（[testing.md「テストの層」](testing.md#テストの層)） |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 
