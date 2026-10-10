@@ -1,7 +1,7 @@
 class CreateItems < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 品目カタログと、読む経路 1 のポリシー（docs/architecture/data-model.md「受注」「RLS」）
+  # 品目カタログと、読む経路 1 のポリシー（docs/architecture/data-model.md「受注（`sales`）」「RLS」）
   def change
     create_tenant_table :items do |t|
       t.string :code, null: false

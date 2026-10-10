@@ -15,7 +15,7 @@
    - API モードの Rails は Cookie・セッションのミドルウェアと CSRF 対策を持たない。ミドルウェアを明示的に足し、セッションの Cookie を `SameSite=Lax`・`HttpOnly` にする。`GraphqlController` と `SessionsController` は、`application/json` の本文だけを受け付ける（`ApplicationController`）。他サイトのフォームは `application/json` を送れず、`fetch` で送るには CORS のプリフライトが要るからである。`GraphqlController` は POST だけを受け付ける。
    - ログインは、成功したときにセッションを作り直してから ID を保存する。ログインの前のセッションを引き継がせないためである。
    - `GraphqlController` は、スキーマを実行する前に、ログの文脈（リクエスト ID・テナント・ユーザー・操作名・相関 ID）を `Rails.event.set_context` で設定する。文脈は Fiber のストレージにあり、Dataloader の Fiber は作られた時点の値を写して持つので、実行の途中で設定した値はフィールドの解決に届かない（`../implementation-plan.md` M18）。
-   - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「テーブル」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
+   - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「取引関係と権限付与（`partnerships`）」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
 3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
@@ -78,7 +78,7 @@ mutation は入れ子にせず、`Mutation` の直下に並べる。GraphQL は�
 
 経路 3 の出荷実績は、購買が持つ写しの入荷（`InboundShipment`）と同じ出荷を指す。業務の正本は写しの入荷で、検収はこれに対して行う。経路 3 は、受注側の出荷実績そのものを、権限付与がある間だけ見せる。
 
-相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。`SupplierShipment` の明細の型 `SupplierShipmentLine` も、出荷明細 ID を返さず、自社の発注明細で識別する。到達可能性のテストが、これら 4 つの型に ID のフィールドが無いことを確かめる。購買が持つ相手側の ID（`data-model.md`「購買」）も、GraphQL のフィールドには出さない。
+相手側の型は、相手テナントの内部の ID を、フィールドにもコネクションのカーソルにも持たない。`PublishedCatalogItem` は品目 ID を、`SupplierPartnership` は取引関係 ID を、`SupplierShipment` は出荷実績 ID を返さない。それぞれ品目コード、受注側テナント、連結先の発注で識別する。`SupplierShipment` の明細の型 `SupplierShipmentLine` も、出荷明細 ID を返さず、自社の発注明細で識別する。到達可能性のテストが、これら 4 つの型に ID のフィールドが無いことを確かめる。購買が持つ相手側の ID（`data-model.md`「購買（`purchasing`）」）も、GraphQL のフィールドには出さない。
 
 ```graphql
 type BuyerView {
@@ -656,6 +656,8 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `SalesOrderStatus` | `CANCELLED`（取消済）・`INSPECTED`（検収済）・`SHIPPED`（出荷済）・`AWAITING_PART_MATCH`（品番照合待ち）・`ALLOCATED`（引当済）・`PARTIALLY_ALLOCATED`（一部引当）・`RECEIVED`（受注済） | `SalesOrder.cancellationReviewPending`（取消審査中） |
 | `ShipmentRequestStatus` | `CANCELLED`（取消済）・`SHIPPED`（出荷済）・`ON_HOLD`（出荷停止中）・`INSTRUCTED`（出荷指示済）・`READY`（出荷待ち） | — |
 | `ImportStatus` | `FAILED`（失敗）・`PARTIALLY_FAILED`（一部失敗）・`SUCCEEDED`（完了）・`APPLYING`（反映中）・`STAGING`（置き場へ写し中）・`QUEUED`（待機中） | — |
+
+`ShipmentRequestStatus` の `ON_HOLD` は、出荷停止を記録する表を足すまで、スキーマに無い（`data-model.md`「状態は保存せず、時刻列から導出する」）。値を足す変更は、互換の判定で危険な変更として通る。
 
 その他の enum は、保存された列の値をそのまま写す。
 

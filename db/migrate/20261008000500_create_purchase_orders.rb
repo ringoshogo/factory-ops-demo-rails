@@ -1,7 +1,7 @@
 class CreatePurchaseOrders < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 発注・発注明細と、発注番号の採番行（docs/architecture/data-model.md「テナントの持ち方」「購買」）
+  # 発注・発注明細と、発注番号の採番行（docs/architecture/data-model.md「テナントの持ち方」「購買（`purchasing`）」）
   def change
     # テナントごとに 1 行。発注を登録するたびに行ロックして last_number を進める
     create_tenant_table :purchase_order_sequences do |t|

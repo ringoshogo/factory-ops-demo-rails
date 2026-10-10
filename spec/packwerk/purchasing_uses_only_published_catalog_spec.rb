@@ -1,7 +1,7 @@
 require "prism"
 
 # packwerk は公開 API の中のクラスを区別しないので、purchasing から sales への参照を
-# Sales::PublishedCatalog だけに絞る規則（context-map.md「許可する依存の向き」）はここで守る
+# Sales::PublishedCatalog だけに絞る規則（context-map.md「疎結合を守る規則」の依存の向き）はここで守る
 module PurchasingCatalogGuard
   ALLOWED = /\A(::)?Sales::PublishedCatalog(::|\z)/
 

@@ -19,7 +19,7 @@ Rails のアプリは、どのクラスからどのクラスでも呼べる。�
 
 | パッケージ | 中身 | 公開 API の例（`app/public/`） |
 |---|---|---|
-| `platform` | `ApplicationRecord`・`ApplicationJob`・`TenantRecord`・`Current`・`Tenancy` などの基底クラスとテナントの仕組み | （公開を限定しない） |
+| `platform` | `ApplicationRecord`・`ApplicationJob`・`TenantRecord`・`Current`・`Tenancy` などの基底クラスとテナントの仕組み、監査ログ（`AuditLog`・`Platform::AuditLogs`）、構造化ログの基盤（`Platform::Logging`・文脈のミドルウェア） | （公開を限定しない） |
 | `contracts` | コンテキスト間のイベントと、その配送（`Contracts.publish`・`EventJob`・配送表 `Subscriptions`） | すべて `app/public/` にある |
 | `partnerships` | テナント・ユーザー・取引関係・権限付与 | `Partnerships::Actor`・`Authentication`・`Access` |
 | `purchasing` | 発注と入荷 | `Purchasing::Ordering`・`PurchaseOrders` |

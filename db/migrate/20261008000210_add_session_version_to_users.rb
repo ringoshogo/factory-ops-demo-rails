@@ -1,5 +1,5 @@
 class AddSessionVersionToUsers < ActiveRecord::Migration[8.1]
-  # セッションの世代（docs/architecture/data-model.md「テーブル」users）。
+  # セッションの世代（docs/architecture/data-model.md「取引関係と権限付与（`partnerships`）」の users）。
   # Cookie のセッションはサーバーに残らないので、ログアウトとパスワードの変更で世代を進め、前の世代の Cookie を拒む
   def up
     add_column :users, :session_version, :integer, null: false, default: 0

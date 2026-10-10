@@ -1,7 +1,7 @@
 class CreateSalesOrders < ActiveRecord::Migration[8.1]
   include TenantTable
 
-  # 得意先品番の対応表・受注・受注明細と、受注番号の採番行（docs/architecture/data-model.md「テナントの持ち方」「受注」）
+  # 得意先品番の対応表・受注・受注明細と、受注番号の採番行（docs/architecture/data-model.md「テナントの持ち方」「受注（`sales`）」）
   def change
     # テナントごとに 1 行。受注を作るたびに行ロックして last_number を進める
     create_tenant_table :sales_order_sequences do |t|
