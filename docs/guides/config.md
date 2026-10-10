@@ -202,7 +202,9 @@ Rails は、executor で包まれた処理（Web の要求と、ワーカーが�
 
 - **相関 ID**（`correlation_id`）：一連の処理の始まりで 1 つ決め、最後まで同じ値を運ぶ。利用者の要求では `request_id` を、要求の外で発行したイベント（相関 ID の無い文脈）ではそのイベントの `event_id` を相関 ID にする。mutation の入口は要求（`GraphqlController`）だけなので、mutation はいつも相関 ID を持つ。監査の行は相関 ID を必須にする（[data-model.md「監査ログ（`platform`）」](../architecture/data-model.md#監査ログplatform)）ので、要求の外から mutation を流す入口を足す人は、その入口の相関 ID の始め方を同じ変更で決める。決めないと、監査の行の INSERT が失敗して操作ごと戻る（OI-42）。
 - **因果 ID**（`causation_id`）：いまの処理を直接引き起こしたものの ID。要求では空、イベントの受け手では届いたイベントの `event_id` である。
-- **付帯情報**：`ApplicationJob` は、ジョブを作った時点（`initialize`）の相関 ID とテナント ID を付帯情報に入れる。`Contracts.publish` は、ジョブを作った後、登録の前に、付帯情報をイベントのもの（[data-model.md「イベントの受け口と冪等キー」](../architecture/data-model.md#イベントの受け口と冪等キー)）に置き換える。付帯情報は直列化の最上位の項目（`"app_metadata"`）に入るので、再試行の登録にも引き継がれる（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3）。項目の無いジョブは、付帯情報の文脈を設定せずに動かす。
+- **付帯情報**：`ApplicationJob` は、ジョブを作った時点（`initialize`）の相関 ID とテナント ID を付帯情報に入れる。`Contracts.publish` は、ジョブを作った後、登録の前に、付帯情報をイベントのもの（[data-model.md「イベントの受け口と冪等キー」](../architecture/data-model.md#イベントの受け口と冪等キー)）に置き換える。付帯情報は直列化の最上位の項目（`"app_metadata"`）に入るので、再試行の登録にも引き継がれる（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3）。付帯情報の無いジョブの扱いは、イベントのジョブとそれ以外で分かれる。
+  - **イベントのジョブ**：付帯情報を必須とする。`Contracts::EventJob` は、受信の監査の行と配送の遅れの計測に使う項目（`Contracts::EventJob::REQUIRED_METADATA`）が 1 つでも無ければ、受け手を動かさずに `Contracts::EventJob::MissingMetadata` で失敗する。受信の監査の行を書けないまま受け手の書き込みだけを残すと、相手テナントに効果が及ぶ書き込みが記録されなくなるからである（[graphql-schema.md「監査ログ」](../architecture/graphql-schema.md#監査ログ)）。
+  - **それ以外のジョブ**：項目の無いジョブも、付帯情報の文脈を設定せずに動かす。
 
 受け手の中で発行するイベントは、同じ相関 ID と、因果 ID として受け手が受け取ったイベントの `event_id` を持つ。これで、発注側の `placePurchaseOrder` の要求 → 「発注登録」 → 受注側の ACL → 「受注確定」 → 購買の受け手、の全ログが同じ相関 ID を持つ（`spec/contracts/correlation_spec.rb`）。テナントは途中で変わるので、相関 ID でログを引けるのは運用者だけで、テナントの利用者には相手側のログを見せない。
 
