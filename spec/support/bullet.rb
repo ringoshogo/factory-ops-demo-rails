@@ -22,10 +22,11 @@ ActiveSupport::Notifications.subscribe("factory_bot.run_factory", BulletFactoryP
 
 # HTTP の要求の外で公開 API を動かす補助（イベントを受け手まで流す、など）は、これで包む。
 # 要求を流す example は下の包みの外にあり、要求ごとの検出は Bullet::Rack が終わりに消すので、補助が自分で検出を始める。
-# 検出の中で呼ばれたらそのまま動かす。Bullet.profile を入れ子にすると、内側の end_request が外側の検出を消す
+# 検出の中で呼ばれたらそのまま動かす。Bullet.profile を入れ子にすると、内側の end_request が外側の検出を消す。
+# 検出の中かどうかは、収集の状態の有無で見分ける。Bullet.start? は、factory の間の Bullet.pause でも偽になる
 module BulletDetection
   def self.wrap(&)
-    Bullet.start? ? yield : Bullet.profile(&)
+    Bullet.notification_collector ? yield : Bullet.profile(&)
   end
 end
 

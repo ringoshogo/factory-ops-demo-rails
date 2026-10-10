@@ -226,13 +226,13 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
 
       type = field.type.unwrap
       here = [ *path, selection.name ]
-      found = in_list && type < Types::BaseConnection ? [ here.join(".") ] : []
+      found = in_list && type.include?(GraphQL::Types::Relay::ConnectionBehaviors) ? [ here.join(".") ] : []
       found + connections_under_list(selection.selections, type, here, in_list: in_list || field.type.list?)
     end
   end
 
-  def self.nested_connections(text)
-    connections_under_list(GraphQL.parse(text).definitions.sole.selections, FactoryOpsSchema.query)
+  def self.nested_connections(text, schema = FactoryOpsSchema)
+    connections_under_list(GraphQL.parse(text).definitions.sole.selections, schema.query)
   end
 
   it "画面の問い合わせは、一覧の中にコネクションを入れ子にしない" do
@@ -247,6 +247,19 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
       .to eq([])
     expect(self.class.nested_connections("{ supplier { salesOrders { nodes { lines { id } } } items { edges { node { id } } } } }"))
       .to eq([])
+  end
+
+  # いまのスキーマには、コネクションの要素の下にコネクションを持つ型が無いので、その形を持つスキーマを作って確かめる
+  it "コネクションの nodes と edges.node の下のコネクションも、一覧の要素の下として見つける" do
+    item = Class.new(GraphQL::Schema::Object) { graphql_name("NestedItem") && field(:code, String) }
+    order = Class.new(GraphQL::Schema::Object) { graphql_name("NestedOrder") && field(:items, item.connection_type) }
+    query = Class.new(GraphQL::Schema::Object) { graphql_name("NestedQuery") && field(:orders, order.connection_type) }
+    schema = Class.new(GraphQL::Schema) { query(query) }
+
+    expect(self.class.nested_connections("{ orders { nodes { items { nodes { code } } } } }", schema)).to eq([ "orders.nodes.items" ])
+    expect(self.class.nested_connections("{ orders { edges { node { items { edges { node { code } } } } } } }", schema))
+      .to eq([ "orders.edges.node.items" ])
+    expect(self.class.nested_connections("{ orders { nodes { code: __typename } } }", schema)).to eq([])
   end
 
   SCREENS.each do |name, screen|

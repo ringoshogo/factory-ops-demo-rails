@@ -155,6 +155,33 @@ RSpec.describe BulletFactoryPause, bullet: false do
   end
 end
 
+RSpec.describe BulletDetection, bullet: false do
+  let(:tenant) { FactoryBot.create(:tenant) }
+
+  # Bullet.pause の間は Bullet.start? が偽になる。止めている間を検出の外と取り違えて Bullet.profile を始めると、
+  # その end_request が外側の検出の状態を消し、再開した後の N+1 が見えない
+  it "検出を止めている間に呼んでも、外側の検出の状態を消さず、再開した後の N+1 を検出する" do
+    expect do
+      Bullet.profile do
+        Tenancy.with_tenant(tenant.id) do
+          lines = FactoryBot.create_list(:sales_order_line, 2)
+          Bullet.pause
+          described_class.wrap { nil }
+          Bullet.resume
+
+          expect(Bullet.notification_collector).not_to be_nil
+          lines.first.sales_order.class.where(id: lines.map(&:sales_order_id)).each { |order| order.lines.to_a }
+        end
+      end
+    end.to raise_error(Bullet::Notification::UnoptimizedQueryError, /Sales::SalesOrder => \[:lines\]/)
+  end
+
+  it "検出の外で呼ぶと、ブロックの間だけ検出を始める" do
+    expect(described_class.wrap { Bullet.start? }).to be(true)
+    expect(Bullet.notification_collector).to be_nil
+  end
+end
+
 RSpec.describe BulletSafelist, bullet: false do
   after { Bullet.delete_safelist(type: :n_plus_one_query, class_name: "BulletSpecOrder", association: :lines) }
 
