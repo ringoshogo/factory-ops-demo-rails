@@ -385,3 +385,78 @@ bin/test-layers tmp/rspec.json                 # 未分類なし
 ### 残件の処理
 
 引当先が M23 の `open` は無かった。OI-63（judgment）は実装と一致し、作者の確認を待つ。実装で決めたことは OI-72 に judgment で積んだ。
+
+## M24 請求の締め
+
+PR #38（`m24-billing-close`、base は `m23-inspection`）。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの `081d7cc` で直し、違和感は直すか台帳に移した。High 以上が無いので、読み直しには出していない。どちらの系統も、`77299ca..66e8854` の diff を読んだ。Codex はテストを流さず、依頼に書いた実行結果を前提にした。Claude は同じ下書きの 2 つの破棄の再現の spec を書いて流した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘（X1） | 指摘（C1） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（X2・X3） | 指摘（C2・C3） |
+| 参照の維持 | 指摘なし | 指摘（C4） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | X1・C1：同じ下書きの 2 つの破棄が並ぶと、後の破棄が請求条件の行ロックを待った後の `lock!` で消えた請求書を読み直し、`ActiveRecord::RecordNotFound` で失敗する | 請求条件の行ロックの後に、請求書を scope を通してロック付きで引き直し、無ければ `NOT_FOUND` を返すようにした。2 つの破棄の競合テストを足し、後の破棄がロックを待ち、`NOT_FOUND` になり、明細が未請求に戻ることを確かめた。引き直しを `lock!` に戻すと落ちる | `081d7cc` |
+| Medium | Codex | X2：締めの最中に届いた検収の競合テストは、締めが終わってから受け手を動かすので、集めた明細だけを請求書に結ぶことを確かめない。明細を条件で引き直して結ぶ形に壊しても落ちない | 締めが明細を集めてから請求書に結ぶまでの間に、別の接続で受け手をコミットさせる形に直した。遅れた明細が未請求で残り、今回の金額に入らず、次の締めで集まることを確かめる。条件で引き直して結ぶ形に壊すと落ちる。受け手が請求条件の行ロックを待たないことは、別の example に分けた | `081d7cc` |
+| Medium | Codex | X3：競合テストの `after` の後始末そのものを外すと、行の残りを誰も確かめない | 競合テストの基盤全体の話なので、IB-26 に積んだ | — |
+| Low | Claude | C2：`for_invoice` の「見えない請求書は空」は、相手の請求書が明細を持たず、空どうしの比較になっている | 相手の請求書に明細を結んだ | `081d7cc` |
+| Low | Claude | C3：S1 の `SupplierView.billableItems(customerTenantId)` の行は、発注側が未請求明細を持たず、空どうしの比較になっている | 発注側にも自社の未請求明細を持たせ、絞らない一覧が 1 件を返すことを確かめてから、相手の ID で絞った一覧が空になることを確かめる | `081d7cc` |
+| Low | Claude | C4：`data-model.md` の `invoice_tax_summaries` の行に、税率と金額の CHECK 制約が無い | 書き足した | `081d7cc` |
+
+違和感は次のように扱った。
+
+- Codex：「前の請求書は下書きを除く」を壊しても落ちないのは、下書きがあれば先に `CONFLICT` になり、下書きの期間を見る経路が無いからで妥当 → 記録だけにした。表の行と同じ条件を書くために `issued` は残す
+- Claude 1：受注の受け手の example 名「数量 0 の明細は出さない」が中身と合わない → 名前を中身に合わせた（`081d7cc`）。数量 0 は別の example が確かめる
+- Claude 2：締め日が今日より後の締めを許している → 確定と一緒に決めるので、OI-77 に積んだ
+- Claude 3：`graphql-schema.md` の `BillableItem.priceExplanation` が M24 の型に無い → 販売単価の履歴と一緒に足すことを SDL の説明に書いた（`081d7cc`）
+
+### 実装の記録
+
+完了条件の spec・競合テスト・行列テスト・S1・`spec/graphql`・`spec/contracts`・`spec/db` を実装の前に流し、1153 examples, 123 failures で落ちた。表・モデル・「請求対象確定」の定義を置き、公開 API を空のモジュールで置いてから流したので、失敗は `NoMethodError`（公開 API が無い）と、mutation とフィールドが無いことによる期待の不一致と、配送表に無いイベントの `KeyError` だった。
+
+壊したファイルは複製から戻し、壊すときと戻すときに更新時刻を進めた（IB-24）。32 通りを壊し、31 通りが落ちた。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 締め | 取引先の確認・請求条件の有無・請求条件の行ロック（競合テスト）・締め日の確認・末日締め・下書きの有無・前の請求書との重なりとその同じ日・明細が 0 件・締め日以前・未請求だけ・取引先で絞る・税の 1 回の切り捨て・期間の始まりの翌日と最も古い検収日・確かめる順・集めた明細だけを結ぶ（競合テスト） |
+| 破棄 | 請求条件の行ロック（競合テスト）・引き直し（競合テスト）・発行済みの確認・明細を未請求に戻す |
+| 請求条件 | 取引先の確認・締め日の範囲 |
+| 受け手 | 請求の受け手の冪等・取引先、受注の受け手の数量 0 を出さない・発注明細 ID・単価の写し |
+| 読み取り | 未請求だけ・取引先で絞る・請求書の状態 |
+
+落ちなかったのは、締めの「前の請求書は下書きを除く」（`invoices.issued.maximum` を `invoices.maximum` に変える）だけである。下書きがあれば先に `CONFLICT` で戻るので、振る舞いが変わらない。
+
+### 確かめたこと
+
+`081d7cc` で、Ruby 3.4.11 で共通の完了条件と M24 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/billing/spec/public/billing/closing_spec.rb packs/billing/spec/public/billing/sales_event_receiver_spec.rb \
+  packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb spec/requests/inspections_spec.rb spec/requests/billing_spec.rb   # 52 examples, 0 failures
+bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb   # 6 examples, 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1635 examples, 0 failures
+BASE_REF=origin/m23-inspection bin/check-branch-coverage   # 一覧は空
+bundle exec rspec --tag concurrency   # 2 回続けて 35 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk check                             # 違反なし
+bin/check-structure                            # 終了コード 0
+BASE_REF=origin/m23-inspection bin/check-schema-compat   # 落とす変更なし
+bin/check-open-items --due M24                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし
+```
+
+分岐の網羅率の警告は、`c901022` の後の全件の計測で 1 件（`Billing::Scope` の操作者の確認の腕）で、example を 1 件足して消した。`081d7cc` の後の全件の計測では 0 件だった。
+
+### 残件の処理
+
+引当先が M24 の `open` は無かった。OI-64・OI-66（judgment）は実装と一致し、作者の確認を待つ。実装で決めたことは OI-73〜OI-76 に judgment で積んだ。未来の締め日は OI-77 で M25 に送った。
