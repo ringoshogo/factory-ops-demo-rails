@@ -60,6 +60,8 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
 
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。
+
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
 | M1 | 骨組みと CI | 主キーが DB の `uuidv7()` で作られ、`structure.sql` に残る |
@@ -82,6 +84,8 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 | M18 | 構造化ログと相関 ID | ログが 1 行 1 件の JSON で文脈を持ち、テナントをまたぐ一連の処理が 1 つの相関 ID で引ける |
 | M19 | 監査ログ | 相手テナントに効果が及ぶ書き込みが必ず記録され、記録は書き換えも削除もできない |
 | M20 | GraphQL スキーマの破壊的変更の検出 | 非推奨を経ない破壊的変更が CI を通らない |
+| M34 | 依存の更新と使っていない部品の削除 | 読み込む Rails の部品が `guides/config.md` の記述と一致し、保守の続く Ruby で動く |
+| M35 | 分岐の網羅率の警告 | PR が足した行の分岐のうち、どの example も通らないものが CI の警告に出る |
 | M21 | 取消依頼と審査 | 審査中は出荷が止まり、取消は受注側の承認でだけ成立する |
 | M22 | 受注側の取消と、取消と出荷の競合 | 同時に進んだ取消と出荷のどちらか一方だけが成立する |
 | M23 | 検収 | 検収数量が出荷数量を超えず、検収が受注側へ 1 回だけ届く |
@@ -107,7 +111,9 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M18 | M4・M7 | 文脈を `GraphqlController` と `ApplicationJob`・`Contracts::EventJob` で設定する |
 | M19 | M16・M18 | 監査ログの相関 ID を、M18 の文脈から取る。競合テストの後始末を、M16 の `concurrency` の置き場のテストに対して決める |
 | M20 | M5 | スキーマを書き出す |
-| M21〜M26 | M15〜M20 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる |
+| M34 | M18・M20 | 依存の更新で、M18 のログの衛生の spec が止めた経路を確かめる。M20 の 2 つ目の PR（CI の互換の検査）の後に CI の設定を変える |
+| M35 | M34 | 分岐の網羅率を、上げた後の Ruby で測る |
+| M21〜M26 | M15〜M20・M34・M35 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる。上げた Ruby で書き、足した分岐の未通過を警告で見る |
 | M27 | M19・M20・M25 | 単価の変更を監査する。請求書の説明が発行済みの請求書を使う |
 | M28 | M18・M25 | 送信の失敗をログに出す。確実な通知の呼び出し元が「請求書発行」の受け手である |
 | M29 | M27・M18 | 単価の列を `Sales::ItemPrices` で反映する。進み具合をログに出す |
@@ -795,6 +801,67 @@ BASE_REF=origin/main bin/check-schema-compat   # 2 つ目の PR で
 **実装する文書の節**：`graphql-schema.md`「スキーマの変更と非推奨」
 
 **文書に残すこと**：通す変更の規則と、例外の一覧の書式（`change`・`path`・`reason`）を、`graphql-schema.md`「スキーマの変更と非推奨」に書く。
+
+## M34 依存の更新と使っていない部品の削除
+
+**目的**：使っていない Rails の部品と gem を残さず、保守の続く Ruby で動かす。読む人や AI が、読み込まれた部品を見て使える前提で設計しない。依存を上げる前に、本番で止めているフレームワークの文字列のログ（`guides/config.md`「止めたフレームワークの文字列のログ」）が、新しい版で漏れないことを確かめる。
+
+**作るもの**
+
+1. 止めたログの経路の調べ直し（改善の候補 IB-14）：上げた後の Rails・Solid Queue・Ruby で、値を文字列で書く購読とミドルウェアが、止めた 5 つの経路のほかに増えていないかを確かめる。購読者の一覧とミドルウェアの並びを上げる前と後で比べ、ログの衛生の spec を新しい版で流す。拒否の一覧を、原則出さない許可の形に変えるかを「判断」に書く
+2. 使っていない部品を外す：`config/application.rb` の Active Storage・Action Mailbox・Action Text・Action Cable の読み込み、`config/environments/*.rb` の `active_storage.service`、`config/storage.yml`、`config/cable.yml`、kamal と image_processing の gem、Dockerfile の libvips。thruster（Dockerfile の起動の命令が使う）と Action Mailer（通知の送り方を `adr/007` が決める）は残す
+3. Ruby を 3.4 の最新の patch に上げる：`.ruby-version` と Dockerfile を変える（CI は `.ruby-version` を読む）。上げる前に、3.3.3 で `RUBYOPT=-W:deprecated` を付けて全件を流し、警告の件数を取っておく
+
+**判断**：Ruby を 3.4 へ直接上げるか
+
+- **既定の推奨**：直接上げる。文字列を比べる spec に `Hash#inspect` の表記に頼るものは無く、変える場所は `.ruby-version` と Dockerfile だけである
+- **裏返る条件**：3.4 で全件が通らない gem があり、すぐに直せない → 3.3 系の最新の patch にとどめ、3.4 は 3.3 系の保守が終わる前に別に上げる
+- **撤退コスト**：小さい。`.ruby-version` と Dockerfile を戻すだけで済む
+
+**完了条件**
+
+```sh
+bundle exec rspec                                                # 全件。本番の環境の起動は spec/platform/logging_spec.rb の子のプロセスが確かめる
+RUBYOPT=-W:deprecated bundle exec rspec 2>&1 | grep -c "warning:"   # 上げる前の件数を超えない
+git grep -nE "active_storage|action_mailbox|action_text|action_cable|image_processing|kamal" -- config app Gemfile Dockerfile   # 0 件
+```
+
+`ruby -v` が `.ruby-version` と同じ版で、`bundle outdated --only-explicit` に、保守の終わった版の gem が無い。
+
+**実装する文書の節**：`guides/config.md`「application.rb で変えたこと」「使っていない機能の設定」「止めたフレームワークの文字列のログ」、`README.md`「開発環境」
+
+**文書に残すこと**：外した部品と残した部品の理由を `guides/config.md` に書く。止めたログの経路の調べ直しの結果を、`guides/config.md`「止めたフレームワークの文字列のログ」に書く。
+
+## M35 分岐の網羅率の警告
+
+**目的**：PR が足した行の分岐のうち、どの example も通らないものを、実装レビューの前に一覧にする。確かめる example の抜け（サイクル 01 で 4 件）を、レビューだけに頼らずに見つける。網羅率は「実行したか」だけを見て「確かめたか」は見ないので、失敗にはせず警告にとどめる。
+
+**作るもの**
+
+- 計測：`spec/spec_helper.rb` は、環境変数 `COVERAGE=1` のときだけ、標準の `Coverage` で行と分岐を数え、結果を `tmp/coverage.json` に書く。gem は足さない
+- `bin/check-branch-coverage`：`tmp/coverage.json` と、基準の ref（`BASE_REF`、既定は `origin/main`）と HEAD の分岐点からの `git diff` を照らし、足した行か変えた行にある分岐のうち、どの example も通らないものを一覧にする。標準出力と `$GITHUB_STEP_SUMMARY` に書き、行ごとに GitHub の警告の注釈を出す。終了コードは 0 にする
+- CI：test のジョブを履歴をすべて取る形（`fetch-depth: 0`）にし、`COVERAGE=1` で rspec を流してから `bin/check-branch-coverage` を流す。`config/ci.rb` にも足す
+- いま通っていない公開 API の失敗の経路 7 か所の example：出荷の指示（`Fulfillment::Instructions`）と計上（`Fulfillment::Shipping`）の `NOT_FOUND`、受注の引当（`Sales::OrderAllocation`）の取消済・出荷済の `CONFLICT`、品目の保存（`Sales::Catalog`）の `NOT_FOUND`、イベントの受け手 3 つ（`Purchasing::SupplierEventReceiver`・`Sales::FulfillmentEventReceiver`・`Fulfillment::SalesEventReceiver`）の想定外のイベント
+- `spec/bin/check_branch_coverage_spec.rb`：小さな計測の結果と差分を渡し、足した行の未通過の分岐だけを一覧にし、足していない行の未通過と、通った分岐を出さないことを確かめる
+
+**判断**：計測と照合に gem（SimpleCov と undercover）を使うか
+
+- **既定の推奨**：使わない。標準の `Coverage` と `git diff` を照らす自前のスクリプトにする。undercover は libgit2 のネイティブのビルド（rugged）に依存し、要るのは差分の行と未通過の分岐を照らすことだけである
+- **裏返る条件**：照合の規則（名前の変わったファイル・子のプロセスの計測など）が増え、自前のスクリプトの保守が重くなる → SimpleCov（子のプロセスを含められる）と undercover に移す
+- **撤退コスト**：小さい。計測の結果の形が同じなので、スクリプトを差し替えるだけで済む
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/bin/check_branch_coverage_spec.rb
+COVERAGE=1 bundle exec rspec && bin/check-branch-coverage   # 終了コード 0。公開 API の失敗の経路 7 か所は一覧に出ない
+```
+
+サイクル 01 の M20 の実装レビューで出た互換の判定の未検証の分岐（X1）について、直す前の commit（`ded1244` の親）を作業ツリーの外に取り出し、`COVERAGE=1` で `spec/graphql/schema_compat_spec.rb` を流して `bin/check-branch-coverage` を当てると、その分岐が警告に出る。
+
+**実装する文書の節**：`guides/testing.md`（分岐の網羅率の警告の読み方を足す）、`guides/bin.md`
+
+**文書に残すこと**：警告が出たときに、example を足すか、足さない理由を PR の本文に書くことを `guides/testing.md` に書く。次のサイクルの振り返りで、警告の件数と、そのうち example を足した件数を数える。
 
 ## M21 取消依頼と審査
 
