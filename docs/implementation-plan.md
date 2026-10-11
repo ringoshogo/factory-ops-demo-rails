@@ -1073,7 +1073,7 @@ test "$(grep -rh "def login_as(user)" spec | wc -l)" -eq 1   # spec/support/requ
 1. 確定と写し：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた。入力と結果、ロック、確定した請求書を変えないトリガーは `data-model.md`「請求（`billing`）」。OI-84）、請求書発行のイベントと配送表の行、購買の受け手 `Purchasing::BillingEventReceiver`（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。`issueInvoice` の規則は `Billing::InvoicePolicy#issue?` で、`admin` に限る。`issueInvoice` は `audit` で、監査の行は `graphql-schema.md`「監査ログ」の表にある。`received_invoices`・`received_invoice_lines`・`invoice_sequences` の表の行列の行と、S1 の表に `issueInvoice(input.invoiceId)`・`buyer.receivedInvoice(id)` の行を足す。購買は「請求書発行」をイベントの契約だけで受けるので、パッケージの依存は変わらない
 2. 締め日（OI-77）：締め日が今日より後の締めを許し、確定も締め日を過ぎるのを待たずにできる（`data-model.md`「請求（`billing`）」）。締めの後に届いた、検収日が締め日以前の検収は、次の締めで集まる
 3. 役割による制限（OI-71〜OI-73）：サイクル 02 で作った mutation の規則のうち、`graphql-schema.md`「役割による制限」の表で `admin` に限るものを、`user.admin?` を条件に含める形に直す。対象は `Sales::SalesOrderPolicy#review?`・`#cancel?`、`Purchasing::PurchaseOrderPolicy#request_cancellation?`・`#inspect_receipt?`、`Billing::InvoicePolicy#set_term?`・`#close?`・`#discard?` の 7 つで、いまはどれも役割を問わない。`member` で `admin` に限る操作を呼んでいる既存の request spec（`spec/requests/inspections_spec.rb`・`spec/requests/billing_spec.rb`・`spec/requests/cancellations_spec.rb`）は、`admin` で呼ぶ形に直す
-4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表の行数と監査の行数が変わらないこと）を確かめる。`member` の行は、値を返すペルソナの `member` でも値を返すことを確かめる（OI-90）。役割を持たない mutation の行があれば落ちる
+4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表ごとの行の数と中身が、監査の行を含めて変わらないこと。既存の行を書き換えるだけの mutation は行の数を変えないので、中身も比べる）を確かめる。`member` の行は、値を返すペルソナの `member` でも値を返すことを確かめる（OI-90）。役割を持たない mutation の行があれば落ちる
 
 役割による制限をここに置くのは、確定（`issueInvoice`）で同じ形の規則を初めから作るからである。サイクル 03 は 6 つのマイルストーンで上限に達しているので、新しいマイルストーンは作らない。M36 は業務の振る舞いを変えないマイルストーンなので入れず、行列テストの役割の列は、M36 で作り直した世界に足す。
 
@@ -1085,14 +1085,14 @@ bundle exec rspec packs/billing/spec/public/billing/closing_spec.rb packs/purcha
   packs/purchasing/spec/public/purchasing/purchase_order_policy_spec.rb packs/billing/spec/public/billing/invoice_policy_spec.rb \
   spec/requests/billing_spec.rb spec/requests/inspections_spec.rb spec/requests/cancellations_spec.rb \
   spec/scenarios/billing_amounts_spec.rb spec/scenarios/tenant_boundary_spec.rb
-bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
+bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb packs/purchasing/spec/concurrency/purchasing/billing_event_receiver_lock_spec.rb
 bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb spec/db
 ```
 
 - 単体（`closing_spec.rb`）：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でない。確定の表の各行（他社の請求書・存在しない ID は `NOT_FOUND`、2 回目の確定は `CONFLICT`）。今日より後の締め日で締めて確定でき、その後に届いた締め日以前の検収が次の締めで集まる
 - 単体（`billing_event_receiver_spec.rb`）：同じ請求書発行を 2 回流しても写しが 1 件（冪等の共有テスト）
 - 単体（policy の spec）：役割を直した 7 つと `issue?` の規則が、`admin` には真、`member` には偽を返す。`purchase_order_policy_spec.rb` と `invoice_policy_spec.rb` は、このマイルストーンで足す
-- 競合（`closing_lock_spec.rb` に足す）：確定と破棄、確定と確定を 2 つの接続で同時に走らせ、どちらか一方だけが成り立つ。請求条件の行ロックで待つことを確かめる。確定が開いている間の同じ取引先の締めも、請求条件の行ロックで待つ
+- 競合（`closing_lock_spec.rb` に足す）：確定と破棄、確定と確定を 2 つの接続で同時に走らせ、どちらか一方だけが成り立つ。請求条件の行ロックで待つことを確かめる。確定が開いている間の同じ取引先の締めも、請求条件の行ロックで待つ。公開 API を通らない明細の書き換えと確定が並んだときも、トリガーが請求書の行の共有ロックで待ち、確定の後なら拒む。同じ「請求書発行」の 2 つの配送が同時に届いても、受領請求書は 1 件になる（`packs/purchasing/spec/concurrency/purchasing/billing_event_receiver_lock_spec.rb`）
 - DB（`spec/db`）：`received_invoices` の `total = subtotal + tax_total` の CHECK 制約が、外れた行を拒む。確定した請求書の UPDATE と DELETE、それに結んだ集計と明細の INSERT・UPDATE・DELETE、未請求の明細を確定した請求書へ結び付ける UPDATE を、トリガーが拒む（SQL で直接書いて確かめ、明細の集まりと集計が変わらない）
 - 行列（`graphql_matrix_spec.rb`）：上の作るもの 4。`admin` に限る規則の 1 つから `user.admin?` を外すと、その mutation の `member` の行が落ちる
 - シナリオ（`spec/scenarios/billing_amounts_spec.rb`、重要シナリオ S5）が通る
