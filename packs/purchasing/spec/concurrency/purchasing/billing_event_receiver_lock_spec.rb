@@ -2,7 +2,7 @@ require "rails_helper"
 
 # 同じ「請求書発行」が 2 つの配送で同時に届いたときの冪等（docs/architecture/context-map.md「検収と請求の流れ」6、
 # docs/architecture/data-model.md「イベントの受け口と冪等キー」）。先の配送が受領請求書を書いてコミットする前は、
-# 後の配送が請求書 ID の一意索引で待ち、先のコミットの後は何も書かずに終わる
+# 後の配送が請求書 ID の一意索引で待ち、先のコミットの後は何も書かずに終わる。確実な通知の送信記録とジョブも 1 回分だけ残る
 RSpec.describe "同じ請求書発行の同時の配送" do
   self.use_transactional_tests = false
 
@@ -20,12 +20,13 @@ RSpec.describe "同じ請求書発行の同時の配送" do
   end
 
   after do
-    delete_owned_rows([ buyer.id, supplier.id ], %w[received_invoice_lines received_invoices purchase_order_lines purchase_orders])
+    delete_owned_rows([ buyer.id, supplier.id ],
+      %w[email_deliveries received_invoice_lines received_invoices purchase_order_lines purchase_orders])
   end
 
   def receive = Purchasing::BillingEventReceiver.handle(event)
 
-  it "後の配送は先の配送のコミットを待ち、受領請求書と明細は 1 回分だけ残る" do
+  it "後の配送は先の配送のコミットを待ち、受領請求書と明細と通知の送信記録は 1 回分だけ残る" do
     _, release, first = hold_open(buyer.id) { receive }
 
     second = in_thread(buyer.id) { receive }
@@ -34,5 +35,9 @@ RSpec.describe "同じ請求書発行の同時の配送" do
     commit(release, first)
     finish(second)
     expect(Tenancy.with_tenant(buyer.id) { [ Purchasing::ReceivedInvoice.count, Purchasing::ReceivedInvoiceLine.count ] }).to eq([ 1, 2 ])
+    # 送信記録はパッケージの外から参照できないモデルなので、表を数える
+    expect(Tenancy.with_tenant(buyer.id) { ApplicationRecord.connection.select_value("SELECT count(*) FROM email_deliveries") }).to eq(1)
+    expect(SolidQueue::Job.where(class_name: "Notifications::CriticalDeliveryJob").where("arguments LIKE ?", "%#{buyer.id}%").count)
+      .to eq(1)
   end
 end

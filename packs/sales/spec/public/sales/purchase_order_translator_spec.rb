@@ -37,6 +37,17 @@ RSpec.describe Sales::PurchaseOrderTranslator do
       lines: [ { "purchase_order_line_id" => event.lines.sole["purchase_order_line_id"], "item_name" => "六角ボルト M8", "unit_price" => "120" } ])
   end
 
+  it "受注を確定したら、自社の admin への新しい受注の通知を撃ちっぱなしで送り、照合待ちで止まった受注では送らない" do
+    allow(Notifications::Email).to receive(:deliver_best_effort).and_call_original
+
+    described_class.handle(event_for("MY-BOLT", "UNKNOWN"))
+    expect(Notifications::Email).not_to have_received(:deliver_best_effort)
+
+    described_class.handle(event_for("MY-BOLT"))
+    confirmed = orders.find { _1.status == :received }
+    expect(Notifications::Email).to have_received(:deliver_best_effort).once.with(:new_sales_order, params: { order_no: confirmed.order_no })
+  end
+
   it "照合できない明細があれば、受注は品番照合待ちで止まり、照合できない明細は品目の写しを持たず、「品番照合待ち」を出す" do
     described_class.handle(event_for("MY-BOLT", "UNKNOWN"))
 

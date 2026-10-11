@@ -22,7 +22,8 @@ module Sales
     end
 
     # 全明細が照合できた受注を確定し、「受注確定」を出す。受注・受注明細・品目の ID は運ばない。
-    # 明細を読み込み済みの呼び出し元は lines に渡し、受注ごとに明細を引き直さない
+    # 明細を読み込み済みの呼び出し元は lines に渡し、受注ごとに明細を引き直さない。
+    # 自社の admin への新しい受注の通知は撃ちっぱなしにする。失っても受注は一覧に出るので、業務は進む（docs/adr/007 決定 5 の B-1）
     def self.confirm(order, lines = order.lines)
       order.update!(confirmed_at: Time.current)
       Contracts.publish(Contracts::SalesOrderConfirmed.new(
@@ -34,6 +35,7 @@ module Sales
             "unit_price" => line.unit_price.to_s }
         end
       ))
+      Notifications::Email.deliver_best_effort(:new_sales_order, params: { order_no: order.order_no })
     end
   end
 end
