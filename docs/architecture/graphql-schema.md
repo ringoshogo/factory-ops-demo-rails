@@ -667,7 +667,7 @@ type SalesOrderStatusCount {
 
 | mutation | 呼ぶ公開 API | 出すイベント |
 |---|---|---|
-| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える。`unitPrice` は、作るときは期限の無い単価に、既存の品目で値が変わるときは今日からの改定の予約になる） | なし |
+| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える。`unitPrice` は、作るときは有効期間 `(,)` の単価の行になる。既存の品目の単価は変えず、今日の単価と違う値は役割を問わず `INVALID_INPUT` にする。単価の改定は `scheduleItemPrice` を、入力の誤りは `correctItemPrice` を使う。今日の単価と同じ値は無視する） | なし |
 | `scheduleItemPrice` | `Sales::ItemPrices.schedule`（品目 ID・単価・改定日。改定日は今日以降） | なし |
 | `correctItemPrice` | `Sales::ItemPrices.correct`（単価の行 ID・正しい単価・理由。現在の行でなければ `CONFLICT`） | なし |
 | `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類。同じファイルの 2 回目は `CONFLICT`） | なし |
