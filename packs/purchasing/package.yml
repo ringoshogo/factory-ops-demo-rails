@@ -6,3 +6,4 @@ dependencies:
   - packs/partnerships
   - packs/contracts
   - packs/sales
+  - packs/notifications

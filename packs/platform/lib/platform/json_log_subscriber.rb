@@ -24,7 +24,9 @@ module Platform
       "active_job.retry_stopped" => %i[job_class job_id executions exception_class],
       "active_job.discarded" => %i[job_class job_id exception_class],
       "graphql.operation_completed" => %i[operation_name result user_error_codes duration_ms],
-      "contracts.event_handled" => %i[event_name receiver delivery_lag_ms]
+      "contracts.event_handled" => %i[event_name receiver delivery_lag_ms],
+      "notification.delivery_failed" => %i[kind delivery_id reason attempts],
+      "notification.best_effort_dropped" => %i[kind reason attempts]
     }.freeze
 
     # GraphQL の名前の形。操作名と変数の名前は利用者が送る値なので、この形の文字列でなければ、中の値ごと書かない

@@ -359,6 +359,40 @@ COMMENT ON TABLE public.customer_part_mappings IS '[受注] 得意先品番の�
 
 
 --
+-- Name: email_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_deliveries (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    notification_key character varying NOT NULL,
+    kind character varying NOT NULL,
+    recipient_user_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    provider_message_id character varying,
+    accepted_at timestamp(6) without time zone,
+    delivered_at timestamp(6) without time zone,
+    bounced_at timestamp(6) without time zone,
+    dropped_at timestamp(6) without time zone,
+    failed_at timestamp(6) without time zone,
+    failure_reason character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT email_deliveries_failure_reason CHECK (((failed_at IS NULL) = (failure_reason IS NULL)))
+);
+
+ALTER TABLE ONLY public.email_deliveries FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE email_deliveries; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.email_deliveries IS '[通知] 確実な送信の送信記録。通知キーごとに 1 行で、状況は時刻列から導出する';
+
+
+--
 -- Name: inbound_shipment_lines; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1674,6 +1708,29 @@ COMMENT ON TABLE public.users IS '[取引関係] テナントのユーザー。�
 
 
 --
+-- Name: webhook_inbox_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhook_inbox_events (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    provider character varying NOT NULL,
+    provider_event_id character varying NOT NULL,
+    received_at timestamp(6) without time zone NOT NULL,
+    payload jsonb NOT NULL,
+    processed_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: TABLE webhook_inbox_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.webhook_inbox_events IS '[通知] 外部の Webhook の受信。提供元のイベント ID ごとに 1 行で、メールアドレスを除いて生のまま残す';
+
+
+--
 -- Name: solid_queue_batch_executions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1826,6 +1883,14 @@ ALTER TABLE ONLY public.cancellation_reviews
 
 ALTER TABLE ONLY public.customer_part_mappings
     ADD CONSTRAINT customer_part_mappings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_deliveries email_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_deliveries
+    ADD CONSTRAINT email_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -2173,6 +2238,14 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: webhook_inbox_events webhook_inbox_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_inbox_events
+    ADD CONSTRAINT webhook_inbox_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: idx_on_inbound_shipment_id_purchase_order_line_id_3e46b99bab; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2436,6 +2509,20 @@ CREATE UNIQUE INDEX index_customer_part_mappings_on_owner_tenant_id_and_id ON pu
 --
 
 CREATE INDEX index_customer_part_mappings_on_owner_tenant_id_and_item_id ON public.customer_part_mappings USING btree (owner_tenant_id, item_id);
+
+
+--
+-- Name: index_email_deliveries_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_deliveries_on_owner_tenant_id_and_id ON public.email_deliveries USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_email_deliveries_on_owner_tenant_id_and_notification_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_email_deliveries_on_owner_tenant_id_and_notification_key ON public.email_deliveries USING btree (owner_tenant_id, notification_key);
 
 
 --
@@ -3139,6 +3226,27 @@ CREATE UNIQUE INDEX index_users_on_owner_tenant_id_and_id ON public.users USING 
 
 
 --
+-- Name: index_webhook_inbox_events_on_provider_and_provider_event_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_webhook_inbox_events_on_provider_and_provider_event_id ON public.webhook_inbox_events USING btree (provider, provider_event_id);
+
+
+--
+-- Name: index_webhook_inbox_events_processed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_webhook_inbox_events_processed ON public.webhook_inbox_events USING btree (processed_at) WHERE (processed_at IS NOT NULL);
+
+
+--
+-- Name: index_webhook_inbox_events_unprocessed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_webhook_inbox_events_unprocessed ON public.webhook_inbox_events USING btree (received_at) WHERE (processed_at IS NULL);
+
+
+--
 -- Name: audit_logs audit_logs_append_only; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3613,6 +3721,14 @@ ALTER TABLE ONLY public.cancellation_reviews
 
 
 --
+-- Name: email_deliveries fk_rails_bad36cb584; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_deliveries
+    ADD CONSTRAINT fk_rails_bad36cb584 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: solid_queue_batch_executions fk_rails_bc9f981155; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3783,6 +3899,12 @@ ALTER TABLE public.cancellation_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_part_mappings ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: email_deliveries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_deliveries ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: inbound_shipment_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3871,6 +3993,13 @@ CREATE POLICY owner_write ON public.cancellation_reviews USING ((owner_tenant_id
 --
 
 CREATE POLICY owner_write ON public.customer_part_mappings USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: email_deliveries owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.email_deliveries USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -4241,6 +4370,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261012100000'),
 ('20261012000000'),
 ('20261011210000'),
 ('20261011200000'),

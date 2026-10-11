@@ -61,5 +61,8 @@ module FactoryOpsDemoRails
 
     # Solid Queue を業務 DB と同じ接続に置く。connects_to を設定せず、全環境で同じアダプタにする（docs/adr/005 決定 1）
     config.active_job.queue_adapter = :solid_queue
+
+    # 通知のメールの差出人。送信先（provider）は環境ごとに決め、決めない環境は起動時に例外にする（Notifications::Provider）
+    config.x.notifications.from = "notifications@factory-ops.example"
   end
 end

@@ -16,6 +16,8 @@ module Contracts
 
     # 業務データと同じトランザクションでジョブの行を書く
     self.enqueue_after_transaction_commit = false
+    # 取り込みとメールを待たせないよう、イベントだけのワーカーで流す（docs/adr/007 決定 7）
+    queue_as :events
 
     class << self
       # 登録の検査と宛先の決め方を上書きさせない

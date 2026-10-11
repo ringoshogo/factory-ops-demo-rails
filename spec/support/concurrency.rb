@@ -113,7 +113,7 @@ module ConcurrencyHelpers
   end
 
   # スレッドをすべて終わらせてから、tables の行のうち tenant_ids のテナントが所有する行と、そのテナントを宛先にした
-  # イベントのジョブを消す。所有ロールの接続で消すのは、アプリのロールでは RLS が他のテナントの行を隠すからである。
+  # イベントのジョブ・そのテナントの名義で登録した送信のジョブを消す。所有ロールの接続で消すのは、アプリのロールでは RLS が他のテナントの行を隠すからである。
   # tables は子の表から先に並べる。テナントとユーザーは、監査の行が指すので消さない（KEPT_TABLES）。
   # 消した後に、KEPT_TABLES の外でそのテナントの行が残る表があれば、tables の書き漏らしなので失敗する
   def delete_owned_rows(tenant_ids, tables)
@@ -134,8 +134,7 @@ module ConcurrencyHelpers
       paused.each { |table, trigger| connection.execute("ALTER TABLE #{table} ENABLE TRIGGER #{trigger}") }
       tenant_ids.each do |tenant_id|
         connection.execute(<<~SQL)
-          DELETE FROM solid_queue_jobs
-          WHERE class_name = 'Contracts::EventJob' AND arguments LIKE #{connection.quote("%#{tenant_id}%")}
+          DELETE FROM solid_queue_jobs WHERE arguments LIKE #{connection.quote("%#{tenant_id}%")}
         SQL
       end
     end

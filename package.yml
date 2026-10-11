@@ -9,3 +9,4 @@ dependencies:
   - packs/fulfillment
   - packs/sales
   - packs/purchasing
+  - packs/notifications

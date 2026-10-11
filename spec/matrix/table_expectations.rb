@@ -71,6 +71,8 @@ module MatrixExpectations
     "received_invoices" => OWNER_ONLY,
     "received_invoice_lines" => OWNER_ONLY,
     # 監査ログは書いたテナントだけが読む。相手テナントへの写しは作らない
-    "audit_logs" => OWNER_ONLY
+    "audit_logs" => OWNER_ONLY,
+    # 送信記録は送ったテナントだけが読む。宛先は自社のユーザーで、相手テナントへ送る通知は無い
+    "email_deliveries" => OWNER_ONLY
   }.freeze
 end

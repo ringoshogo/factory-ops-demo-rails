@@ -9,6 +9,7 @@ inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 
 require:
   - ./lib/rubocop/cop/factory_ops/event_job_enqueue.rb
+  - ./lib/rubocop/cop/factory_ops/external_effect_enqueue.rb
   - ./lib/rubocop/cop/factory_ops/no_history_comment.rb
 
 # イベントのジョブの登録を Contracts.publish の 1 か所に限る（docs/adr/005）
@@ -16,6 +17,18 @@ FactoryOps/EventJobEnqueue:
   Enabled: true
   Exclude:
     - packs/contracts/app/public/contracts.rb
+
+# 外部へ作用するジョブの登録を Notifications::Email の 1 か所に限る（docs/adr/007 決定 4）。
+# Jobs は ExternalEffectJob のサブクラスの一覧で、spec/jobs/event_job_atomicity_spec.rb が実際のサブクラスと照らす
+FactoryOps/ExternalEffectEnqueue:
+  Enabled: true
+  Jobs:
+    - Notifications::CriticalDeliveryJob
+    - Notifications::BestEffortMailJob
+  # ジョブ自身の spec は、ジョブを作って流して確かめる
+  Exclude:
+    - packs/notifications/app/public/notifications/email.rb
+    - packs/notifications/spec/**/*
 
 # コメントに経緯・マイルストーンの番号・予定を書かせない（docs/guides/comments.md「機械で止めるもの」）
 FactoryOps/NoHistoryComment:

@@ -1,15 +1,18 @@
-# examples:
-#   periodic_cleanup:
-#     class: CleanSoftDeletedRecordsJob
-#     queue: background
-#     args: [ 1000, { batch_size: 500 } ]
-#     schedule: every hour
-#   periodic_cleanup_with_command:
-#     command: "SoftDeletedRecord.due.delete_all"
-#     priority: 2
-#     schedule: at 5am every day
+# 定期のジョブ（bin/jobs の scheduler が読む）。Webhook の受信の処理は、受信のときに登録したジョブを失っても
+# 1 分ごとに拾い直す（docs/adr/007 決定 5 の A-3）
+default: &default
+  process_webhook_inbox:
+    class: Notifications::ProcessInboxJob
+    schedule: every minute
+  purge_webhook_inbox:
+    class: Notifications::PurgeInboxJob
+    schedule: every day at 4am
+
+development:
+  <<: *default
 
 production:
+  <<: *default
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12
