@@ -1186,7 +1186,7 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
   - `new_sales_order`（撃ちっぱなし）：受注側が受注を確定したとき（ACL と、対応表の登録による照合のやり直しの両方）に、自社の `admin` へ送る（OI-83・OI-98）。
 - メールの本文は Action Mailer のテンプレート（`Notifications::Mailer`、text だけ）で書き、送信はジョブの中で `deliver_now` を呼ぶ。
 - 送信先の切り替え：`Notifications::Provider` の実装を 3 つ置き、`config.x.notifications.provider` で選ぶ。
-  - `Sendgrid`：v3 の送信 API を `Net::HTTP` で呼ぶ。`Net::HTTP` の既定の時間切れ（`open_timeout`・`read_timeout`・`write_timeout` はどれも 60 秒）は `external_mail` の 2 本のスレッドを長く塞ぐので、`open_timeout` を 5 秒、`read_timeout`・`write_timeout` を 10 秒にする。`Net::OpenTimeout`・`Net::ReadTimeout`・`Net::WriteTimeout`・`Errno::ECONNREFUSED`・`Errno::ECONNRESET`・`SocketError` を、A-2 の表の「タイムアウト・接続の失敗」に当てる。API キーは credentials に置き、ログに書かない。本番以外の環境では、SendGrid の sandbox mode（受け付けの検査だけを行い、配信しない）を有効にしないと起動時に例外にする。
+  - `Sendgrid`：v3 の送信 API を `Net::HTTP` で呼ぶ。`Net::HTTP` の既定の時間切れ（`open_timeout`・`read_timeout`・`write_timeout` はどれも 60 秒）は `external_mail` の 2 本のスレッドを長く塞ぐので、`open_timeout` を 5 秒、`read_timeout`・`write_timeout` を 10 秒にする。`Net::OpenTimeout`・`Net::ReadTimeout`・`Net::WriteTimeout`・`SocketError` と、`SystemCallError`（`Errno::ECONNREFUSED`・`Errno::ECONNRESET` などをまとめる）・`IOError`・`OpenSSL::SSL::SSLError`・`Net::HTTPBadResponse`・`Net::ProtocolError` を、A-2 の表の「タイムアウト・接続の失敗」に当てる（OI-102）。API キーは credentials に置き、ログに書かない。本番以外の環境では、SendGrid の sandbox mode（受け付けの検査だけを行い、配信しない）を有効にしないと起動時に例外にする。
   - `FileSystem`（開発）：`tmp/mails/` に 1 通 1 ファイルで書く。
   - `Fake`（テスト）：メモリに積み、テストから読める。
 - WebMock を test のグループに入れ、`spec/spec_helper.rb` で全テストに `WebMock.disable_net_connect!(allow_localhost: true)` を掛ける。

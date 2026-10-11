@@ -113,7 +113,7 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 
 通知のメールの送信先は、環境ごとに `config.x.notifications.provider` で選ぶ。本番は SendGrid（API キーと Webhook の署名の公開鍵は credentials）、開発は `tmp/mails/` に 1 通 1 ファイルで書くもの、テストはメモリに積むもので、テストと開発は外部へ送らない。`initializers/notifications.rb` が起動時に送信先を作り、本番以外で SendGrid を選んで sandbox mode を外した設定を例外にする。テストは、これとは別に WebMock で外部への HTTP を止める（`spec/spec_helper.rb`）。
 
-ジョブを登録する時機（コミットの後か、トランザクションの中か）は設定ではなく、`ApplicationJob`（`packs/platform`）と `Contracts::EventJob`（`packs/contracts`）の `enqueue_after_transaction_commit` で決める。
+ジョブを登録する時機（コミットの後か、トランザクションの中か）は設定ではなく、`ApplicationJob`（`packs/platform`）・`Contracts::EventJob`（`packs/contracts`）と、`ExternalEffectJob` のサブクラス（`packs/notifications` の送信のジョブ。書かなければ読み込みで例外になる）の `enqueue_after_transaction_commit` で決める（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4）。
 
 ## ログ
 
@@ -266,7 +266,7 @@ GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci
 
 外した部品の定数が起動の後に無く、Action Mailer があることは `spec/platform/framework_loading_spec.rb` が確かめる。部品を足すときは、この表と spec を同じ変更で直す。
 
-次のファイルは、Rails が生成したまま残っているが、本デモの機能は使っていない。
+次のファイルは、Rails が生成したまま残っている。
 
-- **`credentials.yml.enc`**：暗号化した秘密情報。復号の鍵 `config/master.key` は `.gitignore` で除外していて、リポジトリに無い。アプリのコードは credentials を読まないが、本番の `secret_key_base`（セッションの Cookie の暗号化に使う）はここから取る。本番のコンテナには `RAILS_MASTER_KEY` を渡す（`Dockerfile` の冒頭のコメント）。開発とテストでは、Rails が `tmp/local_secret.txt` を作って使う。
-- **`locales/en.yml`**：翻訳の見本の 1 行だけがある。
+- **`credentials.yml.enc`**：暗号化した秘密情報。復号の鍵 `config/master.key` は `.gitignore` で除外していて、リポジトリに無い。アプリのコードが読むのは、本番の SendGrid の API キーと Webhook の署名の公開鍵（`sendgrid.api_key`・`sendgrid.webhook_public_key`。`environments/production.rb`）だけで、本番の `secret_key_base`（セッションの Cookie の暗号化に使う）も Rails がここから取る。本番のコンテナには `RAILS_MASTER_KEY` を渡す（`Dockerfile` の冒頭のコメント）。開発とテストでは、Rails が `tmp/local_secret.txt` を作って使う。
+- **`locales/en.yml`**：翻訳の見本の 1 行だけがある。本デモの機能は使っていない。
