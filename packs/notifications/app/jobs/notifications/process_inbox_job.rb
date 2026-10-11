@@ -25,7 +25,8 @@ module Notifications
       payload = row.payload
       tenant_id, delivery_id, event = payload.values_at("tenant_id", "email_delivery_id", "event")
       if [ tenant_id, delivery_id ].all? { UUID.match?(_1.to_s) } && EmailDelivery::EVENT_COLUMNS.key?(event)
-        Tenancy.with_tenant(tenant_id) { EmailDelivery.find_by(id: delivery_id)&.record_event!(event, occurred_at(row)) }
+        # 送信記録をロックしてから時刻列を読む。同じ送信記録を指す別の行を別の処理が取っても、先に書いた時刻を上書きしない
+        Tenancy.with_tenant(tenant_id) { EmailDelivery.lock.find_by(id: delivery_id)&.record_event!(event, occurred_at(row)) }
       end
       row.update!(processed_at: Time.current)
     end

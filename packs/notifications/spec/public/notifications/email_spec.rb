@@ -107,7 +107,8 @@ RSpec.describe Notifications::Email do
       failed, old, accepted = Tenancy.with_tenant(tenant) do
         [ FactoryBot.create(:email_delivery, failed_at: at, failure_reason: "retries_exhausted:http_503", attempts: 8),
           FactoryBot.create(:email_delivery, failed_at: at - 2.days, failure_reason: "http_400"),
-          FactoryBot.create(:email_delivery, accepted_at: at) ]
+          # 受け付けた送信記録は、失敗の時刻があっても送り直さない
+          FactoryBot.create(:email_delivery, accepted_at: at, failed_at: at, failure_reason: "http_500") ]
       end
 
       count = Tenancy.with_tenant(tenant) { described_class.redeliver_failed(since: at - 1.day) }
@@ -119,7 +120,7 @@ RSpec.describe Notifications::Email do
         expect(old.reload.failed_at).to eq(at - 2.days)
       end
       expect(jobs("Notifications::CriticalDeliveryJob").map { _1.arguments.dig("arguments", 0) }).to eq([ failed.id ])
-      expect(accepted.id).not_to eq(failed.id)
+      expect(Tenancy.with_tenant(tenant) { accepted.reload.failed_at }).to eq(at)
     end
   end
 end

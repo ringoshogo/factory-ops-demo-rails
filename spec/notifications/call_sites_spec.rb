@@ -18,7 +18,8 @@ RSpec.describe "通知の呼び出し元" do
     end
 
     def visit_call_node(node)
-      if METHODS.key?(node.name) && node.receiver.is_a?(Prism::ConstantPathNode) && node.receiver.full_name == "Notifications::Email"
+      if METHODS.key?(node.name) && node.receiver.is_a?(Prism::ConstantPathNode) &&
+          node.receiver.full_name.delete_prefix("::") == "Notifications::Email"
         first = node.arguments&.arguments&.first
         kind = first.is_a?(Prism::SymbolNode) ? first.unescaped.to_sym : nil
         @calls << Call.new(path: @path, line: node.location.start_line, method_name: node.name, kind:)
@@ -55,18 +56,20 @@ RSpec.describe "通知の呼び出し元" do
   end
 
   describe "集め方" do
-    it "2 か所目の呼び出し・シンボルでない種類・別の受け手を区別する" do
+    it "2 か所目の呼び出し・シンボルでない種類・別の受け手・先頭に :: を付けた受け手を区別する" do
       source = <<~RUBY
         module Shop
           def self.a = Notifications::Email.deliver_critical(:received_invoice, key: "k", params: {})
           def self.b = Notifications::Email.deliver_critical(:received_invoice, key: "k2", params: {})
           def self.c(kind) = Notifications::Email.deliver_best_effort(kind, params: {})
           def self.d = OtherMailer.deliver_critical(:received_invoice)
+          def self.e = ::Notifications::Email.deliver_best_effort(:new_sales_order, params: {})
         end
       RUBY
 
       expect(self.class.collect("x.rb", source).map { [ _1.method_name, _1.kind ] })
-        .to eq([ %i[deliver_critical received_invoice], %i[deliver_critical received_invoice], [ :deliver_best_effort, nil ] ])
+        .to eq([ %i[deliver_critical received_invoice], %i[deliver_critical received_invoice], [ :deliver_best_effort, nil ],
+          %i[deliver_best_effort new_sales_order] ])
     end
   end
 end

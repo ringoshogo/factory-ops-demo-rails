@@ -109,7 +109,8 @@ RSpec.describe Notifications::Provider::Sendgrid do
   end
 
   it "タイムアウトと接続の失敗は、再試行する失敗にする" do
-    [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError ].each do |error|
+    [ Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EHOSTUNREACH,
+      Errno::ETIMEDOUT, SocketError, EOFError, OpenSSL::SSL::SSLError, Net::HTTPBadResponse ].each do |error|
       stub_request(:post, endpoint).to_raise(error)
 
       expect(failure).to be_a(Notifications::Provider::TransientError).and have_attributes(message: error.name)

@@ -52,4 +52,22 @@ RSpec.describe "送信記録と受信の表のロック" do
     expect(Tenancy.with_tenant(tenant) { deliveries.map { _1.reload.delivered_at } })
       .to eq([ Time.zone.at(1_791_000_000), Time.zone.at(1_791_000_001) ])
   end
+
+  it "Notifications::ProcessInboxJob.apply は、同じ送信記録を指す別の行の処理を送信記録のロックで待たせ、先に書いた時刻を残す" do
+    stub_const("Notifications::ProcessInboxJob::BATCH_SIZE", 1)
+    2.times do |index|
+      inbox_ids << Notifications::WebhookInboxEvent.create!(provider: "sendgrid", provider_event_id: SecureRandom.uuid,
+        received_at: Time.current + index, payload: { "event" => "delivered", "timestamp" => 1_791_000_000 + index, "tenant_id" => tenant,
+          "email_delivery_id" => delivery.id }).id
+    end
+
+    _, release, holder = hold_open(tenant) { Notifications::ProcessInboxJob.new.send(:process_batch) }
+    waiter = in_thread(tenant) { Notifications::ProcessInboxJob.new.send(:process_batch) }
+
+    expect(blocked_on_lock?(waiter, by: holder)).to be(true)
+    commit(release, holder)
+    finish(waiter)
+    expect(Notifications::WebhookInboxEvent.where(id: inbox_ids, processed_at: nil)).to be_empty
+    expect(Tenancy.with_tenant(tenant) { delivery.reload.delivered_at }).to eq(Time.zone.at(1_791_000_000))
+  end
 end

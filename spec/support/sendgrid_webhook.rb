@@ -6,14 +6,17 @@ require "openssl"
 module SendgridWebhookHelpers
   def self.included(group)
     group.let(:sendgrid_key) { OpenSSL::PKey::EC.generate("prime256v1") }
-    group.around do |example|
-      config = Rails.configuration.x.notifications
-      previous = config.sendgrid_webhook_public_key
-      config.sendgrid_webhook_public_key = Base64.strict_encode64(sendgrid_key.public_to_der)
-      example.run
-    ensure
-      config.sendgrid_webhook_public_key = previous
-    end
+    group.around { |example| SendgridWebhookHelpers.with_public_key(sendgrid_key) { example.run } }
+  end
+
+  # ブロックの間だけ key の公開鍵を設定し、例外で抜けても元の値に戻す。戻さないと、後の example が前の鍵で署名を確かめる
+  def self.with_public_key(key)
+    config = Rails.configuration.x.notifications
+    previous = config.sendgrid_webhook_public_key
+    config.sendgrid_webhook_public_key = Base64.strict_encode64(key.public_to_der)
+    yield
+  ensure
+    config.sendgrid_webhook_public_key = previous
   end
 
   # [本文, 署名, 時刻] を返す。署名は「時刻の文字列 + 本文」の SHA-256 に対する ECDSA を Base64 にしたもの

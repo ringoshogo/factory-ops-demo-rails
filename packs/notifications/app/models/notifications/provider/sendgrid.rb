@@ -11,9 +11,12 @@ module Notifications
       READ_TIMEOUT = 10
       WRITE_TIMEOUT = 10
 
-      # タイムアウトと接続の失敗。相手に届いたかが分からないが、重複を受け入れる（docs/adr/007 決定 6 の C-2）ので再試行する
+      # タイムアウトと接続の失敗。相手に届いたかが分からないが、重複を受け入れる（docs/adr/007 決定 6 の C-2）ので再試行する。
+      # 並べ漏れた例外はジョブから上がり、テナントのトランザクションが戻って送信記録が待機中のまま残るので、
+      # TLS・ソケット（SystemCallError は Errno::* をまとめる）・応答の読み取りの失敗も含める
       CONNECTION_ERRORS = [
-        Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError
+        Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, SocketError, SystemCallError, IOError,
+        OpenSSL::SSL::SSLError, Net::HTTPBadResponse, Net::ProtocolError
       ].freeze
 
       # 待ち時間の上限。これより長く待たせる応答でも、1 時間後にもう一度試す
