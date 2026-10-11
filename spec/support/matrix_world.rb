@@ -22,6 +22,47 @@ class MatrixWorld
 
   attr_reader :tenants, :users
 
+  # 行列の spec のファイルごとに、世界を 1 回だけ作って全 example で使い回す（docs/guides/testing.md「行列テストとの分担」）。
+  # example ごとに作ると、表の数に比例する世界を表の数に比例する example ぶん作り、時間が表の数の 2 乗で伸びる。
+  # 各 example は、rspec-rails が世界と同じ接続の上に開くセーブポイントの中で動き、終わりに巻き戻る
+  def self.share_per_file(group)
+    group.before(:context) { @matrix_world = MatrixWorld.open }
+    group.after(:context) { MatrixWorld.close if @matrix_world }
+    group.let(:world) { @matrix_world }
+  end
+
+  # 接続を固定し、外側のトランザクションの中に世界を作る。作る途中で失敗したら、固定を外してから送出する。
+  # before(:context) は rspec-rails の example ごとのトランザクションの外で動くので、固定しないと世界がコミットされる。
+  # pin_connection! は Rails の公開の文書に無いメソッドで、transactional fixtures も同じものを使う。
+  # lock_thread は transactional fixtures の既定（lock_threads）と同じ真にし、example の固定と同じ形にそろえる
+  def self.open
+    pool = ActiveRecord::Base.connection_pool
+    pool.pin_connection!(true)
+    begin
+      world = new.freeze.tap { check_tenant_cleared! }
+    ensure
+      pool.unpin_connection! unless world
+    end
+  end
+
+  # 世界のトランザクションを巻き戻し、接続の固定を外す。unpin_connection! が偽を返すのは、世界のトランザクションが
+  # ファイルの終わりより前にコミットされたか巻き戻ったときで、その後の example は世界の無い DB で動いたことになる
+  def self.close
+    return if ActiveRecord::Base.connection_pool.unpin_connection!
+
+    raise "行列の世界のトランザクションが、ファイルの終わりより前に閉じた。example が世界の接続でコミットしたか巻き戻した"
+  end
+
+  # 世界を作った後に、テナントの設定が残っていないことを確かめる。残っていると、外側のトランザクションの終わりまで
+  # 全 example に渡り、example の生 SQL が残ったテナントで RLS を通って、行列の結果が変わる。
+  # example の中で設定した値は、example のセーブポイントと一緒に巻き戻る
+  def self.check_tenant_cleared!
+    setting = ActiveRecord::Base.lease_connection.select_value("SELECT current_setting('app.tenant_id', true)")
+    return if setting.blank? && Current.tenant_id.nil?
+
+    raise "テナントの設定が残っている（app.tenant_id: #{setting.inspect}、Current.tenant_id: #{Current.tenant_id.inspect}）"
+  end
+
   def self.tenant_tables
     ActiveRecord::Base.lease_connection.select_values(<<~SQL)
       SELECT table_name FROM information_schema.columns
@@ -47,6 +88,16 @@ class MatrixWorld
     end
     as(:supplier) { FactoryBot.create(:item, :published) }
     @linked_orders = PARTNERSHIPS.keys.index_with { |buyer| link_orders(buyer) }
+  end
+
+  # 世界のオブジェクトを example の間で使い回すので、属性を凍らせ、example の中の書き換えを例外にする。
+  # 行の書き換えは DB の上で巻き戻るが、オブジェクトの書き換えは巻き戻らず、後の example に渡る
+  def freeze
+    [ @tenants, @users, @partnerships, *@rows.values, *@linked_orders.values ].each do |records|
+      records.each_value(&:freeze).freeze
+    end
+    [ @rows, @linked_orders ].each(&:freeze)
+    super
   end
 
   # supplier と buyer の取引関係

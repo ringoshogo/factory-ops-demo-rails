@@ -5,7 +5,7 @@ require_relative "graphql_expectations"
 # 入口のフィールドと mutation ごとに、ペルソナとしてログインして実行し、結果の種類を確かめる
 # （docs/architecture/context-map.md「テナントと所有」、docs/architecture/graphql-schema.md「エラー」）
 RSpec.describe "入口の行列", type: :request do
-  let(:world) { MatrixWorld.new }
+  MatrixWorld.share_per_file(self)
 
   ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
 
