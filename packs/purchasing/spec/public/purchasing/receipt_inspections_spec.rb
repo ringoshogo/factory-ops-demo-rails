@@ -130,8 +130,23 @@ RSpec.describe Purchasing::ReceiptInspections, ".record" do
     expect_nothing_written
   end
 
+  # 上限は仕様の値で書く。定数から入力を作ると、定数を誤って下げても入力が一緒に縮んで通る
+  it "異なる有効な明細が上限ちょうどの 100 件なら受け付ける" do
+    extra = Tenancy.with_tenant(buyer.id) do
+      Array.new(98) do
+        FactoryBot.create(:inbound_shipment_line, inbound_shipment: inbound,
+          purchase_order_line: FactoryBot.create(:purchase_order_line, purchase_order: order, quantity: 1))
+      end
+    end
+    lines = [ *inbound_lines, *extra ].map { line_input(_1, 1) }
+
+    expect(lines.size).to eq(100)
+    expect(record(lines:)).to be_success
+    expect(accepted_quantities.size).to eq(100)
+  end
+
   it "明細が上限の 100 件を超えれば、中身を見ずに INVALID_INPUT で、明細全体を指す" do
-    result = record(lines: Array.new(described_class::MAX_LINES + 1) { line_input(inbound_lines[0], 1) })
+    result = record(lines: Array.new(101) { line_input(inbound_lines[0], 1) })
 
     expect(failure_of(result)).to eq([ [ :invalid_input, [ :lines ] ] ])
     expect_nothing_written
