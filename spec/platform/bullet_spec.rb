@@ -1,5 +1,6 @@
 require "rails_helper"
 require_relative "../support/events"
+require_relative "../support/concurrency"
 
 # 関連を 1 件ずつ読む N+1 が、テストの失敗まで届く（docs/architecture/graphql-schema.md「ページングと N+1」）。
 # 公開 API・Dataloader のソース・/graphql への要求の 3 つの経路で、同じ N+1 が例外になることを確かめる。
@@ -86,8 +87,15 @@ RSpec.describe "N+1 の検出", type: :request, bullet: false do
       expect(run_inner_example(bullet: false, &n_plus_one).status).to eq(:passed)
     end
 
+    # 競合テストの後始末のガード（spec/support/concurrency.rb）も受けるので、内側の example は後始末を終える
     it ":concurrency の example は包まない" do
-      expect(run_inner_example(concurrency: true, &n_plus_one).status).to eq(:passed)
+      read_lines = n_plus_one
+      result = run_inner_example(concurrency: true) do
+        read_lines.call
+        delete_owned_rows([ SecureRandom.uuid ], [])
+      end
+
+      expect(result.status).to eq(:passed)
     end
 
     it "HTTP の要求を流す example（type: :request）は bullet: false を持ち、包まない" do
