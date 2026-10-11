@@ -7,6 +7,10 @@ module ConcurrencyHelpers
   # 監査の行と、監査の行が指しうる行の表。監査の行は消せず、指す先も消さない
   KEPT_TABLES = %w[tenants users audit_logs].freeze
 
+  # 確定した請求書と、それに結んだ集計と明細の書き換えを、所有ロールの接続でも拒むトリガーを持つ表
+  # （docs/architecture/data-model.md「請求（`billing`）」）
+  IMMUTABLE_TABLES = %w[invoices invoice_tax_summaries billable_items].freeze
+
   # スレッドの終わりと、ロックの待ちを待つ上限の秒数
   WAIT_SECONDS = 10
 
@@ -116,7 +120,12 @@ module ConcurrencyHelpers
     connection = OwnerConnection.lease_connection
     ids = tenant_ids.map { connection.quote(_1) }.join(", ")
     connection.transaction do
+      # 確定した請求書を消すために、後始末のトランザクションの中だけ表のトリガーを止める。所有ロールは表の所有者なので
+      # 止められる。ALTER TABLE は表を排他でロックし、コミットの前に戻すので、ほかの接続には止まった状態が見えない
+      paused = tables & IMMUTABLE_TABLES
+      paused.each { connection.execute("ALTER TABLE #{_1} DISABLE TRIGGER USER") }
       tables.each { connection.execute("DELETE FROM #{_1} WHERE owner_tenant_id IN (#{ids})") }
+      paused.each { connection.execute("ALTER TABLE #{_1} ENABLE TRIGGER USER") }
       tenant_ids.each do |tenant_id|
         connection.execute(<<~SQL)
           DELETE FROM solid_queue_jobs

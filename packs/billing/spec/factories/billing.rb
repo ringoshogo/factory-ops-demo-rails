@@ -30,7 +30,8 @@ FactoryBot.define do
     tax_total { 0 }
     total { subtotal + tax_total }
 
-    # 確定済み。採番の規則は確定の公開 API が持つので、番号は乱数で作る
+    # 確定済み。採番の規則は確定の公開 API が持つので、番号は乱数で作る。確定した請求書には明細と集計を結べないので、
+    # 明細を結ぶなら下書きで作って結んでから確定する
     trait :issued do
       issued_at { Time.current }
       invoice_number { "INV-#{SecureRandom.hex(4)}" }
@@ -43,5 +44,9 @@ FactoryBot.define do
     tax_rate_percent { 10 }
     taxable_amount { 0 }
     tax_amount { 0 }
+  end
+
+  factory :invoice_sequence, class: "Billing::InvoiceSequence" do
+    owner_tenant_id { Current.tenant_id }
   end
 end

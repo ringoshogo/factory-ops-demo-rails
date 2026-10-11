@@ -3,11 +3,14 @@ require_relative "../support/matrix_world"
 require_relative "graphql_expectations"
 
 # 入口のフィールドと mutation ごとに、ペルソナとしてログインして実行し、結果の種類を確かめる
-# （docs/architecture/context-map.md「テナントと所有」、docs/architecture/graphql-schema.md「エラー」）
+# （docs/architecture/context-map.md「テナントと所有」、docs/architecture/graphql-schema.md「エラー」）。
+# mutation は、値を返すペルソナの member でも呼び、admin に限る mutation が FORBIDDEN になって何も書かないことと、
+# member に許す mutation が同じ値を返すことを確かめる（docs/architecture/graphql-schema.md「役割による制限」）
 RSpec.describe "入口の行列", type: :request do
   MatrixWorld.share_per_file(self)
 
   ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
+  ROLES = %i[admin member].freeze
 
   # 型ごとの、応答の data からフィールドの親までの道。型の中の読む経路は、経路 2 の取引関係の一覧か発注の一覧の要素を親にする
   def parent_paths = { "BuyerView" => %w[buyer], "SupplierView" => %w[supplier], "Viewer" => %w[viewer], "Query" => [], "Mutation" => [],
@@ -63,6 +66,34 @@ RSpec.describe "入口の行列", type: :request do
     expect(MatrixExpectations::GRAPHQL.keys).to match_array(schema_entries)
   end
 
+  # ペルソナのテナントが所有する、テナントの表ごとの行数。監査の行も含む
+  def owned_row_counts(persona)
+    tenant_id = world.tenants.fetch(persona)
+    world.as(persona) do
+      MatrixWorld.tenant_tables.index_with do |table|
+        connection = ActiveRecord::Base.lease_connection
+        connection.select_value("SELECT count(*) FROM #{connection.quote_table_name(table)} WHERE owner_tenant_id = $1", "Matrix", [ tenant_id ])
+      end
+    end
+  end
+
+  def call(entry, user)
+    variables = entry[:variables]&.call(world) || {}
+    login_as(user)
+    post "/graphql", params: { query: entry[:query], variables: }, as: :json
+    response.parsed_body
+  end
+
+  it "mutation の行はすべて、許す役割を持つ。ほかの行は役割を持たない" do
+    MatrixExpectations::GRAPHQL.each do |key, entry|
+      if key.start_with?("Mutation.")
+        expect(ROLES).to include(entry[:role]), "#{key} に role: :admin か role: :member を書く"
+      else
+        expect(entry).not_to have_key(:role), key
+      end
+    end
+  end
+
   it "期待値はすべてのペルソナについて、決めた結果の種類で書かれている" do
     MatrixExpectations::GRAPHQL.each do |key, entry|
       expect(entry[:expect].keys).to match_array(MatrixWorld::PERSONAS), key
@@ -80,6 +111,25 @@ RSpec.describe "入口の行列", type: :request do
           post "/graphql", params: { query: entry[:query], variables: entry[:variables]&.call(world) || {} }, as: :json
 
           expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(entry[:expect][persona])
+        end
+      end
+
+      entry[:expect].select { |_, result| result == :value }.each_key do |persona|
+        case entry[:role]
+        when :admin
+          it "#{persona} の member には forbidden で、そのテナントの表に何も書かない" do
+            variables = entry[:variables]&.call(world) || {}
+            before = owned_row_counts(persona)
+            login_as(world.members[persona])
+            post "/graphql", params: { query: entry[:query], variables: }, as: :json
+
+            expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(:forbidden)
+            expect(owned_row_counts(persona)).to eq(before)
+          end
+        when :member
+          it "#{persona} の member にも value" do
+            expect(outcome(call(entry, world.members[persona]), [ *parent_paths.fetch(type_name), field_name ])).to eq(:value)
+          end
         end
       end
     end

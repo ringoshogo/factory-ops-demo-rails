@@ -7,7 +7,7 @@ RSpec.describe "取消依頼と審査", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }
   let(:supplier_admin) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, :admin) } }
-  let(:buyer_member) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user) } }
+  let(:buyer_admin) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user, :admin) } }
 
   def mutate(name, selection, **input)
     query(<<~GRAPHQL, input:).fetch(name)
@@ -41,7 +41,7 @@ RSpec.describe "取消依頼と審査", type: :request do
     mutate("registerPartMapping", "partMapping { id }", customerTenantId: buyer.id, customerPartNumber: "MY-BOLT", itemId: item_id)
     mutate("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     @purchase_order_id = mutate("placePurchaseOrder", "purchaseOrder { id }",
       supplierTenantId: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 4 } ]).dig("purchaseOrder", "id")
     deliver_enqueued_events
@@ -55,7 +55,7 @@ RSpec.describe "取消依頼と審査", type: :request do
   end
 
   def request_cancellation
-    login_as(buyer_member)
+    login_as(buyer_admin)
     expect(mutate("requestPurchaseOrderCancellation", "purchaseOrder { status cancellationPending }",
       purchaseOrderId: @purchase_order_id, reason: "数量の誤り"))
       .to eq("purchaseOrder" => { "status" => "ACCEPTED", "cancellationPending" => true }, "errors" => [])
@@ -86,7 +86,7 @@ RSpec.describe "取消依頼と審査", type: :request do
       .to eq("salesOrder" => { "status" => "CANCELLED", "cancellationReviewPending" => false }, "errors" => [])
     deliver_enqueued_events
     expect(audit_rows(buyer, "purchase_order.request_cancellation"))
-      .to eq([ [ buyer_member.id, "PurchaseOrder", @purchase_order_id, supplier.id ] ])
+      .to eq([ [ buyer_admin.id, "PurchaseOrder", @purchase_order_id, supplier.id ] ])
     expect(audit_rows(supplier, "cancellation_review.approve"))
       .to eq([ [ supplier_admin.id, "CancellationReview", approved_review_id, buyer.id ] ])
 
@@ -95,7 +95,7 @@ RSpec.describe "取消依頼と審査", type: :request do
     expect(query("{ supplier { stocks { nodes { onHand allocated } } } }").dig("supplier", "stocks", "nodes"))
       .to eq([ { "onHand" => 10, "allocated" => 0 } ])
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     expect(purchase_order).to match("status" => "CANCELLED", "cancellationPending" => false,
       "cancellationRequests" => [ { "reason" => "数量の誤り", "outcome" => "APPROVED", "decidedAt" => be_present } ])
   end
@@ -116,7 +116,7 @@ RSpec.describe "取消依頼と審査", type: :request do
     expect(mutate("postShipment", "shipmentRequest { status }", shipmentRequestId: @request_id, shippedOn: "2026-10-20"))
       .to eq("shipmentRequest" => { "status" => "SHIPPED" }, "errors" => [])
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     expect(purchase_order).to match("status" => "ACCEPTED", "cancellationPending" => false,
       "cancellationRequests" => [ { "reason" => "数量の誤り", "outcome" => "REJECTED", "decidedAt" => be_present } ])
   end
@@ -125,7 +125,7 @@ RSpec.describe "取消依頼と審査", type: :request do
     mutate("postShipment", "shipmentRequest { status }", shipmentRequestId: @request_id, shippedOn: "2026-10-20")
     deliver_enqueued_events
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     expect(mutate("requestPurchaseOrderCancellation", "purchaseOrder { status cancellationPending }",
       purchaseOrderId: @purchase_order_id, reason: "数量の誤り"))
       .to eq("purchaseOrder" => { "status" => "INBOUND", "cancellationPending" => true }, "errors" => [])
@@ -150,7 +150,7 @@ RSpec.describe "取消依頼と審査", type: :request do
     expect(mutate("postShipment", "shipmentRequest { status }", shipmentRequestId: @request_id, shippedOn: "2026-10-20"))
       .to eq("shipmentRequest" => nil, "errors" => [ { "code" => "CONFLICT" } ])
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     expect(purchase_order).to match("status" => "SUPPLIER_CANCELLED", "cancellationPending" => false, "cancellationRequests" => [])
     expect(mutate("requestPurchaseOrderCancellation", "purchaseOrder { id }", purchaseOrderId: @purchase_order_id, reason: "数量の誤り"))
       .to eq("purchaseOrder" => nil, "errors" => [ { "code" => "CONFLICT" } ])
@@ -172,7 +172,7 @@ RSpec.describe "取消依頼と審査", type: :request do
 
     expect(mutate("approveCancellationReview", "salesOrder { id }", cancellationReviewId: SecureRandom.uuid))
       .to eq("salesOrder" => nil, "errors" => [ { "code" => "NOT_FOUND" } ])
-    login_as(buyer_member)
+    login_as(buyer_admin)
     expect(mutate("requestPurchaseOrderCancellation", "purchaseOrder { id }", purchaseOrderId: @purchase_order_id, reason: "再依頼"))
       .to eq("purchaseOrder" => nil, "errors" => [ { "code" => "CONFLICT" } ])
   end

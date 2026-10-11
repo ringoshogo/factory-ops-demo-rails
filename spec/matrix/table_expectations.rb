@@ -66,6 +66,10 @@ module MatrixExpectations
     "billable_items" => OWNER_ONLY,
     "invoices" => OWNER_ONLY,
     "invoice_tax_summaries" => OWNER_ONLY,
+    "invoice_sequences" => OWNER_ONLY,
+    # 受領請求書は発注側だけが所有する「請求書発行」の写しで、受注側から読む経路は無い
+    "received_invoices" => OWNER_ONLY,
+    "received_invoice_lines" => OWNER_ONLY,
     # 監査ログは書いたテナントだけが読む。相手テナントへの写しは作らない
     "audit_logs" => OWNER_ONLY
   }.freeze

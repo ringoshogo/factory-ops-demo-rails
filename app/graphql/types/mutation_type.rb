@@ -22,6 +22,7 @@ module Types
     field :set_billing_term, mutation: Mutations::SetBillingTerm
     field :close_billing_period, mutation: Mutations::CloseBillingPeriod
     field :discard_draft_invoice, mutation: Mutations::DiscardDraftInvoice
+    field :issue_invoice, mutation: Mutations::IssueInvoice
     field :place_purchase_order, mutation: Mutations::PlacePurchaseOrder
     field :request_purchase_order_cancellation, mutation: Mutations::RequestPurchaseOrderCancellation
     field :inspect_inbound_shipment, mutation: Mutations::InspectInboundShipment

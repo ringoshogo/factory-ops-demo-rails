@@ -53,4 +53,29 @@ FactoryBot.define do
     purchase_order { association :purchase_order, owner_tenant_id: }
     reason { "数量の誤り" }
   end
+
+  # 受注側の請求書は ID で参照するだけなので、作らない
+  factory :received_invoice, class: "Purchasing::ReceivedInvoice" do
+    owner_tenant_id { Current.tenant_id }
+    invoice_id { SecureRandom.uuid }
+    supplier_tenant_id { FactoryBot.create(:tenant).id }
+    invoice_number { "INV-#{SecureRandom.hex(4)}" }
+    period_start { Date.current.beginning_of_month }
+    period_end { Date.current.end_of_month }
+    issued_on { Date.current }
+    subtotal { 0 }
+    tax_total { 0 }
+    total { subtotal + tax_total }
+  end
+
+  factory :received_invoice_line, class: "Purchasing::ReceivedInvoiceLine" do
+    owner_tenant_id { Current.tenant_id }
+    received_invoice { association :received_invoice, owner_tenant_id: }
+    purchase_order_line { association :purchase_order_line, owner_tenant_id: }
+    item_name { "六角ボルト M8" }
+    unit_price { 120 }
+    quantity { 1 }
+    tax_rate_percent { 10 }
+    amount { unit_price * quantity }
+  end
 end

@@ -63,6 +63,55 @@ CREATE FUNCTION public.find_login_user(login_email text) RETURNS TABLE(id uuid, 
 
 
 --
+-- Name: invoice_children_issued_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.invoice_children_issued_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF TG_OP <> 'INSERT' AND OLD.invoice_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.invoices
+    WHERE owner_tenant_id = OLD.owner_tenant_id AND id = OLD.invoice_id AND issued_at IS NOT NULL FOR SHARE
+  ) THEN
+    RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, OLD.id;
+  END IF;
+  IF TG_OP <> 'DELETE' AND NEW.invoice_id IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.invoices
+    WHERE owner_tenant_id = NEW.owner_tenant_id AND id = NEW.invoice_id AND issued_at IS NOT NULL FOR SHARE
+  ) THEN
+    RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, NEW.id;
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: invoices_issued_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.invoices_issued_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF OLD.issued_at IS NOT NULL THEN
+    RAISE EXCEPTION '確定した請求書は変えられない（invoices %）', OLD.id;
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
 -- Name: partnership_active(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -381,6 +430,28 @@ COMMENT ON TABLE public.inspection_records IS '[受注] 検収の記録。「検
 
 
 --
+-- Name: invoice_sequences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invoice_sequences (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    last_number integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.invoice_sequences FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE invoice_sequences; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.invoice_sequences IS '[請求] 請求番号の採番行。テナントごとに 1 行で、最後に払い出した番号を持つ';
+
+
+--
 -- Name: invoice_tax_summaries; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -645,6 +716,65 @@ ALTER TABLE ONLY public.receipt_inspections FORCE ROW LEVEL SECURITY;
 --
 
 COMMENT ON TABLE public.receipt_inspections IS '[購買] 入荷検収。入荷 1 件に 1 回で、検収日を持つ';
+
+
+--
+-- Name: received_invoice_lines; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.received_invoice_lines (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    item_name character varying NOT NULL,
+    unit_price bigint NOT NULL,
+    quantity integer NOT NULL,
+    tax_rate_percent integer NOT NULL,
+    amount bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    received_invoice_id uuid NOT NULL,
+    purchase_order_line_id uuid NOT NULL
+);
+
+ALTER TABLE ONLY public.received_invoice_lines FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE received_invoice_lines; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.received_invoice_lines IS '[購買] 受領請求書の明細。発注明細ごとの品目名・単価・数量・税率・金額の写し';
+
+
+--
+-- Name: received_invoices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.received_invoices (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    invoice_id uuid NOT NULL,
+    supplier_tenant_id uuid NOT NULL,
+    invoice_number character varying NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    issued_on date NOT NULL,
+    subtotal bigint NOT NULL,
+    tax_total bigint NOT NULL,
+    total bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT received_invoices_total_sum CHECK ((total = (subtotal + tax_total)))
+);
+
+ALTER TABLE ONLY public.received_invoices FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE received_invoices; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.received_invoices IS '[購買] 受領請求書。「請求書発行」の写しで、請求書ごとに 1 行';
 
 
 --
@@ -1719,6 +1849,14 @@ ALTER TABLE ONLY public.inspection_records
 
 
 --
+-- Name: invoice_sequences invoice_sequences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_sequences
+    ADD CONSTRAINT invoice_sequences_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: invoice_tax_summaries invoice_tax_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1796,6 +1934,22 @@ ALTER TABLE ONLY public.receipt_inspection_lines
 
 ALTER TABLE ONLY public.receipt_inspections
     ADD CONSTRAINT receipt_inspections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: received_invoice_lines received_invoice_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.received_invoice_lines
+    ADD CONSTRAINT received_invoice_lines_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: received_invoices received_invoices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.received_invoices
+    ADD CONSTRAINT received_invoices_pkey PRIMARY KEY (id);
 
 
 --
@@ -2071,10 +2225,24 @@ CREATE INDEX idx_on_owner_tenant_id_purchase_order_line_id_b4d8e1aa74 ON public.
 
 
 --
+-- Name: idx_on_owner_tenant_id_purchase_order_line_id_f6fdc7abc2; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_purchase_order_line_id_f6fdc7abc2 ON public.received_invoice_lines USING btree (owner_tenant_id, purchase_order_line_id);
+
+
+--
 -- Name: idx_on_owner_tenant_id_receipt_inspection_id_239b33d8d0; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_on_owner_tenant_id_receipt_inspection_id_239b33d8d0 ON public.receipt_inspection_lines USING btree (owner_tenant_id, receipt_inspection_id);
+
+
+--
+-- Name: idx_on_owner_tenant_id_received_invoice_id_a1a6251ba4; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_owner_tenant_id_received_invoice_id_a1a6251ba4 ON public.received_invoice_lines USING btree (owner_tenant_id, received_invoice_id);
 
 
 --
@@ -2295,6 +2463,20 @@ CREATE UNIQUE INDEX index_inspection_records_on_owner_tenant_id_and_id ON public
 
 
 --
+-- Name: index_invoice_sequences_on_owner_tenant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoice_sequences_on_owner_tenant_id ON public.invoice_sequences USING btree (owner_tenant_id);
+
+
+--
+-- Name: index_invoice_sequences_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_invoice_sequences_on_owner_tenant_id_and_id ON public.invoice_sequences USING btree (owner_tenant_id, id);
+
+
+--
 -- Name: index_invoice_tax_summaries_on_invoice_id_and_tax_rate_percent; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2460,6 +2642,27 @@ CREATE UNIQUE INDEX index_receipt_inspections_on_inbound_shipment_id ON public.r
 --
 
 CREATE UNIQUE INDEX index_receipt_inspections_on_owner_tenant_id_and_id ON public.receipt_inspections USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_received_invoice_lines_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_received_invoice_lines_on_owner_tenant_id_and_id ON public.received_invoice_lines USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_received_invoices_on_invoice_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_received_invoices_on_invoice_id ON public.received_invoices USING btree (invoice_id);
+
+
+--
+-- Name: index_received_invoices_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_received_invoices_on_owner_tenant_id_and_id ON public.received_invoices USING btree (owner_tenant_id, id);
 
 
 --
@@ -2946,10 +3149,39 @@ CREATE TRIGGER audit_logs_no_truncate BEFORE TRUNCATE ON public.audit_logs FOR E
 
 
 --
+-- Name: billable_items billable_items_issued_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER billable_items_issued_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.billable_items FOR EACH ROW EXECUTE FUNCTION public.invoice_children_issued_immutable();
+
+
+--
+-- Name: invoice_tax_summaries invoice_tax_summaries_issued_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER invoice_tax_summaries_issued_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.invoice_tax_summaries FOR EACH ROW EXECUTE FUNCTION public.invoice_children_issued_immutable();
+
+
+--
+-- Name: invoices invoices_issued_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER invoices_issued_immutable BEFORE DELETE OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION public.invoices_issued_immutable();
+
+
+--
 -- Name: users users_bump_session_version; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER users_bump_session_version BEFORE UPDATE OF password_digest ON public.users FOR EACH ROW WHEN (((old.password_digest)::text IS DISTINCT FROM (new.password_digest)::text)) EXECUTE FUNCTION public.bump_session_version();
+
+
+--
+-- Name: received_invoice_lines fk_rails_060ae0b27c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.received_invoice_lines
+    ADD CONSTRAINT fk_rails_060ae0b27c FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3006,6 +3238,14 @@ ALTER TABLE ONLY public.shipment_request_lines
 
 ALTER TABLE ONLY public.shipments
     ADD CONSTRAINT fk_rails_1f1c050f7b FOREIGN KEY (owner_tenant_id, shipping_instruction_id) REFERENCES public.shipping_instructions(owner_tenant_id, id);
+
+
+--
+-- Name: invoice_sequences fk_rails_21c30bf28e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invoice_sequences
+    ADD CONSTRAINT fk_rails_21c30bf28e FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3089,11 +3329,27 @@ ALTER TABLE ONLY public.purchase_orders
 
 
 --
+-- Name: received_invoice_lines fk_rails_361873d11c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.received_invoice_lines
+    ADD CONSTRAINT fk_rails_361873d11c FOREIGN KEY (owner_tenant_id, received_invoice_id) REFERENCES public.received_invoices(owner_tenant_id, id);
+
+
+--
 -- Name: solid_queue_failed_executions fk_rails_39bbc7a631; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.solid_queue_failed_executions
     ADD CONSTRAINT fk_rails_39bbc7a631 FOREIGN KEY (job_id) REFERENCES public.solid_queue_jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: received_invoices fk_rails_3a09779cdd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.received_invoices
+    ADD CONSTRAINT fk_rails_3a09779cdd FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3449,6 +3705,14 @@ ALTER TABLE ONLY public.cancellation_reviews
 
 
 --
+-- Name: received_invoice_lines fk_rails_f17d86106f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.received_invoice_lines
+    ADD CONSTRAINT fk_rails_f17d86106f FOREIGN KEY (owner_tenant_id, purchase_order_line_id) REFERENCES public.purchase_order_lines(owner_tenant_id, id);
+
+
+--
 -- Name: shipments fk_rails_f9cec7c937; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3531,6 +3795,12 @@ ALTER TABLE public.inbound_shipments ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.inspection_records ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: invoice_sequences; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.invoice_sequences ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: invoice_tax_summaries; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3621,6 +3891,13 @@ CREATE POLICY owner_write ON public.inspection_records USING ((owner_tenant_id =
 
 
 --
+-- Name: invoice_sequences owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.invoice_sequences USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
 -- Name: invoice_tax_summaries owner_write; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3688,6 +3965,20 @@ CREATE POLICY owner_write ON public.receipt_inspection_lines USING ((owner_tenan
 --
 
 CREATE POLICY owner_write ON public.receipt_inspections USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: received_invoice_lines owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.received_invoice_lines USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: received_invoices owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.received_invoices USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -3856,6 +4147,18 @@ ALTER TABLE public.receipt_inspection_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.receipt_inspections ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: received_invoice_lines; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.received_invoice_lines ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: received_invoices; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.received_invoices ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: sales_order_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3934,6 +4237,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261012000000'),
 ('20261011210000'),
 ('20261011200000'),
 ('20261011100000'),

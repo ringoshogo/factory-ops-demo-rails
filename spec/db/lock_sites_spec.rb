@@ -10,6 +10,7 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
   SITES = {
     "Billing::Closing.close" => { spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb" },
     "Billing::Closing.discard" => { spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb" },
+    "Billing::Closing.issue" => { spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb" },
     "Fulfillment::Instructions.create" => {
       reason: "出荷依頼の行ロックで、出荷停止の受け手・計上と直列になる。同じロックの待ちは、計上と出荷停止の受け手の競合テストが確かめる"
     },

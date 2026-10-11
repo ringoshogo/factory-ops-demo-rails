@@ -1,6 +1,7 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/events"
 
-# 締めの直列化（docs/architecture/data-model.md「請求（`billing`）」）。締めと下書きの破棄は請求条件の行をロックし、
+# 締めの直列化（docs/architecture/data-model.md「請求（`billing`）」）。締めと下書きの破棄と確定は請求条件の行をロックし、
 # 同じ取引先の締めを直列にする。「請求対象確定」の受け手はこのロックを取らないので、締めの最中に届いた検収は待たずに
 # 未請求の明細として残り、次の締めで集まる
 RSpec.describe "締めの競合" do
@@ -8,7 +9,7 @@ RSpec.describe "締めの競合" do
 
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:customers) { FactoryBot.create_list(:tenant, 2) }
-  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
+  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "admin", partner_code: "") }
 
   before do
     as_supplier do
@@ -22,7 +23,7 @@ RSpec.describe "締めの競合" do
 
   after do
     delete_owned_rows([ supplier.id, *customers.map(&:id) ],
-      %w[invoice_tax_summaries billable_items invoices billing_terms partnership_grants partnerships])
+      %w[invoice_tax_summaries billable_items invoices invoice_sequences billing_terms partnership_grants partnerships])
   end
 
   def as_supplier(&) = Tenancy.with_tenant(supplier.id, &)
@@ -32,6 +33,19 @@ RSpec.describe "締めの競合" do
   end
 
   def drafts = as_supplier { Billing::Invoice.draft.order(:id).pluck(:customer_tenant_id) }
+
+  def issued_numbers = as_supplier { Billing::Invoice.issued.order(:id).pluck(:invoice_number) }
+
+  def issue(invoice_id) = Billing::Closing.issue(actor, invoice_id:)
+
+  def discard(invoice_id) = Billing::Closing.discard(actor, invoice_id:)
+
+  # 受注側テナントが登録した「請求書発行」の請求書 ID。ほかの example のテナントのジョブを数えない
+  def published_invoices
+    enqueued_event_jobs.map { _1.arguments.fetch("arguments") }
+      .select { |name, payload| name == "Contracts::InvoiceIssued" && payload.fetch("supplier_tenant_id") == supplier.id }
+      .map { _2.fetch("invoice_id") }
+  end
 
   # 締めの最中に、受注の受け手から届く前の期間の検収
   def late_inspection
@@ -122,5 +136,62 @@ RSpec.describe "締めの競合" do
     finish(receiver_thread)
     commit(release, first_thread)
     expect(as_supplier { Billing::BillableItem.find_by!(item_name: "遅れた検収").invoice_id }).to be_nil
+  end
+
+  describe "確定" do
+    let!(:draft) { as_supplier { close }.value }
+
+    it "確定が開いている間は同じ下書きの破棄が請求条件の行ロックを待ち、確定のコミットの後に CONFLICT になる" do
+      issued, release, issue_thread = hold_open(supplier.id) { issue(draft.id) }
+      expect(issued).to be_success
+
+      discard_thread = in_thread(supplier.id) { discard(draft.id) }
+      expect(blocked_on_lock?(discard_thread, by: issue_thread)).to be(true)
+
+      commit(release, issue_thread)
+      expect(finish(discard_thread).failures.map(&:code)).to eq([ :conflict ])
+      expect(issued_numbers).to eq([ "INV-000001" ])
+      expect(published_invoices).to eq([ draft.id ])
+    end
+
+    it "破棄が開いている間は同じ下書きの確定がロックを待ち、破棄のコミットの後に NOT_FOUND になって「請求書発行」を出さない" do
+      discarded, release, discard_thread = hold_open(supplier.id) { discard(draft.id) }
+      expect(discarded).to be_success
+
+      issue_thread = in_thread(supplier.id) { issue(draft.id) }
+      expect(blocked_on_lock?(issue_thread, by: discard_thread)).to be(true)
+
+      commit(release, discard_thread)
+      expect(finish(issue_thread).failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :invoice_id ] ] ])
+      expect(issued_numbers).to be_empty
+      expect(published_invoices).to be_empty
+    end
+
+    it "確定が開いている間は同じ取引先の締めが請求条件の行ロックを待ち、確定のコミットの後に次の期間を締められる" do
+      as_supplier { FactoryBot.create(:billable_item, customer_tenant_id: customers[0].id, inspected_on: Date.new(2026, 10, 10)) }
+
+      issued, release, issue_thread = hold_open(supplier.id) { issue(draft.id) }
+      expect(issued).to be_success
+
+      close_thread = in_thread(supplier.id) { close(closing_date: Date.new(2026, 10, 20)) }
+      expect(blocked_on_lock?(close_thread, by: issue_thread)).to be(true)
+
+      commit(release, issue_thread)
+      expect(finish(close_thread).value).to have_attributes(period_start: Date.new(2026, 9, 21), total: 132)
+      expect(drafts).to eq([ customers[0].id ])
+    end
+
+    it "同じ下書きの 2 つの確定は、後の確定がロックを待ち、先のコミットの後に CONFLICT になって番号を 1 つだけ振る" do
+      first, release, first_thread = hold_open(supplier.id) { issue(draft.id) }
+      expect(first).to be_success
+
+      second_thread = in_thread(supplier.id) { issue(draft.id) }
+      expect(blocked_on_lock?(second_thread, by: first_thread)).to be(true)
+
+      commit(release, first_thread)
+      expect(finish(second_thread).failures.map(&:code)).to eq([ :conflict ])
+      expect(issued_numbers).to eq([ "INV-000001" ])
+      expect(published_invoices).to eq([ draft.id ])
+    end
   end
 end

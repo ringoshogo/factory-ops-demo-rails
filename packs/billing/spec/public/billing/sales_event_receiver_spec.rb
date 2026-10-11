@@ -49,8 +49,13 @@ RSpec.describe Billing::SalesEventReceiver do
 
   it "請求済みの明細に同じイベントがもう一度届いても、未請求の明細を作り直さない" do
     handle(event)
-    invoice = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:invoice, :issued, customer_tenant_id: buyer.id) }
-    Tenancy.with_tenant(supplier.id) { Billing::BillableItem.update_all(invoice_id: invoice.id) }
+    # 確定した請求書には明細を結べないので、下書きに結んでから確定する
+    invoice = Tenancy.with_tenant(supplier.id) do
+      FactoryBot.create(:invoice, customer_tenant_id: buyer.id).tap do |invoice|
+        Billing::BillableItem.update_all(invoice_id: invoice.id)
+        invoice.update!(issued_at: Time.current, invoice_number: "INV-#{SecureRandom.hex(4)}")
+      end
+    end
 
     handle(event)
 
