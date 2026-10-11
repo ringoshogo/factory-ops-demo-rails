@@ -541,6 +541,7 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `cancelSalesOrder` | `sales_order.cancel` | 対象の受注 | その受注の発注側 |
 | `postShipment` | `shipment.post` | 成功の値の出荷依頼から引いた出荷実績 | 出荷依頼の発注側 |
 | `inspectInboundShipment` | `inbound_shipment.inspect` | 対象の入荷 | 成功の値の発注の受注側 |
+| `issueInvoice` | `invoice.issue` | 対象の請求書 | その請求書の取引先 |
 
 列挙テスト（`spec/graphql/authorization_declarations_spec.rb`）は、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類と action が上の 2 つの表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation は比べない。監査の対象を変えたら、2 つの表を同じ変更で直す。
 
@@ -676,7 +677,7 @@ type SalesOrderStatusCount {
 | `setBillingTerm` | `Billing::Terms.set`（取引先 ID と締め日。取引先は自社が受注側の取引関係の相手に限り、それ以外は `NOT_FOUND`） | なし |
 | `closeBillingPeriod` | `Billing::Closing.close`（取引先 ID と締め日で、下書きの請求書を作る。入力と状態の結果は `data-model.md`「請求（`billing`）」） | なし |
 | `discardDraftInvoice` | `Billing::Closing.discard`（請求書 ID で指定し、消した請求書の ID を返す。発行済みは `CONFLICT`） | なし |
-| `issueInvoice` | `Billing::Closing.issue` | 請求書発行 |
+| `issueInvoice` | `Billing::Closing.issue`（請求書 ID で指定し、確定した請求書を返す。入力と状態の結果は `data-model.md`「請求（`billing`）」） | 請求書発行 |
 | `establishPartnership` | `Partnerships::Management.establish`（相手は発注側テナントの取引用コードで指定する。「ID と `node`」） | なし |
 | `revokePartnership` | `Partnerships::Management.revoke` | なし |
 | `grantPermission`・`withdrawPermission` | `Partnerships::Management` | なし |

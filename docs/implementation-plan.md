@@ -1032,7 +1032,7 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 **作るもの**
 
 1. 行列テストの世界をファイルごとに 1 回作る（IB-27）：`spec/matrix/table_matrix_spec.rb` と `spec/matrix/graphql_matrix_spec.rb` の `let(:world) { MatrixWorld.new }` を、`before(:context)` で接続を固定（`ActiveRecord::ConnectionPool#pin_connection!`）して外側のトランザクションの中で世界を作り、`after(:context)` で巻き戻して固定を外す形にする。準備か example が失敗しても、外側のトランザクションと接続の固定を必ず外す。各 example は、いまと同じく rspec-rails の savepoint の中で動いて巻き戻る。`after(:context)` で `unpin_connection!` が偽を返したら（世界のトランザクションが途中でコミットされたか、外で巻き戻った）失敗させ、行列の spec が別の接続でコミットしないことを機械で守る。`pin_connection!` は Rails の公開の文書に無いメソッドなので、依存していることと、使えなくなったときの移り先（判断の裏返る条件）を `guides/testing.md` に書く。世界のオブジェクト（関連を読み込んだ AR のインスタンス）を example の間で使い回すので、example が世界のオブジェクトを書き換えないことと、テナントの設定（`Tenancy`）が example の外へ漏れないことを確かめる
-2. 競合テストの後始末の呼び忘れを落とすガード（IB-26）：`delete_owned_rows` が正常に終わった後に印を立て、example ごとに印を初期化する。設定の `config.after(:example)` で、`:concurrency` の example に印が無ければ失敗させる。後始末を外した競合テストがコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われるので、呼び忘れは離れた example の失敗になる。`:concurrency` の外でトランザクションを使わない spec（`packs/sales/spec/public/sales/sales_order_policy_spec.rb`・`spec/db/tenant_table_spec.rb`・`spec/platform/tenancy_session_spec.rb`）は自前で後始末するので、ガードの外にあることを補助のコメントに列挙する。ガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/concurrency_helpers_spec.rb` は本文で `delete_owned_rows` を呼ぶので、印は `after` があることそのものではなく、後始末が終わったことを示す
+2. 競合テストの後始末の呼び忘れを落とすガード（IB-26、ガードの example は `spec/concurrency/cleanup_guard_spec.rb`）：`delete_owned_rows` が正常に終わった後に印を立て、example ごとに印を初期化する。設定の `config.after(:example)` で、`:concurrency` の example に印が無ければ失敗させる。後始末を外した競合テストがコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われるので、呼び忘れは離れた example の失敗になる。`:concurrency` の外でトランザクションを使わない spec（`packs/sales/spec/public/sales/sales_order_policy_spec.rb`・`spec/db/tenant_table_spec.rb`・`spec/platform/tenancy_session_spec.rb`）は自前で後始末するので、ガードの外にあることを補助のコメントに列挙する。ガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/concurrency_helpers_spec.rb` は本文で `delete_owned_rows` を呼ぶので、印は `after` があることそのものではなく、後始末が終わったことを示す
 3. request spec の補助を `spec/support/request_helpers.rb` に寄せる（IB-09）：`login_as(user)` と、応答をそのまま返す `graphql_body` を置き、`type: :request` と `ScenarioHelpers` に取り込む。トップレベルのエラーが無いことを確かめて `data` を返す形は、`ScenarioHelpers#query` を同じモジュールへ移して使う。`type: :request` の行列と Bullet の spec で名前がぶつからないことを確かめる。`spec/requests/supplier_shipments_spec.rb` の確かめてから本文を返す形と、`graphql_entry_spec.rb` のメールを取る `login_as` は残す。`mutate` は寄せない
 4. 上限ちょうどの example（IB-25）：検収の明細の件数（異なる有効な明細 100 件で成功する）と、在庫の調整の理由の長さ（200 文字で成功し、201 文字で `INVALID_INPUT` になり書き込みが無い）の example を足す。在庫の調整には単体の spec が無いので、`packs/inventory/spec/public/inventory/adjustment_spec.rb` を足す。入力は定数から作らず、仕様の値（100・200）で書く。検収の上限の定数は発注の定数の別名なので、検収の example は比較の `>` を `>=` に壊すと落ちることで確かめる。上限 + 1 と上限ちょうどの両方を仕様の値で書く規則は、規則の変更として M29（取り込みのファイルの大きさの上限）で試し（IB-25 は `試行中`）、効いたら `guides/testing.md`「層への配分」に書く
 
@@ -1048,14 +1048,14 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 
 ```sh
 bundle exec rspec spec/matrix                       # 0 failures。行列の 2 ファイルが合計 30 秒以下（手元）
-bundle exec rspec spec/matrix --order rand          # シードを 3 つ変えて 0 failures
-bundle exec rspec spec/concurrency/concurrency_helpers_spec.rb spec/requests spec/scenarios
+for seed in 1 2 3; do bundle exec rspec spec/matrix --order rand --seed $seed || exit 1; done
+bundle exec rspec spec/concurrency/concurrency_helpers_spec.rb spec/concurrency/cleanup_guard_spec.rb spec/requests spec/scenarios
 bundle exec rspec packs/purchasing/spec/public/purchasing/receipt_inspections_spec.rb packs/inventory/spec/public/inventory/adjustment_spec.rb   # 在庫の調整の単体の spec は、このマイルストーンで足す
-test "$(git grep -h "def login_as(user)" -- spec | wc -l)" -eq 1   # spec/support/request_helpers.rb の 1 か所
+test "$(grep -rh "def login_as(user)" spec | wc -l)" -eq 1   # spec/support/request_helpers.rb の 1 か所。git に登録する前でも数える
 ```
 
 - 行列：テナントの表 1 つの RLS を外すと、表の行列で変える前と同じ example の集合が落ちる。入口の行列でも、認可の確かめを 1 つ外すと、変える前と同じ集合が落ちる。example の中で行を足しても、次の example とファイルの終わりの後に残らない
-- 後始末のガード：`after` を持たない競合テストの内側の example が落ちる（`spec/platform/bullet_spec.rb` の内側の example group を走らせる型）。ガードを外すと、その example が落ちなくなる
+- 後始末のガード（`cleanup_guard_spec.rb`）：`after` を持たない競合テストの内側の example が落ちる（`spec/platform/bullet_spec.rb` の内側の example group を走らせる型）。ガードを外すと、その example が落ちなくなる
 - 補助：寄せる前と後で、各 request spec の返り値とエラーの確かめ方が同じである
 - 上限：上限の定数を 1 つ下げると、上限ちょうどの example が落ちる
 - CI の test のジョブの Run tests を PR の CI で 3 回以上流し、中央値が 4 分以下であることを記録する。あわせて、全件の分岐の計測ありとなしの時間を 1 回ずつ測って証跡に書く（IB-01 の費用の確かめ）
@@ -1070,10 +1070,10 @@ test "$(git grep -h "def login_as(user)" -- spec | wc -l)" -eq 1   # spec/suppor
 
 **作るもの**
 
-1. 確定と写し：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベントと配送表の行、購買の受け手 `Purchasing::BillingEventReceiver`（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。`issueInvoice` の規則は `Billing::InvoicePolicy#issue?` で、`admin` に限る
+1. 確定と写し：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた。入力と結果、ロック、確定した請求書を変えないトリガーは `data-model.md`「請求（`billing`）」。OI-84）、請求書発行のイベントと配送表の行、購買の受け手 `Purchasing::BillingEventReceiver`（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。`issueInvoice` の規則は `Billing::InvoicePolicy#issue?` で、`admin` に限る。`issueInvoice` は `audit` で、監査の行は `graphql-schema.md`「監査ログ」の表にある。`received_invoices`・`received_invoice_lines`・`invoice_sequences` の表の行列の行と、S1 の表に `issueInvoice(input.invoiceId)`・`buyer.receivedInvoice(id)` の行を足す。購買は「請求書発行」をイベントの契約だけで受けるので、パッケージの依存は変わらない
 2. 締め日（OI-77）：締め日が今日より後の締めを許し、確定も締め日を過ぎるのを待たずにできる（`data-model.md`「請求（`billing`）」）。締めの後に届いた、検収日が締め日以前の検収は、次の締めで集まる
 3. 役割による制限（OI-71〜OI-73）：サイクル 02 で作った mutation の規則のうち、`graphql-schema.md`「役割による制限」の表で `admin` に限るものを、`user.admin?` を条件に含める形に直す。対象は `Sales::SalesOrderPolicy#review?`・`#cancel?`、`Purchasing::PurchaseOrderPolicy#request_cancellation?`・`#inspect_receipt?`、`Billing::InvoicePolicy#set_term?`・`#close?`・`#discard?` の 7 つで、いまはどれも役割を問わない。`member` で `admin` に限る操作を呼んでいる既存の request spec（`spec/requests/inspections_spec.rb`・`spec/requests/billing_spec.rb`・`spec/requests/cancellations_spec.rb`）は、`admin` で呼ぶ形に直す
-4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないことを確かめる。役割を持たない mutation の行があれば落ちる
+4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表の行数と監査の行数が変わらないこと）を確かめる。役割を持たない mutation の行があれば落ちる
 
 役割による制限をここに置くのは、確定（`issueInvoice`）で同じ形の規則を初めから作るからである。サイクル 03 は 6 つのマイルストーンで上限に達しているので、新しいマイルストーンは作らない。M36 は業務の振る舞いを変えないマイルストーンなので入れず、行列テストの役割の列は、M36 で作り直した世界に足す。
 
@@ -1082,18 +1082,24 @@ test "$(git grep -h "def login_as(user)" -- spec | wc -l)" -eq 1   # spec/suppor
 ```sh
 bundle exec rspec packs/billing/spec/public/billing/closing_spec.rb packs/purchasing/spec/public/purchasing/billing_event_receiver_spec.rb \
   packs/purchasing/spec/public/purchasing/received_invoices_spec.rb packs/sales/spec/public/sales/sales_order_policy_spec.rb \
-  spec/requests/billing_spec.rb spec/requests/inspections_spec.rb spec/requests/cancellations_spec.rb spec/scenarios/billing_amounts_spec.rb
+  packs/purchasing/spec/public/purchasing/purchase_order_policy_spec.rb packs/billing/spec/public/billing/invoice_policy_spec.rb \
+  spec/requests/billing_spec.rb spec/requests/inspections_spec.rb spec/requests/cancellations_spec.rb \
+  spec/scenarios/billing_amounts_spec.rb spec/scenarios/tenant_boundary_spec.rb
+bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb spec/db
 ```
 
-- 単体（`closing_spec.rb`）：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でない。確定後の変更と 2 回目の確定が拒否される。今日より後の締め日で締めて確定でき、その後に届いた締め日以前の検収が次の締めで集まる
+- 単体（`closing_spec.rb`）：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でない。確定の表の各行（他社の請求書・存在しない ID は `NOT_FOUND`、2 回目の確定は `CONFLICT`）。今日より後の締め日で締めて確定でき、その後に届いた締め日以前の検収が次の締めで集まる
 - 単体（`billing_event_receiver_spec.rb`）：同じ請求書発行を 2 回流しても写しが 1 件（冪等の共有テスト）
-- 単体（policy の spec）：役割を直した 7 つと `issue?` の規則が、`admin` には真、`member` には偽を返す。`Purchasing::PurchaseOrderPolicy` と `Billing::InvoicePolicy` の spec が無ければ足す
-- DB（`spec/db`）：`total = subtotal + tax_total` の CHECK 制約が、外れた行を拒む
+- 単体（policy の spec）：役割を直した 7 つと `issue?` の規則が、`admin` には真、`member` には偽を返す。`purchase_order_policy_spec.rb` と `invoice_policy_spec.rb` は、このマイルストーンで足す
+- 競合（`closing_lock_spec.rb` に足す）：確定と破棄、確定と確定を 2 つの接続で同時に走らせ、どちらか一方だけが成り立つ。請求条件の行ロックで待つことを確かめる
+- DB（`spec/db`）：`received_invoices` の `total = subtotal + tax_total` の CHECK 制約が、外れた行を拒む。確定した請求書と、それに結んだ集計と明細の UPDATE と DELETE を、トリガーが拒む
 - 行列（`graphql_matrix_spec.rb`）：上の作るもの 4。`admin` に限る規則の 1 つから `user.admin?` を外すと、その mutation の `member` の行が落ちる
 - シナリオ（`spec/scenarios/billing_amounts_spec.rb`、重要シナリオ S5）が通る
 
-**実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6・「自社の中の役割」、`data-model.md`「請求（`billing`）」「購買（`purchasing`）」の受領請求書、`graphql-schema.md`「役割による制限」
+**実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6・「自社の中の役割」、`data-model.md`「請求（`billing`）」「購買（`purchasing`）」の受領請求書、`graphql-schema.md`「役割による制限」「監査ログ」
+
+**文書に残すこと**：行列の時間（M36 の完了条件と同じコマンド）を、役割の列を足した後に測り、実装レビューの節に書く。
 
 ## M26 ダッシュボードと失効の通し試験
 
@@ -1104,7 +1110,7 @@ bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb sp
 1. `supplier.dashboard` と型 `SupplierDashboard`・`SalesOrderStatusCount`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API と集計の境界）。画面の問い合わせ `spec/fixtures/graphql/screens/supplier_dashboard.graphql` を足し、クエリ数の予算の表と行列テストの期待値（`SupplierView.dashboard`）に行を足す
 2. `spec/scenarios/revocation_spec.rb`（重要シナリオ S2）：発注 → 受注確定 → 失効 → 経路 1〜3 が空・新しい発注が `NOT_PERMITTED` → 引当・出荷・検収・締め・発行がそのまま進み、発注側に受領請求書が届く
 3. 画面の問い合わせごとの複雑度のテスト `spec/graphql/query_complexity_spec.rb`（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）から読み、どのファイルも `max_complexity` に収まることを確かめる。一覧に無いファイルが無いことも確かめる
-4. 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合（OI-79）。競合テストで、停止の受け手が出荷依頼の無いことを読んでからコミットするまでの間に、出荷可能の受け手と出荷指示の作成を割り込ませる。停止中の受注に有効な出荷指示が残るなら、停止の受け手と出荷可能の受け手を受注 ID の勧告ロック（`pg_advisory_xact_lock`）で直列にし、`data-model.md`「出荷（`fulfillment`）」に書く。勧告ロックを足したら `spec/db/lock_sites_spec.rb` の表にも足す
+4. 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合（OI-79）。競合テストは、停止の受け手を、出荷依頼の無いことを読んだ後・コミットの前で止めておき（`hold_open`）、その間に出荷可能の受け手と出荷指示の作成を通す、決まった順で書く。ロックの無い経路なので、ただ同時に流すと起きるかどうかが毎回変わる。停止中の受注に有効な出荷指示が残るなら、停止の受け手と出荷可能の受け手を受注 ID の勧告ロック（`pg_advisory_xact_lock`）で直列にし、`data-model.md`「出荷（`fulfillment`）」に書く。勧告ロックを足したら `spec/db/lock_sites_spec.rb` の表にも足す。起きたかと、どう閉じたかを、実装レビューの節と OI-79 の結果に書く
 
 ダッシュボードの集計の境界（受注の状況の数え方・安全在庫と等しい在庫・期限を過ぎた出荷依頼・税抜きの合計）は、計画のときに取りまとめ役が決めた（OI-81）。
 
@@ -1146,7 +1152,8 @@ M27〜M31 は、業務の流れを一通り作った後に、設計判断を見�
 - 公開 API `Sales::ItemPrices`：`schedule`・`correct`・`price_at`・`history`（品目ごとの全行）・`explain(actor, sales_order_line_ids, as_of:)`。
 - 単価を使う箇所の切り替え（`adr/006` 決定 5）：`Sales::Catalog`・`Sales::PublishedCatalog` は今日の単価を返す。ACL（`Sales::PurchaseOrderTranslator`）と照合のやり直し（`Sales::PartMappings.register`）は、受注日の単価を写し、`priced_on` を書く。`saveItem` の `unitPrice` は、品目を作るときは有効期間 `(,)` の行を作り、既存の品目で値が変わるときは今日からの改定として予約する。
 - GraphQL：`Item.prices`・`ItemPrice`・`scheduleItemPrice`・`correctItemPrice`・`BillableItem.priceExplanation`（`graphql-schema.md`「受注側の視点」「mutation の一覧」）。`scheduleItemPrice`・`correctItemPrice` は、発注側のカタログに見える単価を変えるので監査する。
-- 行列テスト：`item_prices` の行（`granted_buyer` は公開品目の現在の行を読める）と、新しいフィールドと mutation の行。
+- 行列テスト：`item_prices` の行（`granted_buyer` は公開品目の現在の行を読める）と、新しいフィールドと mutation の行。`scheduleItemPrice`・`correctItemPrice` の行の役割は `context-map.md`「自社の中の役割」に従う（OI-80）。
+- 品目は、作るときに必ず有効期間 `(,)` の単価の行を持つ（`saveItem` と、M29 の取り込みの `Sales::Catalog.bulk_upsert`）。現在の単価の行が無い品目への `schedule` は `CONFLICT` にする。照合後に埋まる列に `priced_on` が加わるので、受注明細の「揃って空か揃って埋まる」CHECK 制約を直す。
 - テスト：
   - 単体（`packs/sales/spec/public/sales/item_prices_spec.rb`）：予約・訂正・`price_at` を、有効日 × 記録時点の表で確かめる。予約を同じ有効日で 2 回流しても行が増えない。
   - 移行（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）：`backfill` が品目と照合済みの明細を埋め、2 回流しても行が増えず、他のテナントの行に触れない。
@@ -1172,14 +1179,14 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
 
 **作るもの**
 
-- パッケージ `packs/notifications`（`Notifications::`）。依存先は `platform`・`partnerships`（宛先のメールアドレスを自社の `users` から引く）。`sales`・`purchasing` の依存先に `notifications` を足す。`context-map.md`「疎結合を守る規則」の依存の向きの表に `notifications` の行（`platform`・`partnerships`）を足し、`sales`・`purchasing` の行の依存先に `notifications` を足す。表は `email_deliveries` と `webhook_inbox_events`（`data-model.md`「通知（`notifications`）」）。
+- パッケージ `packs/notifications`（`Notifications::`）。依存先は `platform`・`partnerships`（宛先のメールアドレスを自社の `users` から引く）。ルートの `package.yml` の依存先にも足す。`webhook_inbox_events` はテナントの表でないので、テナント列の列挙テストの除外に理由を書いて足す（`adr/007` 決定 5 の A-3）。`sales`・`purchasing` の依存先に `notifications` を足す。`context-map.md`「疎結合を守る規則」の依存の向きの表に `notifications` の行（`platform`・`partnerships`）を足し、`sales`・`purchasing` の行の依存先に `notifications` を足す。表は `email_deliveries` と `webhook_inbox_events`（`data-model.md`「通知（`notifications`）」）。
 - `ExternalEffectJob`（`packs/platform`）と、`Notifications::CriticalDeliveryJob`・`BestEffortMailJob`・`ProcessInboxJob`（`adr/007` 決定 4〜6）。
 - 公開 API `Notifications::Email.deliver_critical`・`deliver_best_effort` と、通知の種類の登録 `Notifications::Catalog`。種類は 2 つにする。
   - `received_invoice`（確実）：購買の「請求書発行」の受け手が、受領請求書を書くのと同じトランザクションで、自社の `admin` へ送る。
-  - `new_sales_order`（撃ちっぱなし）：受注側の ACL が受注を確定したときに、自社の担当者へ送る。
+  - `new_sales_order`（撃ちっぱなし）：受注側の ACL が受注を確定したときに、自社の `admin` へ送る（OI-83）。
 - メールの本文は Action Mailer のテンプレート（`Notifications::Mailer`、text だけ）で書き、送信はジョブの中で `deliver_now` を呼ぶ。
 - 送信先の切り替え：`Notifications::Provider` の実装を 3 つ置き、`config.x.notifications.provider` で選ぶ。
-  - `Sendgrid`：v3 の送信 API を `Net::HTTP` で呼ぶ。API キーは credentials に置き、ログに書かない。本番以外の環境では、SendGrid の sandbox mode（受け付けの検査だけを行い、配信しない）を有効にしないと起動時に例外にする。
+  - `Sendgrid`：v3 の送信 API を `Net::HTTP` で呼ぶ。`Net::HTTP` の既定の時間切れ（`open_timeout`・`read_timeout`・`write_timeout` はどれも 60 秒）は `external_mail` の 2 本のスレッドを長く塞ぐので、`open_timeout` を 5 秒、`read_timeout`・`write_timeout` を 10 秒にする。`Net::OpenTimeout`・`Net::ReadTimeout`・`Net::WriteTimeout`・`Errno::ECONNREFUSED`・`Errno::ECONNRESET`・`SocketError` を、A-2 の表の「タイムアウト・接続の失敗」に当てる。API キーは credentials に置き、ログに書かない。本番以外の環境では、SendGrid の sandbox mode（受け付けの検査だけを行い、配信しない）を有効にしないと起動時に例外にする。
   - `FileSystem`（開発）：`tmp/mails/` に 1 通 1 ファイルで書く。
   - `Fake`（テスト）：メモリに積み、テストから読める。
 - WebMock を test のグループに入れ、`spec/spec_helper.rb` で全テストに `WebMock.disable_net_connect!(allow_localhost: true)` を掛ける。
@@ -1214,23 +1221,24 @@ bin/rubocop
 
 **作るもの**
 
-- パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。`context-map.md`「疎結合を守る規則」の依存の向きの表に、この行を足す。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
-- ファイルの受け取り：`POST /imports/files`（`ImportFilesController`、ルートパッケージ）が `multipart/form-data` の CSV を受け取り、`import_files` に書いて ID を返す。ファイルを置くだけで、業務の表には何も起きない。10 MB を超えるファイルは受け付けない。セッションで認証し、`Origin` ヘッダが許可した origin と一致しなければ拒む。`GraphqlController` の `application/json` の制限に代わる CSRF 対策である。
+- パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。ルートの `package.yml` の依存先にも足す。`context-map.md`「疎結合を守る規則」の依存の向きの表に、この行を足す。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
+- ファイルの受け取り：`POST /imports/files`（`ImportFilesController`、ルートパッケージ）が `multipart/form-data` の CSV を受け取り、`import_files` に書いて ID を返す。ファイルを置くだけで、業務の表には何も起きない。10 MB を超えるファイルは受け付けない。コントローラは `GraphqlController` と同じく、セッションのユーザーと世代を確かめてから、セッションのテナントで `Tenancy.with_tenant` を開いて書く。`startImport` に他社か存在しないファイルの ID を渡すと `NOT_FOUND` になり、S1 の表に行を足す。セッションで認証し、`Origin` ヘッダが許可した origin と一致しなければ拒む。`GraphqlController` の `application/json` の制限に代わる CSRF 対策である。
 - 取り込みの開始：mutation `startImport(fileId, kind)` が `imports` の行を書き、ジョブを登録する。業務の表に効果が及ぶのはここからなので、監査はこの mutation の宣言で行う。
-- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }, duration: 1.hour`、`tenant_transaction :per_chunk`。`limits_concurrency` の保証は `duration` の間だけで、過ぎると待っている次のジョブが動きうる（solid_queue 1.7.0 の README「Concurrency controls」。既定は `SolidQueue.default_concurrency_control_period` の 3 分）。テナントごとに 1 は、1 社が imports のワーカーを占めないための上限で、反映の正しさはこれに頼らない。同じテナントの 2 つの取り込みが並んでも、品目の upsert と単価の予約は品目の行ロックで、在庫は在庫の行ロックで直列になる。各段階の始めに、カーソルを置き場から作り直す（`stage` は `import_rows` の最大の行番号の次から、`apply` は結果の無い最小の行番号から）。そのため、継続の情報を持たない新しいジョブでも続きから進む。
+- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }, duration: 1.hour`、`tenant_transaction :per_chunk`（いまの `ApplicationJob` は `around_perform` でジョブ全体を `Tenancy.with_tenant` で包むので、この宣言を `ApplicationJob` に作り、宣言したジョブでは包まない）。`limits_concurrency` の保証は `duration` の間だけで、過ぎると待っている次のジョブが動きうる（solid_queue 1.7.0 の README「Concurrency controls」。既定は `SolidQueue.default_concurrency_control_period` の 3 分）。テナントごとに 1 は、1 社が imports のワーカーを占めないための上限で、反映の正しさはこれに頼らない。同じテナントの 2 つの取り込みが並んでも、品目の upsert と単価の予約は品目の行ロックで、在庫は在庫の行ロックで直列になる。各段階の始めに、カーソルを置き場から作り直す（`stage` は `import_rows` の最大の行番号の次から、`apply` は結果の無い最小の行番号から）。そのため、継続の情報を持たない新しいジョブでも続きから進む。
   1. `step :stage`：`import_files.content` を `CSV.new` で 1 行ずつ読み、1,000 行ごとに `import_rows` へ `insert_all` で書く。カーソルは書き終えた行番号である。見出しの行の誤りと、50,000 行を超えるファイルは、取り込み全体の失敗（`failed_at`）にする。
   2. `step :apply`：`import_rows` を行番号の順に 500 行ずつ取り、チャンクごとに `Tenancy.with_tenant` を開いて反映する。`applied_at` か `error` のある行は飛ばす。行ごとの業務の書き込みはセーブポイントの中で行い、失敗した行の書き込みだけを戻して `error` を書く。業務の書き込み・行ごとの `applied_at` か `error`・`imports` の件数の加算（そのチャンクで新しく結果を書いた行の数だけ）を、チャンクの 1 つのトランザクションで書く。カーソルは反映したチャンクの最後の行番号である。
   3. `step :finalize`：`finished_at` を書き、`import_files` の中身を消す。
 - 反映の書き方（種類ごと）：
   - **品目**：CSV の列と行ごとの検証は `data-model.md`「取り込み（`imports`）」にある（OI-82）。検証を通った行の品目の列（コード・名前・単位・税率・公開）は、公開 API `Sales::Catalog.bulk_upsert` が `upsert_all(unique_by: [:owner_tenant_id, :code])` で書く。`owner_tenant_id` には `Current.tenant_id` を明示して入れ、RLS の `WITH CHECK` が他社の名義の行を拒む。`bulk_upsert` は、新しく作った品目に、有効期間 `(,)` の単価の行を同じトランザクションで作る（`saveItem` で品目を作るときと同じ）。既存の品目は、単価がその有効日の単価と違うときだけ、行ごとに `Sales::ItemPrices.schedule` で有効日からの改定を予約する（`adr/006` 決定 3）
-  - **在庫**：行ごとに `Inventory::Adjustment` を呼び、CSV の在庫数（目標の数量）との差を入庫か出庫にする。`stocks` を `insert_all` で書かない。在庫の変更は `move!` を通って移動履歴を残す（`data-model.md`「在庫（`inventory`）」）。
+  - **在庫**：行ごとに、在庫の行をロックしてから目標の数量との差を入庫か出庫にする公開 API（`Inventory::Adjustment.set_quantity`、目標の数量を渡す）を呼ぶ。ロックの前に読んだ数量で差を計算すると、同時の `adjustStock` や引当とずれる。`stocks` を `insert_all` で書かない。在庫の変更は `move!` を通って移動履歴を残す（`data-model.md`「在庫（`inventory`）」）。
   - `insert_all`・`upsert_all` は、モデルのコールバックとバリデーションを通らない。使ってよいのは、不変条件が DB の制約だけで閉じる表（品目・置き場の行）に限る。
 - 冪等：同じチャンクを 2 回反映しても結果が 1 つになる。`applied_at` のある行を飛ばし、品目の upsert と単価の予約（同じ単価・同じ有効日なら何もしない）は、もう一度流しても変わらない。プロセスが落ちて中断点を通らなかったときに、最後に保存したカーソルからやり直すためである。
 - GraphQL：`supplier.imports`・`supplier.import(id)`・`Import`・`startImport`（`graphql-schema.md`「受注側の視点」）。
 - 再登録の操作 `Imports::Runs.reenqueue(import_id)`：ジョブを失って「待機中」「置き場へ写し中」「反映中」のまま残った取り込みに、新しいジョブを登録する。プロセスが強制終了したジョブは、Solid Queue が `SolidQueue::Processes::ProcessPrunedError` で失敗にし、自動では再試行しない（solid_queue 1.7.0 の README「Jobs interrupted by non-graceful process death」）。運用者は、取り込みのジョブの失敗を見てから rake タスク `imports:reenqueue` で呼ぶ。動いているジョブがある取り込みに呼んでも、新しいジョブはテナントの上限で待ち、行ごとに飛ばすので結果は変わらない。
 - `bin/rails imports:sample[50000]`：試験用の CSV を作る。
 - テスト：
-  - 中断と再開：アダプタの `stopping?` を `stage` の途中と `apply` の途中で真にして中断させ、もう一度流すと続きから進み、全行が 1 回ずつ反映される。
+  - 置き場（`spec/requests/imports_spec.rb`）：10 MB ちょうどのファイルを受け付け、10 MB + 1 バイトを拒む（IB-25 の試行）。`Origin` の不一致を拒む。
+  - 中断と再開（ここから CSV の契約までは `run_job_spec.rb` と `runs_spec.rb`）：アダプタの `stopping?` を `stage` の途中と `apply` の途中で真にして中断させ、もう一度流すと続きから進み、全行が 1 回ずつ反映される。
   - 継続の情報を失った再開：`stage` の途中と `apply` の途中で実行を捨て、`reenqueue` で登録した新しいジョブを流すと、全行が 1 回ずつ反映され、件数が行の数と合う。
   - 件数の冪等：成功 2 行・失敗 1 行のチャンクを反映した後、カーソルを保存する前に止まったものとして同じチャンクをもう一度流しても、`applied_rows`・`failed_rows`・品目・在庫・移動履歴が増えない。
   - CSV の契約：見出しの誤りで取り込み全体が失敗する。同じ品目コードの 2 行目と、列の検証に外れた行が失敗になる。新しい品目に有効期間 `(,)` の単価の行ができる。既存の品目は、単価が変わるときだけ改定が予約される。
@@ -1256,7 +1264,8 @@ bin/rubocop
 **完了条件**
 
 ```sh
-bundle exec rspec packs/imports/spec spec/requests/imports_spec.rb spec/jobs
+bundle exec rspec packs/imports/spec/jobs/imports/run_job_spec.rb packs/imports/spec/public/imports/runs_spec.rb \
+  packs/inventory/spec/public/inventory/adjustment_spec.rb spec/requests/imports_spec.rb spec/jobs spec/scenarios/tenant_boundary_spec.rb
 bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.rb
 ```
 

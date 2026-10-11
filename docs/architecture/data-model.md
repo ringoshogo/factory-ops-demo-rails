@@ -11,7 +11,7 @@
 - **同じコンテキストの親子は複合外部キーでつなぐ**：親に `UNIQUE (owner_tenant_id, id)` を持たせ、子は `FOREIGN KEY (owner_tenant_id, 親_id) REFERENCES 親 (owner_tenant_id, id)` で参照する。親と子の所有テナントが食い違う行は、DB が拒否する。
 - **コンテキストをまたぐ参照は ID 列だけにする**：外部キー制約を張らず、AR の関連も張らない（`context-map.md`「疎結合を守る規則」1）。相手テナントへの参照（`buyer_tenant_id`・`supplier_tenant_id`・`customer_tenant_id`）と、連結元の伝票への参照（`source_purchase_order_id` など）も同じ扱いにする。
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
-- **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
+- **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`・`invoice_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
 - **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。追記だけの `audit_logs` は、どちらも持たず、DB の `now()` で埋める `occurred_at` が作成の時刻を兼ねる（「監査ログ（`platform`）」）。以下の表では省略する。
 - **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 9 つである。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
@@ -149,6 +149,7 @@
 | `billable_items`（請求対象明細） | `customer_tenant_id`→・`shipment_id`→・`sales_order_line_id`→・`source_purchase_order_line_id`→・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`inspected_on`・`invoice_id`（空は未請求） | `(shipment_id, sales_order_line_id)` 一意。数量は正、単価は 0 以上、税率は 8 か 10。`invoice_id` は請求書へ複合外部キーでつなぐ |
 | `invoices` | `customer_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_at`（空は下書き）・`subtotal`・`tax_total`・`total` | `(owner, invoice_number)` 一意。下書きは取引先ごとに 1 件（部分一意索引）。請求番号は確定した請求書だけが持つ。`period_start <= period_end`。`subtotal`・`tax_total` は 0 以上。`total = subtotal + tax_total` |
 | `invoice_tax_summaries` | `invoice_id`・`tax_rate_percent`・`taxable_amount`・`tax_amount` | `(invoice_id, tax_rate_percent)` 一意。税率は 8 か 10、金額は 0 以上 |
+| `invoice_sequences`（請求番号の採番） | `last_number` | `owner_tenant_id` 一意。番号は `INV-000001` の形で、採番の手順は「全テーブルに共通の規則」の伝票番号 |
 
 受注側の担当者は、取引先と締め日を指定して締めを実行する。請求は、締めの入力と状態を次の表の上から順に確かめ、最初に当たった結果を返す。失敗はどれも何も書かない。
 
@@ -179,7 +180,17 @@
 
 「請求対象確定」の受け手は、請求条件の行をロックしない。締めの最中に届いた明細は、締めを待たずに未請求のまま残り、次の締めで集まる。
 
-担当者が下書きを破棄すると、請求は同じ請求条件の行をロックしてから、明細の `invoice_id` を空に戻し、税率ごとの集計と下書きを消す。破棄した下書きは残さない。残すと破棄済みの列が要り、取引先ごとに 1 件の下書きの部分一意索引と一覧の条件が、その列を見る形に増えるからである。発行済みの請求書の破棄は `CONFLICT` になる。担当者が確定すると `issued_at` と請求番号が入り、その後は請求書も明細も変更しない。確定は、締め日を過ぎるのを待たずにできる。
+担当者が下書きを破棄すると、請求は同じ請求条件の行をロックしてから、明細の `invoice_id` を空に戻し、税率ごとの集計と下書きを消す。破棄した下書きは残さない。残すと破棄済みの列が要り、取引先ごとに 1 件の下書きの部分一意索引と一覧の条件が、その列を見る形に増えるからである。発行済みの請求書の破棄は `CONFLICT` になる。担当者は、請求書 ID を指定して下書きを確定する。確定は、締め日を過ぎるのを待たずにできる。請求は、確定の入力と状態を次の表の上から順に確かめ、最初に当たった結果を返す。失敗はどれも何も書かない。
+
+| 入力・状態 | 結果 |
+|---|---|
+| 請求書が自社のものでない（他社の請求書・存在しない ID） | `NOT_FOUND`（`path` は請求書） |
+| 請求書が発行済み | `CONFLICT` |
+| それ以外 | 請求番号を振り、`issued_at` を書き、「請求書発行」を出す |
+
+確定も、締めと破棄と同じ請求条件の行をロックしてから、請求書が下書きのまま残っているかを確かめる。ロックを取らずに読んでから書くと、破棄のコミットの後に消えた下書きを確定して「請求書発行」を出すか、同じ下書きに番号を 2 回振りうる。破棄が先なら確定は `NOT_FOUND` に、確定が先なら破棄は `CONFLICT` になる。
+
+確定した請求書と、それに結んだ税率ごとの集計と明細は変えない。`invoices` のトリガーが、`issued_at` のある行の UPDATE と DELETE を拒み、`invoice_tax_summaries` と `billable_items` のトリガーが、発行済みの請求書に結んだ行の UPDATE と DELETE を拒む。公開 API の拒否（`CONFLICT`）だけでは、公開 API を通らない書き込みを止められないからである。
 
 ## コンテキストに属さないパッケージのテーブル
 
