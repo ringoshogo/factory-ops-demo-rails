@@ -125,7 +125,8 @@ module ConcurrencyHelpers
     ids = tenant_ids.map { connection.quote(_1) }.join(", ")
     connection.transaction do
       # 確定した請求書を消すために、後始末のトランザクションの中だけ、そのトリガーを名前で止める。所有ロールは表の所有者
-      # なので止められる。ALTER TABLE は表を排他でロックし、コミットの前に戻すので、ほかの接続には止まった状態が見えない。
+      # なので止められる。止めることはカタログの変更なのでコミットまでほかの接続に見えず、コミットの前に戻すので、
+      # ほかの接続には止まった状態が見えない。止めている間、ほかの接続の表への書き込みはロックで待つ。
       # 表のユーザーのトリガーをすべて止めると、後で足したトリガーまで黙って止まる
       paused = IMMUTABLE_TRIGGERS.slice(*tables)
       paused.each { |table, trigger| connection.execute("ALTER TABLE #{table} DISABLE TRIGGER #{trigger}") }
