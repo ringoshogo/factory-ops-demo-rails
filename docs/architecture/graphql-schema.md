@@ -7,6 +7,8 @@
 - **1 つの policy に名前付きの scope を複数持てる**：出荷実績は、受注側には自社のものとして、発注側には経路 3 として見える。`relation_scope(:as_buyer)` のように、視点ごとの scope を同じ policy に並べられる。
 - **認可の結果をリクエストの中でキャッシュできる**：型ごとの認可（「認可」）は、返すオブジェクトごとに評価される。取引関係の公開 API への問い合わせを、同じ相手については 1 回にできる。
 
+認可は、DB の RLS、Action Policy の scope、Action Policy の操作ごとの規則の 3 段で分担する。自社のデータか相手のデータかで仕組みを使い分けるのではなく、どのデータにも 3 段が順に掛かる。各段が何を決めるかは「認可：宣言の無い型・リゾルバ・mutation は拒否する」の表にある。
+
 ## 1 回のリクエストがたどる道
 
 フロントエンドから届いたクエリは、次の順に処理される。
@@ -85,7 +87,7 @@ type BuyerView {
   suppliers: [SupplierPartnership!]!
   "経路 2 の取引先を 1 社選ぶ。取引関係の無い相手・失効した相手・存在しないテナントは区別せず null"
   supplier(supplierTenantId: ID!): SupplierPartnership
-  purchaseOrders(first: Int, after: String, filter: PurchaseOrderFilter): PurchaseOrderConnection!
+  purchaseOrders(first: Int, after: String): PurchaseOrderConnection!
   purchaseOrder(id: ID!): PurchaseOrder
   receivedInvoices(first: Int, after: String): ReceivedInvoiceConnection!
   receivedInvoice(id: ID!): ReceivedInvoice
@@ -208,15 +210,15 @@ type SupplierView {
   partnerships: [Partnership!]!
   items(first: Int, after: String): ItemConnection!
   partMappings(customerTenantId: ID, first: Int, after: String): PartMappingConnection!
-  salesOrders(first: Int, after: String, filter: SalesOrderFilter): SalesOrderConnection!
+  salesOrders(first: Int, after: String): SalesOrderConnection!
   salesOrder(id: ID!): SalesOrder
-  stocks(first: Int, after: String, filter: StockFilter): StockConnection!
+  stocks(first: Int, after: String): StockConnection!
   stockMovements(itemId: ID, first: Int, after: String): StockMovementConnection!
-  shipmentRequests(first: Int, after: String, filter: ShipmentRequestFilter): ShipmentRequestConnection!
+  shipmentRequests(first: Int, after: String): ShipmentRequestConnection!
   billingTerms: [BillingTerm!]!
   "未請求の請求対象明細"
   billableItems(customerTenantId: ID, first: Int, after: String): BillableItemConnection!
-  invoices(first: Int, after: String, filter: InvoiceFilter): InvoiceConnection!
+  invoices(first: Int, after: String): InvoiceConnection!
   invoice(id: ID!): Invoice
   dashboard: SupplierDashboard!
   imports(first: Int, after: String): ImportConnection!
@@ -417,7 +419,17 @@ ID でレコードを引く入口は、視点の下に型ごとに置く（`buye
 
 ## 認可：宣言の無い型・リゾルバ・mutation は拒否する
 
-認可の判定は 2 か所に分かれる。
+テナントをまたぐ可視性と、操作の許否は、次の 3 段で分担する。上の段は下の段の代わりにならない。
+
+| 段 | 置き場 | 決めること | 決めないこと |
+|---|---|---|---|
+| 1. RLS | DB の行ごとのポリシー（`data-model.md`「RLS」） | 自社の行だけを読み書きさせる。相手の行は、読む 3 経路（カタログ・取引関係・自社の発注に連結した出荷）の粗い条件でだけ読ませる | 一覧に相手の行を混ぜるか、どの役割が操作できるか |
+| 2. 可視範囲（scope） | 各コンテキストの Action Policy の `relation_scope` | 公開 API が返す行を、自社の行か、経路ごとの条件（権限付与・自社の発注）を満たす相手の行に絞る | 操作してよいか |
+| 3. 規則 | 同じ policy の操作ごとの規則（`show?`・`cancel?` など） | 型・入口・mutation ごとに、その操作者に許すか。役割による制限もここに置く（「役割による制限」） | どの行が見えるか |
+
+Active Record の関連は、どの段にも当たらない。関連はコンテキストの中だけに張り、別のコンテキストの値は公開 API で引く（`context-map.md`「疎結合を守る規則」）ので、自社の行か相手の行かは関連では決まらない。
+
+以下、2 段目と 3 段目を述べる。
 
 - **可視範囲（scope）**：各コンテキストの policy の `relation_scope` に置く。コンテキストの公開 API は、操作者を必須の引数に取り、内部で scope を掛けてから値を返す。操作者を渡さずにレコードを返す公開 API は作らない。scope は所有の条件を明示し、RLS に任せない。自社のデータを返す scope は `owner_tenant_id` が操作者のテナントであることを、経路 3 の scope は `buyer_tenant_id` が操作者のテナントであることと権限付与を条件にする。RLS は経路 1〜3 の相手の行も返すので、RLS に任せると、受注側の一覧や ID 指定の入口に相手の公開品目・取引関係・出荷が自社の物として混ざる。型の `show?` も同じ条件で判定する。
 - **型・入口・操作ごとの規則**：GraphQL の基底クラスが、宣言された policy の規則を評価する。
@@ -470,7 +482,19 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 ### 役割による制限
 
-取引関係と権限付与を変える mutation は、`admin` のユーザーに限る。policy の規則（`Partnerships::PartnershipPolicy#manage?`。対象の無い `establishPartnership` は操作者に対して評価する `establish?`）で判定し、拒否は `FORBIDDEN` で返す。それ以外の操作は、自社のユーザーなら役割を問わない。
+どの操作をどの役割に許すかは、`context-map.md`「自社の中の役割」で決まる。`admin` に限る操作は、次の policy の規則が `user.admin?` を条件に含めて判定し、拒否は `FORBIDDEN` で返す。対象の無い操作は、操作者に対して評価する。表に無い mutation の規則は、自社のユーザーなら役割を問わない。
+
+| 操作 | mutation・フィールド | policy の規則 |
+|---|---|---|
+| 取引関係と権限付与を変える | `establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission` | `Partnerships::PartnershipPolicy#establish?`（対象なし）・`#manage?` |
+| 取消依頼 | `requestPurchaseOrderCancellation` | `Purchasing::PurchaseOrderPolicy#request_cancellation?` |
+| 検収 | `inspectInboundShipment` | `Purchasing::PurchaseOrderPolicy#inspect_receipt?` |
+| 取消の審査の承認・却下 | `approveCancellationReview`・`rejectCancellationReview` | `Sales::SalesOrderPolicy#review?` |
+| 受注側の取消 | `cancelSalesOrder` | `Sales::SalesOrderPolicy#cancel?` |
+| 請求条件の設定・締め・下書きの破棄・確定 | `setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`・`issueInvoice` | `Billing::InvoicePolicy#set_term?`（対象なし）・`#close?`（対象なし）・`#discard?`・`#issue?` |
+| 監査ログを読む | `viewer.auditLogs` | `Platform::AuditLogPolicy#index?` |
+
+規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。
 
 自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
 
@@ -517,6 +541,7 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `cancelSalesOrder` | `sales_order.cancel` | 対象の受注 | その受注の発注側 |
 | `postShipment` | `shipment.post` | 成功の値の出荷依頼から引いた出荷実績 | 出荷依頼の発注側 |
 | `inspectInboundShipment` | `inbound_shipment.inspect` | 対象の入荷 | 成功の値の発注の受注側 |
+| `issueInvoice` | `invoice.issue` | 対象の請求書 | その請求書の取引先 |
 
 列挙テスト（`spec/graphql/authorization_declarations_spec.rb`）は、スキーマにある全 mutation が監査の宣言を持ち、宣言の種類と action が上の 2 つの表の行と一致することを確かめる。スキーマにある mutation が表に無ければ落ちる。表にあってスキーマにまだ無い mutation は比べない。監査の対象を変えたら、2 つの表を同じ変更で直す。
 
@@ -594,9 +619,36 @@ type AuditLog {
 
 ダッシュボードは、factory-ops-demo の画面と同じく、複数のコンテキストの集計を 1 つの型に束ねる読み取り専用のクエリである。
 
+```graphql
+type SupplierDashboard {
+  "集計の基準にした今日（Asia/Tokyo）"
+  businessDate: ISO8601Date!
+  "受注の 7 つの状況ごとの件数。0 件の状況も返す"
+  salesOrderCounts: [SalesOrderStatusCount!]!
+  "有効在庫が安全在庫より小さい在庫。品目コードの昇順で最大 100 件"
+  stocksBelowSafetyStock: [Stock!]!
+  "出荷期限が今日から 7 日以内の、出荷も取消もしていない出荷依頼。期限の昇順で最大 100 件"
+  shipmentRequestsDueSoon: [ShipmentRequest!]!
+  "未請求の請求対象明細の、単価 × 検収数量の合計（税抜き）"
+  unbilledTotal: BigInt!
+}
+
+type SalesOrderStatusCount {
+  status: SalesOrderStatus!
+  count: Int!
+}
+```
+
+集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。
+
+- **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。
+- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。
+- **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。
+- **未請求の合計**：税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税額を出さず、税抜きの合計だけを返す。
+
 ## mutation の一覧
 
-各 mutation が呼ぶ公開 API と、その操作が同じトランザクションで出すイベントを示す。イベントを出すのは公開 API の中で、GraphQL 層はイベントを出さない。公開 API は、イベントのジョブをリクエストのトランザクションの中で登録する。ジョブはコミットまでワーカーから見えず、リクエストが戻ればジョブも消える（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
+各 mutation が呼ぶ公開 API と、その操作が同じトランザクションで出すイベントを示す。`admin` に限る mutation と、それを判定する規則は「役割による制限」の表にある。イベントを出すのは公開 API の中で、GraphQL 層はイベントを出さない。公開 API は、イベントのジョブをリクエストのトランザクションの中で登録する。ジョブはコミットまでワーカーから見えず、リクエストが戻ればジョブも消える（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
 
 **発注側**
 
@@ -625,7 +677,7 @@ type AuditLog {
 | `setBillingTerm` | `Billing::Terms.set`（取引先 ID と締め日。取引先は自社が受注側の取引関係の相手に限り、それ以外は `NOT_FOUND`） | なし |
 | `closeBillingPeriod` | `Billing::Closing.close`（取引先 ID と締め日で、下書きの請求書を作る。入力と状態の結果は `data-model.md`「請求（`billing`）」） | なし |
 | `discardDraftInvoice` | `Billing::Closing.discard`（請求書 ID で指定し、消した請求書の ID を返す。発行済みは `CONFLICT`） | なし |
-| `issueInvoice` | `Billing::Closing.issue` | 請求書発行 |
+| `issueInvoice` | `Billing::Closing.issue`（請求書 ID で指定し、確定した請求書を返す。入力と状態の結果は `data-model.md`「請求（`billing`）」） | 請求書発行 |
 | `establishPartnership` | `Partnerships::Management.establish`（相手は発注側テナントの取引用コードで指定する。「ID と `node`」） | なし |
 | `revokePartnership` | `Partnerships::Management.revoke` | なし |
 | `grantPermission`・`withdrawPermission` | `Partnerships::Management` | なし |
@@ -720,7 +772,7 @@ enum UserErrorCode {
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、引数は `first`・`after` だけにする（前へは辿らない）。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。件数の総数（`totalCount`）は返さない。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）と、監査ログの絞り込み（`AuditLogFilter`）だけである。画面の検索のための絞り込みの引数は、画面（`../implementation-plan.md` M33）で検索の項目が決まってから、入力型と一緒に足す。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。件数の総数（`totalCount`）は返さない。
 
 公開 API は、操作者・件数・カーソルを受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無を `Page`（`packs/platform`）で返す。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
 
