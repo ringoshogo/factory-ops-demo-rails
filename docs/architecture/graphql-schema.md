@@ -492,9 +492,11 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 取消の審査の承認・却下 | `approveCancellationReview`・`rejectCancellationReview` | `Sales::SalesOrderPolicy#review?` |
 | 受注側の取消 | `cancelSalesOrder` | `Sales::SalesOrderPolicy#cancel?` |
 | 請求条件の設定・締め・下書きの破棄・確定 | `setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`・`issueInvoice` | `Billing::InvoicePolicy#set_term?`（対象なし）・`#close?`（対象なし）・`#discard?`・`#issue?` |
+| 単価の改定の予約と訂正 | `scheduleItemPrice`・`correctItemPrice` | `Sales::ItemPolicy#change_price?` |
+| 品目の CSV の取り込み | `startImport`（種類が `items` のとき） | 種類で役割が変わるので、規則の形は `../implementation-plan.md` M29 で決める |
 | 監査ログを読む | `viewer.auditLogs` | `Platform::AuditLogPolicy#index?` |
 
-規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。
+規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、値を返すペルソナの `member` で呼んで、`admin` に限る mutation が `FORBIDDEN` になって何も書かないことと、`member` に許す mutation が値を返すことを確かめる。
 
 自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
 
