@@ -69,7 +69,7 @@
 
 ## 次にやること
 
-再開する人は、`guides/dev-cycle.md` の流れに沿って、`implementation-plan.md` のマイルストーンを M15 から番号の順に実装する。サイクルの区切りは `dev-cycle.md`「全体の流れ」の表にあり、サイクル 01（M15〜M20）はサイクル末まで終えた。サイクル 02（M34・M35・M21〜M24）はサイクル末まで終えた（`plans/cycle-02/`）。サイクル 03（M36・M25・M26・M27〜M29）は計画レビューを終え、6 つのマイルストーンがどれも Go になった（`plans/cycle-03/plan-review.md`）。次は M36（行列テストの世界の作り方）の実装で、ブランチは計画レビューの PR（`cycle-03-plan`）から切る。M33（フロントエンド）は、流用元の `factory-ops-demo` の刷新後の画面部品を前提に計画を済ませてあり、実装は M32 の後に行う。
+再開する人は、`guides/dev-cycle.md` の流れに沿って、`implementation-plan.md` のマイルストーンを M15 から番号の順に実装する。サイクルの区切りは `dev-cycle.md`「全体の流れ」の表にあり、サイクル 01（M15〜M20）はサイクル末まで終えた。サイクル 02（M34・M35・M21〜M24）はサイクル末まで終えた（`plans/cycle-02/`）。サイクル 03（M36・M25・M26・M27〜M29）は計画レビューを終え、6 つのマイルストーンがどれも Go になった（`plans/cycle-03/plan-review.md`）。M36（行列テストの世界の作り方）は実装レビューを終え、PR #42 にある。次は M25（請求書の発行と受領請求書）の実装で、ブランチは `m36-matrix-world` から切る。M33（フロントエンド）は、流用元の `factory-ops-demo` の刷新後の画面部品を前提に計画を済ませてあり、実装は M32 の後に行う。
 
 残件は、この文書には書かず、台帳 `plans/open-items.md` だけに書く。マイルストーンに着手する前に、引当先がそのマイルストーンの行を台帳で読む。M33 の著者判断（OI-07〜OI-14）は、作者が答えるまで M33 を終えられない。
 
@@ -83,14 +83,14 @@
 
 - `export PATH="$HOME/.rbenv/shims:/opt/homebrew/opt/libpq/bin:$PATH"`（Ruby 3.4.11、pg_dump 18。この版にする理由は `Dockerfile` の `RUBY_VERSION` の直前のコメントにある）
 - DB は `docker compose up -d --wait`（PostgreSQL 18、ポート 5433）
-- rspec の全件は 2 分を超える。テストを並行して流すときは、別名の一時 DB を使う
+- rspec の全件は手元で約 1 分 10 秒かかる。テストを並行して流すときは、別名の一時 DB を使う
 - GitHub の操作（push・PR）の前に `gh auth switch -u ringoshogo` で個人アカウントへ切り替える。gh の既定は仕事用の `ringo-shg` で、そのままでは push できない
 
 ## リポジトリの状態
 
 - **このリポジトリ**：リモートは GitHub の `ringoshogo/factory-ops-demo-rails`（private）。git の作者も ringoshogo にする。
-- **ブランチ**：M1〜M20、サイクル 01 のサイクル末（#30）、サイクル 02 の計画レビューと M34・M35・M21〜M24（#31〜#38）は main にマージ済み。サイクル 02 のサイクル末（#39）も main にマージ済み。サイクル 03 の計画レビューは PR（`cycle-03-plan`）で、main の上にある。Dependabot の依存更新の PR が 3 本、未処理で残っている。
-- **実装**：サイクル 02 のマイルストーンをすべて実装し、サイクル末を終えた。サイクル末で、監査の行を比べる example・ロックを取るメソッドの競合テスト・S1 の一覧の対照を確かめる検査と、テストの環境で bootsnap の命令列のキャッシュを止める設定を足した（`plans/cycle-02/recurrence.md`）。受注側は取引先と締め日を指定して締め、締め日以前に検収された未請求明細を集めた下書きの請求書を作り、破棄できる。締めは請求条件の行ロックで取引先ごとに直列になり、税は請求書・税率ごとに 1 回だけ切り捨てる（`architecture/data-model.md`「請求（`billing`）」）。実装レビューは `plans/cycle-02/implementation-reviews.md`「M24 請求の締め」にある。rspec は 1688 examples, 0 failures（`cycle-02-end` の `a991ff7` で、Ruby 3.4.11 で `COVERAGE=1 bundle exec rspec`）。サイクル 03 の計画レビューを終え、次は M36。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
+- **ブランチ**：M1〜M20、サイクル 01 のサイクル末（#30）、サイクル 02 の計画レビューと M34・M35・M21〜M24（#31〜#38）は main にマージ済み。サイクル 02 のサイクル末（#39）とサイクル 03 の計画レビュー（#40）も main にマージ済み。M36 は PR #42（`m36-matrix-world`、base は main）で、未マージである。Dependabot の依存更新の PR が 3 本、未処理で残っている。
+- **実装**：サイクル 02 のマイルストーンをすべて実装し、サイクル末を終えた。サイクル末で、監査の行を比べる example・ロックを取るメソッドの競合テスト・S1 の一覧の対照を確かめる検査と、テストの環境で bootsnap の命令列のキャッシュを止める設定を足した（`plans/cycle-02/recurrence.md`）。受注側は取引先と締め日を指定して締め、締め日以前に検収された未請求明細を集めた下書きの請求書を作り、破棄できる。締めは請求条件の行ロックで取引先ごとに直列になり、税は請求書・税率ごとに 1 回だけ切り捨てる（`architecture/data-model.md`「請求（`billing`）」）。実装レビューは `plans/cycle-02/implementation-reviews.md`「M24 請求の締め」にある。M36 で、行列テストの世界をファイルごとに 1 回作る形にし、競合テストの後始末のガードと、request spec の補助（`spec/support/request_helpers.rb`）と、上限ちょうどの example を足した。業務の振る舞いは変えていない。全件は 534 秒から約 71 秒に、CI の test のジョブは約 12 分から約 2 分半になった。実装レビューは `plans/cycle-03/implementation-reviews.md`「M36」にある。rspec は 1701 examples, 0 failures（`m36-matrix-world` の `c9ee7f8` で、Ruby 3.4.11 で `COVERAGE=1 bundle exec rspec`）。次は M25。`implementation-plan.md` のマイルストーンを終えるたびに、ここへ書く。
 - **親のモノレポ（`shogo-project`）**：`.gitignore` に `/factory-ops-demo-rails/` を追加し、README の「別リポジトリで管理しているもの」の表に行を足した。どちらも未 commit である。
 
 ## 持ち込まなかったもの
