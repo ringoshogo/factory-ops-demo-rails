@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 require_relative "../../../../../spec/support/events"
 
 # 同じ入荷への 2 つの検収が並んだときの順序（docs/architecture/context-map.md「検収と請求の流れ」1）。

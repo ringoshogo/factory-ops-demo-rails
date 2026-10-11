@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../support/concurrency"
 
 # 競合テストが後始末（delete_owned_rows）を終えずに終わると、その example が落ちる（docs/guides/testing.md「競合テスト」）。
 # ガードは example の後の設定の after で落とし、expect で捕まえられないので、内側の example group を走らせて結果を見る

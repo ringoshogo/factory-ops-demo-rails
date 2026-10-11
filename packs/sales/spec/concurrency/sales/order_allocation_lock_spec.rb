@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 同じ品目を 2 つの受注が同時に引き当てても、有効在庫を超えて引き当てない（docs/architecture/data-model.md「在庫（`inventory`）」）
 RSpec.describe Sales::OrderAllocation do

@@ -1,6 +1,5 @@
 require "rails_helper"
 require_relative "../support/events"
-require_relative "../support/concurrency"
 
 # 関連を 1 件ずつ読む N+1 が、テストの失敗まで届く（docs/architecture/graphql-schema.md「ページングと N+1」）。
 # 公開 API・Dataloader のソース・/graphql への要求の 3 つの経路で、同じ N+1 が例外になることを確かめる。

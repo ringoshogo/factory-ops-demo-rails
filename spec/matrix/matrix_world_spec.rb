@@ -85,6 +85,26 @@ RSpec.describe MatrixWorld do
     expect(count_tenants(tenants)).to eq(0)
   end
 
+  it "接続を固定した後の確かめで失敗しても、固定を残さずに送出し、次の世界を開いて閉じられる" do
+    allow(connection).to receive(:verify!).and_raise(ActiveRecord::ConnectionNotEstablished, "確かめの失敗")
+
+    expect { MatrixWorld.open }.to raise_error(ActiveRecord::ConnectionNotEstablished, "確かめの失敗")
+    expect(pool.instance_variable_get(:@pinned_connection)).to be_nil
+
+    allow(connection).to receive(:verify!).and_call_original
+    world = MatrixWorld.open
+    expect(count_tenants(world.tenants.values)).to eq(MatrixWorld::PERSONAS.size)
+  ensure
+    MatrixWorld.close if world
+  end
+
+  it "接続を借りる前に失敗したら、その例外をそのまま送出する" do
+    allow(pool).to receive(:pin_connection!).and_raise(ActiveRecord::ConnectionTimeoutError, "借りられない")
+
+    expect { MatrixWorld.open }.to raise_error(ActiveRecord::ConnectionTimeoutError, "借りられない")
+    expect(pool.instance_variable_get(:@pinned_connection)).to be_nil
+  end
+
   it "世界を作った後にテナントの設定が残っていれば、作った行と接続の固定を残さずに失敗する" do
     created = []
     allow(MatrixWorld).to receive(:new).and_wrap_original do |original|

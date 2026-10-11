@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 同じ受注の審査の決着と「取消依頼」の受け手を 2 つの接続で同時に動かしても、受注の行ロックで直列になる。
 # 同じ審査の決着は一方だけが成立し、決着のイベントは 1 回だけ出る（docs/architecture/context-map.md「取消の流れ」3）

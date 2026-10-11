@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 締めの直列化（docs/architecture/data-model.md「請求（`billing`）」）。締めと下書きの破棄は請求条件の行をロックし、
 # 同じ取引先の締めを直列にする。「請求対象確定」の受け手はこのロックを取らないので、締めの最中に届いた検収は待たずに

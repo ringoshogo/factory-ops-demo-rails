@@ -1041,7 +1041,7 @@ bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb
 **判断**：世界をファイルごとに作るのに gem（test-prof の `before_all`）を使うか
 
 - **既定の推奨**：使わない。test-prof の `before_all` も同じ `pin_connection!` を包んだもので、要るのは 2 ファイルの外側のトランザクションと接続の固定だけである
-- **裏返る条件**：`pin_connection!` が Rails の更新で使えなくなるか、同じ形を 3 つ以上のファイルで使うことになった → test-prof の `before_all` に移す
+- **裏返る条件**：同じ形を 3 つ以上のファイルで使うことになった → test-prof の `before_all` に移す。`pin_connection!` が Rails の更新で使えなくなった → test-prof の `before_all` がその版で何を使っているかを確かめて移るか、`let(:world)` に戻す。`before_all` も同じ `pin_connection!` を包んでいるので、移るだけでは退路にならない（IB-28）
 - **撤退コスト**：小さい。`let(:world)` に戻すだけで済む
 
 **完了条件**

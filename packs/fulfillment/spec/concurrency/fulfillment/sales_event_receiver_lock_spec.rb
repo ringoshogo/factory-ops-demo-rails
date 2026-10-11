@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 同じ「出荷可能」が 2 つの接続へ同時に届いても、出荷依頼は 1 件だけできる。後の配送は冪等キーの確認を通り抜けるが、
 # 一意索引の上で先の配送のコミットを待ち、何も書かずに終わる（docs/architecture/data-model.md「イベントの受け口と冪等キー」）

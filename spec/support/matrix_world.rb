@@ -37,13 +37,23 @@ class MatrixWorld
   # lock_thread は transactional fixtures の既定（lock_threads）と同じ真にし、example の固定と同じ形にそろえる
   def self.open
     pool = ActiveRecord::Base.connection_pool
-    pool.pin_connection!(true)
+    world = nil
     begin
+      pool.pin_connection!(true)
       world = new.freeze.tap { check_tenant_cleared! }
     ensure
-      pool.unpin_connection! unless world
+      unpin_after_failure(pool) unless world
     end
   end
+
+  # pin_connection! は接続を固定して入れ子の数を足してから、接続の確かめと BEGIN を行うので、そこで失敗しても足した分を外す。
+  # 接続を借りる前に失敗したときは固定が無く、unpin_connection! が固定の無いことを例外にするので、それだけは捨てる
+  def self.unpin_after_failure(pool)
+    pool.unpin_connection!
+  rescue RuntimeError => e
+    raise unless e.message.start_with?("There isn't a pinned connection")
+  end
+  private_class_method :unpin_after_failure
 
   # 世界のトランザクションを巻き戻し、接続の固定を外す。unpin_connection! が偽を返すのは、世界のトランザクションが
   # ファイルの終わりより前にコミットされたか巻き戻ったときで、その後の example は世界の無い DB で動いたことになる
