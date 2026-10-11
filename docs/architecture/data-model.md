@@ -190,7 +190,7 @@
 
 確定も、締めと破棄と同じ請求条件の行をロックしてから、請求書が下書きのまま残っているかを確かめる。ロックを取らずに読んでから書くと、破棄のコミットの後に消えた下書きを確定して「請求書発行」を出すか、同じ下書きに番号を 2 回振りうる。破棄が先なら確定は `NOT_FOUND` に、確定が先なら破棄は `CONFLICT` になる。
 
-確定した請求書と、それに結んだ税率ごとの集計と明細は変えない。`invoices` のトリガーが、`issued_at` のある行の UPDATE と DELETE を拒み、`invoice_tax_summaries` と `billable_items` のトリガーが、発行済みの請求書に結んだ行の UPDATE と DELETE を拒む。公開 API の拒否（`CONFLICT`）だけでは、公開 API を通らない書き込みを止められないからである。
+確定した請求書と、それに結んだ税率ごとの集計と明細は変えない。`invoices` のトリガーが、`issued_at` のある行の UPDATE と DELETE を拒む。`invoice_tax_summaries` と `billable_items` のトリガーは、発行済みの請求書に結んだ行の INSERT・UPDATE・DELETE と、発行済みの請求書へ結び付ける UPDATE を拒む。公開 API の拒否（`CONFLICT`）だけでは、公開 API を通らない書き込みを止められないからである。
 
 ## コンテキストに属さないパッケージのテーブル
 
@@ -248,6 +248,8 @@ CSV は UTF-8 で、1 行目の見出しが次の列名と順に一致しなけ�
 |---|---|---|
 | 品目（`items`） | `code`・`name`・`unit`・`tax_rate_percent`・`published`・`unit_price`・`price_effective_on` | 品目の列は `saveItem` の入力と同じ規則。`tax_rate_percent` は 8 か 10、`published` は `true` か `false`。`unit_price` は 0 以上の整数で、新しい品目では必須、既存の品目では空なら単価を変えない。`price_effective_on` は既存の品目の改定日で、空なら今日、今日より前なら失敗。新しい品目では使わない。同じファイルで同じ `code` の 2 行目以降は失敗 |
 | 在庫（`stocks`） | `item_code`・`quantity` | `item_code` は自社の品目のコード。`quantity` は 0 以上の整数で、目標の在庫数を表す。引当済みの数量より少なくする行は失敗。同じファイルで同じ `item_code` の 2 行目以降は失敗 |
+
+同じ取り込みのジョブが 2 つ動いても、結果は 1 つになる。どの段階も、チャンクのトランザクションの初めに `imports` の行をロックし、ロックの後に置き場の状態を読み直してから書く。`stage` はロックの後に書き終えた最大の行番号を読み、`import_rows` を `(import_id, row_number)` の一意で書く。`apply` はロックの後に結果の無い行だけを選ぶ。`finalize` はロックの後に `finished_at` が空のときだけ書く。
 
 反映は、品目の列を `upsert_all` で、単価の列を `Sales::ItemPrices.schedule` で、在庫を `Inventory::Adjustment` で書く。新しく作った品目には、有効期間 `(,)` の単価の行を作る。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。
 

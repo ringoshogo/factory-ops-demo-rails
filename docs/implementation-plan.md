@@ -1093,7 +1093,7 @@ bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb sp
 - 単体（`billing_event_receiver_spec.rb`）：同じ請求書発行を 2 回流しても写しが 1 件（冪等の共有テスト）
 - 単体（policy の spec）：役割を直した 7 つと `issue?` の規則が、`admin` には真、`member` には偽を返す。`purchase_order_policy_spec.rb` と `invoice_policy_spec.rb` は、このマイルストーンで足す
 - 競合（`closing_lock_spec.rb` に足す）：確定と破棄、確定と確定を 2 つの接続で同時に走らせ、どちらか一方だけが成り立つ。請求条件の行ロックで待つことを確かめる
-- DB（`spec/db`）：`received_invoices` の `total = subtotal + tax_total` の CHECK 制約が、外れた行を拒む。確定した請求書と、それに結んだ集計と明細の UPDATE と DELETE を、トリガーが拒む
+- DB（`spec/db`）：`received_invoices` の `total = subtotal + tax_total` の CHECK 制約が、外れた行を拒む。確定した請求書の UPDATE と DELETE、それに結んだ集計と明細の INSERT・UPDATE・DELETE、未請求の明細を確定した請求書へ結び付ける UPDATE を、トリガーが拒む（SQL で直接書いて確かめ、明細の集まりと集計が変わらない）
 - 行列（`graphql_matrix_spec.rb`）：上の作るもの 4。`admin` に限る規則の 1 つから `user.admin?` を外すと、その mutation の `member` の行が落ちる
 - シナリオ（`spec/scenarios/billing_amounts_spec.rb`、重要シナリオ S5）が通る
 
@@ -1224,7 +1224,7 @@ bin/rubocop
 - パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。ルートの `package.yml` の依存先にも足す。`context-map.md`「疎結合を守る規則」の依存の向きの表に、この行を足す。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
 - ファイルの受け取り：`POST /imports/files`（`ImportFilesController`、ルートパッケージ）が `multipart/form-data` の CSV を受け取り、`import_files` に書いて ID を返す。ファイルを置くだけで、業務の表には何も起きない。10 MB を超えるファイルは受け付けない。コントローラは `GraphqlController` と同じく、セッションのユーザーと世代を確かめてから、セッションのテナントで `Tenancy.with_tenant` を開いて書く。`startImport` に他社か存在しないファイルの ID を渡すと `NOT_FOUND` になり、S1 の表に行を足す。セッションで認証し、`Origin` ヘッダが許可した origin と一致しなければ拒む。`GraphqlController` の `application/json` の制限に代わる CSRF 対策である。
 - 取り込みの開始：mutation `startImport(fileId, kind)` が `imports` の行を書き、ジョブを登録する。業務の表に効果が及ぶのはここからなので、監査はこの mutation の宣言で行う。
-- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }, duration: 1.hour`、`tenant_transaction :per_chunk`（いまの `ApplicationJob` は `around_perform` でジョブ全体を `Tenancy.with_tenant` で包むので、この宣言を `ApplicationJob` に作り、宣言したジョブでは包まない）。`limits_concurrency` の保証は `duration` の間だけで、過ぎると待っている次のジョブが動きうる（solid_queue 1.7.0 の README「Concurrency controls」。既定は `SolidQueue.default_concurrency_control_period` の 3 分）。テナントごとに 1 は、1 社が imports のワーカーを占めないための上限で、反映の正しさはこれに頼らない。同じテナントの 2 つの取り込みが並んでも、品目の upsert と単価の予約は品目の行ロックで、在庫は在庫の行ロックで直列になる。各段階の始めに、カーソルを置き場から作り直す（`stage` は `import_rows` の最大の行番号の次から、`apply` は結果の無い最小の行番号から）。そのため、継続の情報を持たない新しいジョブでも続きから進む。
+- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }, duration: 1.hour`、`tenant_transaction :per_chunk`（いまの `ApplicationJob` は `around_perform` でジョブ全体を `Tenancy.with_tenant` で包むので、この宣言を `ApplicationJob` に作り、宣言したジョブでは包まない）。`limits_concurrency` の保証は `duration` の間だけで、過ぎると待っている次のジョブが動きうる（solid_queue 1.7.0 の README「Concurrency controls」。既定は `SolidQueue.default_concurrency_control_period` の 3 分）。テナントごとに 1 は、1 社が imports のワーカーを占めないための上限で、反映の正しさはこれに頼らない。同じテナントの 2 つの取り込みが並んでも、品目の upsert と単価の予約は品目の行ロックで、在庫は在庫の行ロックで直列になる。各段階の始めに、カーソルを置き場から作り直す（`stage` は `import_rows` の最大の行番号の次から、`apply` は結果の無い最小の行番号から）。同じ取り込みのジョブが 2 つ動いても結果が 1 つになるよう、どの段階もチャンクのトランザクションの初めに `imports` の行をロックし、ロックの後に置き場の状態を読み直してから書く（`data-model.md`「取り込み（`imports`）」）。そのため、継続の情報を持たない新しいジョブでも続きから進む。
   1. `step :stage`：`import_files.content` を `CSV.new` で 1 行ずつ読み、1,000 行ごとに `import_rows` へ `insert_all` で書く。カーソルは書き終えた行番号である。見出しの行の誤りと、50,000 行を超えるファイルは、取り込み全体の失敗（`failed_at`）にする。
   2. `step :apply`：`import_rows` を行番号の順に 500 行ずつ取り、チャンクごとに `Tenancy.with_tenant` を開いて反映する。`applied_at` か `error` のある行は飛ばす。行ごとの業務の書き込みはセーブポイントの中で行い、失敗した行の書き込みだけを戻して `error` を書く。業務の書き込み・行ごとの `applied_at` か `error`・`imports` の件数の加算（そのチャンクで新しく結果を書いた行の数だけ）を、チャンクの 1 つのトランザクションで書く。カーソルは反映したチャンクの最後の行番号である。
   3. `step :finalize`：`finished_at` を書き、`import_files` の中身を消す。
@@ -1242,7 +1242,7 @@ bin/rubocop
   - 継続の情報を失った再開：`stage` の途中と `apply` の途中で実行を捨て、`reenqueue` で登録した新しいジョブを流すと、全行が 1 回ずつ反映され、件数が行の数と合う。
   - 件数の冪等：成功 2 行・失敗 1 行のチャンクを反映した後、カーソルを保存する前に止まったものとして同じチャンクをもう一度流しても、`applied_rows`・`failed_rows`・品目・在庫・移動履歴が増えない。
   - CSV の契約：見出しの誤りで取り込み全体が失敗する。同じ品目コードの 2 行目と、列の検証に外れた行が失敗になる。新しい品目に有効期間 `(,)` の単価の行ができる。既存の品目は、単価が変わるときだけ改定が予約される。
-  - 並んだ取り込み（`packs/imports/spec/concurrency/imports/parallel_imports_spec.rb`）：同じテナントの 2 つの在庫の取り込みを 2 つの接続で同時に流しても、在庫の数量と移動履歴が行ごとに 1 回ずつになる。
+  - 並んだ取り込み（`packs/imports/spec/concurrency/imports/parallel_imports_spec.rb`）：同じテナントの 2 つの在庫の取り込みを 2 つの接続で同時に流しても、在庫の数量と移動履歴が行ごとに 1 回ずつになる。成功の行と失敗の行を含む同じ取り込みの 2 つのジョブを、`stage`・`apply`・`finalize` のそれぞれで 2 つの接続から同時に流しても、置き場の行・件数・品目・在庫・移動履歴が 1 つのジョブのときと同じになる。`imports` の行ロックを外すと落ちる。
   - 部分失敗：3 行のうち 1 行が不正なファイルで、反映が 2 行・失敗が 1 行・状況が `PARTIALLY_FAILED` になる。
   - テナント：`upsert_all` に他社の `owner_tenant_id` の行を混ぜると、RLS が拒む。
   - キュー：`config/queue.yml` を読み、`imports` のワーカーが他のキューを持たず、`events` のワーカーが `imports` を持たないことを確かめる。
