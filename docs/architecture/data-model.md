@@ -231,7 +231,14 @@
 | 5 | 置き場へ写し中 | `started_at` がある |
 | 6 | 待機中 | それ以外 |
 
-反映は、品目の列を `upsert_all` で、単価の列を `Sales::ItemPrices.schedule` で、在庫を `Inventory::Adjustment` で書く。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。
+CSV は UTF-8 で、1 行目の見出しが次の列名と順に一致しなければ、取り込み全体を失敗にする。2 行目以降は、行ごとに検証し、外れた行だけを失敗にして `error` に列名と理由を書く。
+
+| 種類 | 列（見出しの順） | 行ごとの検証 |
+|---|---|---|
+| 品目（`items`） | `code`・`name`・`unit`・`tax_rate_percent`・`published`・`unit_price`・`price_effective_on` | 品目の列は `saveItem` の入力と同じ規則。`tax_rate_percent` は 8 か 10、`published` は `true` か `false`。`unit_price` は 0 以上の整数で、新しい品目では必須、既存の品目では空なら単価を変えない。`price_effective_on` は既存の品目の改定日で、空なら今日、今日より前なら失敗。新しい品目では使わない。同じファイルで同じ `code` の 2 行目以降は失敗 |
+| 在庫（`stocks`） | `item_code`・`quantity` | `item_code` は自社の品目のコード。`quantity` は 0 以上の整数で、目標の在庫数を表す。引当済みの数量より少なくする行は失敗。同じファイルで同じ `item_code` の 2 行目以降は失敗 |
+
+反映は、品目の列を `upsert_all` で、単価の列を `Sales::ItemPrices.schedule` で、在庫を `Inventory::Adjustment` で書く。新しく作った品目には、有効期間 `(,)` の単価の行を作る。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。
 
 ## 取消と出荷の競合を止める場所
 

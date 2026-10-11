@@ -1097,18 +1097,34 @@ bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb sp
 
 ## M26 ダッシュボードと失効の通し試験
 
-**目的**：取引関係を失効させると 3 つの読む経路と新しい発注が閉じ、連結済みの取引はイベントで請求まで進む。この見せどころを 1 本のテストで示す。
+**目的**：取引関係を失効させると 3 つの読む経路と新しい発注が閉じ、連結済みの取引はイベントで請求まで進む。この見せどころを 1 本のテストで示す。受注側は、受注の状況・安全在庫・出荷期限・未請求の額を 1 つの画面の問い合わせで見られる。
 
 **作るもの**
 
-- `supplier.dashboard`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API）
-- `spec/scenarios/revocation_spec.rb`（重要シナリオ S2）：発注 → 受注確定 → 失効 → 経路 1〜3 が空・新しい発注が `NOT_PERMITTED` → 引当・出荷・検収・締め・発行がそのまま進み、発注側に受領請求書が届く
-- 画面の問い合わせごとの複雑度のテスト（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧から読む
-- 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合テスト（OI-79）。停止中の受注に有効な出荷指示ができるなら、受け手を直列にする
+1. `supplier.dashboard` と型 `SupplierDashboard`・`SalesOrderStatusCount`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API と集計の境界）。画面の問い合わせ `spec/fixtures/graphql/screens/supplier_dashboard.graphql` を足し、クエリ数の予算の表と行列テストの期待値（`SupplierView.dashboard`）に行を足す
+2. `spec/scenarios/revocation_spec.rb`（重要シナリオ S2）：発注 → 受注確定 → 失効 → 経路 1〜3 が空・新しい発注が `NOT_PERMITTED` → 引当・出荷・検収・締め・発行がそのまま進み、発注側に受領請求書が届く
+3. 画面の問い合わせごとの複雑度のテスト `spec/graphql/query_complexity_spec.rb`（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）から読み、どのファイルも `max_complexity` に収まることを確かめる。一覧に無いファイルが無いことも確かめる
+4. 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合（OI-79）。競合テストで、停止の受け手が出荷依頼の無いことを読んでからコミットするまでの間に、出荷可能の受け手と出荷指示の作成を割り込ませる。停止中の受注に有効な出荷指示が残るなら、停止の受け手と出荷可能の受け手を受注 ID の勧告ロック（`pg_advisory_xact_lock`）で直列にし、`data-model.md`「出荷（`fulfillment`）」に書く。勧告ロックを足したら `spec/db/lock_sites_spec.rb` の表にも足す
 
-**完了条件**：上の 2 つのテストが通る。全マイルストーンの共通の完了条件が通る。
+ダッシュボードの集計の境界（受注の状況の数え方・安全在庫と等しい在庫・期限を過ぎた出荷依頼・税抜きの合計）は、計画のときに取りまとめ役が決めた（OI-81）。
 
-**実装する文書の節**：`context-map.md`「取引関係の失効」「テナントと所有」、`showcase.md`「1. テナントの境界：読む 3 経路、書けないこと、失効」
+**完了条件**
+
+```sh
+bundle exec rspec packs/sales/spec/public/sales/sales_orders_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb \
+  packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb packs/billing/spec/public/billing/billable_items_spec.rb \
+  spec/requests/dashboard_spec.rb spec/graphql/query_complexity_spec.rb spec/graphql/query_budget_spec.rb spec/matrix
+bundle exec rspec spec/scenarios/revocation_spec.rb
+bundle exec rspec packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb
+```
+
+- 単体（4 つの公開 API の spec。どれもこのマイルストーンで足す）：受注の件数が 7 つの状況を 0 件も含めて返し、取消済を数える。安全在庫は、有効在庫が安全在庫より 1 小さい在庫を返し、等しい在庫を返さない。出荷期限は、今日から 7 日後の出荷依頼と期限を過ぎた出荷依頼を返し、8 日後・出荷済・取消済を返さない。未請求の合計は、請求書に結んだ明細を数えない。どれも他社の行を数えない（対照として、自社の行が数えられることを同じ example で確かめる）
+- 結合（`dashboard_spec.rb`）：画面の問い合わせ `supplier_dashboard.graphql` の応答が、4 つの単体と同じ値を返す。`member` も読める
+- シナリオ（`revocation_spec.rb`）：上の作るもの 2
+- 複雑度（`query_complexity_spec.rb`）：画面の問い合わせのどれもが上限に収まる。一覧の中にコネクションを入れ子にした問い合わせを渡すと、上限を超えて落ちる
+- 競合（`shipping_hold_lock_spec.rb`）：上の割り込みの順で、停止中の受注に有効な出荷指示が残らない。直列にしたなら、勧告ロックを外すと落ちる。直列にしなかったなら、残らない理由を spec の説明に書く
+
+**実装する文書の節**：`context-map.md`「取引関係の失効」「テナントと所有」、`graphql-schema.md`「読み取りの一覧」「ページングと N+1」、`data-model.md`「出荷（`fulfillment`）」、`showcase.md`「1. テナントの境界：読む 3 経路、書けないこと、失効」
 
 ---
 
@@ -1124,14 +1140,16 @@ M27〜M31 は、業務の流れを一通り作った後に、設計判断を見�
 
 - マイグレーション：
   - 拡張 `btree_gist`、表 `item_prices`（`create_tenant_table`、品目へ `add_tenant_reference`）、現在の行の排他制約、書き換えを拒むトリガー、経路 1 の `partner_read`（`data-model.md`「受注（`sales`）」「RLS」）
-  - 既存の `items.unit_price` を、有効期間が `(,)` で記録期間がマイグレーションの時刻から始まる行に写す。`items.unit_price` は、先に `ignored_columns` に入れてから、次のマイグレーションで消す（strong_migrations の手順）
-  - `sales_order_lines.priced_on`：照合前は空で、照合で単価と一緒に埋まる。既存の行は受注日で埋める
+  - `sales_order_lines.priced_on`：照合前は空で、照合で単価と一緒に埋まる
+- データの移行（`adr/001` 決定 4。マイグレーションに入れない）：rake タスク `sales:backfill_item_prices`（`lib/tasks/`）が、テナントを明示して 1 つずつ回り、公開 API `Sales::ItemPrices.backfill` を呼ぶ。`backfill` は、既存の `items.unit_price` を有効期間が `(,)` で記録期間がタスクの時刻から始まる行に写し、照合済みの受注明細の `priced_on` を受注日で埋める。現在の単価の行がある品目と、`priced_on` のある明細は飛ばすので、もう一度流しても行が増えない
+- `items.unit_price` を消す順：表と列を足すマイグレーション → 移行のタスク → `items.unit_price` を `ignored_columns` に入れる → 次のマイグレーションで列を消す（strong_migrations の手順）。列を消すマイグレーションは、現在の単価の行が無い品目か、照合済みで `priced_on` の無い明細が 1 件でも残っていれば、例外で止まる
 - 公開 API `Sales::ItemPrices`：`schedule`・`correct`・`price_at`・`history`（品目ごとの全行）・`explain(actor, sales_order_line_ids, as_of:)`。
 - 単価を使う箇所の切り替え（`adr/006` 決定 5）：`Sales::Catalog`・`Sales::PublishedCatalog` は今日の単価を返す。ACL（`Sales::PurchaseOrderTranslator`）と照合のやり直し（`Sales::PartMappings.register`）は、受注日の単価を写し、`priced_on` を書く。`saveItem` の `unitPrice` は、品目を作るときは有効期間 `(,)` の行を作り、既存の品目で値が変わるときは今日からの改定として予約する。
 - GraphQL：`Item.prices`・`ItemPrice`・`scheduleItemPrice`・`correctItemPrice`・`BillableItem.priceExplanation`（`graphql-schema.md`「受注側の視点」「mutation の一覧」）。`scheduleItemPrice`・`correctItemPrice` は、発注側のカタログに見える単価を変えるので監査する。
 - 行列テスト：`item_prices` の行（`granted_buyer` は公開品目の現在の行を読める）と、新しいフィールドと mutation の行。
 - テスト：
   - 単体（`packs/sales/spec/public/sales/item_prices_spec.rb`）：予約・訂正・`price_at` を、有効日 × 記録時点の表で確かめる。予約を同じ有効日で 2 回流しても行が増えない。
+  - 移行（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）：`backfill` が品目と照合済みの明細を埋め、2 回流しても行が増えず、他のテナントの行に触れない。
   - DB（`packs/sales/spec/db/item_prices_constraints_spec.rb`）：現在の行同士の有効期間の重なりを排他制約が拒み、記録期間を閉じる以外の UPDATE と DELETE をトリガーが拒む。
   - 結合：改定日の前日と当日の発注で、受注明細の単価が切り替わる。請求書の発行の後に単価を訂正すると、`priceExplanation` が発行時の単価と訂正後の単価を別々に返す。
 
@@ -1171,8 +1189,8 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
 - 再送の操作 `Notifications::Email.redeliver_failed(since:)`：再試行を使い切った確実な送信の `failed_at` を空に戻し、同じ送信記録のジョブを登録し直す。新しい送信記録は作らない。運用者は rake タスク `notifications:redeliver` から呼び、タスクはテナントを明示して 1 つずつ回る（`decisions.md` 2 章）。
 - ガードテスト：`spec/jobs/event_job_atomicity_spec.rb` を広げ、`enqueue_after_transaction_commit` が `false` のクラスが `Contracts::EventJob` と `Notifications::CriticalDeliveryJob` の 2 つだけであることと、`ExternalEffectJob` のどのサブクラスもその値と保証を自分のクラスで宣言していることを確かめる。
 - テスト：
-  - `Sendgrid` のアダプタ：WebMock のスタブで 202・429（待ち時間のヘッダ付き）・500・400・401・タイムアウトを返し、`adr/007` 決定 5 の A-2 の表のとおりに分類される。
-  - 確実な送信：同じ「請求書発行」を 2 回流しても送信記録は 1 件。`issueInvoice` が戻れば、送信記録もジョブも残らない。受け付けの後にジョブをもう一度流しても、送らない。400 と、再試行を使い切ったときに `failed_at` が入り、`notification.delivery_failed` が出る。
+  - `Sendgrid` のアダプタ：WebMock のスタブで 202・sandbox mode の 200・429（待ち時間のヘッダ付き）・500・400・401・タイムアウトを返し、`adr/007` 決定 5 の A-2 の表のとおりに分類される。200 と 202 は、メッセージ ID のヘッダが無くても受け付けとして扱う。
+  - 確実な送信：同じ「請求書発行」を 2 回流しても送信記録は 1 件。購買の「請求書発行」の受け手が `deliver_critical` を呼んだ後に例外で失敗すると、受領請求書・送信記録・送信のジョブがどれも残らない。受け手のトランザクションのコミットの前に、送信のジョブが同じトランザクションの中に登録されている。受け付けの後にジョブをもう一度流しても、送らない。400 と、再試行を使い切ったときに `failed_at` が入り、`notification.delivery_failed` が出る。
   - inbox：同じ `sg_event_id` の 2 回の受信で行が 1 件。署名の誤りで 401。保存した行にメールアドレスが無い。処理を 2 回流しても、送信記録の時刻列が 1 回だけ書かれる。
 
 **完了条件**
@@ -1188,7 +1206,7 @@ bin/rubocop
 
 **実装する文書の節**：`adr/007`、`decisions.md` 5 章、`data-model.md`「通知（`notifications`）」、`context-map.md`「コンテキスト」
 
-**文書に残すこと**：`adr/007` の未確認の事項を、確かめた結果で置き換える。
+**文書に残すこと**：`adr/007` の未確認の事項（OI-15）を、確かめた結果で置き換える。
 
 ## M29 大量データの取り込み
 
@@ -1199,20 +1217,24 @@ bin/rubocop
 - パッケージ `packs/imports`（`Imports::`）。依存先は `platform`・`partnerships`・`sales`・`inventory`。`context-map.md`「疎結合を守る規則」の依存の向きの表に、この行を足す。表は `imports`・`import_files`・`import_rows`（`data-model.md`「取り込み（`imports`）」）。
 - ファイルの受け取り：`POST /imports/files`（`ImportFilesController`、ルートパッケージ）が `multipart/form-data` の CSV を受け取り、`import_files` に書いて ID を返す。ファイルを置くだけで、業務の表には何も起きない。10 MB を超えるファイルは受け付けない。セッションで認証し、`Origin` ヘッダが許可した origin と一致しなければ拒む。`GraphqlController` の `application/json` の制限に代わる CSRF 対策である。
 - 取り込みの開始：mutation `startImport(fileId, kind)` が `imports` の行を書き、ジョブを登録する。業務の表に効果が及ぶのはここからなので、監査はこの mutation の宣言で行う。
-- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }`、`tenant_transaction :per_chunk`。
+- ジョブ `Imports::RunJob`（`adr/007` 決定 5 の A-4）：`ApplicationJob` を継承し、`ActiveJob::Continuable` を取り込む。`queue_as :imports`、`limits_concurrency to: 1, key: ->(import_id, tenant_id) { tenant_id }, duration: 1.hour`、`tenant_transaction :per_chunk`。`limits_concurrency` の保証は `duration` の間だけで、過ぎると待っている次のジョブが動きうる（solid_queue 1.7.0 の README「Concurrency controls」。既定は `SolidQueue.default_concurrency_control_period` の 3 分）。テナントごとに 1 は、1 社が imports のワーカーを占めないための上限で、反映の正しさはこれに頼らない。同じテナントの 2 つの取り込みが並んでも、品目の upsert と単価の予約は品目の行ロックで、在庫は在庫の行ロックで直列になる。各段階の始めに、カーソルを置き場から作り直す（`stage` は `import_rows` の最大の行番号の次から、`apply` は結果の無い最小の行番号から）。そのため、継続の情報を持たない新しいジョブでも続きから進む。
   1. `step :stage`：`import_files.content` を `CSV.new` で 1 行ずつ読み、1,000 行ごとに `import_rows` へ `insert_all` で書く。カーソルは書き終えた行番号である。見出しの行の誤りと、50,000 行を超えるファイルは、取り込み全体の失敗（`failed_at`）にする。
-  2. `step :apply`：`import_rows` を行番号の順に 500 行ずつ取り、チャンクごとに `Tenancy.with_tenant` を開いて反映する。行ごとに `applied_at` か `error` を書き、`imports` の件数を足す。`applied_at` のある行は飛ばす。カーソルは反映したチャンクの最後の行番号である。
+  2. `step :apply`：`import_rows` を行番号の順に 500 行ずつ取り、チャンクごとに `Tenancy.with_tenant` を開いて反映する。`applied_at` か `error` のある行は飛ばす。行ごとの業務の書き込みはセーブポイントの中で行い、失敗した行の書き込みだけを戻して `error` を書く。業務の書き込み・行ごとの `applied_at` か `error`・`imports` の件数の加算（そのチャンクで新しく結果を書いた行の数だけ）を、チャンクの 1 つのトランザクションで書く。カーソルは反映したチャンクの最後の行番号である。
   3. `step :finalize`：`finished_at` を書き、`import_files` の中身を消す。
 - 反映の書き方（種類ごと）：
-  - **品目**：品目の列（コード・名前・単位・税率・公開）は、公開 API `Sales::Catalog.bulk_upsert` が `upsert_all(unique_by: [:owner_tenant_id, :code])` で書く。`owner_tenant_id` には `Current.tenant_id` を明示して入れ、RLS の `WITH CHECK` が他社の名義の行を拒む。単価の列（単価・有効日）は、行ごとに `Sales::ItemPrices.schedule` を呼ぶ（`adr/006` 決定 3）。
-  - **在庫**：行ごとに `Inventory::Adjustment` を呼び、目標の数量との差を入庫か出庫にする。`stocks` を `insert_all` で書かない。在庫の変更は `move!` を通って移動履歴を残す（`data-model.md`「在庫（`inventory`）」）。
+  - **品目**：CSV の列と行ごとの検証は `data-model.md`「取り込み（`imports`）」にある（OI-82）。検証を通った行の品目の列（コード・名前・単位・税率・公開）は、公開 API `Sales::Catalog.bulk_upsert` が `upsert_all(unique_by: [:owner_tenant_id, :code])` で書く。`owner_tenant_id` には `Current.tenant_id` を明示して入れ、RLS の `WITH CHECK` が他社の名義の行を拒む。`bulk_upsert` は、新しく作った品目に、有効期間 `(,)` の単価の行を同じトランザクションで作る（`saveItem` で品目を作るときと同じ）。既存の品目は、単価がその有効日の単価と違うときだけ、行ごとに `Sales::ItemPrices.schedule` で有効日からの改定を予約する（`adr/006` 決定 3）
+  - **在庫**：行ごとに `Inventory::Adjustment` を呼び、CSV の在庫数（目標の数量）との差を入庫か出庫にする。`stocks` を `insert_all` で書かない。在庫の変更は `move!` を通って移動履歴を残す（`data-model.md`「在庫（`inventory`）」）。
   - `insert_all`・`upsert_all` は、モデルのコールバックとバリデーションを通らない。使ってよいのは、不変条件が DB の制約だけで閉じる表（品目・置き場の行）に限る。
 - 冪等：同じチャンクを 2 回反映しても結果が 1 つになる。`applied_at` のある行を飛ばし、品目の upsert と単価の予約（同じ単価・同じ有効日なら何もしない）は、もう一度流しても変わらない。プロセスが落ちて中断点を通らなかったときに、最後に保存したカーソルからやり直すためである。
 - GraphQL：`supplier.imports`・`supplier.import(id)`・`Import`・`startImport`（`graphql-schema.md`「受注側の視点」）。
-- 再登録の操作 `Imports::Runs.reenqueue(import_id)`：ジョブを失って「待機中」のまま残った取り込みのジョブを登録し直す。運用者は rake タスク `imports:reenqueue` から呼ぶ。
+- 再登録の操作 `Imports::Runs.reenqueue(import_id)`：ジョブを失って「待機中」「置き場へ写し中」「反映中」のまま残った取り込みに、新しいジョブを登録する。プロセスが強制終了したジョブは、Solid Queue が `SolidQueue::Processes::ProcessPrunedError` で失敗にし、自動では再試行しない（solid_queue 1.7.0 の README「Jobs interrupted by non-graceful process death」）。運用者は、取り込みのジョブの失敗を見てから rake タスク `imports:reenqueue` で呼ぶ。動いているジョブがある取り込みに呼んでも、新しいジョブはテナントの上限で待ち、行ごとに飛ばすので結果は変わらない。
 - `bin/rails imports:sample[50000]`：試験用の CSV を作る。
 - テスト：
   - 中断と再開：アダプタの `stopping?` を `stage` の途中と `apply` の途中で真にして中断させ、もう一度流すと続きから進み、全行が 1 回ずつ反映される。
+  - 継続の情報を失った再開：`stage` の途中と `apply` の途中で実行を捨て、`reenqueue` で登録した新しいジョブを流すと、全行が 1 回ずつ反映され、件数が行の数と合う。
+  - 件数の冪等：成功 2 行・失敗 1 行のチャンクを反映した後、カーソルを保存する前に止まったものとして同じチャンクをもう一度流しても、`applied_rows`・`failed_rows`・品目・在庫・移動履歴が増えない。
+  - CSV の契約：見出しの誤りで取り込み全体が失敗する。同じ品目コードの 2 行目と、列の検証に外れた行が失敗になる。新しい品目に有効期間 `(,)` の単価の行ができる。既存の品目は、単価が変わるときだけ改定が予約される。
+  - 並んだ取り込み（`packs/imports/spec/concurrency/imports/parallel_imports_spec.rb`）：同じテナントの 2 つの在庫の取り込みを 2 つの接続で同時に流しても、在庫の数量と移動履歴が行ごとに 1 回ずつになる。
   - 部分失敗：3 行のうち 1 行が不正なファイルで、反映が 2 行・失敗が 1 行・状況が `PARTIALLY_FAILED` になる。
   - テナント：`upsert_all` に他社の `owner_tenant_id` の行を混ぜると、RLS が拒む。
   - キュー：`config/queue.yml` を読み、`imports` のワーカーが他のキューを持たず、`events` のワーカーが `imports` を持たないことを確かめる。
@@ -1235,6 +1257,7 @@ bin/rubocop
 
 ```sh
 bundle exec rspec packs/imports/spec spec/requests/imports_spec.rb spec/jobs
+bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.rb
 ```
 
 50,000 行の CSV を取り込み、ワーカーの常駐メモリ（`ps -o rss`）の増分が 100 MB 以内で、`supplier.import` の件数が進むのを、手で確かめる。途中で `bin/jobs` を止めて起動し直し、続きから進むことも確かめる。

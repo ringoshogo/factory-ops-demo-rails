@@ -618,6 +618,33 @@ type AuditLog {
 
 ダッシュボードは、factory-ops-demo の画面と同じく、複数のコンテキストの集計を 1 つの型に束ねる読み取り専用のクエリである。
 
+```graphql
+type SupplierDashboard {
+  "集計の基準にした今日（Asia/Tokyo）"
+  businessDate: ISO8601Date!
+  "受注の 7 つの状況ごとの件数。0 件の状況も返す"
+  salesOrderCounts: [SalesOrderStatusCount!]!
+  "有効在庫が安全在庫より小さい在庫。品目コードの昇順で最大 100 件"
+  stocksBelowSafetyStock: [Stock!]!
+  "出荷期限が今日から 7 日以内の、出荷も取消もしていない出荷依頼。期限の昇順で最大 100 件"
+  shipmentRequestsDueSoon: [ShipmentRequest!]!
+  "未請求の請求対象明細の、単価 × 検収数量の合計（税抜き）"
+  unbilledTotal: BigInt!
+}
+
+type SalesOrderStatusCount {
+  status: SalesOrderStatus!
+  count: Int!
+}
+```
+
+集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。
+
+- **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。
+- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。
+- **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。
+- **未請求の合計**：税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税額を出さず、税抜きの合計だけを返す。
+
 ## mutation の一覧
 
 各 mutation が呼ぶ公開 API と、その操作が同じトランザクションで出すイベントを示す。`admin` に限る mutation と、それを判定する規則は「役割による制限」の表にある。イベントを出すのは公開 API の中で、GraphQL 層はイベントを出さない。公開 API は、イベントのジョブをリクエストのトランザクションの中で登録する。ジョブはコミットまでワーカーから見えず、リクエストが戻ればジョブも消える（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
