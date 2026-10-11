@@ -155,9 +155,9 @@ end
 # group の after で後始末を終えた example は通る。印は example のインスタンスの変数で、rspec は example ごとに
 # インスタンスを作り直すので、前の example の印は渡らない。
 # 渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。
-# :concurrency の外でトランザクションを使わない spec は、自前で後始末するので、このガードの外にある：
-# packs/sales/spec/public/sales/sales_order_policy_spec.rb・spec/db/tenant_table_spec.rb・
-# spec/platform/tenancy_session_spec.rb・spec/matrix/matrix_world_spec.rb
+# :concurrency の外でトランザクションを使わない spec は、このガードの外にある。次の 3 本はコミットした行を自前で消す：
+# packs/sales/spec/public/sales/sales_order_policy_spec.rb・spec/db/tenant_table_spec.rb・spec/platform/tenancy_session_spec.rb。
+# spec/matrix/matrix_world_spec.rb は接続を固定して巻き戻すだけで、何もコミットしない
 RSpec.configure do |config|
   config.include ConcurrencyHelpers, :concurrency
   config.after(:example, :concurrency) do

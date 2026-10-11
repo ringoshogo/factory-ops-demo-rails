@@ -12,10 +12,7 @@ RSpec.describe "在庫と引当", type: :request do
     end
   end
 
-  before do
-    post "/session", params: { email: member.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
+  before { login_as(member) }
 
   def adjust(type, quantity, item_id: item.id)
     graphql_body(<<~GRAPHQL, input: { itemId: item_id, type:, quantity:, reason: "棚卸" }).dig("data", "adjustStock")

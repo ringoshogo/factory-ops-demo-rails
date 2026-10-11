@@ -123,7 +123,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 行列の spec を書く人は、次の 2 つを守る。
 
 - 別の接続を使わない（`OwnerConnection`・スレッド・`use_transactional_tests = false`）。別の接続からは、コミットしていない世界の行が見えない。別の接続でコミットした行は、example の終わりに巻き戻らない。
-- 世界のオブジェクトを書き換えない。オブジェクトは example の間で使い回し、DB の巻き戻しでは戻らない。`MatrixWorld` は属性を凍らせ、書き換えを `FrozenError` にする。
+- 世界のオブジェクトを書き換えない。オブジェクトは example の間で使い回し、DB の巻き戻しでは戻らない。`MatrixWorld` は世界が持つインスタンスの属性を凍らせ、属性の代入を `FrozenError` にする。`reload`・`destroy` と、関連先のインスタンスの書き換えは捕まえないので、呼ばない。
 
 補助は、世界のトランザクションがファイルの終わりより前にコミットされたか巻き戻ったら、`after(:context)` で失敗させる（`unpin_connection!` が偽を返す）。世界を作った後にテナントの設定が残っていても失敗させる。残った設定は外側のトランザクションの終わりまで全 example に渡り、生 SQL の RLS の結果を変えるからである。`spec/matrix/matrix_world_spec.rb` が、example で足した行とテナントの設定が次の example に残らないことと、ファイルの終わりに世界が残らないことを確かめる。
 

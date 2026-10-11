@@ -16,10 +16,7 @@ RSpec.describe "出荷指示と出荷実績の計上", type: :request do
     end
   end
 
-  before do
-    post "/session", params: { email: member.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
+  before { login_as(member) }
 
   def mutate(name, **input)
     graphql_body(<<~GRAPHQL, input:).dig("data", name)

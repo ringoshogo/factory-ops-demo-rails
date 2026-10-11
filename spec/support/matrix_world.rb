@@ -100,7 +100,8 @@ class MatrixWorld
     @linked_orders = PARTNERSHIPS.keys.index_with { |buyer| link_orders(buyer) }
   end
 
-  # 世界のオブジェクトを example の間で使い回すので、属性を凍らせ、example の中の書き換えを例外にする。
+  # 世界のオブジェクトを example の間で使い回すので、属性を凍らせ、example の中の属性の代入を例外にする。
+  # reload・destroy と、関連先のインスタンスの書き換えは捕まえない。行列の spec はそれらを呼ばない規則で守る
   # 行の書き換えは DB の上で巻き戻るが、オブジェクトの書き換えは巻き戻らず、後の example に渡る
   def freeze
     [ @tenants, @users, @partnerships, *@rows.values, *@linked_orders.values ].each do |records|
