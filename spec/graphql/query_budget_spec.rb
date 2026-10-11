@@ -12,7 +12,8 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
 
   # 操作名ごとに、操作者・応答の data から一覧の親までの道・入れ子ごとの各親の件数・入れ子を引くソースの公開 API とメソッドを持つ。
   # 単数の入れ子の件数は 1 で、値があることを表す。sources に無い入れ子は、親の値に含まれていてソースを通らない。
-  # variables は first のほかに渡す変数を返すメソッドの名前
+  # variables は first のほかに渡す変数を返すメソッドの名前。1 つの問い合わせが一覧を 2 つ持つなら、2 つ目からを
+  # more_lists に { list:, nested: } で書き、seed は 1 回でどの一覧にも親を 1 件ずつ足す
   SCREENS = {
     "SupplierSalesOrders" => {
       actor: :supplier_member, list: %w[supplier salesOrders nodes],
@@ -56,6 +57,13 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
       actor: :buyer_member, list: %w[buyer suppliers],
       nested: { "supplier" => 1, "permissions" => 2 },
       sources: {}
+    },
+    "SupplierDashboard" => {
+      actor: :supplier_member, list: %w[supplier dashboard stocksBelowSafetyStock],
+      nested: { "item" => 1 },
+      more_lists: [ { list: %w[supplier dashboard shipmentRequestsDueSoon], nested: { "salesOrder" => 1, "customer" => 1 } } ],
+      sources: { "item" => [ Sales::Catalog, :items_for ], "salesOrder" => [ Sales::SalesOrders, :by_ids ],
+                 "customer" => [ Partnerships::Directory, :tenants ] }
     },
     "BuyerSupplierCatalog" => {
       actor: :buyer_member, list: %w[buyer supplier catalog nodes], variables: :catalog_variables,
@@ -123,6 +131,15 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     as_supplier { FactoryBot.create(:stock_movement, item_id: seed_supplier_items.item_id) }
   end
 
+  # 安全在庫を下回る在庫と、期限を過ぎた出荷依頼を 1 件ずつ足す。期限を過ぎていれば、今日を日本時間で決めても UTC で決めても入る
+  def seed_supplier_dashboard
+    as_supplier do
+      FactoryBot.create(:stock, item_id: FactoryBot.create(:item).id, on_hand: 0, safety_stock: 1)
+      order = FactoryBot.create(:sales_order)
+      FactoryBot.create(:shipment_request, sales_order_id: order.id, buyer_tenant_id: order.customer_tenant_id, due_date: Date.current - 1)
+    end
+  end
+
   def seed_supplier_part_mappings
     as_supplier { FactoryBot.create(:customer_part_mapping) }
   end
@@ -188,10 +205,12 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     end
 
     expect(result["errors"]).to be_nil
-    nodes = result.to_h.dig("data", *screen[:list])
-    expect(nodes.size).to eq(parents)
-    screen[:nested].each do |field, size|
-      expect(nodes.map { |node| node[field].is_a?(Array) ? node[field].size : [ node[field] ].compact.size }).to all(eq(size)), field
+    [ screen.slice(:list, :nested), *screen[:more_lists] ].each do |list|
+      nodes = result.to_h.dig("data", *list[:list])
+      expect(nodes.size).to eq(parents)
+      list[:nested].each do |field, size|
+        expect(nodes.map { |node| node[field].is_a?(Array) ? node[field].size : [ node[field] ].compact.size }).to all(eq(size)), field
+      end
     end
     count
   end

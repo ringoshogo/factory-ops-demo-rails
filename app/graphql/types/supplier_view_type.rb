@@ -17,5 +17,6 @@ module Types
     field :billable_items, resolver: Resolvers::Supplier::BillableItemsResolver, description: "未請求の請求対象明細"
     field :invoices, resolver: Resolvers::Supplier::InvoicesResolver
     field :invoice, resolver: Resolvers::Supplier::InvoiceResolver
+    field :dashboard, resolver: Resolvers::Supplier::DashboardResolver
   end
 end

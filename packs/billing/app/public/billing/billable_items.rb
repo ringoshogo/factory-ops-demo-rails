@@ -13,6 +13,12 @@ module Billing
       Page.of(Scope.call(actor, BillableItem.where(invoice_id:)), first:, after:) { |items| items.map { to_value(_1) } }
     end
 
+    # 未請求の明細の単価 × 検収数量の合計。税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税を足さない
+    # （docs/architecture/data-model.md「請求（`billing`）」）。PostgreSQL の bigint の sum は numeric を返すので、整数に戻す
+    def self.unbilled_total(actor)
+      Scope.call(actor, BillableItem.unbilled).sum(Arel.sql("unit_price * quantity")).to_i
+    end
+
     def self.to_value(item)
       BillableItemValue.new(**item.slice(*(BillableItemValue.members - [ :amount ]).map(&:to_s)).symbolize_keys, amount: item.amount)
     end

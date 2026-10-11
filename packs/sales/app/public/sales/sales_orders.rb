@@ -30,6 +30,12 @@ module Sales
       lines.to_h { [ _1.id, to_line_value(_1, allocated) ] }
     end
 
+    # 状況ごとの受注の件数。受注一覧と同じ導出で数え、取消済を含む 7 つの状況をすべて持つ（0 件の状況も返す）
+    def self.count_by_status(actor)
+      counts = to_values(actor, Scope.sales_orders(actor, :own)).map(&:status).tally
+      SalesOrderStatus::ALL.index_with { counts.fetch(_1, 0) }
+    end
+
     def self.to_values(actor, orders)
       orders = orders.to_a
       lines = SalesOrderLine.where(sales_order_id: orders.map(&:id)).to_a
