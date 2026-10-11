@@ -202,7 +202,7 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 - `perspective_reachability_spec.rb`：発注側から受注側の型へたどれず、相手のデータを返す型が 3 経路の 3 つに限られる
 - `authorization_declarations_spec.rb`：全型・全リゾルバ・全 mutation が宣言を持ち、認可の例外が `graphql-schema.md` の表と一致する
 - `base_classes_spec.rb`：宣言の無いものを拒否し、拒否を `FORBIDDEN` に揃える
-- `query_complexity_spec.rb`：画面の問い合わせのどれもが、1 ページの件数を上限まで求めても複雑度の上限に収まり、コネクションを入れ子にした問い合わせは上限を超えて拒否される
+- `query_complexity_spec.rb`：画面の問い合わせのどれもが、1 ページの件数を上限まで求めても複雑度の上限に収まる。いまのスキーマに無い形の、コネクションの要素の下にコネクションを置いて両方に 100 件を求める問い合わせは、同じ上限を持つスキーマを spec の中で作って渡し、上限を超えて拒否されることを確かめる。リストの要素の下のコネクションは掛け算にならないので、画面の問い合わせに置かないことを `query_budget_spec.rb` が確かめる
 
 **状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。画面の問い合わせの複雑度のテストは実装済み（M26）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、互換の判定は CI で流している（M20）。
 

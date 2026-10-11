@@ -801,7 +801,7 @@ N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 
-クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの中のフィールドの複雑度を、`first` の値の倍で数え、`first` を省くと 1 ページの件数の既定（20）の倍で数える（graphql 2.6 の `GraphQL::Schema::Field#calculate_complexity`）。リストで返す明細と一覧は掛け算にならない。そのため、リストの要素の下のコネクション（`buyer.suppliers` の下の `catalog`）は複雑度では止まらず、画面の問い合わせの規則（一覧の中にコネクションを入れ子にしない）が止める。
+クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの要素（`nodes`・`edges` の下）の複雑度を `first` の値の倍で数え、`first` を省くと 1 ページの件数の既定（20）の倍で数える。`pageInfo` のような要素でない選択は掛け算にしない（graphql 2.6.11 の [`GraphQL::Schema::Field#calculate_complexity`](https://github.com/rmosolgo/graphql-ruby/blob/v2.6.11/lib/graphql/schema/field.rb)。`first` が無いときの件数は `default_page_size || query.schema.default_page_size || max_page_size || query.schema.default_max_page_size`）。リストで返す明細と一覧は掛け算にならない。そのため、リストの要素の下のコネクション（`buyer.suppliers` の下の `catalog`）は複雑度では止まらず、画面の問い合わせの規則（一覧の中にコネクションを入れ子にしない）が止める。
 
 | 上限 | 値 | 決め方 |
 |---|---|---|

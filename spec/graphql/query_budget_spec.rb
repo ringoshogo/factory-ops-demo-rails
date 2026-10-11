@@ -205,14 +205,19 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     end
 
     expect(result["errors"]).to be_nil
+    expect_lists(result.to_h, screen, parents)
+    count
+  end
+
+  # 表のすべての一覧（more_lists を含む）について、親の件数と、各親の入れ子の件数を確かめる
+  def expect_lists(result, screen, parents)
     [ screen.slice(:list, :nested), *screen[:more_lists] ].each do |list|
-      nodes = result.to_h.dig("data", *list[:list])
+      nodes = result.dig("data", *list[:list])
       expect(nodes.size).to eq(parents)
       list[:nested].each do |field, size|
         expect(nodes.map { |node| node[field].is_a?(Array) ? node[field].size : [ node[field] ].compact.size }).to all(eq(size)), field
       end
     end
-    count
   end
 
   def counts_for(name, screen)
@@ -252,6 +257,19 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
 
   def self.nested_connections(text, schema = FactoryOpsSchema)
     connections_under_list(GraphQL.parse(text).definitions.sole.selections, schema.query)
+  end
+
+  it "2 つ目からの一覧（more_lists）の件数と入れ子の件数も確かめる" do
+    screen = SCREENS.fetch("SupplierDashboard")
+    stocks = [ { "item" => { "id" => "i" } } ]
+    request = { "salesOrder" => { "id" => "o" }, "customer" => { "id" => "c" } }
+    response = ->(requests) { { "data" => { "supplier" => { "dashboard" => { "stocksBelowSafetyStock" => stocks,
+      "shipmentRequestsDueSoon" => requests } } } } }
+
+    expect_lists(response.call([ request ]), screen, 1)
+    expect { expect_lists(response.call([]), screen, 1) }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
+    expect { expect_lists(response.call([ request.merge("customer" => nil) ]), screen, 1) }
+      .to raise_error(RSpec::Expectations::ExpectationNotMetError)
   end
 
   it "画面の問い合わせは、一覧の中にコネクションを入れ子にしない" do

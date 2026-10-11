@@ -53,6 +53,25 @@ RSpec.describe "受注側のダッシュボード", type: :request do
              expected[:unbilled] ]).to eq([ 1, 1, 2, 1, 360 ])
   end
 
+  # リゾルバは受注の一覧の規則だけを評価するので、ほかの 3 つの一覧の規則が役割で違う答えを返すと、
+  # その一覧を読めない役割にもダッシュボードが集計を返す（docs/architecture/graphql-schema.md「読み取りの一覧」）
+  it "4 つの一覧の規則が、admin と member のどちらにも、ダッシュボードの規則と同じ答えを返す" do
+    answers = %w[admin member].to_h do |role|
+      user = actor.with(role:)
+      [ role, [ Sales::SalesOrderPolicy, Inventory::StockPolicy, Fulfillment::ShipmentRequestPolicy, Billing::InvoicePolicy ]
+        .map { _1.new(user:).apply(:list?) } ]
+    end
+
+    expect(answers).to eq("admin" => [ true ] * 4, "member" => [ true ] * 4)
+    expect(Resolvers::Supplier::DashboardResolver.authorization_policy).to eq(Sales::SalesOrderPolicy)
+    expect(Resolvers::Supplier::DashboardResolver.authorization_rule).to eq(:list?)
+  end
+
+  it "受注の件数の状況が、GraphQL の受注の状況の値とそろう" do
+    expect(as_supplier { Sales::SalesOrders.count_by_status(actor).keys })
+      .to match_array(Types::SalesOrderStatusType.values.values.map(&:value))
+  end
+
   it "安全在庫を下回る在庫を、品目コードの昇順で上限の件数まで返す" do
     stub_const("Types::SupplierDashboardType::STOCKS_LIMIT", 2)
     stock_below("AXLE-1")

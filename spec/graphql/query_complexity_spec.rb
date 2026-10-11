@@ -6,15 +6,30 @@ require "rails_helper"
 RSpec.describe "画面の問い合わせの複雑度" do
   screens = Rails.root.join("spec/fixtures/graphql/screens").glob("*.graphql").sort
 
-  # 1 ページの件数を上限まで求めたときの複雑度。first を省くと既定の件数で数えるので、問い合わせが取りうる最大で計る
+  # 1 ページの件数を上限まで求めたときの複雑度。first を省くと既定の件数で数えるので、問い合わせが取りうる最大で計る。
+  # 必須の ID の変数には値を入れる。妥当でない問い合わせは、引数を解決できないフィールドを数え損ねる
   def complexity(text, schema = FactoryOpsSchema)
-    variables = GraphQL.parse(text).definitions.sole.variables.any? { _1.name == "first" } ? { "first" => schema.default_max_page_size } : {}
-    query = GraphQL::Query.new(schema, text, variables:)
+    variables = GraphQL.parse(text).definitions.sole.variables.to_h do |variable|
+      next [ variable.name, schema.default_max_page_size ] if variable.name == "first"
+      next [ variable.name, nil ] unless variable.type.is_a?(GraphQL::Language::Nodes::NonNullType)
+      raise ArgumentError, "必須の変数 #{variable.name} の値の決め方が無い" unless variable.type.of_type.name == "ID"
+
+      [ variable.name, SecureRandom.uuid ]
+    end
+    query = GraphQL::Query.new(schema, text, variables: variables.compact)
+    expect(query.static_errors).to be_empty
     GraphQL::Analysis.analyze_query(query, [ GraphQL::Analysis::QueryComplexity ]).sole
   end
 
   it "画面の問い合わせの一覧にファイルがある" do
     expect(screens).not_to be_empty
+  end
+
+  it "必須の ID の変数に値を入れて計り、妥当でない問い合わせと、値の決め方の無い必須の変数では落ちる" do
+    expect { complexity("query($id: ID!, $first: Int) { buyer { supplier(supplierTenantId: $id) { catalog(first: $first) { nodes { code } } } } }") }
+      .not_to raise_error
+    expect { complexity("query { supplier { unknownField } }") }.to raise_error(RSpec::Expectations::ExpectationNotMetError)
+    expect { complexity("query($code: String!) { buyer { suppliers { supplier { name } } } }") }.to raise_error(ArgumentError)
   end
 
   screens.each do |path|
