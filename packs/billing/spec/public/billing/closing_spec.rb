@@ -320,6 +320,24 @@ RSpec.describe Billing::Closing do
         expect(published_invoices.size).to eq(1)
       end
 
+      it "番号を振った後に失敗した確定は、番号と確定と「請求書発行」を戻し、次の確定は同じ番号を振る" do
+        item("2026-09-10")
+        draft = close("2026-09-20").value
+        failing = true
+        allow(Contracts).to receive(:publish).and_wrap_original do |original, event|
+          raise "配送表に登録できない" if failing && event.is_a?(Contracts::InvoiceIssued)
+
+          original.call(event)
+        end
+
+        expect { issue(draft.id) }.to raise_error("配送表に登録できない")
+        expect(invoices.map { [ _1.invoice_number, _1.issued_at ] }).to eq([ [ nil, nil ] ])
+        expect(published_invoices).to be_empty
+
+        failing = false
+        expect(issue(draft.id).value.invoice_number).to eq("INV-000001")
+      end
+
       it "確定の失敗の後の確定は、番号を詰めて振る" do
         expect(failure_of(issue(issued_invoice("2026-08-20").id))).to eq([ [ :conflict, nil ] ])
         item("2026-09-10")

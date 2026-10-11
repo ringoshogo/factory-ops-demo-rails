@@ -66,13 +66,17 @@ RSpec.describe "入口の行列", type: :request do
     expect(MatrixExpectations::GRAPHQL.keys).to match_array(schema_entries)
   end
 
-  # ペルソナのテナントが所有する、テナントの表ごとの行数。監査の行も含む
-  def owned_row_counts(persona)
+  # ペルソナのテナントが所有する行の、テナントの表ごとの行数と中身の要約。監査の行も含む。
+  # 行数だけを比べると、既存の行を書き換えるだけの mutation が書いても変わらない
+  def owned_rows(persona)
     tenant_id = world.tenants.fetch(persona)
     world.as(persona) do
+      connection = ActiveRecord::Base.lease_connection
       MatrixWorld.tenant_tables.index_with do |table|
-        connection = ActiveRecord::Base.lease_connection
-        connection.select_value("SELECT count(*) FROM #{connection.quote_table_name(table)} WHERE owner_tenant_id = $1", "Matrix", [ tenant_id ])
+        connection.select_rows(<<~SQL, "Matrix", [ tenant_id ]).first
+          SELECT count(*), md5(coalesce(string_agg(t::text, ',' ORDER BY t.id), ''))
+          FROM #{connection.quote_table_name(table)} t WHERE owner_tenant_id = $1
+        SQL
       end
     end
   end
@@ -119,12 +123,12 @@ RSpec.describe "入口の行列", type: :request do
         when :admin
           it "#{persona} の member には forbidden で、そのテナントの表に何も書かない" do
             variables = entry[:variables]&.call(world) || {}
-            before = owned_row_counts(persona)
+            before = owned_rows(persona)
             login_as(world.members[persona])
             post "/graphql", params: { query: entry[:query], variables: }, as: :json
 
             expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(:forbidden)
-            expect(owned_row_counts(persona)).to eq(before)
+            expect(owned_rows(persona)).to eq(before)
           end
         when :member
           it "#{persona} の member にも value" do

@@ -66,22 +66,28 @@ class CreateInvoiceIssue < ActiveRecord::Migration[8.1]
               FOR EACH ROW EXECUTE FUNCTION invoices_issued_immutable();
 
             -- invoice_tax_summaries と billable_items に共通。変える前の行と変えた後の行のどちらかが確定した請求書に
-            -- 結んでいれば拒む。請求書の行を FOR SHARE で読むので、確定の UPDATE がコミットするまで待ち、
-            -- 確定の直前に読んだ下書きの状態で明細を結んでしまうことがない
+            -- 結んでいれば拒む。結んだ請求書の行を、下書きでも FOR SHARE でロックしてから issued_at を確かめる。
+            -- issued_at を検索の条件に入れると、READ COMMITTED では文の開始の時点で下書きに見える行がロックの前に
+            -- 条件で外れ、コミット前の確定を待たずに通る。ロックすれば確定の UPDATE のコミットを待ってから確かめ、
+            -- 先に子の行を変えたときは、確定の FOR UPDATE がこのトランザクションのコミットを待つ
             CREATE FUNCTION invoice_children_issued_immutable() RETURNS trigger LANGUAGE plpgsql
             SET search_path = pg_catalog, pg_temp AS $$
+            DECLARE
+              issued timestamp(6) without time zone;
             BEGIN
-              IF TG_OP <> 'INSERT' AND OLD.invoice_id IS NOT NULL AND EXISTS (
-                SELECT 1 FROM public.invoices
-                WHERE owner_tenant_id = OLD.owner_tenant_id AND id = OLD.invoice_id AND issued_at IS NOT NULL FOR SHARE
-              ) THEN
-                RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, OLD.id;
+              IF TG_OP <> 'INSERT' AND OLD.invoice_id IS NOT NULL THEN
+                SELECT issued_at INTO issued FROM public.invoices
+                WHERE owner_tenant_id = OLD.owner_tenant_id AND id = OLD.invoice_id FOR SHARE;
+                IF issued IS NOT NULL THEN
+                  RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, OLD.id;
+                END IF;
               END IF;
-              IF TG_OP <> 'DELETE' AND NEW.invoice_id IS NOT NULL AND EXISTS (
-                SELECT 1 FROM public.invoices
-                WHERE owner_tenant_id = NEW.owner_tenant_id AND id = NEW.invoice_id AND issued_at IS NOT NULL FOR SHARE
-              ) THEN
-                RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, NEW.id;
+              IF TG_OP <> 'DELETE' AND NEW.invoice_id IS NOT NULL THEN
+                SELECT issued_at INTO issued FROM public.invoices
+                WHERE owner_tenant_id = NEW.owner_tenant_id AND id = NEW.invoice_id FOR SHARE;
+                IF issued IS NOT NULL THEN
+                  RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, NEW.id;
+                END IF;
               END IF;
               IF TG_OP = 'DELETE' THEN
                 RETURN OLD;

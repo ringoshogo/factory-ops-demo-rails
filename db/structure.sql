@@ -70,18 +70,22 @@ CREATE FUNCTION public.invoice_children_issued_immutable() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'pg_temp'
     AS $$
+DECLARE
+  issued timestamp(6) without time zone;
 BEGIN
-  IF TG_OP <> 'INSERT' AND OLD.invoice_id IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.invoices
-    WHERE owner_tenant_id = OLD.owner_tenant_id AND id = OLD.invoice_id AND issued_at IS NOT NULL FOR SHARE
-  ) THEN
-    RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, OLD.id;
+  IF TG_OP <> 'INSERT' AND OLD.invoice_id IS NOT NULL THEN
+    SELECT issued_at INTO issued FROM public.invoices
+    WHERE owner_tenant_id = OLD.owner_tenant_id AND id = OLD.invoice_id FOR SHARE;
+    IF issued IS NOT NULL THEN
+      RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, OLD.id;
+    END IF;
   END IF;
-  IF TG_OP <> 'DELETE' AND NEW.invoice_id IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.invoices
-    WHERE owner_tenant_id = NEW.owner_tenant_id AND id = NEW.invoice_id AND issued_at IS NOT NULL FOR SHARE
-  ) THEN
-    RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, NEW.id;
+  IF TG_OP <> 'DELETE' AND NEW.invoice_id IS NOT NULL THEN
+    SELECT issued_at INTO issued FROM public.invoices
+    WHERE owner_tenant_id = NEW.owner_tenant_id AND id = NEW.invoice_id FOR SHARE;
+    IF issued IS NOT NULL THEN
+      RAISE EXCEPTION '確定した請求書は変えられない（% %）', TG_TABLE_NAME, NEW.id;
+    END IF;
   END IF;
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;

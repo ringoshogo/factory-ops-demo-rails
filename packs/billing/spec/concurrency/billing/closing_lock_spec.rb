@@ -40,12 +40,15 @@ RSpec.describe "締めの競合" do
 
   def discard(invoice_id) = Billing::Closing.discard(actor, invoice_id:)
 
-  # 受注側テナントが登録した「請求書発行」の請求書 ID。ほかの example のテナントのジョブを数えない
-  def published_invoices
+  # 受注側テナントが登録した「請求書発行」のペイロード。ほかの example のテナントのジョブを数えない
+  def published_payloads
     enqueued_event_jobs.map { _1.arguments.fetch("arguments") }
       .select { |name, payload| name == "Contracts::InvoiceIssued" && payload.fetch("supplier_tenant_id") == supplier.id }
-      .map { _2.fetch("invoice_id") }
+      .map(&:second)
   end
+
+  def published_invoices = published_payloads.map { _1.fetch("invoice_id") }
+  def published_lines = published_payloads.flat_map { _1.fetch("lines") }
 
   # 締めの最中に、受注の受け手から届く前の期間の検収
   def late_inspection
@@ -179,6 +182,50 @@ RSpec.describe "締めの競合" do
       commit(release, issue_thread)
       expect(finish(close_thread).value).to have_attributes(period_start: Date.new(2026, 9, 21), total: 132)
       expect(drafts).to eq([ customers[0].id ])
+    end
+
+    # 公開 API を通らない書き込みも、確定と競うと DB のトリガーが請求書の行の共有ロックで待ってから拒む
+    describe "確定と、公開 API を通らない明細の書き換え" do
+      def bound_items = as_supplier { Billing::BillableItem.where(invoice_id: draft.id).order(:id).pluck(:id, :quantity) }
+
+      it "確定が開いている間は、結んだ明細の書き換えが請求書の行ロックを待ち、確定のコミットの後に拒まれる" do
+        before_items = bound_items
+        issued, release, issue_thread = hold_open(supplier.id) { issue(draft.id) }
+        expect(issued).to be_success
+
+        writer = in_thread(supplier.id) { Billing::BillableItem.where(invoice_id: draft.id).update_all(quantity: 2) }
+        expect(blocked_on_lock?(writer, by: issue_thread)).to be(true)
+
+        commit(release, issue_thread)
+        expect { finish(writer) }.to raise_error(ActiveRecord::StatementInvalid, /確定した請求書は変えられない/)
+        expect(bound_items).to eq(before_items)
+      end
+
+      it "確定が開いている間は、未請求の明細を結ぶ書き換えが請求書の行ロックを待ち、確定のコミットの後に拒まれる" do
+        unbilled = as_supplier { FactoryBot.create(:billable_item, customer_tenant_id: customers[0].id, inspected_on: Date.new(2026, 10, 1)) }
+        before_items = bound_items
+        issued, release, issue_thread = hold_open(supplier.id) { issue(draft.id) }
+        expect(issued).to be_success
+
+        writer = in_thread(supplier.id) { Billing::BillableItem.where(id: unbilled.id).update_all(invoice_id: draft.id) }
+        expect(blocked_on_lock?(writer, by: issue_thread)).to be(true)
+
+        commit(release, issue_thread)
+        expect { finish(writer) }.to raise_error(ActiveRecord::StatementInvalid, /確定した請求書は変えられない/)
+        expect(bound_items).to eq(before_items)
+      end
+
+      it "明細の書き換えが開いている間は、確定が請求書の行ロックを待ち、書き換えた明細で「請求書発行」を出す" do
+        written, release, writer = hold_open(supplier.id) { Billing::BillableItem.where(invoice_id: draft.id).update_all(quantity: 2) }
+        expect(written).to eq(1)
+
+        issue_thread = in_thread(supplier.id) { issue(draft.id) }
+        expect(blocked_on_lock?(issue_thread, by: writer)).to be(true)
+
+        commit(release, writer)
+        expect(finish(issue_thread)).to be_success
+        expect(published_lines.map { _1.fetch("quantity") }).to eq([ 2 ])
+      end
     end
 
     it "同じ下書きの 2 つの確定は、後の確定がロックを待ち、先のコミットの後に CONFLICT になって番号を 1 つだけ振る" do
