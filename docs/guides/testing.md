@@ -11,7 +11,7 @@
 | 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | — |
 | 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | — |
 | シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト | 50% を超えたら |
-| ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/platform`・`spec/rubocop`・`spec/bin` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制）と、`bin/` の検査のスクリプト | 数えない |
+| ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/notifications`・`spec/platform`・`spec/rubocop`・`spec/bin` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制・外部への作用の呼び出し元）と、`bin/` の検査のスクリプト | 数えない |
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
 
@@ -81,7 +81,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 2. 先の操作を `hold_open` で、コミットせずに開いたままにする。
 3. 後の操作を `in_thread` で別の接続から始め、`blocked_on_lock?(後のスレッド, by: 先のスレッド)` で、後の接続が先の接続のロックを待っていることを確かめる。補助は 2 つの接続の pid を控え、`pg_blocking_pids` で待ちの相手を確かめるので、無関係な接続の待ちを数えない。待たずに終わる操作は、ロックで直列になっていない。
 4. 先の操作を `commit` でコミットさせ、後の操作の結果を `finish` で受け取る。どちらもスレッドの例外を送出し直すので、先の操作のコミットの失敗も隠れない。
-5. 作った業務の行を、example の後で `delete_owned_rows` に消させる。補助は、開いたままのトランザクションをすべて閉じさせ、スレッドが終わったことを確かめてから、所有ロールの接続でそのテナントの業務の行とイベントのジョブを消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。確定した請求書と、それに結んだ集計と明細は、所有ロールの削除もトリガーが拒む（[data-model.md「請求（`billing`）」](../architecture/data-model.md#請求billing)）ので、補助は後始末のトランザクションの中だけその表のトリガーを止めて消し、コミットの前に戻す。スレッドが終わらなければ、行を消さずに失敗する。消した後に、`owner_tenant_id` を持つ表（残す表を除く）にそのテナントの行が残っていれば、渡す表の書き漏らしとして失敗する。`delete_owned_rows` を最後まで終えずに終わった `:concurrency` の example は、`spec/support/concurrency.rb` の設定の `after` が落とす。この補助は、`:concurrency` のメタデータと同じく `spec/rails_helper.rb` が読み込むので、spec のファイルで読み込まなくても効く。呼び忘れた example がコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われ、離れた example の失敗になるからである。このガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/cleanup_guard_spec.rb` が、後始末を呼ばない example と、`after` があっても後始末を終えない example が落ちることを確かめる。
+5. 作った業務の行を、example の後で `delete_owned_rows` に消させる。補助は、開いたままのトランザクションをすべて閉じさせ、スレッドが終わったことを確かめてから、所有ロールの接続でそのテナントの業務の行と、そのテナントの ID を引数に含むジョブ（イベントのジョブと送信のジョブ）を消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。確定した請求書と、それに結んだ集計と明細は、所有ロールの削除もトリガーが拒む（[data-model.md「請求（`billing`）」](../architecture/data-model.md#請求billing)）ので、補助は後始末のトランザクションの中だけその表のトリガーを止めて消し、コミットの前に戻す。スレッドが終わらなければ、行を消さずに失敗する。消した後に、`owner_tenant_id` を持つ表（残す表を除く）にそのテナントの行が残っていれば、渡す表の書き漏らしとして失敗する。`delete_owned_rows` を最後まで終えずに終わった `:concurrency` の example は、`spec/support/concurrency.rb` の設定の `after` が落とす。この補助は、`:concurrency` のメタデータと同じく `spec/rails_helper.rb` が読み込むので、spec のファイルで読み込まなくても効く。呼び忘れた example がコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われ、離れた example の失敗になるからである。このガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/cleanup_guard_spec.rb` が、後始末を呼ばない example と、`after` があっても後始末を終えない example が落ちることを確かめる。
 
 競合テストは、GraphQL の入口を通すと監査の行を作る（[graphql-schema.md「監査ログ」](../architecture/graphql-schema.md#監査ログ)）。監査の行は所有ロールでも消せず（[data-model.md「監査ログ（`platform`）」](../architecture/data-model.md#監査ログplatform)）、所有テナントは外部キーで消せない。そのため、後始末はテナント・ユーザー・監査の行を消さずに残す。相手テナントとユーザーは外部キーの無い参照なので消せるが、監査の行が消えた行を指さないように、これも残す。`delete_owned_rows` は、`tenants`・`users`・`audit_logs` を渡されると失敗する。
 

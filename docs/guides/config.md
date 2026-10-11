@@ -15,14 +15,15 @@
 | `initializers/cors.rb` | CORS の設定。全行がコメント | 生成のまま | [起動とリクエスト](#起動とリクエスト) |
 | `initializers/event_log.rb` | `Rails.event` のイベントを 1 行の JSON で書く購読者を登録する | 追加 | [ログ](#ログ) |
 | `initializers/filter_parameter_logging.rb` | ログに出さないパラメータ | 生成のまま | [ログ](#ログ) |
+| `initializers/notifications.rb` | 起動時に通知の送信先を作り、本番以外で SendGrid の sandbox mode を外した設定を止める | 追加 | [ジョブ](#ジョブ) |
 | `initializers/inflections.rb` | 単数形・複数形の規則。全行がコメント | 生成のまま | — |
 | `initializers/strong_migrations.rb` | 危険なマイグレーションを止める gem の設定 | 追加 | [DB の接続](#db-の接続) |
 | `initializers/tenancy.rb` | 接続を貸し出すたびにテナントの設定を空にする | 追加 | [DB の接続](#db-の接続) |
 | `routes.rb` | URL とコントローラの対応 | 変更 | [起動とリクエスト](#起動とリクエスト) |
 | `puma.rb` | Web サーバー Puma の設定 | 生成のまま | — |
 | `database.yml` | DB の接続先とロール | 変更 | [DB の接続](#db-の接続) |
-| `queue.yml` | Solid Queue のワーカーの設定 | 追加（生成器のまま） | [ジョブ](#ジョブ) |
-| `recurring.yml` | Solid Queue の定期実行 | 追加（生成器のまま） | [ジョブ](#ジョブ) |
+| `queue.yml` | Solid Queue のワーカーの設定 | 追加（生成器の後に変更） | [ジョブ](#ジョブ) |
+| `recurring.yml` | Solid Queue の定期実行 | 追加（生成器の後に変更） | [ジョブ](#ジョブ) |
 | `test_layers.yml` | テストの層ごとの置き場と、割合の目安。`bin/test-layers` が読む | 追加 | [testing.md「テストの層」](testing.md#テストの層) |
 | `branch_coverage.yml` | 分岐の網羅率の計測の対象。`spec/support/branch_coverage.rb` と `bin/check-branch-coverage` が読む | 追加 | [testing.md「分岐の網羅率の警告」](testing.md#分岐の網羅率の警告) |
 | `ci.rb` | `bin/ci` が流す工程 | 変更 | [CI の工程](#ci-の工程) |
@@ -40,12 +41,13 @@ Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `appl
 
 ### application.rb で変えたこと
 
-`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 5 つを足した。DB・ジョブ・ログに関わる 3 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
+`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 6 つを足した。DB・ジョブ・ログに関わる 4 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
 
 - **`autoload_lib` の除外に `rubocop` と `schema_compat.rb` を足す。** `lib/rubocop/` はカスタム Cop で、`lib/schema_compat.rb` はスキーマの互換の判定である。どちらも開発とテストのグループにしかない gem（rubocop・graphql-schema_comparator）を読むので、本番の起動では読めない。自動読み込みの対象から外す。
 - **Cookie とセッションのミドルウェアを足す。** API モードの Rails は、Cookie とセッションのミドルウェアを持たない。本デモはログインを Cookie のセッションで保つので、`ActionDispatch::Cookies` とセッションのストアを明示的に足す。セッションの Cookie は `SameSite=Lax` にし、本番では `secure` を付け、最後のリクエストから 12 時間で切れるようにする（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 1）。
 - **`schema_format = :sql`**（[DB の接続](#db-の接続)）
 - **`queue_adapter = :solid_queue`**（[ジョブ](#ジョブ)）
+- **`config.x.notifications.from`**：通知のメールの差出人（[ジョブ](#ジョブ)）
 - **`Platform::RequestContext` のミドルウェア**（[ログ](#ログ)）
 
 ### CSRF を防ぐ前提：CORS を開けない
@@ -60,10 +62,11 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 
 ### routes.rb で足したもの
 
-生成のままの `GET /up`（死活監視）に、次の 2 つを足した。
+生成のままの `GET /up`（死活監視）に、次の 3 つを足した。
 
 - `resource :session, only: %i[create destroy]`：ログインとログアウト（`SessionsController`）。GraphQL に認証の mutation は置かない
 - `post "graphql"`：GraphQL の入口（`GraphqlController`）。POST だけを受け付ける
+- `post "webhooks/sendgrid/events"`：SendGrid のイベント Webhook の受け口（`Webhooks::SendgridEventsController`）。セッションを読まず、署名で認証する（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-3）
 
 ## DB の接続
 
@@ -105,7 +108,10 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 
 - **`application.rb` の `queue_adapter = :solid_queue`**：全環境で同じアダプタにする。テストでも `:test` アダプタに差し替えない（ADR 005 決定 1・6）。
 - **`connects_to` を書かない**：Rails 8 の既定は、`production.rb` の `config.solid_queue.connects_to` でキューを別の DB に置く。本デモはこれを書かず、`database.yml` にもキューの DB を置かない。`SolidQueue::Record` は業務と同じ接続を使うので、業務のトランザクションの中で登録したジョブは、業務データと一緒に確定するか一緒に消える。
-- **`queue.yml`・`recurring.yml`**：`solid_queue:install` が作ったまま。`queue.yml` は dispatcher と worker の数とポーリングの間隔、`recurring.yml` は本番で毎時、終わったジョブの行を消すタスクを定める。どちらも `bin/jobs` が読む。
+- **`queue.yml`**：ワーカーをキューごとに分け、`events`（3 スレッド）・`external_mail`（2）・`imports`（1）・`default`（2）の 4 つにする。重い取り込みが、イベントの配送とメールを待たせないためである（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 7）。SendGrid への同時の送信の上限は、設定ではなく送信のジョブの `limits_concurrency` に書く。`bin/jobs` が読み、`spec/jobs/queue_config_spec.rb` が、どのジョブもワーカーのあるキューに載ることを確かめる。
+- **`recurring.yml`**：開発と本番で、Webhook の受信の未処理を毎分拾うジョブと、処理を終えた行を毎日消すジョブを流す。本番だけは、生成のままの、終わったジョブの行を毎時消すタスクも流す。
+
+通知のメールの送信先は、環境ごとに `config.x.notifications.provider` で選ぶ。本番は SendGrid（API キーと Webhook の署名の公開鍵は credentials）、開発は `tmp/mails/` に 1 通 1 ファイルで書くもの、テストはメモリに積むもので、テストと開発は外部へ送らない。`initializers/notifications.rb` が起動時に送信先を作り、本番以外で SendGrid を選んで sandbox mode を外した設定を例外にする。テストは、これとは別に WebMock で外部への HTTP を止める（`spec/spec_helper.rb`）。
 
 ジョブを登録する時機（コミットの後か、トランザクションの中か）は設定ではなく、`ApplicationJob`（`packs/platform`）と `Contracts::EventJob`（`packs/contracts`）の `enqueue_after_transaction_commit` で決める。
 
@@ -132,6 +138,8 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 | `active_job.enqueued`・`enqueued_at`・`started`・`completed`・`retry_scheduled`・`retry_stopped`・`discarded` | `job_class`・`job_id`・`queue`・時間・`exception_class` | ジョブの引数と、例外のメッセージとバックトレース。`ApplicationJob.log_arguments = false` にし、購読者も落とす |
 | `graphql.operation_completed`（アプリが出す） | `operation_name`・`result`（`success`・`user_error`・`error`）・`user_error_codes`・`duration_ms` | — |
 | `contracts.event_handled`（アプリが出す） | `event_name`・`receiver`・`delivery_lag_ms`（受け手の始まりの時刻 − 発行時刻） | — |
+| `notification.delivery_failed`（アプリが出す） | `kind`・`delivery_id`（送信記録の ID）・`reason`・`attempts` | 宛先。送信記録の ID を `email_delivery_id` と書くと、`filter_parameters` の `email` が名前の一部に当たって値が隠れる |
+| `notification.best_effort_dropped`（アプリが出す） | `kind`・`reason`・`attempts` | 宛先 |
 | 上の表に無いイベント | 無し（`name`・`context`・`timestamp` だけを書く） | `payload` と `tags` |
 | ヘルスチェック（`Rails::HealthController`）の要求の開始と終わり | 行を書かない | 全体。`silence_healthcheck_path` は `Rails.logger` を黙らせるだけで、`Rails.event` を止めない |
 
