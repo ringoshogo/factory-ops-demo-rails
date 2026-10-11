@@ -15,7 +15,7 @@
 この形のシステムでは、次の 4 つが壊れやすい。4 つとも、守る仕組みと、それが効いていることを示すテストを実装済みである。
 
 1. **他社のデータが漏れないか。** 1 つの DB を共有するので、検索条件を 1 つ書き忘れるだけで他社のデータが見える。
-   - 守り方：DB の行単位のアクセス制御（RLS）が、全表で自社の行だけを返す。発注側が受注側のデータを読めるのは、カタログ・取引関係・自社の発注に対する出荷の 3 つの経路に限る。取引関係を失効させると、この 3 つの経路も閉じる。
+   - 守り方：DB の行単位のアクセス制御（RLS）が、全表で自社の行だけを返す。発注側が受注側のデータを読めるのは、カタログ・取引関係・自社の発注に対する出荷の 3 つの経路に限る。取引関係を失効させると、この 3 つの経路も閉じる。アプリの側では、Action Policy の scope が返す行を経路ごとに絞り、操作ごとの規則が操作者に許すかを決める（RLS・scope・規則の 3 段。テーマ 1 の表）。
    - 証拠：[`spec/matrix/table_matrix_spec.rb`](../spec/matrix/table_matrix_spec.rb)。全表を 5 つの立場（受注側・権限のある発注側・権限の無い発注側・取引関係を失効させられた発注側・取引の無い会社）から読み書きし、読める行と、他社の名義で書けないことを確かめる。期待値は [`spec/matrix/table_expectations.rb`](../spec/matrix/table_expectations.rb) に表の形で並ぶ。同じことを GraphQL の全入口で確かめるのが [`spec/matrix/graphql_matrix_spec.rb`](../spec/matrix/graphql_matrix_spec.rb) である。詳細はテーマ 1。
 2. **発注側が、受注側の社内向けの項目まで取得できないか。** 発注側は、受注側の品目をカタログとして読める（1 の 3 つの経路の 1 つ）。しかし品目の行には、在庫数への関連や公開するかどうかの設定など、受注側の社内向けの項目も付いている。画面の API は GraphQL で、利用者は型の項目と関連を自由に選んで取得できる。そのため、受注側が使う品目の型を発注側にもそのまま返すと、発注側は `buyer { catalog { stock { onHand } } }` のように関連をたどり、受注側の在庫数を問い合わせられてしまう。
    - 守り方：同じ品目の行でも、発注側には発注側用の型（`PublishedCatalogItem`：品目コード・名称・単位・単価・税率だけ）で返し、受注側用の型（`Item`：在庫や公開の設定を含む）とは分ける。発注側の入口から受注側用の型へ、どの項目からもつながらないようにする。どの行を読めるかは 1 の RLS が決め、読める行のどの項目と関連を見せるかは、この型の分け方が決める。
@@ -47,6 +47,17 @@
 - [`architecture/decisions.md`](architecture/decisions.md) 2 章（RLS は粗い判定、可視範囲は policy scope）
 
 **どこで守っているか**
+
+読む・書くの許否は、次の 3 段で分担する。自社のデータか相手のデータかで仕組みを使い分けるのではなく、どの問い合わせにも 3 段が順に掛かる。Active Record の関連はコンテキストの中だけに張るので、関連をたどって相手のデータへ届くことはない。
+
+| 段 | 決めること | 置き場 |
+|---|---|---|
+| 1. RLS（DB） | 自社の行だけを読み書きさせ、相手の行は 3 経路の粗い条件でだけ読ませる | 全表のポリシー |
+| 2. scope（Action Policy） | 公開 API が返す行を、自社の行か、経路ごとの条件を満たす相手の行に絞る | 各パッケージの policy の `relation_scope` |
+| 3. 規則（Action Policy） | 操作ごとに、その操作者に許すか（`admin` に限る操作を含む） | 同じ policy の `show?`・`cancel?` など |
+
+詳しくは [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「認可：宣言の無い型・リゾルバ・mutation は拒否する」にある。
+
 - DB：全表の RLS（`WITH CHECK` で所有テナントに限る）と、3 経路だけに足した `SELECT` のポリシー。表は `lib/tenant_table.rb` の `create_tenant_table` で作る。親子は `owner_tenant_id` を含む複合外部キーでつなぐ
 - DB ロール：アプリ・テスト・ワーカーは RLS の掛かる一般ロール `factory_app` で接続する（`lib/tasks/db_roles.rake`）
 - テナントの設定：`packs/platform/app/models/tenancy.rb`（`SET LOCAL`）、`packs/platform/app/models/tenant_record.rb`（テナント未設定なら例外）、`config/initializers/tenancy.rb`（接続の貸し出しで空にする）

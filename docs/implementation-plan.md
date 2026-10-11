@@ -91,7 +91,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M23 | 検収 | 検収数量が出荷数量を超えず、検収が受注側へ 1 回だけ届く |
 | M24 | 請求の締め | 締めが取引先ごとに直列になり、税が請求書・税率ごとに 1 回だけ丸められる |
 | M36 | 行列テストの世界の作り方と、テストの検出力の小さな穴 | 行列テストの時間が表の数に比例し、競合テストの後始末の呼び忘れが落ちる |
-| M25 | 請求書の発行と受領請求書 | 確定した請求書が変わらず、写しが発注側に 1 回だけ届く |
+| M25 | 請求書の発行と受領請求書 | 確定した請求書が変わらず、写しが発注側に 1 回だけ届く。`admin` に限る操作を `member` が呼ぶと `FORBIDDEN` になる |
 | M26 | ダッシュボードと失効の通し試験 | 失効の後も連結済みの取引が請求まで進む |
 | M27 | 販売単価のバイテンポラル履歴 | 現在の単価の有効期間が重ならず、単価の行が書き換わらない |
 | M28 | 外部サービスの呼び出しと非同期の型 | 外部への作用が 1 つの登録口からだけ登録され、テストと開発で本物の SendGrid を呼べない |
@@ -115,6 +115,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M34 | M18・M20 | 依存の更新で、M18 のログの衛生の spec が止めた経路を確かめる。M20 の 2 つ目の PR（CI の互換の検査）の後に CI の設定を変える |
 | M35 | M34 | 分岐の網羅率を、上げた後の Ruby で測る |
 | M36 | M24 | 行列テストの世界に、M24 までの表と入口がそろっている |
+| M25 | M36 | 行列テストの役割の列を、M36 で作り直した世界に足す |
 | M21〜M26 | M15〜M20・M34・M35 | 新しい mutation に監査の宣言を、イベントに付帯情報を、テストに層を、型の変更に `schema.graphql` の書き直しを伴わせる。上げた Ruby で書き、足した分岐の未通過を警告で見る |
 | M27 | M19・M20・M25 | 単価の変更を監査する。請求書の説明が発行済みの請求書を使う |
 | M28 | M18・M25 | 送信の失敗をログに出す。確実な通知の呼び出し元が「請求書発行」の受け手である |
@@ -1065,13 +1066,34 @@ test "$(git grep -h "def login_as(user)" -- spec | wc -l)" -eq 1   # spec/suppor
 
 ## M25 請求書の発行と受領請求書
 
-**目的**：確定した請求書と明細は変わらない。写しは発注側の名義で 1 回だけ作られる。
+**目的**：確定した請求書と明細は変わらない。写しは発注側の名義で 1 回だけ作られる。取引を取り消す操作と、検収と請求で金額を確定させる操作は、`admin` だけが行える（`context-map.md`「自社の中の役割」）。
 
-**作るもの**：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベント、購買の受け手（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。締め日が今日より後の締めを許すか（OI-77）を作者の判断を受けて決め、決めた条件を `closing_spec.rb` の example で確かめる
+**作るもの**
 
-**完了条件**：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でないテスト。確定後の変更が拒否されるテスト。同じ請求書発行を 2 回流しても写しが 1 件のテスト。`total = subtotal + tax_total` の CHECK 制約のテスト。重要シナリオ S5（`spec/scenarios/billing_amounts_spec.rb`）が通る。
+1. 確定と写し：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた）、請求書発行のイベントと配送表の行、購買の受け手 `Purchasing::BillingEventReceiver`（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。`issueInvoice` の規則は `Billing::InvoicePolicy#issue?` で、`admin` に限る
+2. 締め日（OI-77）：締め日が今日より後の締めを許し、確定も締め日を過ぎるのを待たずにできる（`data-model.md`「請求（`billing`）」）。締めの後に届いた、検収日が締め日以前の検収は、次の締めで集まる
+3. 役割による制限（OI-71〜OI-73）：サイクル 02 で作った mutation の規則のうち、`graphql-schema.md`「役割による制限」の表で `admin` に限るものを、`user.admin?` を条件に含める形に直す。対象は `Sales::SalesOrderPolicy#review?`・`#cancel?`、`Purchasing::PurchaseOrderPolicy#request_cancellation?`・`#inspect_receipt?`、`Billing::InvoicePolicy#set_term?`・`#close?`・`#discard?` の 7 つで、いまはどれも役割を問わない。`member` で `admin` に限る操作を呼んでいる既存の request spec（`spec/requests/inspections_spec.rb`・`spec/requests/billing_spec.rb`・`spec/requests/cancellations_spec.rb`）は、`admin` で呼ぶ形に直す
+4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないことを確かめる。役割を持たない mutation の行があれば落ちる
 
-**実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6、`data-model.md`「購買（`purchasing`）」の受領請求書
+役割による制限をここに置くのは、確定（`issueInvoice`）で同じ形の規則を初めから作るからである。サイクル 03 は 6 つのマイルストーンで上限に達しているので、新しいマイルストーンは作らない。M36 は業務の振る舞いを変えないマイルストーンなので入れず、行列テストの役割の列は、M36 で作り直した世界に足す。
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/billing/spec/public/billing/closing_spec.rb packs/purchasing/spec/public/purchasing/billing_event_receiver_spec.rb \
+  packs/purchasing/spec/public/purchasing/received_invoices_spec.rb packs/sales/spec/public/sales/sales_order_policy_spec.rb \
+  spec/requests/billing_spec.rb spec/requests/inspections_spec.rb spec/requests/cancellations_spec.rb spec/scenarios/billing_amounts_spec.rb
+bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb spec/db
+```
+
+- 単体（`closing_spec.rb`）：確定で請求番号が振られ、確定した請求書の `invoiceNumber` が空でない。確定後の変更と 2 回目の確定が拒否される。今日より後の締め日で締めて確定でき、その後に届いた締め日以前の検収が次の締めで集まる
+- 単体（`billing_event_receiver_spec.rb`）：同じ請求書発行を 2 回流しても写しが 1 件（冪等の共有テスト）
+- 単体（policy の spec）：役割を直した 7 つと `issue?` の規則が、`admin` には真、`member` には偽を返す。`Purchasing::PurchaseOrderPolicy` と `Billing::InvoicePolicy` の spec が無ければ足す
+- DB（`spec/db`）：`total = subtotal + tax_total` の CHECK 制約が、外れた行を拒む
+- 行列（`graphql_matrix_spec.rb`）：上の作るもの 4。`admin` に限る規則の 1 つから `user.admin?` を外すと、その mutation の `member` の行が落ちる
+- シナリオ（`spec/scenarios/billing_amounts_spec.rb`、重要シナリオ S5）が通る
+
+**実装する文書の節**：`context-map.md`「検収と請求の流れ」5・6・「自社の中の役割」、`data-model.md`「請求（`billing`）」「購買（`purchasing`）」の受領請求書、`graphql-schema.md`「役割による制限」
 
 ## M26 ダッシュボードと失効の通し試験
 
@@ -1392,6 +1414,7 @@ CI にも、`promtool` の 2 つの検査を足す。各手順書の「確かめ
 - **呼び出し口**：`lib/graphql/request.ts` の 1 か所だけが Rails を呼ぶ。流用元の `lib/api-client.ts`・`api.ts`・`api-types.ts` と、`lib/*-actions.ts` の REST の呼び出しを、これに置き換える。`fetch` は `cache: "no-store"` で呼び、Next のデータのキャッシュ（`"use cache"`・`unstable_cache`・`fetch` の `next.revalidate`）は使わない。キャッシュの鍵にセッションが入らないので、あるテナントへの応答を別のテナントに返すからである。ESLint の `no-restricted-syntax` と `no-restricted-imports` で、これらを書くと落ちるようにする。
 - **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next のサーバーが Asia/Tokyo の今日として出す。
 - **画面の問い合わせ**：`frontend/graphql/<視点>/<操作名>.graphql` に 1 ファイル 1 つで置き、断片（fragment）はそのファイルの中でだけ使う。一覧は絞り込みの引数を使わず、`first: 100` で `pageInfo.hasNextPage` が偽になるまで読み、流用元の並べ替え・絞り込み・タブの純関数にそのまま渡す（著者判断 1）。
+- **一覧の絞り込みの引数**：画面の検索の項目が決まったら、その一覧に `filter` の入力型を定義して足し、`graphql-schema.md` の SDL と「ページングと N+1」、行列テストの期待値、`schema.graphql` を同じ変更で直す。いまの一覧は、親を ID で選ぶ引数と監査ログの絞り込みのほかに引数を持たない。項目が決まらない一覧には足さない
 - **認証**：ログインの server action が、Rails の `POST /session` に JSON で資格情報を送り、応答の `Set-Cookie` にあるセッションの Cookie（`_factory_ops_session`）を、同じ属性（`HttpOnly`・`SameSite=Lax`・本番は `Secure`・期限）で `cookies().set` に写す。`request.ts` は、ブラウザから届いた Cookie のうちセッションの Cookie だけを Rails へ送る。ログアウトの server action は `DELETE /session` を呼び、Cookie を消す。Rails が応答のたびに延ばす期限の扱いは、著者判断 5 による。
 - **`Origin` と CSRF**：ブラウザが見るオリジンはフロントエンドの 1 つだけにし、Rails の CORS は開けない（`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」）。ブラウザからの書き込みは server action を通り、Next が `Origin` と `Host` の一致を確かめる。Next のサーバーは Rails へ `Content-Type: application/json` で送るので、`ApplicationController` の制限をそのまま通る。例外は取り込みのファイル（M29 の `POST /imports/files`）で、`next.config.mjs` の `rewrites` で同じオリジンの下に出し、ブラウザから `multipart/form-data` で送る。Rails は、ブラウザの `Origin` を、許可したオリジン（フロントエンドのオリジン）と比べる。
 - **エラー**：`request.ts` が応答を次の表のとおりに分け、画面は分けた結果だけを見る。流用元の `ApiResult` の `code` の一覧は、この分け方に置き換える。ユーザーエラーの `message` は API の文言をそのまま出し、言い換えるのは次にすることを書き足すときだけにする（流用元の `handbook/README.md`「同じ意味を2箇所に実装しない」）。

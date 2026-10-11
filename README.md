@@ -13,6 +13,7 @@ Rails で B2B SaaS を 0 から作るときの設計判断を、実際に動く�
 - **バックエンド**：Rails（API モード）＋ PostgreSQL
 - **API**：GraphQL
 - **フロントエンド**：factory-ops-demo の Next.js を流用する。画面部品はそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を追加する
+- **認可**：DB の RLS（自社の行と、相手を読む 3 経路の粗い条件）、Action Policy の scope（公開 API が返す行の絞り込み）、Action Policy の規則（操作ごとの許否と役割）の 3 段で分担する。どのデータにも 3 段が順に掛かる（`docs/architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
 - **コードの置き場**：業務のコードは、コンテキストごとに `packs/<パッケージ>/app/` に置く。他のパッケージから呼べるのは `app/public/` の下だけで、依存してよい先は各 `package.yml` に書く。どちらも `bin/packwerk check` が CI で検査する。Rails の基底クラスは `packs/platform` にある
 
 ## 開発環境
@@ -36,7 +37,7 @@ pg_dump は 18 系を使う。18 未満の pg_dump は 18 のサーバーに対�
 | `docs/showcase.md` | 見せどころ。全体の流れ（題材・壊れやすい 4 つの点・守り方と証拠）と、テーマごとの設計判断・守っているコード・確かめるコマンド・実装の状態 |
 | `docs/handoff.md` | 引き継ぎ。作業の現在地、決まったこと・決まっていないこと、次にやること。再開時に最初に読む |
 | `docs/architecture/decisions.md` | 設計の決定事項。最初の 1 か月で決める順と、各論点の「既定の推奨・裏返る条件・撤退コスト」 |
-| `docs/architecture/context-map.md` | コンテキストマップ。6 つのコンテキスト（取引関係・購買・受注・在庫・出荷・請求）と、その間のつなぎ方・テナントの所有 |
+| `docs/architecture/context-map.md` | コンテキストマップ。6 つのコンテキスト（取引関係・購買・受注・在庫・出荷・請求）と、その間のつなぎ方・テナントの所有・自社の中の役割 |
 | `docs/architecture/data-model.md` | データモデル。テナントの持ち方、各コンテキストのテーブル、イベントの冪等キー、RLS ポリシー |
 | `docs/architecture/graphql-schema.md` | GraphQL スキーマ。発注側と受注側の視点の型、相手側へたどれないことの保証、認可の基底クラス、クエリと mutation が呼ぶ公開 API |
 | `docs/implementation-plan.md` | 実装計画。骨組みから業務機能までのマイルストーンと、各マイルストーンが機械で守るようにする規則・完了条件 |
