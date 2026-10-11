@@ -13,20 +13,10 @@ RSpec.describe "品番の対応表と照合のやり直し", type: :request do
   end
   let!(:bolt) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code: "BOLT-8", name: "六角ボルト M8", unit_price: 120) } }
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    response.parsed_body
-  end
-
   # 発注側で発注し、受注側へ「発注登録」を流して受注を作る。発注 ID を返す
   def place_and_deliver(*part_numbers)
     login_as(buyer_member)
-    placed = graphql(<<~GRAPHQL, input: { supplierTenantId: supplier.id, lines: part_numbers.map { { partNumber: _1, quantity: 2 } } })
+    placed = graphql_body(<<~GRAPHQL, input: { supplierTenantId: supplier.id, lines: part_numbers.map { { partNumber: _1, quantity: 2 } } })
       mutation($input: PlacePurchaseOrderInput!) { placePurchaseOrder(input: $input) { purchaseOrder { id } errors { code } } }
     GRAPHQL
     deliver_enqueued_events
@@ -34,7 +24,7 @@ RSpec.describe "品番の対応表と照合のやり直し", type: :request do
   end
 
   def register(customer_tenant_id: buyer.id, customer_part_number: "MY-BOLT", item_id: bolt.id)
-    graphql(<<~GRAPHQL, input: { customerTenantId: customer_tenant_id, customerPartNumber: customer_part_number, itemId: item_id })
+    graphql_body(<<~GRAPHQL, input: { customerTenantId: customer_tenant_id, customerPartNumber: customer_part_number, itemId: item_id })
       mutation($input: RegisterPartMappingInput!) {
         registerPartMapping(input: $input) {
           partMapping { customer { name } customerPartNumber item { code } }
@@ -46,18 +36,18 @@ RSpec.describe "品番の対応表と照合のやり直し", type: :request do
   end
 
   def sales_orders
-    graphql("{ supplier { salesOrders { nodes { status lines { customerPartNumber itemName unitPrice } } } } }")
+    graphql_body("{ supplier { salesOrders { nodes { status lines { customerPartNumber itemName unitPrice } } } } }")
       .dig("data", "supplier", "salesOrders", "nodes")
   end
 
   def purchase_order(id)
-    graphql(<<~GRAPHQL, id:).dig("data", "buyer", "purchaseOrder")
+    graphql_body(<<~GRAPHQL, id:).dig("data", "buyer", "purchaseOrder")
       query($id: ID!) { buyer { purchaseOrder(id: $id) { status lines { partNumber confirmedItemName confirmedUnitPrice } } } }
     GRAPHQL
   end
 
   def part_mappings
-    graphql("{ supplier { partMappings { nodes { customerPartNumber } } } }").dig("data", "supplier", "partMappings", "nodes")
+    graphql_body("{ supplier { partMappings { nodes { customerPartNumber } } } }").dig("data", "supplier", "partMappings", "nodes")
   end
 
   it "照合待ち → 対応表の登録 → 受注確定 → 発注が「受注済」になる" do

@@ -7,19 +7,8 @@ RSpec.describe "請求の締め", type: :request do
   let!(:customer) { FactoryBot.create(:tenant, name: "組立メーカー") }
   let(:supplier_member) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user) } }
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    expect(response.parsed_body["errors"]).to be_nil
-    response.parsed_body.fetch("data")
-  end
-
   def mutate(name, selection, **input)
-    graphql(<<~GRAPHQL, input:).fetch(name)
+    query(<<~GRAPHQL, input:).fetch(name)
       mutation($input: #{name[0].upcase}#{name[1..]}Input!) { #{name}(input: $input) { #{selection} errors { code path } } }
     GRAPHQL
   end
@@ -27,7 +16,7 @@ RSpec.describe "請求の締め", type: :request do
   def invoice_selection = "id invoiceNumber state customer { name } periodStart periodEnd issuedAt subtotal taxTotal total " \
     "taxSummaries { taxRatePercent taxableAmount taxAmount } items { nodes { itemName unitPrice quantity amount taxRatePercent inspectedOn } }"
 
-  def unbilled_count = graphql("{ supplier { billableItems { nodes { id } } } }").dig("supplier", "billableItems", "nodes").size
+  def unbilled_count = query("{ supplier { billableItems { nodes { id } } } }").dig("supplier", "billableItems", "nodes").size
 
   # 取引関係を結んだ取引先に、9 月に検収された未請求明細を 2 つ持たせる
   before do
@@ -43,7 +32,7 @@ RSpec.describe "請求の締め", type: :request do
   it "請求条件を決めて締め、下書きの請求書を番号の空のまま読み、破棄すると明細が未請求に戻る" do
     term = mutate("setBillingTerm", "billingTerm { customer { name } closingDay }", customerTenantId: customer.id, closingDay: 20)
     expect(term).to eq("errors" => [], "billingTerm" => { "customer" => { "name" => "組立メーカー" }, "closingDay" => 20 })
-    expect(graphql("{ supplier { billingTerms { closingDay } } }")).to eq("supplier" => { "billingTerms" => [ { "closingDay" => 20 } ] })
+    expect(query("{ supplier { billingTerms { closingDay } } }")).to eq("supplier" => { "billingTerms" => [ { "closingDay" => 20 } ] })
     expect(unbilled_count).to eq(2)
 
     closed = mutate("closeBillingPeriod", "invoice { #{invoice_selection} }", customerTenantId: customer.id, closingDate: "2026-09-20")
@@ -61,14 +50,14 @@ RSpec.describe "請求の締め", type: :request do
     expect(unbilled_count).to eq(0)
 
     # 下書きでも、invoiceNumber を選んだ一覧と 1 件の読み取りがエラーにならず空を返す
-    expect(graphql("{ supplier { invoices { nodes { id invoiceNumber state } } } }"))
+    expect(query("{ supplier { invoices { nodes { id invoiceNumber state } } } }"))
       .to eq("supplier" => { "invoices" => { "nodes" => [ { "id" => invoice.fetch("id"), "invoiceNumber" => nil, "state" => "DRAFT" } ] } })
-    expect(graphql("query($id: ID!) { supplier { invoice(id: $id) { invoiceNumber state } } }", id: invoice.fetch("id")))
+    expect(query("query($id: ID!) { supplier { invoice(id: $id) { invoiceNumber state } } }", id: invoice.fetch("id")))
       .to eq("supplier" => { "invoice" => { "invoiceNumber" => nil, "state" => "DRAFT" } })
 
     expect(mutate("discardDraftInvoice", "discardedInvoiceId", invoiceId: invoice.fetch("id")))
       .to eq("errors" => [], "discardedInvoiceId" => invoice.fetch("id"))
-    expect(graphql("{ supplier { invoices { nodes { id } } } }").dig("supplier", "invoices", "nodes")).to eq([])
+    expect(query("{ supplier { invoices { nodes { id } } } }").dig("supplier", "invoices", "nodes")).to eq([])
     expect(unbilled_count).to eq(2)
   end
 
@@ -83,7 +72,7 @@ RSpec.describe "請求の締め", type: :request do
       .to eq("invoice" => nil, "errors" => [ { "code" => "INVALID_INPUT", "path" => [ "closingDate" ] } ])
     expect(mutate("closeBillingPeriod", "invoice { id }", customerTenantId: customer.id, closingDate: "2026-08-20"))
       .to eq("invoice" => nil, "errors" => [ { "code" => "CONFLICT", "path" => nil } ])
-    expect(graphql("{ supplier { invoices { nodes { id } } } }").dig("supplier", "invoices", "nodes")).to eq([])
+    expect(query("{ supplier { invoices { nodes { id } } } }").dig("supplier", "invoices", "nodes")).to eq([])
 
     issued = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:invoice, :issued, customer_tenant_id: customer.id) }
     expect(mutate("discardDraftInvoice", "discardedInvoiceId", invoiceId: issued.id))

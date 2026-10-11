@@ -13,18 +13,8 @@ RSpec.describe "カタログの GraphQL", type: :request do
   let!(:published) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :published, code: "B-1") } }
   let!(:unpublished) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code: "A-1") } }
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    response.parsed_body
-  end
-
   def mutate(name, input)
-    graphql(<<~GRAPHQL, input:).fetch("data").fetch(name)
+    graphql_body(<<~GRAPHQL, input:).fetch("data").fetch(name)
       mutation($input: #{name.camelize}Input!) {
         #{name}(input: $input) { item { id code name unitPrice taxRatePercent published } errors { code message path } }
       }
@@ -32,7 +22,7 @@ RSpec.describe "カタログの GraphQL", type: :request do
   end
 
   def catalog_codes
-    graphql("{ buyer { suppliers { catalog { nodes { code } } } } }")
+    graphql_body("{ buyer { suppliers { catalog { nodes { code } } } } }")
       .dig("data", "buyer", "suppliers").flat_map { _1.dig("catalog", "nodes") }.map { _1["code"] }
   end
 
@@ -47,7 +37,7 @@ RSpec.describe "カタログの GraphQL", type: :request do
     before { login_as(buyer_member) }
 
     it "公開品目だけを返し、品目 ID をフィールドにもカーソルにも出さない" do
-      body = graphql("{ buyer { suppliers { catalog { edges { cursor node { code name unit unitPrice taxRatePercent } } } } } }")
+      body = graphql_body("{ buyer { suppliers { catalog { edges { cursor node { code name unit unitPrice taxRatePercent } } } } } }")
 
       expect(body.dig("data", "buyer", "suppliers", 0, "catalog", "edges")).to eq([
         { "cursor" => "B-1", "node" => { "code" => "B-1", "name" => published.name, "unit" => "個", "unitPrice" => "120",
@@ -99,10 +89,10 @@ RSpec.describe "カタログの GraphQL", type: :request do
       Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :published, code: "C-1") }
       query = "query($after: String) { buyer { suppliers { catalog(first: 1, after: $after) { nodes { code } pageInfo { hasNextPage endCursor } } } } }"
 
-      first = graphql(query).dig("data", "buyer", "suppliers", 0, "catalog")
+      first = graphql_body(query).dig("data", "buyer", "suppliers", 0, "catalog")
       expect(first).to eq("nodes" => [ { "code" => "B-1" } ], "pageInfo" => { "hasNextPage" => true, "endCursor" => "B-1" })
 
-      second = graphql(query, after: "B-1").dig("data", "buyer", "suppliers", 0, "catalog")
+      second = graphql_body(query, after: "B-1").dig("data", "buyer", "suppliers", 0, "catalog")
       expect(second).to eq("nodes" => [ { "code" => "C-1" } ], "pageInfo" => { "hasNextPage" => false, "endCursor" => "C-1" })
     end
   end
@@ -113,7 +103,7 @@ RSpec.describe "カタログの GraphQL", type: :request do
       own = Tenancy.with_tenant(buyer.id) { FactoryBot.create(:item) }
       login_as(buyer_member)
 
-      expect(graphql("{ supplier { items { nodes { id } } } }").dig("data", "supplier", "items", "nodes")).to eq([ { "id" => own.id } ])
+      expect(graphql_body("{ supplier { items { nodes { id } } } }").dig("data", "supplier", "items", "nodes")).to eq([ { "id" => own.id } ])
       expect(catalog_codes).to eq(%w[B-1])
     end
 
@@ -121,17 +111,17 @@ RSpec.describe "カタログの GraphQL", type: :request do
       login_as(supplier_member)
       query = "query($after: String) { supplier { items(first: 1, after: $after) { nodes { id } pageInfo { hasNextPage endCursor } } } }"
 
-      first = graphql(query).dig("data", "supplier", "items")
+      first = graphql_body(query).dig("data", "supplier", "items")
       expect(first).to eq("nodes" => [ { "id" => unpublished.id } ], "pageInfo" => { "hasNextPage" => true, "endCursor" => unpublished.id })
 
-      second = graphql(query, after: unpublished.id).dig("data", "supplier", "items")
+      second = graphql_body(query, after: unpublished.id).dig("data", "supplier", "items")
       expect(second).to eq("nodes" => [ { "id" => published.id } ], "pageInfo" => { "hasNextPage" => false, "endCursor" => published.id })
     end
 
     it "形の誤ったカーソルはトップレベルのエラーにする" do
       login_as(supplier_member)
 
-      expect(graphql("{ supplier { items(after: \"x\") { nodes { id } } } }")["errors"].map { _1["message"] }).to eq([ "Invalid cursor" ])
+      expect(graphql_body("{ supplier { items(after: \"x\") { nodes { id } } } }")["errors"].map { _1["message"] }).to eq([ "Invalid cursor" ])
     end
   end
 

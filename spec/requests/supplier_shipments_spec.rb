@@ -20,11 +20,6 @@ RSpec.describe "出荷計上の還流と経路 3", type: :request do
     end
   end
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
   def graphql(query, **variables)
     post "/graphql", params: { query:, variables: }, as: :json
     response.parsed_body.tap { expect(_1["errors"]).to be_nil }

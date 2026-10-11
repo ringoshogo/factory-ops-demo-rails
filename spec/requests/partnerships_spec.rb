@@ -12,18 +12,8 @@ RSpec.describe "取引関係の GraphQL", type: :request do
     Tenancy.with_tenant(supplier.id) { FactoryBot.create(:partnership, buyer_tenant_id: buyer.id, permissions: %w[view_catalog]) }
   end
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    response.parsed_body
-  end
-
   def mutate(name, input)
-    graphql(<<~GRAPHQL, input:).fetch("data").fetch(name)
+    graphql_body(<<~GRAPHQL, input:).fetch("data").fetch(name)
       mutation($input: #{name.camelize}Input!) {
         #{name}(input: $input) { partnership { id status permissions buyer { name } } errors { code message path } }
       }
@@ -67,7 +57,7 @@ RSpec.describe "取引関係の GraphQL", type: :request do
       it "member の #{name} は FORBIDDEN で、何も変わらない" do
         variables = input.call(self)
         before = partnerships_of_supplier
-        body = graphql("mutation($input: #{name.camelize}Input!) { #{name}(input: $input) { errors { code } } }", input: variables)
+        body = graphql_body("mutation($input: #{name.camelize}Input!) { #{name}(input: $input) { errors { code } } }", input: variables)
 
         expect(body["data"]).to eq(name => nil)
         expect(error_codes(body)).to eq([ "FORBIDDEN" ])
@@ -77,7 +67,7 @@ RSpec.describe "取引関係の GraphQL", type: :request do
 
     it "member も一覧は読める" do
       partnership
-      expect(graphql("{ supplier { partnerships { id } } }").dig("data", "supplier", "partnerships")).to eq([ { "id" => partnership.id } ])
+      expect(graphql_body("{ supplier { partnerships { id } } }").dig("data", "supplier", "partnerships")).to eq([ { "id" => partnership.id } ])
     end
   end
 
@@ -85,14 +75,14 @@ RSpec.describe "取引関係の GraphQL", type: :request do
     it "受注側の admin が失効させると、発注側の経路 2 と権限の判定が閉じる" do
       partnership
       login_as(buyer_admin)
-      expect(graphql("{ buyer { suppliers { supplier { name } permissions } } }").dig("data", "buyer", "suppliers"))
+      expect(graphql_body("{ buyer { suppliers { supplier { name } permissions } } }").dig("data", "buyer", "suppliers"))
         .to eq([ { "supplier" => { "name" => supplier.name }, "permissions" => [ "VIEW_CATALOG" ] } ])
 
       login_as(supplier_admin)
       expect(mutate("revokePartnership", partnershipId: partnership.id)).to match("partnership" => include("status" => "REVOKED"), "errors" => [])
 
       login_as(buyer_admin)
-      expect(graphql("{ buyer { suppliers { supplier { name } } } }").dig("data", "buyer", "suppliers")).to eq([])
+      expect(graphql_body("{ buyer { suppliers { supplier { name } } } }").dig("data", "buyer", "suppliers")).to eq([])
       buyer_actor = Tenancy.with_tenant(buyer.id) { Partnerships::Authentication.actor(buyer_admin.id, session_version: buyer_admin.reload.session_version) }
       expect(Tenancy.with_tenant(buyer.id) do
         Partnerships::Access.permitted?(buyer_actor, supplier_tenant_id: supplier.id, permission: "view_catalog")
@@ -113,7 +103,7 @@ RSpec.describe "取引関係の GraphQL", type: :request do
   # 取引先を 1 社選んでカタログを引く入口（docs/architecture/graphql-schema.md「ページングと N+1」）
   describe "buyer.supplier" do
     def supplier_of(tenant_id)
-      graphql("query($id: ID!) { buyer { supplier(supplierTenantId: $id) { supplier { name } permissions } } }", id: tenant_id)
+      graphql_body("query($id: ID!) { buyer { supplier(supplierTenantId: $id) { supplier { name } permissions } } }", id: tenant_id)
         .tap { expect(_1["errors"]).to be_nil }.dig("data", "buyer", "supplier")
     end
 
@@ -141,10 +131,10 @@ RSpec.describe "取引関係の GraphQL", type: :request do
   describe "viewer.partnerCode" do
     it "admin には自社の取引用コードを返し、member には返さない" do
       login_as(supplier_admin)
-      expect(graphql("{ viewer { partnerCode } }").dig("data", "viewer", "partnerCode")).to eq(supplier.partner_code)
+      expect(graphql_body("{ viewer { partnerCode } }").dig("data", "viewer", "partnerCode")).to eq(supplier.partner_code)
 
       login_as(supplier_member)
-      expect(graphql("{ viewer { partnerCode } }").dig("data", "viewer", "partnerCode")).to be_nil
+      expect(graphql_body("{ viewer { partnerCode } }").dig("data", "viewer", "partnerCode")).to be_nil
     end
   end
 end

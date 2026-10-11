@@ -17,13 +17,8 @@ RSpec.describe "在庫と引当", type: :request do
     expect(response).to have_http_status(:no_content)
   end
 
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    response.parsed_body
-  end
-
   def adjust(type, quantity, item_id: item.id)
-    graphql(<<~GRAPHQL, input: { itemId: item_id, type:, quantity:, reason: "棚卸" }).dig("data", "adjustStock")
+    graphql_body(<<~GRAPHQL, input: { itemId: item_id, type:, quantity:, reason: "棚卸" }).dig("data", "adjustStock")
       mutation($input: AdjustStockInput!) {
         adjustStock(input: $input) { stock { item { code } onHand allocated available } errors { code path } }
       }
@@ -31,7 +26,7 @@ RSpec.describe "在庫と引当", type: :request do
   end
 
   def allocate
-    graphql(<<~GRAPHQL, input: { salesOrderId: order.id }).dig("data", "allocateSalesOrder")
+    graphql_body(<<~GRAPHQL, input: { salesOrderId: order.id }).dig("data", "allocateSalesOrder")
       mutation($input: AllocateSalesOrderInput!) {
         allocateSalesOrder(input: $input) { salesOrder { status lines { allocatedQuantity } } errors { code } }
       }
@@ -47,10 +42,10 @@ RSpec.describe "在庫と引当", type: :request do
     adjust("INBOUND", 2)
     expect(allocate.dig("salesOrder", "status")).to eq("ALLOCATED")
 
-    expect(graphql("{ supplier { items { nodes { stock { onHand allocated available belowSafetyStock } } } } }")
+    expect(graphql_body("{ supplier { items { nodes { stock { onHand allocated available belowSafetyStock } } } } }")
       .dig("data", "supplier", "items", "nodes")).to eq([ { "stock" => { "onHand" => 5, "allocated" => 5, "available" => 0,
         "belowSafetyStock" => false } } ])
-    expect(graphql("query($id: ID) { supplier { stockMovements(itemId: $id) { nodes { type quantity reason } } } }", id: item.id)
+    expect(graphql_body("query($id: ID) { supplier { stockMovements(itemId: $id) { nodes { type quantity reason } } } }", id: item.id)
       .dig("data", "supplier", "stockMovements", "nodes").map(&:values))
       .to eq([ [ "ALLOCATE", 2, nil ], [ "INBOUND", 2, "棚卸" ], [ "ALLOCATE", 3, nil ], [ "INBOUND", 3, "棚卸" ] ])
   end
@@ -64,7 +59,7 @@ RSpec.describe "在庫と引当", type: :request do
   end
 
   it "入出庫も引当もしていない品目の在庫は空" do
-    expect(graphql("{ supplier { items { nodes { stock { onHand } } } } }").dig("data", "supplier", "items", "nodes"))
+    expect(graphql_body("{ supplier { items { nodes { stock { onHand } } } } }").dig("data", "supplier", "items", "nodes"))
       .to eq([ { "stock" => nil } ])
   end
 end

@@ -8,19 +8,8 @@ RSpec.describe "検収", type: :request do
   let(:supplier_admin) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, :admin) } }
   let(:buyer_member) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user) } }
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    expect(response.parsed_body["errors"]).to be_nil
-    response.parsed_body.fetch("data")
-  end
-
   def mutate(name, selection, **input)
-    graphql(<<~GRAPHQL, input:).fetch(name)
+    query(<<~GRAPHQL, input:).fetch(name)
       mutation($input: #{name[0].upcase}#{name[1..]}Input!) { #{name}(input: $input) { #{selection} errors { code path } } }
     GRAPHQL
   end
@@ -28,13 +17,13 @@ RSpec.describe "検収", type: :request do
   def inbound_selection = "status inboundShipments { id inspection { inspectedOn } lines { id shippedQuantity acceptedQuantity } }"
 
   def purchase_order
-    graphql(<<~GRAPHQL, id: @purchase_order_id).dig("buyer", "purchaseOrder")
+    query(<<~GRAPHQL, id: @purchase_order_id).dig("buyer", "purchaseOrder")
       query($id: ID!) { buyer { purchaseOrder(id: $id) { #{inbound_selection} } } }
     GRAPHQL
   end
 
   def sales_order_status
-    graphql("query($id: ID!) { supplier { salesOrder(id: $id) { status } } }", id: @sales_order_id).dig("supplier", "salesOrder", "status")
+    query("query($id: ID!) { supplier { salesOrder(id: $id) { status } } }", id: @sales_order_id).dig("supplier", "salesOrder", "status")
   end
 
   def inspect_inbound(lines)
@@ -58,10 +47,10 @@ RSpec.describe "検収", type: :request do
     deliver_enqueued_events
 
     login_as(supplier_admin)
-    @sales_order_id = graphql("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
+    @sales_order_id = query("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
     mutate("allocateSalesOrder", "salesOrder { id }", salesOrderId: @sales_order_id)
     deliver_enqueued_events
-    request_id = graphql("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
+    request_id = query("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
     mutate("createShippingInstruction", "shipmentRequest { id }", shipmentRequestId: request_id, plannedDate: "2026-10-20")
     mutate("postShipment", "shipmentRequest { id }", shipmentRequestId: request_id, shippedOn: "2026-10-20")
     deliver_enqueued_events
@@ -105,7 +94,7 @@ RSpec.describe "検収", type: :request do
     deliver_enqueued_events
 
     login_as(supplier_admin)
-    expect(graphql("{ supplier { billableItems { nodes { itemName unitPrice quantity taxRatePercent amount inspectedOn } } } }"))
+    expect(query("{ supplier { billableItems { nodes { itemName unitPrice quantity taxRatePercent amount inspectedOn } } } }"))
       .to eq("supplier" => { "billableItems" => { "nodes" => [
         { "itemName" => "BOLT", "unitPrice" => "120", "quantity" => 3, "taxRatePercent" => 10, "amount" => "360",
           "inspectedOn" => Date.current.iso8601 }

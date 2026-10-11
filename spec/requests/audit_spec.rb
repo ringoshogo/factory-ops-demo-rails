@@ -22,20 +22,10 @@ RSpec.describe "監査ログの記録", type: :request do
 
   PLACE = "placePurchaseOrder(input: %s) { purchaseOrder { id } errors { code } }".freeze
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    response.parsed_body
-  end
-
   def place_input(supplier_tenant_id = supplier.id) = { supplierTenantId: supplier_tenant_id, lines: [ { partNumber: "MY-BOLT", quantity: 1 } ] }
 
   def place(supplier_tenant_id = supplier.id)
-    graphql("mutation($input: PlacePurchaseOrderInput!) { #{format(PLACE, '$input')} }", input: place_input(supplier_tenant_id))
+    graphql_body("mutation($input: PlacePurchaseOrderInput!) { #{format(PLACE, '$input')} }", input: place_input(supplier_tenant_id))
       .dig("data", "placePurchaseOrder")
   end
 
@@ -86,7 +76,7 @@ RSpec.describe "監査ログの記録", type: :request do
     end
     login_as(supplier_admin)
     run = lambda do |name, selection, input|
-      body = graphql("mutation($input: #{name.camelize}Input!) { #{name}(input: $input) { #{selection} errors { code } } }", input:)
+      body = graphql_body("mutation($input: #{name.camelize}Input!) { #{name}(input: $input) { #{selection} errors { code } } }", input:)
       expect(body.dig("data", name, "errors")).to eq([]), name
       body.dig("data", name)
     end
@@ -115,7 +105,7 @@ RSpec.describe "監査ログの記録", type: :request do
   describe "1 つの要求の 2 つの mutation" do
     it "2. 先が成功し後がユーザーエラーなら、先の業務の行・監査の行・イベントのジョブが残り、後の分は何も残らない" do
       login_as(buyer_member)
-      body = graphql(<<~GRAPHQL, a: place_input, b: place_input(FactoryBot.create(:tenant).id))
+      body = graphql_body(<<~GRAPHQL, a: place_input, b: place_input(FactoryBot.create(:tenant).id))
         mutation($a: PlacePurchaseOrderInput!, $b: PlacePurchaseOrderInput!) {
           first: #{format(PLACE, '$a')}
           second: #{format(PLACE, '$b')}
@@ -130,7 +120,7 @@ RSpec.describe "監査ログの記録", type: :request do
 
     it "3. 先が成功し後がトップレベルのエラー（FORBIDDEN）なら、どれも残らない" do
       login_as(buyer_member)
-      body = graphql(<<~GRAPHQL, a: place_input)
+      body = graphql_body(<<~GRAPHQL, a: place_input)
         mutation($a: PlacePurchaseOrderInput!) {
           first: #{format(PLACE, '$a')}
           second: establishPartnership(input: { partnerCode: "anything" }) { errors { code } }
@@ -216,8 +206,8 @@ RSpec.describe "監査ログの記録", type: :request do
       } ])
 
       login_as(supplier_member)
-      sales_order_id = graphql("{ supplier { salesOrders { nodes { id } } } }").dig("data", "supplier", "salesOrders", "nodes", 0, "id")
-      allocated = graphql("mutation($input: AllocateSalesOrderInput!) { allocateSalesOrder(input: $input) { errors { code } } }",
+      sales_order_id = graphql_body("{ supplier { salesOrders { nodes { id } } } }").dig("data", "supplier", "salesOrders", "nodes", 0, "id")
+      allocated = graphql_body("mutation($input: AllocateSalesOrderInput!) { allocateSalesOrder(input: $input) { errors { code } } }",
         input: { salesOrderId: sales_order_id })
       expect(allocated.dig("data", "allocateSalesOrder", "errors")).to eq([])
       expect(jobs.order(:id).last.arguments.dig("app_metadata", "event_name")).to eq("Contracts::SalesOrderReadyForShipment")
@@ -240,7 +230,7 @@ RSpec.describe "監査ログの記録", type: :request do
     let(:buyer_admin) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user, :admin, name: "発注の管理者") } }
 
     def audit_logs(filter = {})
-      graphql(<<~GRAPHQL, filter:)
+      graphql_body(<<~GRAPHQL, filter:)
         query($filter: AuditLogFilter) {
           viewer { auditLogs(filter: $filter) { nodes { action actorName targetType targetId counterparty { name } correlationId } } }
         }

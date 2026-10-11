@@ -24,18 +24,8 @@ RSpec.describe "発注登録と受注の連結", type: :request do
     Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role:, partner_code: "")
   end
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    response.parsed_body
-  end
-
   def place(supplier_tenant_id: supplier.id, lines: [ { partNumber: "MY-BOLT", quantity: 10 } ], **input)
-    graphql(<<~GRAPHQL, input: { supplierTenantId: supplier_tenant_id, lines:, **input }).fetch("data").fetch("placePurchaseOrder")
+    graphql_body(<<~GRAPHQL, input: { supplierTenantId: supplier_tenant_id, lines:, **input }).fetch("data").fetch("placePurchaseOrder")
       mutation($input: PlacePurchaseOrderInput!) {
         placePurchaseOrder(input: $input) {
           purchaseOrder { id orderNo status supplier { name } desiredDeliveryOn lines { partNumber quantity } }
@@ -46,7 +36,7 @@ RSpec.describe "発注登録と受注の連結", type: :request do
   end
 
   def purchase_order(id)
-    graphql(<<~GRAPHQL, id:).dig("data", "buyer", "purchaseOrder")
+    graphql_body(<<~GRAPHQL, id:).dig("data", "buyer", "purchaseOrder")
       query($id: ID!) {
         buyer { purchaseOrder(id: $id) { status lines { partNumber confirmedItemName confirmedUnitPrice } } }
       }
@@ -54,7 +44,7 @@ RSpec.describe "発注登録と受注の連結", type: :request do
   end
 
   def sales_orders
-    graphql(<<~GRAPHQL).dig("data", "supplier", "salesOrders", "nodes")
+    graphql_body(<<~GRAPHQL).dig("data", "supplier", "salesOrders", "nodes")
       {
         supplier {
           salesOrders {
