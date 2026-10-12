@@ -129,11 +129,14 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 入口の行列は、読み取りの行ごとに、同じ要求を RLS の SELECT を開いて送り直し、本文が変わらないことも確かめる。認可の scope は RLS に任せない（`../architecture/graphql-schema.md`「認可」）が、相手から読む経路の無い表では、公開 API が scope を外しても RLS が他社の行を隠すので、1 回目の応答は変わらないからである。結果の種類だけを比べると、集計を返す入口（`supplier.dashboard`）は scope を外しても種類が変わらないので、本文を比べる。並びだけが変わったときは、scope の抜けと区別して「並びの決まらない一覧」として落とす。仕組みは次のとおりである。
 
-- `MatrixWorld.share_per_file(self, cross_read: true)` は、世界を開く前に、テナントの表ごとに、設定 `app.matrix_cross_read` が `on` のときだけ全行を読ませる SELECT のポリシーを所有ロールの接続で足し、世界を閉じた後に外す（`spec/support/matrix_cross_read.rb`）。ポリシーの足し外しは表のロックを取るので、世界のトランザクションが開いている間に行うと待ち合う。足すのは 1 つのトランザクションなので、途中で失敗しても残らない。接続先の名前がテストの DB でなければ足さずに失敗する
+- `MatrixWorld.share_per_file(self, cross_read: true)` は、世界を開く前に、テナントの表ごとに、設定 `app.matrix_cross_read` が `on` のときだけ全行を読ませる SELECT のポリシーを所有ロールの接続で足し、世界を閉じた後に外す（`spec/support/matrix_cross_read.rb`）。ポリシーの足し外しは表のロックを取るので、世界のトランザクションが開いている間に行うと待ち合う。足すのは 1 つのトランザクションなので、途中で失敗しても残らない。外すのは足し終えたときだけである。接続先の名前がテストの DB でなければ足さずに失敗する
 - 設定は example の中で `MatrixCrossRead.on!` が `SET LOCAL` と同じ形で入れ、example のセーブポイントと一緒に戻る。ロールや DB の既定には書かない
 - ポリシーの SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。`structure.sql` に混ざれば `bin/check-structure` が、消し忘れれば `spec/db/tenant_enforcement_spec.rb`（テナントの表のポリシーは `owner_write` と 6 つの表の `partner_read` だけ）が落とす
-- `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと各集計が他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行を持つ
+- `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと、公開 API の値も入口の要求の応答も他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行を持つ
+- 1 つのテストの DB で、行列の spec を同時に 2 つの実行から流さない。ポリシーの名前は 1 つなので、後から足す実行は「ポリシーがすでにある」で失敗する。並行で流すときは、別名のテストの DB を使う。途中で止めた実行が残したポリシーも同じ失敗になるので、ほかに流している実行が無いことを確かめてから `bin/rails runner -e test 'require "./spec/support/matrix_world"; MatrixCrossRead.remove!'` で外す
 - 表の行列（`table_matrix_spec.rb`）には掛けない。表の行列は生 SQL で RLS そのものを確かめるからである
+
+入れ子のフィールドが親の値から取った ID で呼ぶ公開 API（dataloader の一括取得と、親の ID を渡す resolver）は、入口の行列の応答では scope の抜けが見えない。親と同じテナントの子しか引かないので、scope を外しても RLS の SELECT を開いても、応答が変わらないからである。入口の行列は、これらの公開 API に全ペルソナの ID を直に渡し、RLS の SELECT を開いても呼んだペルソナの ID にだけ値を返すことを確かめる（`spec/matrix/graphql_expectations.rb` の `NESTED_APIS`）。`app/graphql` が親の ID で呼ぶ公開 API を足したのに行が無ければ、列挙の完全性の example が落ちる。
 
 確かめるのは GraphQL の入口から届く読み取りだけである。GraphQL を通らない公開 API（通知の宛先・取り込みの再登録・単価の移行）の所有の条件は、この 2 回目の外にある。
 

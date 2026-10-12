@@ -360,7 +360,7 @@ CREATE POLICY owner_write ON items FOR ALL
 
 `WITH CHECK` が全テーブルで同じなので、どのテーブルにも相手テナントの名義では書けない。イベントの受け手も自社の名義で書くだけなので、この規則に例外は無い。
 
-マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作り、表の説明を `comment:` で渡す（「全テーブルに共通の規則」）。`create_tenant_table` は、主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。
+マイグレーションの担当者は、テナントの表を `lib/tenant_table.rb` の `create_tenant_table` で作り、表の説明を `comment:` で渡す（「全テーブルに共通の規則」）。`create_tenant_table` は、主キー、`owner_tenant_id`（`tenants` への外部キー付き）、`UNIQUE (owner_tenant_id, id)`、`ENABLE`・`FORCE ROW LEVEL SECURITY`、上の `owner_write` をまとめて作る。同じコンテキストの親への参照は `add_tenant_reference`（複合外部キー）で、読む経路のポリシーは `add_partner_read_policy` で足す。付け忘れは、`spec/db/tenant_enforcement_spec.rb` がテスト DB のカタログを引いて落とす。同じ spec は、テナントの表のポリシーが `owner_write` と読む経路の `partner_read` だけであることも確かめるので、読む経路を足す人は、その spec の `partner_read` の表の一覧にも足す。
 
 相手テナントのデータを読む 3 つの経路にだけ、読み取り専用のポリシーを足す。PostgreSQL は、同じ操作に対する複数の許可ポリシーを OR で結ぶ。そのため、足したポリシーは `SELECT` だけを広げ、書き込みは `owner_write` のまま変わらない。
 
