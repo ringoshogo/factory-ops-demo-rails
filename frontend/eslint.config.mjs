@@ -2,9 +2,10 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
-// Next のデータのキャッシュは、キャッシュの鍵にセッションが入らない。使うと、あるテナントへの応答を別のテナントに返す。
-// 画面はどれもセッションごとに Rails を呼び直すので、キャッシュを書く形を書いた時点で落とす
-const NO_CACHE = "Next のデータのキャッシュは使わない。鍵にセッションが入らず、別のテナントに応答を返す";
+// Next のデータのキャッシュを使わない。"use cache" と unstable_cache は関数の引数を鍵にし、セッションの Cookie を鍵に
+// 含めないので、あるテナントへの応答を別のテナントに返す。fetch のキャッシュは鍵に要求のヘッダを含めるが、書き込みの後の
+// 画面に古い値を出す。画面はどれもセッションごとに Rails を呼び直すので、キャッシュを書く形を書いた時点で落とす
+const NO_CACHE = "Next のデータのキャッシュは使わない。セッションを鍵に含めないキャッシュは、別のテナントに応答を返す";
 const NO_LINK = "@/components/app-link の Link を使う (先読みしない)";
 
 const eslintConfig = defineConfig([

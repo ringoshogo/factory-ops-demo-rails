@@ -3,3 +3,8 @@
 # 公開 API 以外への参照を落とす（adr/002 決定 3）
 require:
   - packwerk/privacy/checker
+
+# frontend/ は Next の画面で、パッケージに属さない。exclude を書くと既定の除外を置き換えるので、既定の 5 つも並べる
+exclude:
+  - "{bin,node_modules,script,tmp,vendor}/**/*"
+  - "frontend/**/*"

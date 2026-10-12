@@ -114,8 +114,8 @@ async function execute<TData, TVariables extends Variables>(
       // ApplicationController は application/json の本文だけを受け付ける (他サイトのフォームからの CSRF を防ぐ)
       headers: { "Content-Type": "application/json", Cookie: sessionHeader(session) },
       body: JSON.stringify({ query: print(document), variables, operationName: operationName(document) }),
-      // セッションごとに応答が違うので、Next のデータのキャッシュに載せない。キャッシュの鍵にセッションが入らず、
-      // あるテナントへの応答を別のテナントに返すことになる
+      // Next のデータのキャッシュに載せない。応答はセッションと書き込みのたびに変わり、キャッシュは書き込みの後の画面に
+      // 古い値を出す (どのキャッシュも使わないことは eslint.config.mjs が守る)
       cache: "no-store",
       signal: AbortSignal.timeout(RAILS_TIMEOUT_MS),
     });
