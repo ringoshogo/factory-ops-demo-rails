@@ -115,6 +115,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 - 1 件を引くフィールドは `null` になる
 - 一覧を ID で絞るフィールドは空になる。spec は、同じ入口を絞らずに引いた一覧が空でないことを先に確かめる。絞らない一覧も空なら、絞った一覧が空でも絞り込みを確かめたことにならないので、準備に自社の行を足す
+- 表に自社の ID（`own`）を書いた入口は、その ID を入れて自社の行が返ることを、相手の ID を入れる前に確かめる。絞り込みの入力型の ID（`SalesOrderFilter.customerTenantId` など）と 1 件を引くフィールド（`supplier.item(id:)`）がそうで、自社の ID でも何も返らない入口は、相手の ID で空か `null` になっても境界を確かめたことにならない
 - 対象を引く mutation は `NOT_FOUND` になる
 - `placePurchaseOrder` は、相手の有無と取引関係を区別しない `NOT_PERMITTED` になる（[graphql-schema.md「ID と `node`」](../architecture/graphql-schema.md#id-と-node)）
 
