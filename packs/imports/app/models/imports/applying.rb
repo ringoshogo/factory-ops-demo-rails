@@ -109,7 +109,7 @@ module Imports
 
     def self.message(result)
       failure = result.failures.first
-      [ failure.path&.last, failure.message || failure.code.to_s ].compact.join(": ")
+      [ failure.path&.last, failure.message ].compact.join(": ")
     end
 
     private_class_method :apply_items, :schedule!, :apply_stocks, :parse, :first_rows_by_code, :record, :message

@@ -7,41 +7,57 @@ module Imports
     MAX_ROWS = 50_000
     # 行番号は、見出しを 1 行目とした CSV の記録の番号。利用者が表計算のソフトで開いたときの行と合う
     FIRST_ROW_NUMBER = 2
+    # ファイルの中身を、この大きさの断片ずつ DB から一時ファイルへ写してから読む。bytea を 1 度に読むと、受け取った 16 進の文字列と
+    # 復号した文字列が同時に載り、ワーカーのメモリがファイルの数倍になる
+    SLICE_BYTES = 1024 * 1024
 
     # チャンクを書くたびに、書き終えた行番号を yield する。呼ぶ側はそこを中断点にする
     def self.run(import_id, tenant_id)
-      kind, content, staged = Chunk.locked(import_id, tenant_id) do |import|
+      kind, file_id, byte_size, staged = Chunk.locked(import_id, tenant_id) do |import|
         import.update!(started_at: Time.current) unless import.started_at
-        [ import.kind, ImportFile.where(id: import.import_file_id).pick(:content), ImportRow.where(import_id:).maximum(:row_number) || 0 ] unless import.staged_at
+        next if import.staged_at
+
+        [ import.kind, import.import_file_id, ImportFile.where(id: import.import_file_id).pick(:byte_size),
+          ImportRow.where(import_id:).maximum(:row_number) || 0 ]
       end
-      return unless content
+      return unless kind
 
-      text = decode(content) or return fail(import_id, tenant_id, "invalid_encoding")
-      csv = CSV.new(text)
-      return fail(import_id, tenant_id, "header_mismatch") unless CsvContract.header?(kind, csv.shift)
+      with_file(tenant_id, file_id, byte_size) do |io|
+        csv = CSV.new(io)
+        return fail(import_id, tenant_id, "header_mismatch") unless CsvContract.header?(kind, csv.shift)
 
-      buffer = []
-      csv.each.with_index(FIRST_ROW_NUMBER) do |values, row_number|
-        return fail(import_id, tenant_id, "too_many_rows") if row_number - FIRST_ROW_NUMBER >= MAX_ROWS
-        next if row_number <= staged
-
-        buffer << [ row_number, values ]
-        next if buffer.size < CHUNK_ROWS
-
-        write(import_id, tenant_id, buffer)
         buffer = []
-        yield row_number
+        csv.each.with_index(FIRST_ROW_NUMBER) do |values, row_number|
+          return fail(import_id, tenant_id, "too_many_rows") if row_number - FIRST_ROW_NUMBER >= MAX_ROWS
+          next if row_number <= staged
+
+          buffer << [ row_number, values ]
+          next if buffer.size < CHUNK_ROWS
+
+          write(import_id, tenant_id, buffer)
+          buffer = []
+          yield row_number
+        end
+        write(import_id, tenant_id, buffer)
       end
-      write(import_id, tenant_id, buffer)
       finish(import_id, tenant_id)
+    rescue CSV::InvalidEncodingError
+      fail(import_id, tenant_id, "invalid_encoding")
     rescue CSV::MalformedCSVError
       fail(import_id, tenant_id, "malformed_csv")
     end
 
-    # bytea は ASCII-8BIT で返るので UTF-8 として読み、表計算のソフトが付ける BOM を外す。UTF-8 でなければ nil
-    def self.decode(content)
-      text = content.dup.force_encoding(Encoding::UTF_8)
-      text.delete_prefix("﻿") if text.valid_encoding?
+    # ファイルの中身を一時ファイルに写し、UTF-8 として開いて渡す。表計算のソフトが付ける BOM は、開くときに読み飛ばす
+    def self.with_file(tenant_id, file_id, byte_size, &)
+      Tempfile.create([ "import", ".csv" ], binmode: true) do |file|
+        (0...byte_size).step(SLICE_BYTES) do |offset|
+          file.write(Tenancy.with_tenant(tenant_id) do
+            ImportFile.where(id: file_id).pick(Arel.sql("substring(content FROM #{offset + 1} FOR #{SLICE_BYTES})"))
+          end)
+        end
+        file.flush
+        File.open(file.path, "r:bom|utf-8", &)
+      end
     end
 
     # ロックの後に最大の行番号を読み直し、それより後の行だけを書く。値は前後の空白を除いた文字列にする
@@ -68,6 +84,6 @@ module Imports
       nil
     end
 
-    private_class_method :decode, :write, :finish, :fail
+    private_class_method :with_file, :write, :finish, :fail
   end
 end

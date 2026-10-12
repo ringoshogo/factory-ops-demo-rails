@@ -167,23 +167,43 @@ RSpec.describe Imports::RunJob do
 
     it "既存の品目は、単価が改定日の単価と違うときだけ改定を予約し、空なら単価を変えない。改定日が空なら今日から" do
       tenancy do
-        { "OLD-1" => 100, "OLD-2" => 200, "OLD-3" => 300 }.each { |code, price| FactoryBot.create(:item, code:, unit_price: price) }
+        { "OLD-1" => 100, "OLD-2" => 200, "OLD-3" => 300, "OLD-4" => 400 }.each { |code, price| FactoryBot.create(:item, code:, unit_price: price) }
       end
       tomorrow = Date.current + 1
       import = start("items", items_csv("OLD-1,改名,個,10,false,100,", "OLD-2,改名,個,10,false,250,#{tomorrow.iso8601}",
-        "OLD-3,改名,個,10,false,350,", "OLD-1x,新品,個,10,false,,"))
+        "OLD-3,改名,個,10,false,350,", "OLD-1x,新品,個,10,false,,", "OLD-4,改名,個,10,false,,"))
 
       run_all(import)
 
       expect(row_errors(import)).to eq([ [ 5, "unit_price: Unit price is required for a new item" ] ])
-      ids = tenancy { Sales::Catalog.ids_by_codes(actor, %w[OLD-1 OLD-2 OLD-3]) }
+      ids = tenancy { Sales::Catalog.ids_by_codes(actor, %w[OLD-1 OLD-2 OLD-3 OLD-4]) }
       history = tenancy { Sales::ItemPrices.history(actor, ids.values) }.transform_values { |rows| rows.map { [ _1.valid_from, _1.unit_price ] } }
       expect(ids.transform_values { history.fetch(_1) }).to eq(
         "OLD-1" => [ [ nil, 100 ] ],
         "OLD-2" => [ [ nil, 200 ], [ tomorrow, 250 ] ],
-        "OLD-3" => [ [ nil, 300 ], [ Date.current, 350 ] ]
+        "OLD-3" => [ [ nil, 300 ], [ Date.current, 350 ] ],
+        "OLD-4" => [ [ nil, 400 ] ]
       )
       expect(tenancy { Sales::Catalog.items_for(actor, ids.values).values.map(&:name) }).to all(eq("改名"))
+    end
+
+    # 段階を進めた後の例外は、Continuable が中断と同じく登録し直す（activejob 8.1.4 の resume_errors_after_advancing の既定は真）
+    it "品目の列を書いた後に改定の予約が失敗したら、行の失敗にせずチャンクごと戻し、登録し直したジョブが反映し直す" do
+      tenancy { FactoryBot.create(:item, code: "OLD-1", name: "旧名", unit_price: 100) }
+      import = start("items", items_csv("OLD-1,改名,個,10,false,150,", "NEW-1,新品,個,10,false,10,"))
+      allow(Sales::ItemPrices).to receive(:schedule).and_return(OperationResult.failure(:invalid_input, path: [ :effective_on ], message: "x"))
+
+      run_next(import)
+
+      expect(import_of(import)).to have_attributes(status: :applying, applied_rows: 0, failed_rows: 0)
+      expect(tenancy { Sales::Catalog.items(actor, first: 10, after: nil).values.map { [ _1.name, _1.unit_price ] } }).to eq([ [ "旧名", 100 ] ])
+      expect(pending_jobs(import).sole.arguments["continuation"]).to eq("completed" => [ "stage" ], "current" => [ "apply", nil ])
+
+      allow(Sales::ItemPrices).to receive(:schedule).and_call_original
+      run_all(import)
+
+      expect(import_of(import)).to have_attributes(status: :succeeded, applied_rows: 2)
+      expect(items).to eq("OLD-1" => 150, "NEW-1" => 10)
     end
 
     it "単価の改定日が今日より前の行と、日付の形でない行は失敗にする" do
@@ -203,13 +223,21 @@ RSpec.describe Imports::RunJob do
         Inventory::Adjustment.set_quantity(actor, item_id: a, quantity: 5, reason: "棚卸")
         Inventory::Allocation.allocate(actor, [ { sales_order_line_id: SecureRandom.uuid, item_id: a, quantity: 4 } ])
       end
-      import = start("stocks", stocks_csv("A,3", "B,7", "B,8", "B,-1", "B"))
+      import = start("stocks", stocks_csv("A,3", "B,7", "B,8", "B,-1", "B", " ,3"))
 
       run_all(import)
 
       expect(row_errors(import).map { [ _1[0], _1[1].split(":").first ] })
-        .to eq([ [ 2, "quantity" ], [ 4, "item_code" ], [ 5, "quantity" ], [ 6, "row has 1 columns, expected 2" ] ])
+        .to eq([ [ 2, "quantity" ], [ 4, "item_code" ], [ 5, "quantity" ], [ 6, "row has 1 columns, expected 2" ], [ 7, "item_code" ] ])
       expect(on_hand(%w[A B]).values.map(&:on_hand)).to eq([ 5, 7 ])
+    end
+
+    it "見出しだけのファイルは、0 行の取り込みとして完了する" do
+      import = start("stocks", stocks_csv)
+
+      run_all(import)
+
+      expect(import_of(import)).to have_attributes(status: :succeeded, total_rows: 0, applied_rows: 0, failed_rows: 0)
     end
 
     it "見出しを除いて 50,000 行までを受け付け、超えたファイルは取り込み全体を失敗にする" do

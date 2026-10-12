@@ -122,6 +122,10 @@ RSpec.describe Imports::Runs do
       expect(jobs.map { _1.arguments["arguments"] }).to match_array([ [ waiting.id, tenant ], [ applying.id, tenant ] ])
     end
 
+    it "操作者でない値で読むと例外にする" do
+      expect { tenancy { described_class.list(nil, first: 10, after: nil) } }.to raise_error(ArgumentError, /actor/)
+    end
+
     it "テナントを開かずに呼ぶと例外にする" do
       expect { described_class.reenqueue(SecureRandom.uuid) }.to raise_error(Tenancy::MissingTenant)
     end
