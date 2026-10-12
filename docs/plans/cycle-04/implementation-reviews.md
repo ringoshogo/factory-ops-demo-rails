@@ -152,7 +152,41 @@ bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 f
 
 ## M30 メトリクス
 
-PR（`m30-metrics`、base は `main`）。PR #49（`cycle-04-plan`）と PR #50（`m37-scope-matrix`）が未マージなので、その commit も差分に見える。M30 の差分は `8fc96cc..` である。
+PR #51（`m30-metrics`、base は `main`）。PR #49（`cycle-04-plan`）と PR #50（`m37-scope-matrix`）が未マージなので、その commit も差分に見える。M30 の差分は `8fc96cc..` である。
+
+どちらの系統も Go だった。Critical と High は無く、Medium と Low はすべて同じブランチの `215448e` で直した。High が無いので、読み直しには出していない。どちらの系統も、`8fc96cc..bab789f` の diff を `bab789f` の版で読んだ。Codex はテストを流さず、対象の commit のコードを読み込む Ruby の実行で M30-R1・M30-R2 を再現した。Claude は `bab789f` の worktree を別名のテスト DB で流し（228 examples, 0 failures）、F-1 を再現し、F-4 を壊して確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた控えのファイルから結果を読んだ。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R3） | 指摘（F-5） |
+| 正しさ | 指摘（R1・R2） | 指摘（F-1・F-2・F-3） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R1・R2・R3） | 指摘（F-4） |
+| 参照の維持 | 指摘なし | 指摘（F-1・F-2・F-3 の文書） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Claude | F-1：`ForbiddenError` を作るときに出どころを積むと、null が伝わって応答から消えた拒否（graphql 2.6.11 は `graphql_dead` の位置のエラーを `context.errors` に載せない）まで数え、後ろの `FORBIDDEN` に別の出どころが当たる。非 null の要素のリストで 2 件を拒否し、別のフィールドを規則で拒否すると、応答の `FORBIDDEN` は 2 件で、出どころは `object`・`object`・`rule` になる | 出どころを `ForbiddenError` に持たせ、`GraphqlController` が応答に載ったエラー（`result.context.errors`）から集める。`check_declarations!` の引数は元に戻した。再現の形を `base_classes_spec.rb` に足し、`graphql-schema.md`「エラー」を直した | `215448e` |
+| Medium | Claude | F-2：solid_queue 1.7.0 の `LifecycleHooks#run_hooks_for` はフックの例外を `Exception` ごと拾って起動を続けるので、`PROMETHEUS_EXPORTER_PORT` の無い `bin/jobs` が exporter の無いまま動く | ワーカーのフックを `Platform::Metrics.start_worker_exporter!` にし、設定の誤りでは worker を fork する前に `Kernel.exit!(1)` で終える。登録したフックを呼ぶ example を足し、`guides/config.md`「メトリクス」に Web とワーカーの止まり方を書いた | `215448e` |
+| Medium | Codex | M30-R1：文字列でない `query` では、例外の経路の `operation_type` が文書を解析し直して例外になり、イベントが出ず、元の例外も置き換わる | 結果が無く `query` が文字列でなければ、解析し直さずに `none` にする。`query: 123` の要求でイベントが 1 回出て、元の `ArgumentError` が上がる example を足した | `215448e` |
+| Medium | Codex | M30-R2：設定に無いキューは、ジョブが無くなった後の収集で 0 を書かず、最後に数えた値が残る | そのプロセスで一度でも数えたキューも 0 で埋める。設定に無いキューのジョブを消して数え直す example を足した | `215448e` |
+| Medium | Codex | M30-R3：`correctItemPrice` の request spec が最大値ちょうどを送っていない | 最大値ちょうどに訂正し、訂正後の行を確かめる形にした | `215448e` |
+| Low | Claude | F-3：Puma は `WEB_CONCURRENCY` があれば `workers` が無くてもクラスタのモードで起き、`after_booted` が worker の fork の後に動いて、空にしたディレクトリが worker の値を消す | `WEB_CONCURRENCY` を設定した Web のプロセスでは、ディレクトリを空にせずに起動を止める。`puma.rb` のコメントと `guides/config.md` に前提を書いた | `215448e` |
+| Low | Claude | F-4：収集のブロックを Web にも登録しても、spec が落ちない | `METRICS_PROCESS=web` の子のプロセスで、キューのゲージを書かないことを確かめる example を足した | `215448e` |
+| Low | Claude | F-5：M30-R3 と同じ | M30-R3 と同じ | `215448e` |
+
+違和感は次のように扱った。
+
+- Claude 1：`graphql.operation_completed` は要求のトランザクションの中で出て、コミットに失敗した要求も `ok` と数える → IB-51 に足した
+- Claude 2：exporter のポートの衝突と、キューの収集のブロックの失敗が見えにくい → IB-53 に積んだ
+- Claude 3：文字列でない `query` の例外の経路 → M30-R1 と同じで、直した
+- Claude 4：計画の M18 の節の `graphql.operation_completed` の項目の一覧が古い → 済んだマイルストーンの節で、いまの項目の正本は `guides/config.md`「イベントごとに書く項目」なので、直さない
+- Codex 1：親と子が同時に書いた値の集計を spec で確かめていない → IB-54 に積んだ
 
 ### 実装の記録
 
@@ -240,6 +274,31 @@ bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 f
 
 手で確かめたこと（開発の環境、`a7df5eb` の後の作業ツリー）：`PROMETHEUS_EXPORTER_PORT=9394 METRICS_PROCESS=web bin/rails server` に `SupplierDashboard` の問い合わせを 1 回流すと、`curl -s localhost:9394/metrics` に `graphql_operation_duration_seconds_bucket{operation="SupplierDashboard",operation_type="query",outcome="ok",le="0.1"} 1.0` などが出た。同じサーバーの Rails のルートの `/metrics` は 404 だった。`PROMETHEUS_EXPORTER_PORT=9395 METRICS_PROCESS=jobs bin/jobs` を起こし、定期のジョブ（`Notifications::ProcessInboxJob`）が 1 回流れた後、`curl -s localhost:9395/metrics` に、fork した worker のプロセスが書いた `job_duration_seconds_count{job_class="Notifications::ProcessInboxJob",queue="default"} 1.0` と、supervisor が数えた `queue_ready_jobs{queue="events"} 0.0` など 4 つのキューの行が出た。`queue_ready_jobs` の行に `pid` のラベルは無かった。
 
+#### 実装レビューの直しの記録
+
+F-1 は、Claude が `bab789f` で再現した結果（応答の `FORBIDDEN` 2 件に、出どころが `object`・`object`・`rule`）を RED に代える。足した example は、直した後の形で応答の 2 件と出どころの 2 件（`object`・`rule`）が対応することを確かめる。ほかの直しは、`215448e` の上で次のように壊して落ちることを確かめ、戻した。
+
+| 壊したもの | 落ちた example |
+|---|---|
+| 文字列でない `query` を解析し直さない確かめを外す | `graphql_entry_spec.rb` の 1：文字列でない `query` |
+| 一度数えたキューを覚えない | `metrics_spec.rb` の 1：設定に無いキューを 0 に戻す |
+| ワーカーのフックがプロセスを終えない | `metrics_spec.rb` の 1：ワーカーのフック |
+| `WEB_CONCURRENCY` の確かめを外す | `metrics_spec.rb` の 1：クラスタのモード |
+| 収集のブロックを Web にも登録する | `metrics_spec.rb` の 1：`METRICS_PROCESS=web` の子のプロセス |
+| `correctItemPrice` が最大値ちょうどを拒む | `item_prices_spec.rb` の 1 |
+| 出どころを、応答に載ったすべてのエラーから `ForbiddenError` に限らずに集める | `graphql_entry_spec.rb` の 1：トップレベルのエラーのコードを書く example |
+
+開発の環境で、`PROMETHEUS_EXPORTER_PORT` を設定せずに `METRICS_PROCESS=jobs bin/jobs` と `METRICS_PROCESS=web bin/rails server` を起こすと、どちらも 1 秒ほどで終了コード 1 で終わった。
+
+`215448e` で、共通の完了条件を流し直した。
+
+```sh
+bin/ci                                         # 全工程が通る（brakeman は警告 0、rspec は 2526 examples, 0 failures）。2 分 7 秒
+BASE_REF=origin/main bin/check-branch-coverage # 一覧は空
+bin/check-open-items --due M30                 # 終了コード 0
+bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 failures
+```
+
 ### 残件の処理
 
-引当先が M30 の `open` は OI-119・OI-121 で、どちらも閉じた。OI-124 は judgment のまま、出どころのラベルを実装した。実装で決めたことは OI-129〜OI-133 に judgment で積んだ。
+引当先が M30 の `open` は OI-119・OI-121 で、どちらも閉じた。OI-124 は judgment のまま、出どころのラベルを実装した。実装で決めたことは OI-129〜OI-133 に judgment で積んだ。実装レビューの違和感は IB-51 に足し、IB-53・IB-54 に積んだ。
