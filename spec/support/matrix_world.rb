@@ -158,10 +158,14 @@ class MatrixWorld
 
   # 一覧の絞り込み（入口の行列の "#filter" の行）に当たる行。どのペルソナにも当たる行と当たらない行があるので、
   # 公開 API が絞り込みか件数の scope を外すと、RLS の SELECT を開いた入口の行列で他社のこの行が応答に入る。
-  # 在庫の安全在庫はダッシュボードの行が当たり、出荷依頼は並べ替えだけなので足さない
+  # 受注と発注は、列の絞り込みに当たる取消済の行が当たり、取消していない行は状況で外れる。
+  # 在庫の安全在庫はダッシュボードの行が当たる。出荷依頼は、表ごとの行とダッシュボードの行（出荷待ち）が当たり、取消済の行が外れる
   def add_filter_rows
-    FactoryBot.create(:sales_order, customer_tenant_id: tenants[:granted_buyer], order_date: FILTER_ORDER_DATE)
-    FactoryBot.create(:purchase_order, supplier_tenant_id: tenants[:supplier], order_date: FILTER_ORDER_DATE)
+    [ nil, Time.current ].each do |cancelled_at|
+      FactoryBot.create(:sales_order, customer_tenant_id: tenants[:granted_buyer], order_date: FILTER_ORDER_DATE, cancelled_at:)
+      FactoryBot.create(:purchase_order, supplier_tenant_id: tenants[:supplier], order_date: FILTER_ORDER_DATE, cancelled_at:)
+    end
+    FactoryBot.create(:shipment_request, due_date: Date.current, cancelled_at: Time.current)
     FactoryBot.create(:stock_movement, type: "outbound")
     FactoryBot.create(:item, name: FILTER_ITEM_NAME)
   end

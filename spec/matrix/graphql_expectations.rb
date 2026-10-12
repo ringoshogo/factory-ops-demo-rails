@@ -198,7 +198,7 @@ module MatrixExpectations
       variables: lambda { |world|
         { orderBy: { field: "ORDER_NO", direction: "DESC" },
           filter: { supplierTenantId: world.tenants[:supplier], orderDateFrom: MatrixWorld::FILTER_ORDER_DATE.iso8601,
-                    orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601 } }
+                    orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601, statuses: [ "CANCELLED" ] } }
       },
       expect: EVERYONE
     },
@@ -228,7 +228,7 @@ module MatrixExpectations
       variables: lambda { |world|
         { orderBy: { field: "DUE_DATE", direction: "DESC" },
           filter: { customerTenantId: world.tenants[:granted_buyer], orderDateFrom: MatrixWorld::FILTER_ORDER_DATE.iso8601,
-                    orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601 } }
+                    orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601, statuses: [ "CANCELLED" ] } }
       },
       expect: EVERYONE
     },
@@ -281,11 +281,12 @@ module MatrixExpectations
       query: "{ supplier { shipmentRequests { totalCount nodes { id } } } }",
       expect: EVERYONE
     },
-    # 出荷依頼は並べ替えだけを持つ。世界のどのペルソナにも、期限のある行と無い行がある
-    "SupplierView.shipmentRequests#orderBy" => {
+    # 世界のどのペルソナにも、出荷待ちの期限のある行と無い行がある
+    "SupplierView.shipmentRequests#filter" => {
       role: :member,
-      query: "query($orderBy: ShipmentRequestOrder) { supplier { shipmentRequests(orderBy: $orderBy) { totalCount nodes { id dueDate } } } }",
-      variables: ->(_world) { { orderBy: { field: "DUE_DATE", direction: "ASC" } } },
+      query: "query($orderBy: ShipmentRequestOrder, $filter: ShipmentRequestFilter) " \
+        "{ supplier { shipmentRequests(orderBy: $orderBy, filter: $filter) { totalCount nodes { id dueDate } } } }",
+      variables: ->(_world) { { orderBy: { field: "DUE_DATE", direction: "ASC" }, filter: { statuses: [ "READY" ] } } },
       expect: EVERYONE
     },
     # 出荷指示の無い出荷依頼に指示を作る

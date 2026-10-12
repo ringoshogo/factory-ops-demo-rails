@@ -9,16 +9,15 @@ module Purchasing
     }.freeze
 
     # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
-    # filter は受注側と、両端を含む発注日の範囲で絞る
+    # filter は受注側と、両端を含む発注日の範囲と、状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
     def self.list(actor, first:, after:, order_by: nil, filter: {})
-      Page.of(filtered(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |orders|
-        to_values(orders)
-      end
+      Page.of(filtered(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS),
+        columns: [ PurchaseOrderStatus.expression.as("status") ]) { to_values(_1) }
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
     def self.find(actor, id)
-      to_values(Scope.call(actor, :own).where(id:)).first
+      to_values(with_status(Scope.call(actor, :own).where(id:))).first
     end
 
     # 発注 ID ごとの明細。見えない発注の ID は空の配列になる
@@ -67,23 +66,24 @@ module Purchasing
         &.then { to_record_value(InboundShipmentValue, _1) }
     end
 
-    def self.filtered(relation, supplier_tenant_id: nil, order_date_from: nil, order_date_to: nil)
+    def self.filtered(relation, supplier_tenant_id: nil, order_date_from: nil, order_date_to: nil, statuses: nil)
       relation = relation.where(supplier_tenant_id:) if supplier_tenant_id
       relation = relation.where(order_date: order_date_from..) if order_date_from
       relation = relation.where(order_date: ..order_date_to) if order_date_to
+      relation = relation.where(PurchaseOrderStatus.expression.in(statuses.map(&:to_s))) unless statuses.nil?
       relation
     end
 
+    def self.with_status(relation) = relation.select(PurchaseOrder.arel_table[Arel.star], PurchaseOrderStatus.expression.as("status"))
+
+    # orders は状況の式を status の別名で読んだ発注
     def self.to_values(orders)
       orders = orders.to_a
-      inbound = InboundShipment.where(purchase_order_id: orders.map(&:id)).distinct.pluck(:purchase_order_id).to_set
-      inspected = InboundShipment.where(purchase_order_id: orders.map(&:id)).joins(:inspection).distinct.pluck(:purchase_order_id).to_set
       pending = CancellationRequest.pending.where(purchase_order_id: orders.map(&:id)).pluck(:purchase_order_id).to_set
       orders.map do |order|
         PurchaseOrderValue.new(id: order.id, owner_tenant_id: order.owner_tenant_id, order_no: order.order_no,
           supplier_tenant_id: order.supplier_tenant_id, order_date: order.order_date,
-          desired_delivery_on: order.desired_delivery_on, status: PurchaseOrderStatus.derive(order, inbound: inbound.include?(order.id), inspected: inspected.include?(order.id)),
-          cancellation_pending: pending.include?(order.id))
+          desired_delivery_on: order.desired_delivery_on, status: order["status"].to_sym, cancellation_pending: pending.include?(order.id))
       end
     end
 
@@ -96,6 +96,6 @@ module Purchasing
     def self.to_record_value(klass, record, **extra)
       klass.new(**record.slice(*(klass.members - extra.keys).map(&:to_s)).symbolize_keys, **extra)
     end
-    private_class_method :filtered, :to_values, :to_cancellation_request_value, :to_line_value, :to_record_value
+    private_class_method :filtered, :with_status, :to_values, :to_cancellation_request_value, :to_line_value, :to_record_value
   end
 end

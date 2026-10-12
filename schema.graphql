@@ -1166,6 +1166,11 @@ type PurchaseOrderEdge {
 input PurchaseOrderFilter {
   orderDateFrom: ISO8601Date
   orderDateTo: ISO8601Date
+
+  """
+  状況。空の配列は 0 件を返し、省くか null なら絞らない。取消依頼中は状況ではないので含めない
+  """
+  statuses: [PurchaseOrderStatus!]
   supplierTenantId: ID
 }
 
@@ -1461,6 +1466,11 @@ input SalesOrderFilter {
   customerTenantId: ID
   orderDateFrom: ISO8601Date
   orderDateTo: ISO8601Date
+
+  """
+  状況。空の配列は 0 件を返し、省くか null なら絞らない。取消審査中は状況ではないので含めない
+  """
+  statuses: [SalesOrderStatus!]
 }
 
 type SalesOrderLine {
@@ -1671,6 +1681,13 @@ type ShipmentRequestEdge {
   The item at the end of the edge.
   """
   node: ShipmentRequest
+}
+
+input ShipmentRequestFilter {
+  """
+  状況。空の配列は 0 件を返し、省くか null なら絞らない
+  """
+  statuses: [ShipmentRequestStatus!]
 }
 
 type ShipmentRequestLine {
@@ -1973,7 +1990,7 @@ type SupplierView {
   partnerships: [Partnership!]!
   salesOrder(id: ID!): SalesOrder
   salesOrders(after: String, filter: SalesOrderFilter, first: Int, orderBy: SalesOrderOrder): SalesOrderConnection!
-  shipmentRequests(after: String, first: Int, orderBy: ShipmentRequestOrder): ShipmentRequestConnection!
+  shipmentRequests(after: String, filter: ShipmentRequestFilter, first: Int, orderBy: ShipmentRequestOrder): ShipmentRequestConnection!
   stockMovements(after: String, filter: StockMovementFilter, first: Int, itemId: ID): StockMovementConnection!
   stocks(after: String, filter: StockFilter, first: Int, orderBy: StockOrder): StockConnection!
 }

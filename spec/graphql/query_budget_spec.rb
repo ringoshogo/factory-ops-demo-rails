@@ -172,14 +172,17 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
   def catalog_variables = { "supplierTenantId" => @catalog_supplier.id }
 
   # 絞り込みの値は、seed が作る親がすべて当たるものにする。当たらないと 0 件どうしを比べ、N+1 を件数に出せない。
-  # 受注と発注は、入れ子の取引先のソースの負例のために親ごとに別の取引先を作るので、取引先では絞らず受注日・発注日で絞る
+  # 受注と発注は、入れ子の取引先のソースの負例のために親ごとに別の取引先を作るので、取引先では絞らず受注日・発注日で絞る。
+  # 状況は、seed が作る親の状況（照合前の明細の受注は品番照合待ち、入荷のある発注は入荷予定、出荷指示のある出荷依頼は出荷指示済）を含む集まりで絞る
   def order_date_filter = { "orderDateFrom" => (Date.current - 1).iso8601, "orderDateTo" => Date.current.iso8601 }
 
-  def sales_orders_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "DESC" }, "filter" => order_date_filter }
+  def sales_orders_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "DESC" }, "filter" => order_date_filter.merge("statuses" => %w[AWAITING_PART_MATCH RECEIVED]) }
 
-  def purchase_orders_variables = { "orderBy" => { "field" => "ORDER_NO", "direction" => "ASC" }, "filter" => order_date_filter }
+  def purchase_orders_variables
+    { "orderBy" => { "field" => "ORDER_NO", "direction" => "ASC" }, "filter" => order_date_filter.merge("statuses" => %w[INBOUND INSPECTED]) }
+  end
 
-  def shipment_requests_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "ASC" } }
+  def shipment_requests_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "ASC" }, "filter" => { "statuses" => %w[INSTRUCTED READY] } }
 
   def stocks_variables = { "orderBy" => { "field" => "AVAILABLE", "direction" => "ASC" }, "filter" => { "belowSafetyStock" => true } }
 

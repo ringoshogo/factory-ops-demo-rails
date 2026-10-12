@@ -1,44 +1,67 @@
 require "rails_helper"
 
-# 導出表の行ごとに 1 つ（docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）
+# 導出表の行ごとに受注を 1 件ずつ作り、状況で絞った一覧にその 1 件だけが返ることを確かめる
+# （docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）。
+# 各行の受注は下の行の条件にも当たるように作り、式の優先順を確かめる。取消済と出荷済は DB の CHECK 制約で同時に持てない
 RSpec.describe Sales::SalesOrderStatus do
+  let(:tenant) { FactoryBot.create(:tenant) }
+  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
   let(:now) { Time.current }
 
-  # モデルを作るだけでもテナントの設定が要る
-  around { |example| Tenancy.with_tenant(FactoryBot.create(:tenant).id) { example.run } }
-  let(:matched) { Sales::SalesOrderLine.new(id: SecureRandom.uuid, item_id: SecureRandom.uuid, quantity: 2) }
-  let(:other) { Sales::SalesOrderLine.new(id: SecureRandom.uuid, item_id: SecureRandom.uuid, quantity: 3) }
-  let(:unmatched) { Sales::SalesOrderLine.new(id: SecureRandom.uuid, quantity: 1) }
+  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
 
-  def derive(lines, allocated: {}, **timestamps)
-    described_class.derive(Sales::SalesOrder.new(**timestamps), lines, allocated:)
+  # allocated は照合済みの明細（数量 2）ごとの引当数量で、0 なら引当を作らない。unmatched は照合前の明細の数で、
+  # 品番照合待ちの受注が引当済の条件にも当たるように全量を引き当てる（実際の引当は照合の後にしかできない）
+  def order(allocated: [], unmatched: 0, **timestamps)
+    FactoryBot.create(:sales_order, **timestamps).tap do |order|
+      allocated.each do |quantity|
+        line = FactoryBot.create(:sales_order_line, :matched, sales_order: order, quantity: 2)
+        FactoryBot.create(:allocation, sales_order_line_id: line.id, quantity:) if quantity.positive?
+      end
+      unmatched.times do
+        line = FactoryBot.create(:sales_order_line, sales_order: order)
+        FactoryBot.create(:allocation, sales_order_line_id: line.id, quantity: line.quantity)
+      end
+    end
   end
 
-  it "1. cancelled_at があれば、取消済" do
-    expect(derive([ unmatched ], cancelled_at: now, inspected_at: now, shipped_at: now)).to eq(:cancelled)
+  def list(statuses)
+    page = Sales::SalesOrders.list(actor, first: 100, after: nil, filter: { statuses: })
+    [ page.values.map { [ _1.id, _1.status ] }, page.total_count ]
   end
 
-  it "2. inspected_at があれば、検収済" do
-    expect(derive([ matched ], inspected_at: now, shipped_at: now)).to eq(:inspected)
+  it "導出表の行ごとに、その行の状況で絞った一覧にその受注だけが返る" do
+    orders = {
+      cancelled: order(cancelled_at: now, allocated: [ 2 ], unmatched: 1),
+      inspected: order(inspected_at: now, shipped_at: now, allocated: [ 2 ], unmatched: 1),
+      shipped: order(shipped_at: now, allocated: [ 2 ], unmatched: 1),
+      awaiting_part_match: order(allocated: [ 2 ], unmatched: 1),
+      allocated: order(allocated: [ 2, 2 ]),
+      partially_allocated: order(allocated: [ 1, 0 ]),
+      received: order(allocated: [ 0, 0 ])
+    }
+
+    expect(orders.keys).to eq(described_class::ALL)
+    orders.each do |status, order|
+      expect(list([ status ])).to eq([ [ [ order.id, status ] ], 1 ])
+    end
   end
 
-  it "3. shipped_at があれば、出荷済" do
-    expect(derive([ matched ], shipped_at: now)).to eq(:shipped)
+  it "解除した引当は数えない" do
+    released = order(allocated: [ 2, 2 ])
+    expect(Inventory::Allocation.release(actor, Sales::SalesOrderLine.where(sales_order: released).pluck(:id))).to be_success
+    allocated = order(allocated: [ 2, 2 ])
+
+    # 対照：解除していない引当の受注は引当済になる
+    expect(list([ :allocated ])).to eq([ [ [ allocated.id, :allocated ] ], 1 ])
+    expect(list([ :received ])).to eq([ [ [ released.id, :received ] ], 1 ])
   end
 
-  it "4. item_id が空の明細があれば、品番照合待ち" do
-    expect(derive([ matched, unmatched ], allocated: { matched.id => 2 })).to eq(:awaiting_part_match)
-  end
+  it "複数の状況はどれかに当たる受注に絞り、空の配列は 0 件、nil は絞らない" do
+    cancelled, received, shipped = order(cancelled_at: now), order(allocated: [ 0 ]), order(shipped_at: now)
 
-  it "5. 全明細が全量引き当て済みなら、引当済" do
-    expect(derive([ matched, other ], allocated: { matched.id => 2, other.id => 3 })).to eq(:allocated)
-  end
-
-  it "6. 引当が 1 つ以上あれば、一部引当" do
-    expect(derive([ matched, other ], allocated: { matched.id => 2 })).to eq(:partially_allocated)
-  end
-
-  it "7. それ以外は、受注済" do
-    expect(derive([ matched, other ])).to eq(:received)
+    expect(list(%i[cancelled shipped])).to eq([ [ [ shipped.id, :shipped ], [ cancelled.id, :cancelled ] ], 2 ])
+    expect(list([])).to eq([ [], 0 ])
+    expect(list(nil)).to eq([ [ [ shipped.id, :shipped ], [ received.id, :received ], [ cancelled.id, :cancelled ] ], 3 ])
   end
 end

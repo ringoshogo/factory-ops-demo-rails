@@ -31,9 +31,12 @@ class Page
   # relation を並べ、after より後の first 件を引いて、ブロックで値に写すページを返す。
   # sort を省くと、一意な列 key の順に並べ、key の値をカーソルにする。:id（UUIDv7）なら作成順の新しいものから並べる。
   # sort を渡すと「列の値、id」の組で並べ、id を列と同じ向きに並べる。値の無い行は向きによらず最後に置く。
-  # 件数は first と after によらず、relation の行を数える
-  def self.of(relation, first:, after:, key: :id, direction: :desc, sort: nil, &to_values)
+  # 件数は first と after によらず、relation の行を数える。
+  # columns は行と一緒に読む式（Arel の As のノード）で、件数の SQL には入れない。行には、その別名の属性で載る
+  def self.of(relation, first:, after:, key: :id, direction: :desc, sort: nil, columns: [], &to_values)
     rows = sort ? sorted(relation, sort, after) : keyed(relation, key, direction, after)
+    columns += [ sort.expression.as("page_sort_value") ] if sort
+    rows = rows.select(relation.arel_table[Arel.star], *columns)
     cursor = sort ? ->(record) { encode(sort, record) } : ->(record) { record.public_send(key).to_s }
     new(rows: rows.limit(first + 1), first:, cursor:, count: -> { relation.count }, to_values:)
   end
@@ -62,8 +65,7 @@ class Page
           .or(sort.expression.eq(nil)))
       end
     end
-    relation.select(relation.arel_table[Arel.star], sort.expression.as("page_sort_value"))
-      .reorder(sort.expression.public_send(sort.direction).nulls_last, id.public_send(sort.direction))
+    relation.reorder(sort.expression.public_send(sort.direction).nulls_last, id.public_send(sort.direction))
   end
 
   # カーソルは、並べ替えの列の名前・向き・列の値・id を JSON にして Base64 で包む。
