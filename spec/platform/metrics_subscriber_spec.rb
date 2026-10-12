@@ -187,15 +187,15 @@ RSpec.describe Platform::MetricsSubscriber do
       expect(tags.grep(/tenant|user|_id\z/)).to eq([])
     end
 
-    it "登録の表の queries は、画面の問い合わせの一覧の操作名と一致する" do
+    it "登録の表の queries と mutations は、画面の問い合わせ（frontend/graphql）の query と mutation の操作名と一致する" do
       registered = YAML.load_file(Rails.root.join("config/graphql_operations.yml"))
-      screens = Rails.root.join("spec/fixtures/graphql/screens").glob("*.graphql").map do |path|
-        GraphQL.parse(path.read).definitions.sole.name
-      end
+      screens = Rails.root.join("frontend/graphql").glob("*/*.graphql").map { GraphQL.parse(_1.read).definitions.sole }
+        .group_by(&:operation_type).transform_values { |definitions| definitions.map(&:name) }
 
-      expect(screens).not_to be_empty
-      expect(registered.fetch("queries")).to match_array(screens)
-      expect(registered.fetch("mutations")).to include("PlacePurchaseOrder")
+      expect(screens.fetch("query")).not_to be_empty
+      expect(screens.fetch("mutation")).not_to be_empty
+      expect(registered.fetch("queries")).to match_array(screens.fetch("query"))
+      expect(registered.fetch("mutations")).to match_array(screens.fetch("mutation"))
     end
   end
 end

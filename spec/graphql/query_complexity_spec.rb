@@ -1,10 +1,11 @@
 require "rails_helper"
 
 # 画面の問い合わせごとの複雑度が上限に収まり、コネクションを入れ子にした問い合わせが上限を超える
-# （docs/architecture/graphql-schema.md「ページングと N+1」）。問い合わせは画面の問い合わせの一覧のファイルをすべて読むので、
-# 一覧に足したファイルは表に書かなくても確かめる
+# （docs/architecture/graphql-schema.md「ページングと N+1」）。画面の問い合わせ（frontend/graphql）の query の文書をすべて読むので、
+# 足した文書は表に書かなくても確かめる。mutation の文書は一覧を返さないので計らない
 RSpec.describe "画面の問い合わせの複雑度" do
-  screens = Rails.root.join("spec/fixtures/graphql/screens").glob("*.graphql").sort
+  screens = Rails.root.join("frontend/graphql").glob("*/*.graphql").sort
+    .select { GraphQL.parse(_1.read).definitions.sole.operation_type == "query" }
 
   # 1 ページの件数を上限まで求めたときの複雑度。first を省くと既定の件数で数えるので、問い合わせが取りうる最大で計る。
   # 必須の ID の変数には値を入れる。妥当でない問い合わせは、引数を解決できないフィールドを数え損ねる
@@ -21,7 +22,7 @@ RSpec.describe "画面の問い合わせの複雑度" do
     GraphQL::Analysis.analyze_query(query, [ GraphQL::Analysis::QueryComplexity ]).sole
   end
 
-  it "画面の問い合わせの一覧にファイルがある" do
+  it "画面の問い合わせの query の文書がある" do
     expect(screens).not_to be_empty
   end
 
