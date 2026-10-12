@@ -33,7 +33,7 @@ module Types
 
       # 返すオブジェクトごとに policy の規則を評価する。偽はスキーマの unauthorized_object で FORBIDDEN になる
       def authorized?(object, context)
-        check_declarations!(context)
+        check_declarations!
         return false unless super
         return true if authorization_exempt_reason
 

@@ -263,6 +263,14 @@ RSpec.describe "GraphQL の入口", type: :request do
       ])
     end
 
+    it "文字列でない query で実行が例外を上げても、操作の種類を none にしたイベントを 1 回出し、元の例外を上げ直す" do
+      expect { post "/graphql", params: { query: 123 }, as: :json }.to raise_error(ArgumentError)
+      expect(events.map { _1.except(:duration_ms) }).to eq([
+        { operation_name: "anonymous", operation_type: "none", result: "error", user_error_codes: [], error_codes: [],
+          forbidden_reasons: [] }
+      ])
+    end
+
     it "操作名が GraphQL の名前の形の文字列でなければ、ログの文脈にも操作の終わりにも書かない" do
       contexts = []
       allow(FactoryOpsSchema).to receive(:execute).and_wrap_original do |original, *args, **kwargs|

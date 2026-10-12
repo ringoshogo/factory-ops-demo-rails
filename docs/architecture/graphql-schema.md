@@ -780,7 +780,7 @@ enum UserErrorCode {
 }
 ```
 
-`FORBIDDEN` は 1 つのコードで返し、応答からは出どころを区別させない。運用者は、メトリクス（`graphql_top_level_errors_total` の `reason`。[config.md「メトリクス」](../guides/config.md#メトリクス)）で出どころを分けて見る。出どころは次の 3 つで、拒否した箇所が `ForbiddenError` を作るときに要求の文脈（`context[:forbidden_reasons]`）に積む。作るときに積むので、`FORBIDDEN` の数と出どころの数は食い違わない。
+`FORBIDDEN` は 1 つのコードで返し、応答からは出どころを区別させない。運用者は、メトリクス（`graphql_top_level_errors_total` の `reason`。[config.md「メトリクス」](../guides/config.md#メトリクス)）で出どころを分けて見る。出どころは次の 3 つで、拒否した箇所が `ForbiddenError` に持たせ、`GraphqlController` が応答に載ったエラー（`result.context.errors`）から集める。拒否した箇所で数えると、null が伝わって応答から消えた位置の拒否まで数え、応答の `FORBIDDEN` より多くなるからである（graphql 2.6.11 の `lib/graphql/execution/interpreter/runtime.rb`）。
 
 | 出どころ | 拒否する箇所 | 起きる場面 |
 |---|---|---|

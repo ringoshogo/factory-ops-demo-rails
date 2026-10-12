@@ -42,4 +42,4 @@ Rails.event.subscribe(Platform::MetricsSubscriber.new(operations:))
 
 # ワーカーの exporter は、supervisor が worker・dispatcher・scheduler を fork する前に 1 つだけ立てる
 # （solid_queue 1.7.0 の README「Lifecycle hooks」）
-SolidQueue.on_start { Platform::Metrics.start_exporter!("jobs") }
+SolidQueue.on_start { Platform::Metrics.start_worker_exporter! }

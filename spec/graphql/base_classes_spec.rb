@@ -55,16 +55,15 @@ RSpec.describe "GraphQL の基底クラス" do
     schema.execute(query_string, context: { current_user: actor.with(role:) }).to_h
   end
 
-  # FORBIDDEN の出どころは、応答ではなく要求の文脈に積まれる（ForbiddenError）
+  # FORBIDDEN の出どころは、応答ではなくエラーが持つ。GraphqlController が応答に載ったエラーから集める
   def forbidden_reasons(schema, query_string, role: "member")
-    context = { current_user: actor.with(role:) }
-    schema.execute(query_string, context:)
-    context[:forbidden_reasons]
+    schema.execute(query_string, context: { current_user: actor.with(role:) }).context.errors.grep(ForbiddenError).map(&:reason)
   end
 
   it "FORBIDDEN の出どころは rule・object・undeclared のどれかに限る" do
-    expect { ForbiddenError.new({}, reason: "role") }.to raise_error(ArgumentError, /role/)
-    expect(ForbiddenError::REASONS.map { ForbiddenError.new({}, reason: _1).extensions }).to all(eq("code" => "FORBIDDEN"))
+    expect { ForbiddenError.new(reason: "role") }.to raise_error(ArgumentError, /role/)
+    expect(ForbiddenError::REASONS.map { ForbiddenError.new(reason: _1) }.map { [ _1.reason, _1.extensions ] })
+      .to eq(ForbiddenError::REASONS.map { [ _1, { "code" => "FORBIDDEN" } ] })
   end
 
   describe "型" do
@@ -131,6 +130,30 @@ RSpec.describe "GraphQL の基底クラス" do
       expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       expect(Rails.error).to have_received(:report).with(an_instance_of(GraphQL::UnauthorizedFieldError))
       expect(forbidden_reasons(schema, "{ item { secret } }")).to eq([ "object" ])
+    end
+
+    # 非 null の要素のリストで 2 件目を拒否すると、null がリストまで伝わり、2 件目の FORBIDDEN は応答に載らない
+    it "null が伝わって応答から消えた拒否は、出どころにも数えない" do
+      allow(Rails.error).to receive(:report)
+      type = object_type("Item") do
+        perspective :supplier
+        authorize_with SpecPolicy
+      end
+      denied = resolver(type) do
+        perspective :supplier
+        authorize_with SpecPolicy, :read?
+      end
+      schema = schema_with(proc do
+        field :items, [ type ], null: true, resolver_method: :items
+        define_method(:items) { [ { name: "a", visible: false }, { name: "b", visible: false } ] }
+        field :item, resolver: denied
+      end)
+
+      result = run(schema, "{ items { name } item { name } }")
+
+      expect(result["errors"].map { [ _1.dig("extensions", "code"), _1["path"] ] })
+        .to eq([ [ "FORBIDDEN", [ "items", 0 ] ], [ "FORBIDDEN", [ "item" ] ] ])
+      expect(forbidden_reasons(schema, "{ items { name } item { name } }")).to eq(%w[object rule])
     end
 
     it "コネクションとエッジは中身の型の視点を持ち、宣言を持つ PageInfo を返す" do

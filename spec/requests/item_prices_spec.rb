@@ -132,8 +132,9 @@ RSpec.describe "販売単価の履歴", type: :request do
       travel 1.hour
       expect(mutate("correctItemPrice", "item { id }", itemPriceId: row_id, unitPrice: "9223372036854775808", reason: "入力の誤り"))
         .to eq("item" => nil, "errors" => [ { "code" => "INVALID_INPUT", "path" => [ "unitPrice" ] } ])
-      expect(mutate("correctItemPrice", "item { id }", itemPriceId: row_id, unitPrice: "9223372036854775806", reason: "入力の誤り")["errors"])
+      expect(mutate("correctItemPrice", "item { id }", itemPriceId: row_id, unitPrice: "9223372036854775807", reason: "入力の誤り")["errors"])
         .to eq([])
+      expect(prices.map { _1.values_at("unitPrice", "reason") }).to eq([ [ "100", nil ], [ "9223372036854775807", "入力の誤り" ] ])
       expect(audit_rows("item_price.correct").size).to eq(1)
     end
 

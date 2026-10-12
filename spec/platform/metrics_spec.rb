@@ -56,6 +56,41 @@ RSpec.describe Platform::Metrics do
       end
     end
 
+    it "Puma が WEB_CONCURRENCY でクラスタのモードなら、ディレクトリを空にせずに起動を止める" do
+      FileUtils.mkdir_p(directory)
+      kept = directory.join("metric_spec___1.bin").tap { FileUtils.touch(_1) }
+
+      [ "2", "auto" ].each do |workers|
+        with_env("METRICS_PROCESS" => "web", "PROMETHEUS_EXPORTER_PORT" => "9394", "WEB_CONCURRENCY" => workers) do
+          expect { described_class.start_exporter!("web") }.to raise_error(described_class::ConfigurationError, /WEB_CONCURRENCY/)
+        end
+      end
+      with_env("METRICS_PROCESS" => "web", "PROMETHEUS_EXPORTER_PORT" => "9394", "WEB_CONCURRENCY" => "0") do
+        expect(kept).to exist
+        described_class.start_exporter!("web")
+      end
+      expect(Yabeda::Prometheus::Exporter).to have_received(:start_metrics_server!).once
+    ensure
+      FileUtils.rm_rf(directory)
+    end
+
+    # solid_queue 1.7.0 はフックの例外を拾って起動を続けるので、ワーカーのフックはプロセスを終える
+    it "ワーカーのフックは、設定の誤りで worker を fork する前にプロセスを終える" do
+      allow(Kernel).to receive(:exit!)
+      hook = SolidQueue::Supervisor.lifecycle_hooks.fetch(:start).sole
+
+      with_env("METRICS_PROCESS" => "jobs", "PROMETHEUS_EXPORTER_PORT" => nil) do
+        expect { hook.call(nil) }.to output(/PROMETHEUS_EXPORTER_PORT/).to_stderr
+      end
+      expect(Kernel).to have_received(:exit!).with(1)
+
+      with_env("METRICS_PROCESS" => "jobs", "PROMETHEUS_EXPORTER_PORT" => "9395") { hook.call(nil) }
+      expect(Kernel).to have_received(:exit!).once
+      expect(Yabeda::Prometheus::Exporter).to have_received(:start_metrics_server!).once
+    ensure
+      FileUtils.rm_rf(described_class.directory("jobs"))
+    end
+
     it "test の環境では、設定があっても立てない" do
       allow(Rails.env).to receive(:test?).and_call_original
 
@@ -102,17 +137,22 @@ RSpec.describe Platform::Metrics do
         expect(gauge(:queue_ready_jobs, "default")).to eq(0)
       end
     end
+
+    it "設定に無いキューは、ジョブが無くなった後の収集で 0 を書く" do
+      job_id = enqueue("spec_temporary")
+      described_class.collect_queue_depths
+      expect(gauge(:queue_ready_jobs, "spec_temporary")).to eq(1)
+
+      SolidQueue::ReadyExecution.where(job_id:).delete_all
+      described_class.collect_queue_depths
+
+      expect(gauge(:queue_ready_jobs, "spec_temporary")).to eq(0)
+    end
   end
 
-  it "収集のブロックは、ワーカーのプロセスでだけ登録する" do
-    expect(described_class.process).to be_nil
-    expect(Yabeda.collectors).to be_empty
-  end
-
-  # 本番と同じ DirectFileStore の経路を、METRICS_PROCESS=jobs の子のプロセスで通す。テストのプロセスは値をメモリに置く
-  it "METRICS_PROCESS=jobs のプロセスは、ファイルに書き、収集のブロックでキューのゲージを pid のラベル無しに書く" do
-    directory = described_class.directory("jobs")
-    FileUtils.rm_rf(directory)
+  # 本番と同じ DirectFileStore の経路を、METRICS_PROCESS を設定した子のプロセスで通す。テストのプロセスは値をメモリに置き、
+  # METRICS_PROCESS が無いので収集のブロックを登録しない
+  def collect_in_child(process)
     script = <<~RUBY
       require "./config/environment"
       Yabeda.collect!
@@ -121,14 +161,35 @@ RSpec.describe Platform::Metrics do
         text: Prometheus::Client::Formats::Text.marshal(Prometheus::Client.registry)
       )
     RUBY
-    output, status = Open3.capture2e({ "RAILS_ENV" => "test", "METRICS_PROCESS" => "jobs" }, RbConfig.ruby, "-e", script,
+    output, status = Open3.capture2e({ "RAILS_ENV" => "test", "METRICS_PROCESS" => process }, RbConfig.ruby, "-e", script,
       chdir: Rails.root.to_s)
     expect(status).to be_success, output
-    result = JSON.parse(output.lines.grep(/\ASPEC_RESULT /).sole.delete_prefix("SPEC_RESULT "))
+    JSON.parse(output.lines.grep(/\ASPEC_RESULT /).sole.delete_prefix("SPEC_RESULT "))
+  end
+
+  it "METRICS_PROCESS=jobs のプロセスは、ファイルに書き、収集のブロックでキューのゲージを pid のラベル無しに書く" do
+    directory = described_class.directory("jobs")
+    FileUtils.rm_rf(directory)
+
+    result = collect_in_child("jobs")
 
     expect(result.fetch("store")).to eq("Prometheus::Client::DataStores::DirectFileStore")
     expect(directory.glob("*.bin")).not_to be_empty
     expect(result.fetch("text").lines.grep(/\Aqueue_ready_jobs\{/)).to include(%(queue_ready_jobs{queue="events"} 0.0\n))
+  ensure
+    FileUtils.rm_rf(directory)
+  end
+
+  # Web の exporter もキューを数えると、同じキューの系列が 2 つの exporter から出て、合計が 2 倍になる
+  it "METRICS_PROCESS=web のプロセスと、METRICS_PROCESS の無いプロセスは、収集のブロックを登録せず、キューのゲージを書かない" do
+    directory = described_class.directory("web")
+
+    result = collect_in_child("web")
+
+    expect(result.fetch("store")).to eq("Prometheus::Client::DataStores::DirectFileStore")
+    expect(result.fetch("text").lines.grep(/\Aqueue_ready_jobs\{/)).to eq([])
+    expect(described_class.process).to be_nil
+    expect(Yabeda.collectors).to be_empty
   ensure
     FileUtils.rm_rf(directory)
   end

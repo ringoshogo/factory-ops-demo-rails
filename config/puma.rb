@@ -39,5 +39,6 @@ plugin :tmp_restart
 pidfile ENV["PIDFILE"] if ENV["PIDFILE"]
 
 # メトリクスの Web の exporter を立てる（docs/guides/config.md「メトリクス」）。初期化子に置くと、config/environment を読む
-# bin/jobs・rake タスク・console でも立つ。この設定は workers を置かない単一のモードで fork しないので、起動の後に 1 回だけ呼ぶ
+# bin/jobs・rake タスク・console でも立つ。workers を置かず、WEB_CONCURRENCY も設定しない単一のモードで fork しないので、
+# 起動の後に 1 回だけ呼ぶ。WEB_CONCURRENCY があれば Platform::Metrics.start_exporter! が起動を止める
 after_booted { Platform::Metrics.start_exporter!("web") }

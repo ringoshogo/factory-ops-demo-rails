@@ -114,7 +114,7 @@ RSpec.describe "GraphQL の認可の宣言" do
         authorize_with Sales::ItemPolicy, :save?
       end
 
-      expect { mutation.check_declarations!({}) }
+      expect { mutation.check_declarations! }
         .to raise_error(AuthorizationDeclarations::MissingDeclaration, "Undeclared lacks audit declaration")
     end
   end

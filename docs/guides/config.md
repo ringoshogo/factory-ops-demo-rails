@@ -257,7 +257,7 @@ grep <相関 ID> log/events.log
 | `job_duration_seconds` | ヒストグラム | `queue`・`job_class` | `active_job.completed` の `duration`（ミリ秒） |
 | `job_queue_latency_seconds` | ヒストグラム | `queue` | `active_job.started` のイベントの時刻 − `enqueued_at`。`enqueued_at` の無いジョブ（登録を通らずに `perform_now` したもの）は数えない |
 | `event_delivery_lag_seconds` | ヒストグラム | `event` | `contracts.event_handled` の `delivery_lag_ms` |
-| `queue_ready_jobs`・`queue_blocked_jobs`・`queue_claimed_jobs`・`queue_failed_jobs` | ゲージ | `queue` | 引きに来た時点で、Solid Queue の 4 つの実行の表をキューごとに数える。`claimed` は実行中のジョブである。`config/queue.yml` のワーカーのキューは、ジョブが無くても 0 を書く。書かないと、最後に数えた値が残る |
+| `queue_ready_jobs`・`queue_blocked_jobs`・`queue_claimed_jobs`・`queue_failed_jobs` | ゲージ | `queue` | 引きに来た時点で、Solid Queue の 4 つの実行の表をキューごとに数える。`claimed` は実行中のジョブである。`config/queue.yml` のワーカーのキューと、そのプロセスで一度でも数えたキューは、ジョブが無くても 0 を書く。書かないと、最後に数えた値が残る |
 | `external_requests_total` | カウンタ | `provider`・`status` | `notifications.provider_responded` |
 | `notification_acceptance_seconds` | ヒストグラム | `kind` | `notification.accepted` の `acceptance_ms` |
 | `notification_failures_total`・`notification_dropped_total` | カウンタ | `kind`・`reason` | `notification.delivery_failed`・`notification.best_effort_dropped` |
@@ -276,10 +276,10 @@ exporter は、Web とワーカーで 1 つずつ、別のポート（Web は 93
 
 | プロセス | 立てる場所 | 立てる時機 |
 |---|---|---|
-| Web（`METRICS_PROCESS=web`） | `puma.rb` の `after_booted` | 起動の後に 1 回。`puma.rb` は `workers` を置かない単一のモードなので fork しない。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つ |
+| Web（`METRICS_PROCESS=web`） | `puma.rb` の `after_booted` | 起動の後に 1 回。Puma を単一のモードで動かし、fork しない。`puma.rb` に `workers` を置かず、環境変数 `WEB_CONCURRENCY` も設定しない。Puma は `WEB_CONCURRENCY` があればクラスタのモードで起き（puma 8.0.2 の `lib/puma/configuration.rb`）、`after_booted` が worker の fork の後に動くので、空にしたディレクトリが worker の値を消す。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つ |
 | ワーカー（`METRICS_PROCESS=jobs`） | `initializers/metrics.rb` の `SolidQueue.on_start` | supervisor が worker・dispatcher・scheduler を fork する前に 1 回（solid_queue 1.7.0 の README「Lifecycle hooks」） |
 
-`yabeda-prometheus` の exporter は、ポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`lib/yabeda/prometheus/exporter.rb`）。`PORT` は Puma も使うので、`Platform::Metrics.start_exporter!` は、`PROMETHEUS_EXPORTER_PORT` の無いプロセスと、`METRICS_PROCESS` がプロセスの種類と違うプロセスの起動を止める。exporter は Rack 3 では `Rackup::Handler::WEBrick` で立つが、`webrick` は `yabeda-prometheus` の依存に無いので、Gemfile に書く。
+`yabeda-prometheus` の exporter は、ポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`lib/yabeda/prometheus/exporter.rb`）。`PORT` は Puma も使うので、`Platform::Metrics.start_exporter!` は、`PROMETHEUS_EXPORTER_PORT` の無いプロセスと、`METRICS_PROCESS` がプロセスの種類と違うプロセスと、`WEB_CONCURRENCY` を設定した Web のプロセスの起動を止める。Web は `after_booted` の例外で止まる。ワーカーは、solid_queue 1.7.0 の `LifecycleHooks#run_hooks_for` がフックの例外を拾って起動を続けるので、`Platform::Metrics.start_worker_exporter!` が worker を fork する前にプロセスを終える。exporter は Rack 3 では `Rackup::Handler::WEBrick` で立つが、`webrick` は `yabeda-prometheus` の依存に無いので、Gemfile に書く。
 
 fork した子のプロセスも値を書くので、`METRICS_PROCESS` のあるプロセスは、値を `prometheus-client` の `DirectFileStore` で `tmp/metrics/<環境>/<METRICS_PROCESS>` に書き、exporter がまとめて読む。
 

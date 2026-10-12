@@ -46,7 +46,7 @@ module Platform
       Yabeda.graphql_operation_duration_seconds.measure(
         { operation:, operation_type: type, outcome: OUTCOMES.fetch(payload[:result]) }, seconds(payload[:duration_ms]))
 
-      # FORBIDDEN の 1 件ごとに出どころが 1 つ積まれている（ForbiddenError）。足りなければ next が例外を上げる
+      # 応答に載った FORBIDDEN の 1 件ごとに、出どころが 1 つある（GraphqlController）。足りなければ next が例外を上げる
       reasons = payload[:forbidden_reasons].each
       payload[:error_codes].each do |code|
         Yabeda.graphql_top_level_errors_total.increment({ operation:, code:, reason: code == "FORBIDDEN" ? reasons.next : "none" })
