@@ -30,6 +30,18 @@ RSpec.describe E2ePrepare do
     end
   end
 
+  describe ".worlds" do
+    it "ワーカーごとに namespace w<番号> の世界を作り、そのアカウントを返す。ワーカーの数が 1 未満なら作らずに止まる" do
+      expect { described_class.worlds(0) }.to raise_error(ArgumentError, /1 以上/)
+
+      worlds = described_class.worlds(1)
+
+      expect(worlds.map { _1[:index] }).to eq([ 0 ])
+      expect(worlds.sole[:accounts].map { _1[:email] }).to all(include("+w0@"))
+      expect(worlds.sole[:accounts].map { _1[:persona] }).to include("supplier_admin", "revoked_buyer_admin")
+    end
+  end
+
   it "書き出す JSON は、ワーカーごとの添字とアカウントを持つ" do
     path = Rails.root.join("tmp/e2e-spec-#{SecureRandom.hex(4)}.json")
     worlds = [ { index: 0, accounts: [ { persona: "supplier_admin", email: "admin+w0@seiran.example" } ] } ]

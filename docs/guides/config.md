@@ -63,7 +63,9 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 2. `ApplicationController` が、本文が `application/json` でないリクエストを 415 で拒む。他サイトのフォームは `application/json` を送れない。
 3. CORS を開けない。`initializers/cors.rb` は生成のまま全行がコメントで、`rack-cors` も Gemfile でコメントのままである。他サイトの JavaScript が `fetch` で `application/json` を送るには CORS のプリフライトが要り、それが通らない。
 
-例外は、取り込むファイルの受け口（`POST /imports/files`、`ImportFilesController`）である。ブラウザが `multipart/form-data` で CSV を直接送るので、2 の `application/json` の制限を外す。代わりに、`Origin` ヘッダが `config.x.frontend_origin` と一致しない要求と、`Origin` の無い要求を 403 で拒む。ブラウザは別のオリジンからの POST に必ず `Origin` を付けるので、他サイトのフォームからの送信はここで止まる。本番では `FRONTEND_ORIGIN` にフロントエンドのオリジンを渡す。渡さなければ開発の値のままになり、本番のブラウザからの送信はすべて拒まれる。
+画面（`frontend/`）は、ブラウザから見えるオリジンを Next の 1 つだけにする。ブラウザは Next のサーバーだけを呼び、Next のサーバー（サーバーコンポーネントと server action）が Rails へ `application/json` で送る。ブラウザからの書き込みは server action を通り、Next が `Origin` と `Host` の一致を確かめる。Rails のセッションの Cookie は、Next がフロントエンドのオリジンの Cookie として同じ属性で写す（`frontend/lib/session.ts`）。
+
+例外は、取り込むファイルの受け口（`POST /imports/files`、`ImportFilesController`）である。ブラウザが `multipart/form-data` で CSV を直接送るので、2 の `application/json` の制限を外す。代わりに、`Origin` ヘッダが `config.x.frontend_origin` と一致しない要求と、`Origin` の無い要求を 403 で拒む。ブラウザは別のオリジンからの POST に必ず `Origin` を付けるので、他サイトのフォームからの送信はここで止まる。画面は `frontend/next.config.mjs` の `rewrites` でこの受け口を同じオリジンの下に出し、ブラウザから送る。本番では `FRONTEND_ORIGIN` にフロントエンドのオリジンを渡す。渡さなければ開発の値のままになり、本番のブラウザからの送信はすべて拒まれる。
 
 フロントエンドを別のオリジンから呼ぶことになったら、`cors.rb` を有効にする前に、この前提を見直す。
 
@@ -108,6 +110,8 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 - `db:rollback` と `db:migrate:up`・`down`・`redo` は、設定ごとに回らず `primary` の接続で流れる。`lib/tasks/db_roles.rake` が、これらを所有ロールの接続に切り替える。
 - 表を作るタスクの後に、同じ rake ファイルの `db:grant_app_role` がアプリのロールへ権限を付与する。
 - 本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。所有ロールの資格情報を渡す工程は [data-model.md「RLS」](../architecture/data-model.md#rls) にある。
+
+test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられる。E2E は `factory_ops_e2e` を渡し、rspec のテスト DB と分ける。E2E の準備（`lib/tasks/e2e.rake`）は DB を作り直すので、同じ DB を使うと rspec の DB を消す。準備は、`TEST_DATABASE` が無いか rspec のテスト DB の名前なら止まる。
 
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
 
@@ -281,7 +285,7 @@ grep <相関 ID> log/events.log
 
 メトリクスを足す人は、ラベルにテナント ID・ユーザー ID・伝票の ID を入れない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログの相関 ID で行う。`spec/platform/metrics_subscriber_spec.rb` が、どのラベルの名前にも `tenant`・`user`・`_id` で終わる名前が無いことを確かめる。
 
-`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、登録の無い名前・名前の無い操作・種類の違う操作に付いた登録の名前は `other` にする。登録の表は `queries` と `mutations` に分ける。`queries` は画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）の操作名と一致させ、spec がそれを確かめる。`mutations` には、画面が送る mutation の操作名を書く。mutation の文書は画面の問い合わせの一覧に置かない。一覧は query だけで、クエリ数の予算と複雑度の spec が query であることを求めるからである。
+`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、登録の無い名前・名前の無い操作・種類の違う操作に付いた登録の名前は `other` にする。登録の表は `queries` と `mutations` に分ける。`queries` は画面の問い合わせ（`frontend/graphql/`）の query の操作名と、`mutations` は mutation の操作名と一致させ、spec がそれを確かめる。
 
 ヒストグラムのバケットは、SLO の閾値（`graphql_operation_duration_seconds` の 0.5 秒と 1 秒、`event_delivery_lag_seconds` の 60 秒、`notification_acceptance_seconds` の 900 秒、`import_duration_seconds` の 300 秒）を境界に含める。バケットを指定しないと `prometheus-client` の既定（最大 10 秒）になり、閾値の割合を取れない（yabeda-prometheus 0.9.1 の `lib/yabeda/prometheus/adapter.rb` の `register_histogram!`）。閾値を変える人は、バケットも同じ変更で直す。spec は、閾値ちょうどの値と閾値を超える値が別の `le` に数えられることを確かめる。
 
@@ -291,10 +295,10 @@ exporter は、Web とワーカーで 1 つずつ、別のポート（Web は 93
 
 | プロセス | 立てる場所 | 立てる時機 |
 |---|---|---|
-| Web（`METRICS_PROCESS=web`） | `puma.rb` の `after_booted` | 起動の後に 1 回。Puma を単一のモードで動かし、fork しない。`puma.rb` に `workers` を置かず、環境変数 `WEB_CONCURRENCY` も設定しない。Puma は `WEB_CONCURRENCY` があればクラスタのモードで起き（puma 8.0.2 の `lib/puma/configuration.rb`）、`after_booted` が worker の fork の後に動くので、空にしたディレクトリが worker の値を消す。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つ |
+| Web（`METRICS_PROCESS=web`） | `puma.rb` の `after_booted` | 起動の後に 1 回。Puma を単一のモードで動かし、fork しない。`puma.rb` に `workers` を置かず、環境変数 `WEB_CONCURRENCY` にクラスタのモードになる値（正の数と `auto`）を設定しない。未設定と `0` は単一のモードで起きる。Puma は `WEB_CONCURRENCY` があればクラスタのモードで起き（puma 8.0.2 の `lib/puma/configuration.rb`）、`after_booted` が worker の fork の後に動くので、空にしたディレクトリが worker の値を消す。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つ |
 | ワーカー（`METRICS_PROCESS=jobs`） | `initializers/metrics.rb` の `SolidQueue.on_start` | supervisor が worker・dispatcher・scheduler を fork する前に 1 回（solid_queue 1.7.0 の README「Lifecycle hooks」） |
 
-`yabeda-prometheus` の exporter は、ポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`lib/yabeda/prometheus/exporter.rb`）。`PORT` は Puma も使うので、`Platform::Metrics.start_exporter!` は、`PROMETHEUS_EXPORTER_PORT` の無いプロセスと、`METRICS_PROCESS` がプロセスの種類と違うプロセスと、`WEB_CONCURRENCY` を設定した Web のプロセスの起動を止める。Web は `after_booted` の例外で止まる。ワーカーは、solid_queue 1.7.0 の `LifecycleHooks#run_hooks_for` がフックの例外を拾って起動を続けるので、`Platform::Metrics.start_worker_exporter!` が worker を fork する前にプロセスを終える。exporter は Rack 3 では `Rackup::Handler::WEBrick` で立つが、`webrick` は `yabeda-prometheus` の依存に無いので、Gemfile に書く。
+`yabeda-prometheus` の exporter は、ポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`lib/yabeda/prometheus/exporter.rb`）。`PORT` は Puma も使うので、`Platform::Metrics.start_exporter!` は、`PROMETHEUS_EXPORTER_PORT` の無いプロセスと、`METRICS_PROCESS` がプロセスの種類と違うプロセスと、`WEB_CONCURRENCY` にクラスタのモードになる値（正の数と `auto`）を設定した Web のプロセスの起動を止める。Web は `after_booted` の例外で止まる。ワーカーは、solid_queue 1.7.0 の `LifecycleHooks#run_hooks_for` がフックの例外を拾って起動を続けるので、`Platform::Metrics.start_worker_exporter!` が worker を fork する前にプロセスを終える。exporter は Rack 3 では `Rackup::Handler::WEBrick` で立つが、`webrick` は `yabeda-prometheus` の依存に無いので、Gemfile に書く。
 
 fork した子のプロセスも値を書くので、`METRICS_PROCESS` のあるプロセスは、値を `prometheus-client` の `DirectFileStore` で `tmp/metrics/<環境>/<METRICS_PROCESS>` に書き、exporter がまとめて読む。
 
@@ -333,6 +337,8 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 | Tests: layers | — | `bin/test-layers tmp/rspec.json` | テストの層ごとの件数・割合・時間を報告し、未分類のファイルを止める（[testing.md「テストの層」](testing.md#テストの層)） |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 | Alerts | — | `bin/check-alerts` | 警報の規則の式と、テストの系列での発火と不発火を、Prometheus のイメージの promtool で確かめる（[../slo.md](../slo.md)） |
+
+画面（`frontend/`）の検査は `bin/ci` の工程に無く、`.github/workflows/ci.yml` の `frontend` のジョブ（`npm run codegen:check`・`lint`・`typecheck`・`test:unit`）と `e2e` のジョブ（`npm run test:e2e`）が流す。手元では `README.md`「画面」の手順で流す。
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 

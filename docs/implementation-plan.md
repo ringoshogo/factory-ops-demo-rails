@@ -582,7 +582,7 @@ bundle exec rspec --tag concurrency   # 同上
   2. Dataloader のソースの中：同じく `Bullet.profile` の中で、`FactoryOpsSchema.execute` を呼び、その処理をソースから呼ぶフィールドを解決する
   3. `/graphql` への要求：`expect { post "/graphql", ... }.to raise_error(...)`。`Bullet::Rack` は `ActionDispatch::ShowExceptions` の内側にあり、テストの `show_exceptions = :rescuable` は対応表に無い例外を応答に変えずに投げ直すので、`post` 自身が例外を出す
 - 許可リスト：`spec/support/bullet_safelist.rb` に `{ type:, class_name:, association:, reason: }` の配列で書き、`Bullet.add_safelist` に渡す。`reason` の無い行は、読み込みの時点で例外にする。許可してよいのは、件数が 1 に決まっている誤検知（1 件のレコードを引いてから関連をたどる、など）だけである。本当の N+1 を許可リストで黙らせない。
-- 画面の問い合わせの一覧（`spec/fixtures/graphql/screens/*.graphql`）：画面が送る問い合わせを、操作名を付けて 1 ファイル 1 つで置く。M17 では、M33 の画面の一覧のうち M14 までの入口で動く画面について、次の表の問い合わせを作る。後のマイルストーンは、入口を足すたびに、それを使う画面の問い合わせをここへ足す。M26 の複雑度のテストと M30 の操作名の登録も、この一覧を使う。
+- 画面の問い合わせの一覧（`frontend/graphql/<視点>/<操作名>.graphql`。M33 で `spec/fixtures/graphql/screens/` から移し、画面が実際に送る文書を正本にした）：画面が送る問い合わせを、操作名を付けて 1 ファイル 1 つで置く。M17 では、M33 の画面の一覧のうち M14 までの入口で動く画面について、次の表の問い合わせを作る。後のマイルストーンは、入口を足すたびに、それを使う画面の問い合わせをここへ足す。一覧には mutation の文書も入るので、クエリ数の予算と M26 の複雑度のテストは query の文書だけを読み、M30 の操作名の登録は query と mutation の両方を照らす。
 
   | 操作名 | 画面（M33） | 操作者 | 一覧の親 | 選ぶ入れ子 |
   |---|---|---|---|---|
@@ -1125,9 +1125,9 @@ bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb sp
 
 **作るもの**
 
-1. `supplier.dashboard` と型 `SupplierDashboard`・`SalesOrderStatusCount`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API と集計の境界）。画面の問い合わせ `spec/fixtures/graphql/screens/supplier_dashboard.graphql` を足し、クエリ数の予算の表と行列テストの期待値（`SupplierView.dashboard`）に行を足す
+1. `supplier.dashboard` と型 `SupplierDashboard`・`SalesOrderStatusCount`（`graphql-schema.md`「読み取りの一覧」の 4 つの公開 API と集計の境界）。画面の問い合わせ `supplier_dashboard.graphql`（M33 で `frontend/graphql/supplier/SupplierDashboard.graphql` に移した）を足し、クエリ数の予算の表と行列テストの期待値（`SupplierView.dashboard`）に行を足す
 2. `spec/scenarios/revocation_spec.rb`（重要シナリオ S2）：発注 → 受注確定 → 失効 → 経路 1〜3 が空・新しい発注が `NOT_PERMITTED` → 引当・出荷・検収・締め・発行がそのまま進み、発注側に受領請求書が届く
-3. 画面の問い合わせごとの複雑度のテスト `spec/graphql/query_complexity_spec.rb`（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）から読み、どのファイルも `max_complexity` に収まることを確かめる。一覧に無いファイルが無いことも確かめる
+3. 画面の問い合わせごとの複雑度のテスト `spec/graphql/query_complexity_spec.rb`（`graphql-schema.md`「ページングと N+1」）。問い合わせは、M17 の画面の問い合わせの一覧（M33 で `frontend/graphql/` に移し、query の文書だけを読む）から読み、どのファイルも `max_complexity` に収まることを確かめる。一覧に無いファイルが無いことも確かめる
 4. 出荷依頼がまだ無い受注への「出荷停止」の受け手と、出荷可能の受け手・出荷指示の作成の競合（OI-79）。競合テストは、停止の受け手を、出荷依頼の無いことを読んだ後・コミットの前で止めておき（`hold_open`）、その間に出荷可能の受け手と出荷指示の作成を通す、決まった順で書く。ロックの無い経路なので、ただ同時に流すと起きるかどうかが毎回変わる。停止中の受注に有効な出荷指示が残るなら、停止の受け手と出荷可能の受け手を受注 ID の勧告ロック（`pg_advisory_xact_lock`）で直列にし、`data-model.md`「出荷（`fulfillment`）」に書く。勧告ロックを足したら `spec/db/lock_sites_spec.rb` の表にも足す。起きたかと、どう閉じたかを、実装レビューの節と OI-79 の結果に書く
 
 ダッシュボードの集計の境界（受注の状況の数え方・安全在庫と等しい在庫・期限を過ぎた出荷依頼・税抜きの合計）は、計画のときに取りまとめ役が決めた（OI-81）。
@@ -1366,7 +1366,7 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
    | `import_rows_total` | カウンタ | `kind`・`result`（`applied`・`failed`） | — | `imports.chunk_applied` の `applied_rows`・`failed_rows` | |
    | `import_duration_seconds` | ヒストグラム | `kind`・`size`（10,000 行以下は `small`、超えれば `large`） | 10・30・60・300・900・3600 | `imports.finished` の `duration_ms`・`total_rows` | |
 
-3. ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録の表は `queries` と `mutations` の 2 つに分ける。`queries` は、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）の操作名と一致させる。`mutations` は、画面が送る mutation の操作名を書き、M31 の SLO が測る発注の登録（`PlacePurchaseOrder`）をこのマイルストーンで足す。mutation の文書は画面の問い合わせの一覧に置かない。一覧は query だけで、クエリ数の予算（`spec/graphql/query_budget_spec.rb`）と複雑度（`spec/graphql/query_complexity_spec.rb`）が query であることを求めるからである。
+3. ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録の表は `queries` と `mutations` の 2 つに分ける。`queries` は、M17 の画面の問い合わせの一覧（M33 で `frontend/graphql/` に移した）の query の操作名と一致させる。`mutations` は、画面が送る mutation の操作名を書き、M31 の SLO が測る発注の登録（`PlacePurchaseOrder`）をこのマイルストーンで足す。M33 で一覧を `frontend/graphql/` に移してからは、一覧に mutation の文書も置き、`mutations` を mutation の文書の操作名と一致させる。
 4. 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーでそれぞれ 1 つずつ、別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。exporter はポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`exporter.rb`）。`PORT` は Puma も使うので、exporter を立てるプロセス（`METRICS_PROCESS` を示したプロセス。OI-133）では `PROMETHEUS_EXPORTER_PORT` を必ず設定し、無ければ起動を止める。
    - Web：Puma の起動のフック（`config/puma.rb`）で立てる。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つからである
    - ワーカー：`bin/jobs` は、supervisor が worker・dispatcher・scheduler を別のプロセスに fork するので、exporter は supervisor が fork の前に呼ぶ `SolidQueue.on_start` で 1 つだけ立てる（solid_queue 1.7.0 の README「Lifecycle hooks」）
@@ -1583,7 +1583,7 @@ bundle exec rspec packs/notifications/spec/public/notifications/email_spec.rb pa
 4. 入口を 2 つ足す（OI-12）：`supplier.item(id:)` は自社の品目を 1 件返し、見えない ID には `null` を返す（`architecture/graphql-schema.md`「ID と `node`」の 1 件を引くフィールド）。`viewer.tenant` は自社のテナントの `id` と `name` を返し、取引用コードを含めない（取引用コードは `viewer.partnerCode` が `admin` にだけ返す）。どちらも役割を問わない。
 5. 行列テスト：コネクションを返すフィールドの行は、すべて問い合わせで `totalCount` を読む。`graphql_matrix_spec.rb` が、スキーマからコネクションを返すフィールドを集め、その行の問い合わせが `totalCount` を選ぶことを確かめる（規則の正本はスキーマ。`guides/dev-cycle.md`「テストから書く」）。表の 6 つの一覧には、並べ替えと絞り込みを両方渡す変種の行（`"SupplierView.salesOrders#filter"` の形）を足し、`MatrixWorld` の各ペルソナに、絞り込みに当たる行と当たらない行を持たせる。RLS を開いた 2 回目の比較（M37）が、件数・絞り込み・並びの scope の抜けを捕まえる。2 回目の比較は並びまで同じことを求めるので、`id` で決着しない並びは落ちる。`supplier.item`・`viewer.tenant` の行を、許す役割と期待値とともに足す。
 6. S1 の入口の列挙：`SalesOrderFilter.customerTenantId`・`PurchaseOrderFilter.supplierTenantId` と `supplier.item(id:)` は、`spec/scenarios/tenant_boundary_spec.rb` の列挙に現れる。相手の伝票の ID とテナントの ID を渡して、一覧は空、1 件は `null` になる行を足す。同じ example で、自社の ID を渡せば自社の行が返ることを先に確かめる（`guides/testing.md`「S1 の入口の列挙」）。発注側の自社の発注は相手を受注側にしているので、`PurchaseOrderFilter.supplierTenantId` では相手のテナント ID が自社の行を返す対照になり、空になる ID には受注側の伝票の ID と取引の無いテナントの ID を渡す（OI-154）。
-7. クエリ数の予算と複雑度：表の一覧を読む画面の問い合わせ（`spec/fixtures/graphql/screens/` の `SupplierSalesOrders`・`BuyerPurchaseOrders`・`SupplierShipmentRequests`・`SupplierStocks`・`SupplierStockMovements`・`SupplierItems`）に、`totalCount` と、変数の `$orderBy`・`$filter` を足す。予算の表（`SCREENS`）には、並べ替えと絞り込みを渡す変数のメソッドを書く。絞り込みの値は、予算の spec が作る親がすべて当たるものにする。当たらないと 0 件どうしを比べ、N+1 を件数に出せない。件数は親の数によらず 1 つの問い合わせなので、親が 1 件と 20 件の SQL の件数は同じになる。`totalCount` だけを読む問い合わせの SQL の件数が、件数の 1 つ（とテナントの設定）だけであることを確かめる example も足す（作るもの 2）。`totalCount` はコネクションの要素の外にあるので、複雑度では `first` の倍にならない（`architecture/graphql-schema.md`「ページングと N+1」）。
+7. クエリ数の予算と複雑度：表の一覧を読む画面の問い合わせ（画面の問い合わせの一覧の `SupplierSalesOrders`・`BuyerPurchaseOrders`・`SupplierShipmentRequests`・`SupplierStocks`・`SupplierStockMovements`・`SupplierItems`）に、`totalCount` と、変数の `$orderBy`・`$filter` を足す。予算の表（`SCREENS`）には、並べ替えと絞り込みを渡す変数のメソッドを書く。絞り込みの値は、予算の spec が作る親がすべて当たるものにする。当たらないと 0 件どうしを比べ、N+1 を件数に出せない。件数は親の数によらず 1 つの問い合わせなので、親が 1 件と 20 件の SQL の件数は同じになる。`totalCount` だけを読む問い合わせの SQL の件数が、件数の 1 つ（とテナントの設定）だけであることを確かめる example も足す（作るもの 2）。`totalCount` はコネクションの要素の外にあるので、複雑度では `first` の倍にならない（`architecture/graphql-schema.md`「ページングと N+1」）。
 8. 互換：足すのは、省いてよい引数・フィールド・新しい型だけなので、`bin/check-schema-compat` は非破壊の変更として通す。
 
 テナントの境界：書き込みは足さない。足す読み取りは、どれもいまの公開 API の scope を掛けた relation に条件と並びを足すだけで、RLS と policy は変えない。絞り込みの ID（取引先のテナント ID）は自社の行の列と比べるだけで、相手の行を引かない。コンテキストの境界：在庫の安全在庫の条件は在庫のパッケージに、品目の `keyword` は受注のパッケージに置き、パッケージの依存の向きは変えない。
@@ -1732,7 +1732,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
 
 流用元は、サーバーコンポーネントで読み、server action で書き、どちらも Next のサーバーから API を呼ぶ。この形を保ち、呼び先だけを Rails の GraphQL に替える。
 
-- **呼び出し口**：`lib/graphql/request.ts` の 1 か所だけが Rails を呼ぶ。流用元の `lib/api-client.ts`・`api.ts`・`api-types.ts` と、`lib/*-actions.ts` の REST の呼び出しを、これに置き換える。`fetch` は `cache: "no-store"` で呼び、Next のデータのキャッシュ（`"use cache"`・`unstable_cache`・`fetch` の `next.revalidate`）は使わない。キャッシュの鍵にセッションが入らないので、あるテナントへの応答を別のテナントに返すからである。ESLint の `no-restricted-syntax` と `no-restricted-imports` で、これらを書くと落ちるようにする。
+- **呼び出し口**：`lib/graphql/request.ts` の 1 か所だけが Rails を呼ぶ。流用元の `lib/api-client.ts`・`api.ts`・`api-types.ts` と、`lib/*-actions.ts` の REST の呼び出しを、これに置き換える。`fetch` は `cache: "no-store"` で呼び、Next のデータのキャッシュ（`"use cache"`・`unstable_cache`・`fetch` の `next.revalidate`）は使わない。`"use cache"` と `unstable_cache` は関数の引数を鍵にし、セッションを鍵に含めないので、あるテナントへの応答を別のテナントに返すからである。`fetch` のキャッシュは鍵に要求のヘッダを含めるが、書き込みの後の画面に古い値を出す（OI-166）。ESLint の `no-restricted-syntax` と `no-restricted-imports` で、これらを書くと落ちるようにする。
 - **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next では決めず、API が返す業務の今日（`supplier.dashboard.businessDate`）を使う。業務の今日を決める場所が Rails と Next の 2 か所になると、OI-117 で決めた形と画面の今日がずれるからである。API に無い画面で要るときは、著者判断 6 と同じく足すだけの変更として入口に足す。サイドバーの自社の名前は `viewer.tenant`（M39）から出す。
 - **画面の問い合わせ**：`frontend/graphql/<視点>/<操作名>.graphql` に 1 ファイル 1 つで置き、断片（fragment）はそのファイルの中でだけ使う。
 - **一覧の読み方**（著者判断 1）：一覧の画面は 1 ページ（`first: 20`）ずつ読む。流用元が URL に持つ並べ替え（`sort`・`dir`）・タブ・絞り込みの値を、`orderBy` と `filter`（M39・M40）に写し、次のページは `pageInfo.endCursor` を `after` に入れた URL で開く。API は前のページへ辿らないので（`graphql-schema.md`「ページングと N+1」）、前へはブラウザの戻る操作と「最初のページ」へのリンクで戻る。一覧の件数とタブごとの件数は、同じ問い合わせの中で、タブの `filter` を渡した一覧を別名で並べ、`totalCount` だけを読む。流用元の並べ替え・絞り込み・タブの件数の純関数（`lib/sort.ts` の `sortRows`、`lib/order-list.ts` の `buildOrderList`、`lib/sample.ts` の `filterByQuery` など）は写さず、URL の値を変数に写す関数に置き換える。同じ意味を画面とサーバーの 2 か所に持たないためである。API で並べられない列（取引先の名前・金額の合計・状況・在庫の品目のコードと名前。M39 の判断）の見出しは、並べ替えの対象にしない。作者が OI-144 で既定を変えたら、足した並べ替えの列の見出しを対象に戻す。在庫の画面には品目の検索の欄を置かず、安全在庫を下回るものだけを出す切り替え（`filter.belowSafetyStock`）を置く
@@ -1745,7 +1745,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
   |---|---|
   | HTTP 401 | セッションの Cookie を消し、ログインの画面へ移す |
   | 接続できない・5xx・タイムアウト | 流用元の「API に届かない」表示（`error-notice`・`list-error`）を出す |
-  | ID で引く入口（`supplier.salesOrder(id:)` など）の `null`、mutation の `NOT_FOUND` | どちらも流用元の見つからない画面（`not-found-message`）にする。無いのか見えないのかを言い分けない |
+  | ID で引く入口（`supplier.salesOrder(id:)` など）の `null`、mutation の `NOT_FOUND` | どちらも流用元の見つからない画面（`not-found-message`）にする。無いのか見えないのかを言い分けない。例外は `establishPartnership` の取引用コードの `NOT_FOUND` で、入れた値の誤りなので、入力欄の下に出す（OI-162） |
   | mutation の `NOT_PERMITTED` | 1 つの文言で出す。失効・付与なし・存在しない相手のどれなのかを、画面で推し量って言い分けない |
   | mutation の `INVALID_INPUT` | `path` の指す入力欄の下に出す。`path` が空ならフォームの上に出す |
   | mutation の `CONFLICT` | 最新の状態を読み直してから、メッセージを出す |
@@ -1775,7 +1775,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
 
 流用元の E2E は、Go の API に当てる live と、REST のスタブに当てる stub の 2 系統である。本デモは、Rails に当てる 1 系統にする。stub が作っていた「API に届かない」状態は、届かない URL を向いた Next のサーバーをもう 1 つ立てて作る。
 
-- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 の `DemoWorld.build(namespace: "w<ワーカー番号>", variant: :e2e)` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作り、返ったアカウントを JSON に書き出す。`DemoWorld` はジョブを claim せずにその場で流すので、`e2e:prepare` が `bin/jobs` の起動より先に終わることを、何が保証するか（Playwright の `webServer` と `globalSetup` の起こす順）を版の文書で確かめて決め、完了条件で確かめる（OI-143）。テストは、自分のワーカー番号の世界のアカウントでログインし、他の世界に書かない。
+- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `TEST_DATABASE=factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。Rails の `webServer` は `frontend/e2e/start-rails.sh` を流し、`bin/rails e2e:check`（test の環境で、rspec のテスト DB と別の DB を指し、心拍の生きている Solid Queue のプロセスが無いこと）・`bin/rails db:drop db:prepare`・`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`）の順に、DB を作り直してから、Playwright のワーカーごとに、M32 の `DemoWorld.build(namespace: "w<ワーカー番号>", variant: :e2e)` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作り、返ったアカウントを `tmp/e2e/worlds.json` に書き出す。DB を作り直す工程は、世界を作るプロセスと別のコマンドにする。`DemoWorld` を読み込んだプロセスの中で `db:prepare` を呼ぶと、作り直した DB に構造を読み込まずに終わるからである。`DemoWorld` はジョブを claim せずにその場で流すので、`bin/jobs` は、このスクリプトが準備を終えてから起こす。Playwright 1.64 は `webServer` を `globalSetup` より先に起こす（`lib/runner` の `createGlobalSetupTasks` がプラグインの setup の後に `globalSetup` を並べる）ので、準備を `globalSetup` に置くと `bin/jobs` が先に動く。`e2e:prepare` は世界を作った後にも心拍の生きている Solid Queue のプロセスが無いことを確かめ、この順が崩れたら失敗する（OI-143）。`webServer` は SIGTERM で止め、`bin/jobs` に Solid Queue の登録を消させる。テストは、自分のワーカー番号（`parallelIndex`）の世界のアカウントでログインし、他の世界に書かない。
 - **一覧のページ**：E2E（`frontend/e2e/list-pagination.spec.ts`）で、品目の一覧（`variant: :e2e` は 22 件で、1 ページの 20 件を超える。`spec/scenarios/demo_world_spec.rb` で件数を確かめる）を、名前の昇順で 2 ページ目まで読み、1 ページ目と 2 ページ目の行が重ならず、合わせて `totalCount` の件数になることを確かめる。並べ替えの見出しを押すと、URL の `sort`・`dir` と `orderBy` が変わり、1 ページ目に戻ることも確かめる。
 - **画面の通し試験**：E2E に次の 2 本を置く。1 本目は、重要シナリオ S2（M26）を画面で通す。失効の後、発注側の取引先とカタログと出荷が空になり、発注登録が `NOT_PERMITTED` の文言になる。2 本目は、発注側の 2 社のユーザーで続けてログインし、前のテナントの伝票番号が画面に出ないことを確かめる。
 - **流用元の規則**：流用元の `handbook/README.md` の E2E と見た目の規則を、次のとおり持ち込む。
@@ -1793,7 +1793,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
 
   流用元の開発の進め方（台帳・交差レビュー・RED と GREEN の push の規約）と、配信先のエッジに掛かる上限の検査は持ち込まない。本書の「1 つのマイルストーンの進め方」と、`guides/dev-cycle.md` のレビューの回し方に従う。
 - **CI**：`.github/workflows/ci.yml` にジョブを 2 つ足す。`frontend` は、`npm ci`・`npm run codegen:check`・`npm run lint`（コメントの検査を含む）・`npm run typecheck`・`npm run test:unit` を流す。`e2e` は、既存の test のジョブと同じ PostgreSQL 18 のサービスとロールの準備をし、Ruby と Node を入れ、`npx playwright install --with-deps chromium` の後に `npm run test:e2e` を流す。
-- **サイクル 04 の逸脱検査から送った確かめ**：E2E が Rails のサーバーを起こす前に、`WEB_CONCURRENCY` の未設定・`0`・正の数・`auto` で Web（`METRICS_PROCESS=web`）を起こし、Puma が単一のモードで起きて exporter が値を出すかを確かめる（OI-142）。`0` が単一のモードなら、`guides/config.md`「exporter と値の置き場」を「クラスタのモードになる値」に具体化する
+- **サイクル 04 の逸脱検査から送った確かめ**：E2E が Rails のサーバーを起こす前に、`WEB_CONCURRENCY` の未設定・`0`・正の数・`auto` で Web（`METRICS_PROCESS=web`）を起こし、Puma が単一のモードで起きて exporter が値を出すかを確かめる（OI-142）。`0` が単一のモードなら、`guides/config.md`「exporter と値の置き場」を「クラスタのモードになる値」に具体化する。確かめた結果、未設定と `0` は単一のモードで起きて exporter が値を出し、`2` と `auto` はクラスタのモードで起きて `Platform::Metrics` が起動を止めたので、`guides/config.md` を「クラスタのモードになる値（正の数と `auto`）」に直した
 
 **完了条件**
 
