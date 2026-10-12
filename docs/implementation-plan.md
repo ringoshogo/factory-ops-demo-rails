@@ -17,17 +17,24 @@
 
 ### 共通の完了条件
 
-M2 以降のすべてのマイルストーンで、次のコマンドが成功する。CI（M1 で作る）も同じものを実行する。検査を足したマイルストーンより後では、その検査も共通の完了条件に加わる。
+M2 以降のすべてのマイルストーンで、実装者は PR を出す前に次のコマンドを流し、成功させる。CI（M1 で作る）も同じ検査を流す。検査を足したマイルストーンより後では、その検査も共通の完了条件に加わる。`bin/ci` は、`--due` のほかのこれらを CI と同じ形で 1 つで流す。
 
 ```sh
 bin/rubocop                                   # M15 からコメントの規約の Cop を含む
 bin/packwerk validate && bin/packwerk check   # M2 から
-bundle exec rspec --format progress --format json --out tmp/rspec.json
+bin/brakeman --no-pager                       # Rails のコードの静的なセキュリティ検査
+bin/bundler-audit                             # gem の既知の脆弱性
+bin/rails db:test:prepare
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json
+BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage   # M35 から。どの example も通らない分岐の一覧（失敗にはしない）
 bin/test-layers tmp/rspec.json                # M16 から。テストの層ごとの件数の報告
 bin/check-structure                           # structure.sql の往復の検査
 bin/check-schema-compat                       # M20 から。GraphQL のスキーマの破壊的変更の検査
 bin/check-open-items --due M<番号>            # 引当先がこのマイルストーンの残件が、open と blocked-user のまま残っていない
+bin/check-commit-refs                         # 台帳・証跡・引き継ぎに書いた SHA が HEAD の祖先である
 ```
+
+この一覧は、CI のワークフローが流す `bin/` の検査をすべて含む。`spec/platform/ci_checks_spec.rb` が、ワークフローの `bin/` のコマンドがこの一覧と `config/ci.rb` の工程にあることを確かめる。一覧に無い検査は、PR を出してから CI で初めて落ちる。
 
 `bin/check-structure` は、開発の DB にマイグレーションを流した結果と、`structure.sql` を読み込み直して書き出した結果が、どちらも `structure.sql` と一致することを確かめる。空の DB への `db:migrate` は `structure.sql` を読み込むだけでマイグレーションを流さないので、`structure.sql` を退避してから流す。文字列の列の CHECK 制約は `status::text IN (...)` と書く。`status IN (...)` と書くと、マイグレーションの結果と読み込み直した結果で式の表記が変わり、この検査が落ちる。
 
