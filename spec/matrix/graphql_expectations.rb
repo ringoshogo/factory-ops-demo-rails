@@ -5,10 +5,11 @@ module MatrixExpectations
   # （docs/architecture/graphql-schema.md「エラー」）
   OUTCOMES = %i[value empty null not_found not_permitted invalid_input forbidden].freeze
 
-  # "型.フィールド" => { query:, variables: ->(world) { ... }（省略可）, role:（mutation だけ）, expect: { ペルソナ => 結果 } }。
+  # "型.フィールド" => { query:, variables: ->(world) { ... }（省略可）, role:, member:（admin に限る読み取りだけ）, expect: { ペルソナ => 結果 } }。
   # 入力で許す役割が変わる mutation は、"型.フィールド#変種" の形で変種ごとに行を持つ。
   # query は対象のフィールドを 1 つだけ選ぶ。variables は世界の行の ID を引数に渡すときに書く。
-  # role は mutation を許す役割（:admin か :member）で、docs/architecture/graphql-schema.md「役割による制限」の表に合わせる。
+  # role は操作を許す役割（:admin か :member）で、docs/architecture/graphql-schema.md「役割による制限」の表に合わせる。
+  # member は admin に限る読み取りを member で呼んだ結果である。
   # expect はペルソナの admin で呼んだ結果である
   # 世界の各ペルソナは、自社が受注側の取引関係を factory で 1 件ずつ持つ（相手は世界の外のテナント）
   EVERYONE = MatrixWorld::PERSONAS.index_with(:value).freeze
@@ -24,35 +25,50 @@ module MatrixExpectations
 
   GRAPHQL = {
     "Query.viewer" => {
+      role: :member,
       query: "{ viewer { id } }",
       expect: EVERYONE
     },
     # 自社の監査ログ。世界のペルソナは admin で、どのペルソナにも自社の行だけが返る
     "Viewer.auditLogs" => {
+      role: :admin,
+      member: :forbidden,
       query: "{ viewer { auditLogs { nodes { action } } } }",
       expect: EVERYONE
     },
+    # 自社テナントの取引用コード。admin にだけ返し、member には null を返す
+    "Viewer.partnerCode" => {
+      role: :admin,
+      member: :null,
+      query: "{ viewer { partnerCode } }",
+      expect: EVERYONE
+    },
     "SupplierView.partnerships" => {
+      role: :member,
       query: "{ supplier { partnerships { id } } }",
       expect: EVERYONE
     },
     # 経路 2。有効な取引関係があれば権限付与が無くても開き、失効で閉じる
     "BuyerView.suppliers" => {
+      role: :member,
       query: "{ buyer { suppliers { supplier { name } } } }",
       expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :value, revoked_buyer: :empty, stranger: :empty }
     },
     # 経路 2 の取引先を 1 社選ぶ。supplier の取引先の関係を、発注側の各ペルソナから引く
     "BuyerView.supplier" => {
+      role: :member,
       query: "query($id: ID!) { buyer { supplier(supplierTenantId: $id) { supplier { name } } } }",
       variables: ->(world) { { id: world.tenants[:supplier] } },
       expect: { supplier: :null, granted_buyer: :value, ungranted_buyer: :value, revoked_buyer: :null, stranger: :null }
     },
     "SupplierView.items" => {
+      role: :member,
       query: "{ supplier { items { nodes { id } } } }",
       expect: EVERYONE
     },
     # 経路 1。有効な取引関係と view_catalog の付与がある発注側にだけ開き、付与があっても失効で閉じる
     "SupplierPartnership.catalog" => {
+      role: :member,
       query: "{ buyer { suppliers { catalog { nodes { code } } } } }",
       expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :empty, revoked_buyer: :empty, stranger: :empty }
     },
@@ -112,10 +128,12 @@ module MatrixExpectations
     },
     # 取り込みは書いたテナントだけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.imports" => {
+      role: :member,
       query: "{ supplier { imports { nodes { id } } } }",
       expect: EVERYONE
     },
     "SupplierView.import" => {
+      role: :member,
       query: "query($id: ID!) { supplier { import(id: $id) { id } } }",
       variables: ->(world) { { id: world.row("imports", :supplier).id } },
       expect: only(:supplier)
@@ -135,6 +153,7 @@ module MatrixExpectations
     },
     # 対応表は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.partMappings" => {
+      role: :member,
       query: "{ supplier { partMappings { nodes { id } } } }",
       expect: EVERYONE
     },
@@ -149,37 +168,44 @@ module MatrixExpectations
       expect: ONLY_SUPPLIER
     },
     "BuyerView.purchaseOrders" => {
+      role: :member,
       query: "{ buyer { purchaseOrders { nodes { id } } } }",
       expect: EVERYONE
     },
     # 経路 3。自社の発注に連結した出荷が、有効な取引関係と view_shipments の付与がある発注側にだけ見え、
     # 付与があっても失効で閉じる。受注側の supplier の発注には連結した出荷が無い
     "PurchaseOrder.supplierShipments" => {
+      role: :member,
       query: "{ buyer { purchaseOrders { nodes { supplierShipments { shippedOn } } } } }",
       expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :empty, revoked_buyer: :empty, stranger: :empty }
     },
     # 連結した受注を持つ発注。受注側の supplier にも見えない
     "BuyerView.purchaseOrder" => {
+      role: :member,
       query: "query($id: ID!) { buyer { purchaseOrder(id: $id) { id } } }",
       variables: ->(world) { { id: world.linked_order(:purchase_order).id } },
       expect: only(:granted_buyer)
     },
     "SupplierView.salesOrders" => {
+      role: :member,
       query: "{ supplier { salesOrders { nodes { id } } } }",
       expect: EVERYONE
     },
     # 発注に連結した受注。発注側の granted_buyer にも見えない
     "SupplierView.salesOrder" => {
+      role: :member,
       query: "query($id: ID!) { supplier { salesOrder(id: $id) { id } } }",
       variables: ->(world) { { id: world.linked_order(:sales_order).id } },
       expect: only(:supplier)
     },
     # 在庫は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.stocks" => {
+      role: :member,
       query: "{ supplier { stocks { nodes { onHand } } } }",
       expect: EVERYONE
     },
     "SupplierView.stockMovements" => {
+      role: :member,
       query: "{ supplier { stockMovements { nodes { id } } } }",
       expect: EVERYONE
     },
@@ -198,6 +224,7 @@ module MatrixExpectations
     },
     # 出荷は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.shipmentRequests" => {
+      role: :member,
       query: "{ supplier { shipmentRequests { nodes { id } } } }",
       expect: EVERYONE
     },
@@ -271,25 +298,36 @@ module MatrixExpectations
     },
     # 請求は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.billingTerms" => {
+      role: :member,
       query: "{ supplier { billingTerms { closingDay } } }",
       expect: EVERYONE
     },
     "SupplierView.billableItems" => {
+      role: :member,
       query: "{ supplier { billableItems { nodes { id } } } }",
       expect: EVERYONE
     },
     "SupplierView.invoices" => {
+      role: :member,
       query: "{ supplier { invoices { nodes { id } } } }",
       expect: EVERYONE
     },
     "SupplierView.invoice" => {
+      role: :member,
       query: "query($id: ID!) { supplier { invoice(id: $id) { id } } }",
       variables: ->(world) { { id: world.row("invoices", :supplier).id } },
       expect: only(:supplier)
     },
-    # 自社の集計を返す。他社の行を数えないことは、4 つの公開 API の spec が確かめる
+    # 自社の集計を返す。世界はどのペルソナにも各集計に当たる行を持つので、集計の公開 API が scope を外すと、
+    # RLS の SELECT を開いた応答で他社の行が数に入り、本文が変わる
     "SupplierView.dashboard" => {
-      query: "{ supplier { dashboard { businessDate salesOrderCounts { status count } unbilledTotal } } }",
+      role: :member,
+      query: <<~GRAPHQL,
+        { supplier { dashboard {
+          businessDate salesOrderCounts { status count } stocksBelowSafetyStock { item { code } onHand allocated safetyStock }
+          shipmentRequestsDueSoon { id dueDate } unbilledTotal
+        } } }
+      GRAPHQL
       expect: EVERYONE
     },
     # supplier の取引先（granted_buyer）の請求条件。ほかのペルソナには取引先でないので NOT_FOUND になる
@@ -327,10 +365,12 @@ module MatrixExpectations
     },
     # 受領請求書は発注側だけが所有する。どのペルソナにも自社の行だけが返る
     "BuyerView.receivedInvoices" => {
+      role: :member,
       query: "{ buyer { receivedInvoices { nodes { id } } } }",
       expect: EVERYONE
     },
     "BuyerView.receivedInvoice" => {
+      role: :member,
       query: "query($id: ID!) { buyer { receivedInvoice(id: $id) { id } } }",
       variables: ->(world) { { id: world.row("received_invoices", :granted_buyer).id } },
       expect: only(:granted_buyer)
@@ -343,5 +383,63 @@ module MatrixExpectations
       variables: ->(world) { { input: { supplierTenantId: world.tenants[:supplier], lines: [ { partNumber: "P-1", quantity: 1 } ] } } },
       expect: MatrixWorld::PERSONAS.index_with(:not_permitted).merge(granted_buyer: :value)
     }
+  }.freeze
+
+  # 入れ子のフィールドが、親の値から取った ID で呼ぶ公開 API（dataloader の一括取得と、親の ID を渡す resolver）。
+  # 入口の行列の応答は親の ID でしか引かないので、子の公開 API が scope を外しても、親と同じテナントの行しか返らず、
+  # RLS の SELECT を開いた 2 回目でも応答が変わらない。そこで、全ペルソナの ID を直に渡して、RLS の SELECT を開いても
+  # 自社の ID にだけ値を返すことを確かめる（spec/matrix/graphql_matrix_spec.rb）。
+  # "モジュール.メソッド" => { table:, column:（省略時は id）, persona:（省略時は :supplier）, ids:, call:, setup: }。
+  # ID はペルソナごとに、その表の世界の行の column の値を渡す。ids は ID の取り方が表の列で書けないときに書く。
+  # call は、ID の配列ではなく 1 つの ID とページを取る公開 API の呼び方を書く。setup は、世界に子の行が無い親に子を足す
+  NESTED_APIS = {
+    "Billing::BillableItems.for_invoice" => {
+      table: "invoices",
+      setup: ->(world, persona) { FactoryBot.create(:billable_item, invoice_id: world.row("invoices", persona).id) },
+      call: ->(actor, ids) { ids.index_with { Billing::BillableItems.for_invoice(actor, _1, first: 10, after: nil).values } }
+    },
+    "Billing::Invoices.by_ids" => { table: "invoices" },
+    "Billing::Invoices.tax_summaries_for" => { table: "invoice_tax_summaries", column: "invoice_id" },
+    # 経路 3。発注側の granted_buyer が、自社の発注に連結した出荷を読む。ほかの発注側の発注の ID には値を返さない
+    "Fulfillment::PartnerShipments.for_purchase_orders" => {
+      persona: :granted_buyer,
+      ids: ->(world, persona) { world.linked_order(:purchase_order, persona).id if MatrixWorld::PARTNERSHIPS.key?(persona) }
+    },
+    "Fulfillment::ShipmentRequests.for_sales_orders" => { table: "shipment_requests", column: "sales_order_id" },
+    "Fulfillment::ShipmentRequests.instructions_for" => { table: "shipping_instructions", column: "shipment_request_id" },
+    "Fulfillment::ShipmentRequests.lines_for" => { table: "shipment_request_lines", column: "shipment_request_id" },
+    "Fulfillment::ShipmentRequests.request_lines" => { table: "shipment_request_lines" },
+    "Fulfillment::ShipmentRequests.shipment_lines_for" => { table: "shipment_lines", column: "shipment_id" },
+    "Fulfillment::ShipmentRequests.shipments_for" => { table: "shipments", column: "shipment_request_id" },
+    "Imports::Runs.row_errors" => {
+      table: "import_rows", column: "import_id",
+      setup: ->(world, persona) { FactoryBot.create(:import_row, import_id: world.row("import_rows", persona).import_id, error: "失敗") },
+      call: ->(actor, ids) { ids.index_with { Imports::Runs.row_errors(actor, _1, first: 10, after: nil).values } }
+    },
+    "Inventory::Stocks.for_items" => { table: "stocks", column: "item_id" },
+    "Partnerships::Directory.user_names" => { table: "users" },
+    "Purchasing::PurchaseOrders.cancellation_requests_for" => { table: "cancellation_requests", column: "purchase_order_id" },
+    "Purchasing::PurchaseOrders.inbound_shipment_lines_for" => { table: "inbound_shipment_lines", column: "inbound_shipment_id" },
+    "Purchasing::PurchaseOrders.inbound_shipments_for" => { table: "inbound_shipments", column: "purchase_order_id" },
+    "Purchasing::PurchaseOrders.inspections_for" => { table: "receipt_inspections", column: "inbound_shipment_id" },
+    "Purchasing::PurchaseOrders.lines_by_id" => { table: "purchase_order_lines" },
+    "Purchasing::PurchaseOrders.lines_for" => { table: "purchase_order_lines", column: "purchase_order_id" },
+    "Purchasing::ReceivedInvoices.lines_for" => { table: "received_invoice_lines", column: "received_invoice_id" },
+    "Sales::CancellationReviews.for_sales_orders" => { table: "cancellation_reviews", column: "sales_order_id" },
+    "Sales::Catalog.items_for" => { table: "items" },
+    # 照合前の明細には説明が無いので、照合した明細を足して渡す
+    "Sales::ItemPrices.explain" => {
+      ids: ->(world, persona) { FactoryBot.create(:sales_order_line, :matched, sales_order_id: world.row("sales_orders", persona).id).id },
+      call: ->(actor, ids) { Sales::ItemPrices.explain(actor, ids, as_of: Time.current) }
+    },
+    "Sales::ItemPrices.history" => { table: "item_prices", column: "item_id" },
+    "Sales::SalesOrders.by_ids" => { table: "sales_orders" },
+    "Sales::SalesOrders.lines_by_ids" => { table: "sales_order_lines" },
+    "Sales::SalesOrders.lines_for" => { table: "sales_order_lines", column: "sales_order_id" }
+  }.freeze
+
+  # 他社の ID にも値を返すことが仕様の公開 API と、その理由
+  NESTED_APIS_CROSS_TENANT = {
+    "Partnerships::Directory.tenants" => "取引先の名前を返す。tenants は RLS を付けない表で、名前は相手にも見せる"
   }.freeze
 end

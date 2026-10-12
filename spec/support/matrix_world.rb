@@ -1,4 +1,5 @@
 require_relative "tenant_helpers"
+require_relative "matrix_cross_read"
 
 # 行列テストの世界（docs/architecture/context-map.md「テナントと所有」、docs/architecture/data-model.md「RLS」）。ペルソナごとにテナントと、
 # admin と member のユーザーを 1 人ずつ作り、
@@ -6,7 +7,8 @@ require_relative "tenant_helpers"
 # そのうえで、supplier が受注側になる取引関係を 3 つ結び、supplier の公開品目を 1 件足す
 # （表ごとの行は factory の既定のままなので、品目は公開しない）。
 # さらに supplier と取引関係を結んだ発注側ごとに、supplier への発注と、それに連結した supplier の受注と出荷実績を 1 組足す。
-# 連結元の ID を持ち合う行でも、相手からは見えないことと、出荷実績を読む経路 3 が付与と失効に従うことを確かめるためである
+# 連結元の ID を持ち合う行でも、相手からは見えないことと、出荷実績を読む経路 3 が付与と失効に従うことを確かめるためである。
+# 最後に、どのペルソナにもダッシュボードの各集計に当たる行を足す
 class MatrixWorld
   include TenantHelpers
 
@@ -26,10 +28,25 @@ class MatrixWorld
 
   # 行列の spec のファイルごとに、世界を 1 回だけ作って全 example で使い回す（docs/guides/testing.md「行列テストとの分担」）。
   # example ごとに作ると、表の数に比例する世界を表の数に比例する example ぶん作り、時間が表の数の 2 乗で伸びる。
-  # 各 example は、rspec-rails が世界と同じ接続の上に開くセーブポイントの中で動き、終わりに巻き戻る
-  def self.share_per_file(group)
-    group.before(:context) { @matrix_world = MatrixWorld.open }
-    group.after(:context) { MatrixWorld.close if @matrix_world }
+  # 各 example は、rspec-rails が世界と同じ接続の上に開くセーブポイントの中で動き、終わりに巻き戻る。
+  # cross_read: true は、世界を開く前に RLS の SELECT を開くポリシーを足し、世界を閉じた後に外す（MatrixCrossRead）。
+  # 世界のトランザクションが表のロックを持つ間は足し外しが待ち合うので、順を 1 つのフックの中で固定する。
+  # rspec は before(:context) が失敗しても after(:context) を走らせるので（rspec-core 3.13 の lib/rspec/core/example_group.rb の
+  # ExampleGroup.run が ensure で run_after_context_hooks を呼ぶ）、世界を開く途中の失敗でもポリシーは外れる。
+  # 外すのは足し終えたときだけにする。足すのに失敗したときに外すと、同じ DB に先に足した別の実行のポリシーを消す
+  def self.share_per_file(group, cross_read: false)
+    group.before(:context) do
+      if cross_read
+        MatrixCrossRead.add!
+        @matrix_cross_read = true
+      end
+      @matrix_world = MatrixWorld.open
+    end
+    group.after(:context) do
+      MatrixWorld.close if @matrix_world
+    ensure
+      MatrixCrossRead.remove! if @matrix_cross_read
+    end
     group.let(:world) { @matrix_world }
   end
 
@@ -101,6 +118,7 @@ class MatrixWorld
     end
     as(:supplier) { FactoryBot.create(:item, :published) }
     @linked_orders = PARTNERSHIPS.keys.index_with { |buyer| link_orders(buyer) }
+    PERSONAS.each { |persona| as(persona) { add_dashboard_rows(persona) } }
   end
 
   # 世界のオブジェクトを example の間で使い回すので、属性を凍らせ、example の中の属性の代入を例外にする。
@@ -130,6 +148,15 @@ class MatrixWorld
   def persona_of(tenant_id) = tenants.key(tenant_id) || tenant_id
 
   private
+
+  # ダッシュボードの集計に当たる行。受注と未請求の明細は表ごとの行で足りる。在庫と出荷依頼は、factory の既定では
+  # 安全在庫を割らず期限も無いので、ここで足す。どの集計も自社の行を数えるので、集計の公開 API が scope を外すと、
+  # RLS の SELECT を開いた入口の行列で他社のこの行が数に入る（docs/guides/testing.md「行列テストとの分担」）。
+  # 在庫はダッシュボードが品目のコードで並べるので、自社の品目に作る
+  def add_dashboard_rows(persona)
+    FactoryBot.create(:stock, item_id: row("items", persona).id, on_hand: 1, safety_stock: 2)
+    FactoryBot.create(:shipment_request, due_date: Date.current)
+  end
 
   # 受注側の ACL が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、
   # 出荷が「出荷可能」から作るのと同じ形に、受注を全量で出荷する

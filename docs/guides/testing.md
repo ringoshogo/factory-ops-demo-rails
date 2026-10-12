@@ -122,9 +122,22 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 行列の spec を書く人は、次の 2 つを守る。
 
-- 別の接続を使わない（`OwnerConnection`・スレッド・`use_transactional_tests = false`）。別の接続からは、コミットしていない世界の行が見えない。別の接続でコミットした行は、example の終わりに巻き戻らない。
+- 別の接続を使わない（`OwnerConnection`・スレッド・`use_transactional_tests = false`）。別の接続からは、コミットしていない世界の行が見えない。別の接続でコミットした行は、example の終わりに巻き戻らない。例外は、下の RLS の SELECT を開くポリシーの足し外しだけで、補助が世界を開く前と閉じた後に所有ロールの接続で行う。
 - 世界のオブジェクトを書き換えない。オブジェクトは example の間で使い回し、DB の巻き戻しでは戻らない。`MatrixWorld` は世界が持つインスタンスの属性を凍らせ、属性の代入を `FrozenError` にする。`reload`・`destroy` と、関連先のインスタンスの書き換えは捕まえないので、呼ばない。
 
 補助は、世界のトランザクションがファイルの終わりより前にコミットされたか巻き戻ったら、`after(:context)` で失敗させる（`unpin_connection!` が偽を返す）。世界を作った後にテナントの設定が残っていても失敗させる。残った設定は外側のトランザクションの終わりまで全 example に渡り、生 SQL の RLS の結果を変えるからである。`spec/matrix/matrix_world_spec.rb` が、example で足した行とテナントの設定が次の example に残らないことと、ファイルの終わりに世界が残らないことを確かめる。
+
+入口の行列は、読み取りの行ごとに、同じ要求を RLS の SELECT を開いて送り直し、本文が変わらないことも確かめる。認可の scope は RLS に任せない（`../architecture/graphql-schema.md`「認可」）が、相手から読む経路の無い表では、公開 API が scope を外しても RLS が他社の行を隠すので、1 回目の応答は変わらないからである。結果の種類だけを比べると、集計を返す入口（`supplier.dashboard`）は scope を外しても種類が変わらないので、本文を比べる。並びだけが変わったときは、scope の抜けと区別して「並びの決まらない一覧」として落とす。仕組みは次のとおりである。
+
+- `MatrixWorld.share_per_file(self, cross_read: true)` は、世界を開く前に、テナントの表ごとに、設定 `app.matrix_cross_read` が `on` のときだけ全行を読ませる SELECT のポリシーを所有ロールの接続で足し、世界を閉じた後に外す（`spec/support/matrix_cross_read.rb`）。ポリシーの足し外しは表のロックを取るので、世界のトランザクションが開いている間に行うと待ち合う。足すのは 1 つのトランザクションなので、途中で失敗しても残らない。外すのは足し終えたときだけである。接続先の名前がテストの DB でなければ足さずに失敗する
+- 設定は example の中で `MatrixCrossRead.on!` が `SET LOCAL` と同じ形で入れ、example のセーブポイントと一緒に戻る。ロールや DB の既定には書かない
+- ポリシーの SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。`structure.sql` に混ざれば `bin/check-structure` が、消し忘れれば `spec/db/tenant_enforcement_spec.rb`（テナントの表のポリシーは `owner_write` と 6 つの表の `partner_read` だけ）が落とす
+- `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと、公開 API の値も入口の要求の応答も他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行を持つ
+- 1 つのテストの DB で、行列の spec を同時に 2 つの実行から流さない。ポリシーの名前は 1 つなので、後から足す実行は「ポリシーがすでにある」で失敗する。並行で流すときは、別名のテストの DB を使う。途中で止めた実行が残したポリシーも同じ失敗になるので、ほかに流している実行が無いことを確かめてから `bin/rails runner -e test 'require "./spec/support/matrix_world"; MatrixCrossRead.remove!'` で外す
+- 表の行列（`table_matrix_spec.rb`）には掛けない。表の行列は生 SQL で RLS そのものを確かめるからである
+
+入れ子のフィールドが親の値から取った ID で呼ぶ公開 API（dataloader の一括取得と、親の ID を渡す resolver）は、入口の行列の応答では scope の抜けが見えない。親と同じテナントの子しか引かないので、scope を外しても RLS の SELECT を開いても、応答が変わらないからである。入口の行列は、これらの公開 API に全ペルソナの ID を直に渡し、RLS の SELECT を開いても呼んだペルソナの ID にだけ値を返すことを確かめる（`spec/matrix/graphql_expectations.rb` の `NESTED_APIS`）。`app/graphql` が親の ID で呼ぶ公開 API を足したのに行が無ければ、列挙の完全性の example が落ちる。
+
+確かめるのは GraphQL の入口から届く読み取りだけである。GraphQL を通らない公開 API（通知の宛先・取り込みの再登録・単価の移行）の所有の条件は、この 2 回目の外にある。
 
 接続の固定には `ActiveRecord::ConnectionPool#pin_connection!` を使う。Rails の公開の文書に無いメソッドで、rspec-rails の transactional fixtures が使うものと同じである。`lock_thread` は transactional fixtures の既定と同じ真にし、example の固定と形をそろえる（activerecord 8.1 の `active_record/test_fixtures.rb` の `class_attribute :lock_threads, default: true`。固定と入れ子の数え方は `active_record/connection_adapters/abstract/connection_pool.rb` の `pin_connection!`・`unpin_connection!`）。Rails の更新でこのメソッドの名前か入れ子の数え方が変わると、行列の spec は `before(:context)` か `after(:context)` で落ちる。そのときは、test-prof の `before_all` がその版で何を使っているかを確かめて移るか、`let(:world) { MatrixWorld.new }` で example ごとに作る形に戻す。test-prof の `before_all` も同じメソッドを包んでいるので、移るだけでは退路にならない。
