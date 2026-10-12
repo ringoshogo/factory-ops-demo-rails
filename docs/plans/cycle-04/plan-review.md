@@ -4,26 +4,26 @@
 
 M33（フロントエンド）は作者の方針で最後に実装するが、`guides/dev-cycle.md`「全体の流れ」のサイクルの表でサイクル 04 に入っているので、このレビューに含めた。M33 はサイクル 01 で計画レビューを済ませているので、サイクル 03 までの変更（役割の制限・M37・M30〜M32・業務の今日の時刻帯）との食い違いを中心に読ませた。
 
-レビューに出す前に、取りまとめ役が計画を観点ごとに読み直し、コードと照らして直した（`122dd68`）。初回のレビューは、その版を読んだ。2 系統の High を直した版（`e79d7ed`）を、この文書と一緒に Codex で読み直した（読み直し 1）。
+レビューに出す前に、取りまとめ役が計画を観点ごとに読み直し、コードと照らして直した（`122dd68`）。初回のレビューは、その版を読んだ。2 系統の High を直した版を、この文書と一緒に Codex で読み直した（読み直し 1、`16a79bd`）。そこで出た High を直した版を、Codex でもう一度読み直した（読み直し 2）。
 
 読む順は、マイルストーンごとの判定 → 指摘ごとの対応 → 指摘の根拠を確かめた結果 → 取りまとめ役が読み直しで直したこと → 作者の判断を待つもの → 直さなかった指摘と台帳に積んだもの、である。指摘の出典は次の形で示す。
 
 | | Claude | Codex |
 |---|---|---|
 | 初回 | `<マイルストーン>-<番号>`（`M30-1` など） | `P<番号>` |
-| 読み直し 1 | — | `N<番号>` |
+| 読み直し 1・2 | — | `N<番号>` |
 
 Codex は、初回の指摘にも `M30-1` の形の ID を振った。Claude の ID とぶつかるので、この文書では Codex の初回の指摘を `P01`〜`P13` に振り直した。対応は、M37-1→P01、M37-2→P02、M30-1→P03、M30-2→P04、M30-3→P05、M30-4→P06、M31-1→P07、M31-2→P08、M31-3→P09、M32-1→P10、M32-2→P11、M33-1→P12、M33-2→P13 である。
 
 ## 判定
 
-| マイルストーン | 初回 Claude | 初回 Codex | 読み直し 1 Codex |
-|---|---|---|---|
-| M37 RLS が隠す scope の抜けと、読み取りの役割を行列で捕まえる | Conditional Go | Conditional Go | （読み直しの結果） |
-| M30 メトリクス | Conditional Go | Conditional Go | （読み直しの結果） |
-| M31 SLO と障害対応の手順書 | Go | Conditional Go | （読み直しの結果） |
-| M32 シードデータ | Conditional Go | Conditional Go | （読み直しの結果） |
-| M33 フロントエンド | Conditional Go | Conditional Go | （読み直しの結果） |
+| マイルストーン | 初回 Claude | 初回 Codex | 読み直し 1 Codex | 読み直し 2 Codex |
+|---|---|---|---|---|
+| M37 RLS が隠す scope の抜けと、読み取りの役割を行列で捕まえる | Conditional Go | Conditional Go | Go | （読み直し 2 の結果） |
+| M30 メトリクス | Conditional Go | Conditional Go | Go | （読み直し 2 の結果） |
+| M31 SLO と障害対応の手順書 | Go | Conditional Go | Go | （読み直し 2 の結果） |
+| M32 シードデータ | Conditional Go | Conditional Go | Conditional Go | （読み直し 2 の結果） |
+| M33 フロントエンド | Conditional Go | Conditional Go | Go | （読み直し 2 の結果） |
 
 全体の判定は、初回は 2 系統とも Conditional Go だった。Claude は High を 3 件、Codex は High を 8 件挙げ、それを直せば Go とした。Conditional Go は再レビューを要しないが、High が 10 件あり、M32 には公開 API を足す直しが入ったので、直した版を Codex で 1 回読み直した。
 
@@ -41,7 +41,8 @@ Codex は、初回の指摘にも `M30-1` の形の ID を振った。Claude の
 
 読み直しでは、前の High の指摘が解消したかと、High 以上の新しい指摘だけで判定した。
 
-（読み直し 1 の結果）
+- **読み直し 1**：前の High 10 件をすべて解消と判定した。M32 に新しい High の N01（シードがジョブを実行した後に、実行待ちの行と同時実行の制御のセマフォが残る）が出た。
+- **読み直し 2**：（読み直し 2 の結果）
 
 ## 指摘と対応
 
@@ -90,12 +91,14 @@ Codex は、初回の指摘にも `M30-1` の形の ID を振った。Claude の
 | M32-4 | Medium | 流し方がイベントのジョブだけで、取り込みが進まない | 作るもの 4。イベントと取り込みのジョブをその場で流し、通知は `bin/jobs` に任せる |
 | M32-6 | Medium | 作者の判断を待つ行が M33 の着手を止めること、OI-06 を M32 の終わりの条件に置く理由が書かれていない | OI-06 の引当先を M33 にし、M33 の著者判断 8 で確かめると書いた。M32 は残りの 3 つ（OI-117・OI-118・OI-120）を待つが、M33 は着手の前に作者に著者判断を確かめるので、そのときまでにそろうと書いた |
 | M32-1 | Low | テナントの境界とコンテキストの境界への影響が書かれていない | 作るもの 6 を足した |
+| N01 | High | シードがジョブを `ActiveJob::Base.execute` と `finished!` で流すと、実行待ちの行と、`Imports::RunJob` の `limits_concurrency` のセマフォが残る。同じテナントの次の取り込みが 1 時間待たされ、`bin/jobs` が同じジョブをもう一度動かす | 作るもの 4。実行の後に、ワーカーと同じ順で `ready_execution` を消して `finished!` にし、`unblock_next_blocked_job` でセマフォを返す（solid_queue 1.7.0 の `claimed_execution.rb`）。`demo_world_spec.rb` で、実行待ちの行とセマフォが残らず、次の取り込みが blocked にならないことを確かめる |
 
 ### M33
 
 | 出典 | 重大度 | 指摘 | 直した節と内容 |
 |---|---|---|---|
 | M33-2 | Medium | 画面の問い合わせの正本を `frontend/graphql/` に移すと、mutation の文書と詳細の問い合わせで既存の予算と複雑度の検査が落ちる。撤退コスト「小」が合わない | 判断「画面の問い合わせの正本」。予算と複雑度は query だけを対象にし、予算の表に一覧の行を足し、撤退コストを中にした。完了条件に 2 つの spec と `metrics_subscriber_spec.rb` を足した |
+| （読み直し 1 の参考） | Medium | 予算の spec は query の文書と表の行の一致を確かめるので、詳細の問い合わせの扱いも要る | 判断「画面の問い合わせの正本」。query の文書のすべて（一覧と詳細）の行を予算の表に足すと書いた |
 | P13・M33-3 | Medium | 画面 18・20 が、一覧の中にコネクションを入れ子にする形のまま（OI-17） | 作るもの 2 の画面の表。取引先の一覧と、選んだ 1 社の `buyer.supplier(supplierTenantId:)` のカタログに分けた |
 | M33-1 | Low | `admin` に限る操作の印が一部の画面にしか無い。取り込みの開始は種類で役割が変わる | 作るもの 2。`admin` に限る操作を画面ごとに挙げ、取り込みは種類 `items` の選択肢だけを `admin` に出すと書いた |
 | M33-4 | Low | 業務の日付を Next が決めると、業務の今日を決める場所が 2 か所になる | 作るもの 3。Next では決めず、API の `businessDate` を使う |
@@ -112,6 +115,7 @@ Codex は、初回の指摘にも `M30-1` の形の ID を振った。Claude の
 | `yabeda-prometheus` 0.9.1 は `prometheus-client` を 5 未満に限る | 正しい。`gem specification -r yabeda-prometheus -v 0.9.1` の依存 |
 | 発注日は公開 API が `Date.current` で決める（M32-3） | 正しい。`packs/purchasing/app/public/purchasing/ordering.rb` の `order_date: Date.current` |
 | `bin/jobs` の supervisor は fork の前に `on_start` を呼ぶ（M30 の作るもの 4） | 正しい。solid_queue 1.7.0 の README「Lifecycle hooks」 |
+| `finished!` は終わりの時刻を書くだけで、セマフォを返さない（N01） | 正しい。solid_queue 1.7.0 の `app/models/solid_queue/job/executable.rb` の `finished!` と、`claimed_execution.rb` の `finalize` が後で呼ぶ `unblock_next_blocked_job`（`job/concurrency_controls.rb`、公開のメソッド） |
 | 既定のバケットが最大 10 秒（P04・M30-6）、`DirectFileStore` のゲージの既定の集計が `:all` で `pid` を足す（P06） | 2 系統が yabeda-prometheus 0.9.1 の `adapter.rb` と prometheus-client 4.2.5 の `direct_file_store.rb` を引いた。手元では確かめていない |
 
 ## 取りまとめ役が読み直しで直したこと

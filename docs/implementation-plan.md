@@ -1461,7 +1461,7 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
    - 冪等：同じ `namespace` の受注側のテナントがあれば、何も作らずに、あるテナントとアカウントを返す。冪等は `namespace` ごとに判定する
 2. 中身：受注側に青嵐精機工業、発注側に架空の組立メーカー 2 社（全権限の付与ありと、失効済み）を作る。流用元（factory-ops-demo の `958de71`）の `backend/internal/seed/default.go` から品目（`ITM-001`〜`ITM-020`、単価・安全在庫・初期在庫）を写し、発注側の 2 社の名前に得意先の `CUS-001`・`CUS-002` を使う（OI-123）。得意先の住所と担当者、ほかの 3 社は写さない。本デモの得意先はテナントで、住所と担当者を持たないからである。受注・出荷・検収・請求書の確定まで進んだ取引と、途中の取引を混ぜる。品目には、単価の改定の予約と訂正を 1 件ずつ含める。取り込みも 1 件（一部の行が失敗したもの）含める。
 3. 日付：発注日・検収日・請求書の発行日は、公開 API が `Date.current`・`Time.current` で決める。シードはこれを動かさず、シードを流した日の日付にする。入力で渡す日付（希望納期 `desired_delivery_on`・出荷日 `shipped_on`・単価の改定日）だけを、今日からの差で書く。流用元のように受注日を過去にずらすことはしない。表へ直接書くことになるからである。
-4. 書き方：シードは公開 API とイベントを通して作り、業務の表へ直接書かない。公開 API は、テナントごとに `Tenancy.with_tenant` を開き、そのテナントの `admin` のユーザーを操作者にして呼ぶ。各段の後に、登録済みのジョブのうち、イベント（`Contracts::EventJob`）と取り込み（`Imports::RunJob`）を、発行元のトランザクションの外で古い順に実行し、無くなるまで繰り返す（`spec/support/events.rb` の `deliver_enqueued_events` と同じ形。`solid_queue_jobs` の行を読み、`ActiveJob::Base.execute` で動かして `finished!` にする）。通知のジョブは実行せず、`bin/jobs` に任せる（開発の配送先は `tmp/mails/`）。この流し方を `DemoWorld` に置き、`spec/support/events.rb` もそれを呼ぶ形にして 1 つにする。
+4. 書き方：シードは公開 API とイベントを通して作り、業務の表へ直接書かない。公開 API は、テナントごとに `Tenancy.with_tenant` を開き、そのテナントの `admin` のユーザーを操作者にして呼ぶ。各段の後に、登録済みのジョブのうち、イベント（`Contracts::EventJob`）と取り込み（`Imports::RunJob`）を、発行元のトランザクションの外で古い順に実行し、無くなるまで繰り返す（`spec/support/events.rb` の `deliver_enqueued_events` と同じく `solid_queue_jobs` の行を読み、`ActiveJob::Base.execute` で動かす）。テストと違い、シードは巻き戻らないので、実行した後の後始末を Solid Queue のワーカーと同じ順で行う。1 つのトランザクションで、ジョブの `ready_execution` を消して `finished!` にし、その後で `unblock_next_blocked_job` を呼んで同時実行の制御（`Imports::RunJob` の `limits_concurrency`）のセマフォを返す（solid_queue 1.7.0 の `app/models/solid_queue/claimed_execution.rb` の `finished`・`finalize`）。`finished!` だけでは、実行待ちの行とセマフォが残り、`bin/jobs` が同じジョブをもう一度動かし、同じテナントの次の取り込みが `duration`（1 時間）まで待たされる。通知のジョブは実行せず、`bin/jobs` に任せる（開発の配送先は `tmp/mails/`）。この流し方を `DemoWorld` に置き、`spec/support/events.rb` もそれを呼ぶ形にして 1 つにする。
 5. 公開 API が無い 2 つの書き込み：いまはテナントとユーザーを作る公開 API と、安全在庫を設定する公開 API が無い（テストは factory で表へ書く）。次の 2 つを足す（OI-125）。
    - `Partnerships::Onboarding.register(name:, code:, partner_code:, users:)`：テナントと、`admin`・`member` のユーザーを作り、テナントの ID を返す。テナントがまだ無いので、操作者を取らず、テナントの設定の外で呼ぶ（`tenants` への書き込みは追加だけを許す、`data-model.md`「RLS」）。ユーザーは作ったテナントの `Tenancy.with_tenant` の中で書く。`production` の環境では呼べない（例外）。サインアップの入口ではなく、シードと E2E の準備のためのものである
    - `Inventory::Stocks.set_safety_stock(actor, item_id:, safety_stock:)`：自社の在庫の安全在庫を変える。所有の条件を scope で明示する。役割は問わない（在庫の調整 `adjustStock` と同じ）。GraphQL の入口は足さない
@@ -1490,7 +1490,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 OI-118 の直しは、決まった案で直した公開 API の spec（上の一覧）もコマンドに足す。
 
 - `spec/scenarios/seeds_spec.rb`：`DemoWorld.build(namespace: "", variant: :seed)` の後、両社の `admin` と `member` でログインして確かめる。受注側は `supplier.dashboard`・`supplier.salesOrders`・`supplier.invoices`・`supplier.imports` が値を返す。全権限の付与がある発注側は、`buyer.suppliers` とそのカタログ・出荷が値を返す。失効済みの発注側は、`buyer.suppliers` とカタログ・出荷が空になり（`graphql-schema.md`「発注側の視点」の経路 2）、自社の `buyer.purchaseOrders`・`buyer.receivedInvoices` は値を返す
-- `spec/scenarios/demo_world_spec.rb`：同じ DB に `namespace` の違う 2 組を作れ、それぞれの 2 回目は行を増やさない。操作者を `member` に替えると、`admin` に限る段がどれも例外で止まる。`variant: :e2e` は、状況の enum の全値の行を持つ
+- `spec/scenarios/demo_world_spec.rb`：同じ DB に `namespace` の違う 2 組を作れ、それぞれの 2 回目は行を増やさない。操作者を `member` に替えると、`admin` に限る段がどれも例外で止まる。`variant: :e2e` は、状況の enum の全値の行を持つ。作った後に、実行したジョブの `solid_queue_ready_executions` の行と、取り込みのセマフォ（`solid_queue_semaphores`）が残らず、同じテナントで次の取り込みを始めると、そのジョブが blocked にならずに ready になる
 - 置き場：2 つとも `spec/scenarios` に置く。どの層の置き場にも当たらないファイルは `bin/test-layers` が落とす
 
 **範囲外**：公開の配置と訪問者ごとのデータ（M33 の著者判断 8）、性能の測定のための大量のデータ、サインアップの入口。
@@ -1594,9 +1594,9 @@ OI-118 の直しは、決まった案で直した公開 API の spec（上の一
 
 **判断**：画面の問い合わせの正本をどこに置くか
 
-- **既定の推奨**：`frontend/graphql/` を正本にする。M17 の `spec/fixtures/graphql/screens/` を消し、クエリ数の予算（M17）・複雑度のテスト（M26）・操作名の登録の一致のテスト（M30）が `frontend/graphql/` を読むように替える。画面が実際に送る問い合わせと、検査する問い合わせが 1 つになる。`frontend/graphql/` には mutation の文書と詳細の問い合わせも入るので、クエリ数の予算と複雑度のテストは query の文書だけを対象にし、予算の表（`SCREENS`）に、一覧の問い合わせのすべての行を足す。操作名の登録の一致のテストは、query を登録の表の `queries` と、mutation を `mutations` と照らす。
+- **既定の推奨**：`frontend/graphql/` を正本にする。M17 の `spec/fixtures/graphql/screens/` を消し、クエリ数の予算（M17）・複雑度のテスト（M26）・操作名の登録の一致のテスト（M30）が `frontend/graphql/` を読むように替える。画面が実際に送る問い合わせと、検査する問い合わせが 1 つになる。`frontend/graphql/` には mutation の文書と詳細の問い合わせも入るので、クエリ数の予算と複雑度のテストは query の文書だけを対象にし、予算の表（`SCREENS`）に、query の文書のすべて（一覧と詳細）の行を足す。予算の spec は、query の文書と表の行の一致を確かめるからである。操作名の登録の一致のテストは、query を登録の表の `queries` と、mutation を `mutations` と照らす。
 - **裏返る条件**：`frontend/` を別のリポジトリに置く → `spec/fixtures/graphql/screens/` を残し、フロントエンドの CI で両者の一致を確かめる。
-- **撤退コスト**：中。3 つのテストの読み先を替え、予算と複雑度のテストに query だけを選ぶ条件を足し、予算の表に画面の一覧の行を足す。
+- **撤退コスト**：中。3 つのテストの読み先を替え、予算と複雑度のテストに query だけを選ぶ条件を足し、予算の表に画面の query の文書の行を足す。
 
 **作るもの 4：テストとゲート**
 
