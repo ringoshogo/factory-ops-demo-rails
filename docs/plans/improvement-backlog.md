@@ -108,3 +108,4 @@
 | IB-90 | 未着手 | 作り直し（`demo:reset`）を、本番の環境の外では入口で止めるか | `Platform::DemoWorldGate.open?` は開発とテストで真なので、手元で `bin/rails demo:reset` を流すと入口を通る。実際に止めているのは、ServiceAccount の場所（`KUBERNETES_SERVICE_HOST`）が無いことによる例外で、開発の DB を消す前に止まるのは順に頼っている（M41 の実装レビュー、Claude の違和感） | 2026-10-13 |  |
 | IB-91 | 未着手 | CI の `images` のジョブの push を、テストのジョブの成功に結ぶか | main への push で、`images` のジョブはほかのジョブの成否を待たずに GHCR へ push する。テストが落ちた commit のイメージも SHA のタグで置かれる。作者が SHA を選んで適用するので実害は小さいが、`needs:` で結ぶと CI の時間が延びる（M41 の実装レビュー、Claude の違和感） | 2026-10-13 |  |
 | IB-92 | 未着手 | 公開の配置に NetworkPolicy を置くか | `postgres` と `web` の Service には、同じ k3s のほかの名前空間（流用元の `factory-ops`）の Pod から届く。クラスタの外からは届かず、DB はパスワードで守られている（M41 の実装レビュー、Claude の違和感） | 2026-10-13 |  |
+| IB-93 | 未着手 | 公開の配置のイメージの組み立てを、arm64 の GitHub ホストのランナーに移すか | PR #60 の CI で、`images` のジョブの Rails のイメージの QEMU の上の組み立てが 24 分 47 秒で、`adr/009`「見直す条件」の 20 分を超えた。GitHub Actions のキャッシュが空の初回の組み立てで、キャッシュが効いた後の時間はまだ測っていない（M41 の実装レビューの確かめ） | 2026-10-13 |  |

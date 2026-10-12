@@ -41,9 +41,9 @@ daily-reset          毎日、web と jobs を 0 にして DB ごと作り直し
 
 ## Secret
 
-Secret はリポジトリに置かない。作者が名前空間に `kubectl create secret` で入れ、値はその場で生成して、どこにも書き残さない。マニフェストが参照する Secret とキーは次のとおりで、`deploy/preflight.sh` がマニフェストから同じ一覧を集めて、名前空間にあるかを確かめる。
+Secret はリポジトリに置かない。作者が「作者の手順」1 で名前空間に入れ、値はその場で生成して、どこにも書き残さない。マニフェストが参照する Secret とキーは次のとおりで、`deploy/preflight.sh` がマニフェストから同じ一覧を集めて、名前空間にあるかを確かめる。
 
-| Secret | キー | 使うコンテナ | 中身 |
+| Secret | キー | 使うワークロード | 中身 |
 |---|---|---|---|
 | `db-credentials` | `app-password` | postgres・web・jobs・migrate・daily-reset | アプリのロール `factory_app` のパスワード |
 | `db-credentials` | `owner-password` | postgres・migrate・daily-reset | 所有ロール `factory_owner` のパスワード。RLS を素通りするので、DB を作る工程にだけ渡す |

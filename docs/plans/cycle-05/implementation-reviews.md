@@ -502,3 +502,121 @@ rubocop・packwerk・`bin/check-open-items`・`bin/check-commit-refs`・`bin/che
 引当先が M33 の行は、着手の前と PR の前に台帳を読んだ。OI-17・OI-142・OI-143 を閉じた。OI-06〜OI-14 は作者の判断どおりに作った（OI-07 の一覧の読み方、OI-08 の色、OI-09 のログインの画面、OI-10 のサイドバー、OI-11 の期限、OI-13 の入荷予定のタブ。OI-14 の配置は M41）。M33 で決めたことは OI-161〜OI-167 に judgment で積んだ。
 
 作者を待つものは 2 つある。OI-144（並べ替えの列を一覧の表に限るか）は blocked-user のままで、既定（限る）で作った。並べ替えの見出しは orderBy の field から作るので、作者が変えれば、API に列を足すと見出しが足りないことを型検査が知らせる。もう 1 つは検収表のスクリーンショットの受け入れで、計画は作者が受け入れるまで M33 を終えないとする。OI-138・OI-139・OI-141（E2E の世界の中身と、シードが監査の行を書かないこと）は judgment のまま作者の確認を待つ。
+
+## M41 Raspberry Pi の k3s への配置
+
+`m41-k3s-deploy`（base は `main`、PR #60）。PR #55〜#59 が未マージなので、その commit も差分に見える。M41 の差分は `488645a..` である（`488645a` は M33 のブランチの先端）。
+
+Codex は Conditional Go、Claude は Go だった。どちらの系統も、`488645a..5dca71c` の diff を `5dca71c` の版で読み、テストは流さず、依頼に書いた実行結果を前提にした。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex の High は 3 件で、R2 と R3 は `844c291` で直した。R1（OI-145〜OI-149 が作者を待つことと、CI の `images` のジョブの結果）は実装者が直せない部分を含むので、作者に渡す事項と CI の結果として残した。High があったので Codex に読み直しを 1 回出し、`844c291` の版で、R2〜R6 は解消、R1 は作者待ちと CI の結果待ち、新しい High は無し、判定は Conditional Go のままだった（`844c291` の `images` のジョブが通れば Go）。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Conditional Go（High 3・Medium 3） | Conditional Go（R2〜R6 解消、R1 は作者待ちと CI の結果待ち、新しい High なし） |
+| Claude | Go（Medium 3・Low 4） | 出していない（High が無かった） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R4） |
+| 正しさ | 指摘（R3・R6） | 指摘（R1・R5・R6） |
+| 境界と規約 | 指摘（R2） | 指摘（R3） |
+| テストの検出力 | 指摘（R4・R5） | 指摘（R2・R3） |
+| 参照の維持 | 指摘なし | 指摘（R7） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex | R1：OI-145〜OI-149 が blocked-user で `--due M41` が落ち、CI の `images` のジョブが未実行 | `--due M41` は作者の判断を待つ。下の「残件の処理」に書いた。`images` のジョブの結果は「確かめたこと」に書いた | — |
+| High | Codex・Claude | Codex R2・Claude R6：パスワード・暗号化鍵・PAT が `kubectl` と `psql` の引数に入る | 手順書の Secret の作り方を、ヒアドキュメントと標準入力で `kubectl create -f -` に渡す形にし、PAT は手元で読んで組み込みの `printf` で組み立てて ssh の標準入力で渡す。PostgreSQL の初期化は `\getenv` で環境変数から読む。手元の postgres:18.6 で、引用符と空白を含むパスワードでロールを作れた | `844c291` |
+| High | Codex | R3：手で作った作り直しの Job と定時の Job が重なり、`DemoReset` に排他が無い | 所有ロールで保守用の DB（`postgres`）に接続してアドバイザリロックを取り、取れなければ何も触らずに止まる（OI-174） | `844c291` |
+| Medium | Claude | R1：追い出された Pod が `Failed` のまま一覧に残り、毎日の作り直しが毎回 5 分待って失敗する | phase が `Succeeded`・`Failed` の Pod を待たない（OI-175） | `844c291` |
+| Medium | Claude | R2：`SHARED_DEMO_ACCOUNTS` から設定への写しを確かめる spec が無い | `production_boot_spec.rb` で、未設定・`1`・`true` を子のプロセスで確かめる | `844c291` |
+| Medium | Codex | R4：Role と Pod のラベルの期待値を、実装の定数（`DemoReset::DEPLOYMENTS`）から作る | spec に `RESET_TARGETS = %w[web jobs]` を独立に持ち、定数・セレクタ・Role をそれぞれ比べる | `844c291` |
+| Medium | Codex | R5：`spec/support/env_helpers.rb` の戻しを確かめる example が無い | `spec/platform/env_helpers_spec.rb` を足した | `844c291` |
+| Medium | Codex | R6：SIGTERM の後の猶予（30 秒）の間に、API の時間切れ（30 秒）の 2 つの要求が終わらない | 作り直しの Pod の猶予を 90 秒、API の時間切れを接続 5 秒・応答 10 秒にし、猶予が 2 つの和より長いことを spec で確かめる（OI-176） | `844c291` |
+| Medium | Claude | R4：CI の `images` のジョブが通ったことを確かめていない | Codex R1 と同じ。「確かめたこと」に書いた | — |
+| Low | Claude | R3：所有ロールのパスワードを持つコンテナを、変数の名前でしか数えない | `owner-password` のキーを読むワークロードが postgres・migrate・daily-reset だけで、`envFrom` が無いことを確かめ、手順書の Secret の表の「使うコンテナ」の列もマニフェストと比べる | `844c291` |
+| Low | Claude | R5：手順書の migrate の失敗と、Pod が動く前の `logs -f` で詰まる | migrate が `Failed` で止まったときの見方と流し直し方、`logs` の前に Pod を待つことを書いた | `844c291` |
+| Low | Claude | R7：計画の「接続をプールに返して」が `clear_all_connections!` の振る舞いと違う | 計画を「接続を切ってから（各プールの `disconnect!`）」に直した | `844c291` |
+
+違和感は次のように扱った。
+
+- Claude 1：DB のタスクの途中で SIGTERM を受けると、作りかけの DB に向けて web と jobs が起きる → `deploy/README.md`「作り直しが途中で止まったとき」に、手で流し直すことを書いた（`844c291`）
+- Claude 2：本番の環境の外では、`demo:reset` の入口を `ServiceAccount` の場所が無いことで止めている → IB-90
+- Claude 3：`images` のジョブはテストのジョブを待たずに push する。kubeconform の取得を確かめていない → push は IB-91。kubeconform は sha256 で確かめるようにした（`844c291`）
+- Claude 4：postgres と web の Service に、同じ k3s のほかの名前空間から届く → IB-92
+- Claude 5：`README.md` の文書の表で、`deploy/README.md` の行が ADR の並びを割る → 手順書の並びに移した（`844c291`）
+- Claude 6：作り直しの最中に適用すると、web と jobs が途中で起きる → 手順書の「作者の手順」2 に、作り直しの時刻を避けることを書いた（`844c291`）
+- Claude 7：spec の 2 つの `it` の間に空行が無い → 直した（`844c291`）
+- Codex（読み直し）：SIGTERM の spec は `SignalException` を直接上げるだけで、子のプロセスを待つ間の振る舞いを確かめない → 本番のイメージで、子のプロセス（`sleep 60`）を待つ間に `docker stop`（SIGTERM）を送り、1 秒以内に web と jobs を 1 に戻して終わることを手で確かめた（下の「確かめたこと」）
+
+### 実装の記録
+
+#### 計画との違い
+
+計画に書かれていないことを決めたものと、計画の書き方から変えたものは、OI-168〜OI-176 に judgment で積んだ。DB のタスクを子のプロセスで流し、`DISABLE_DATABASE_ENVIRONMENT_CHECK` を子のプロセスにだけ渡すこと（OI-168）、画面のイメージの standalone の選び方と文脈（OI-169）、Secret の名前とキー（OI-170）、公開のホスト名を Kustomize の 1 つの値から写すこと（OI-171）、`Recreate` と probe と ServiceAccount のトークンと Role の `resourceNames`（OI-172）、節の参照の spec をパスで引くこと（OI-173）、作り直しのアドバイザリロック（OI-174）、終わった Pod を待たないこと（OI-175）、終了の猶予と API の時間切れ（OI-176）である。計画の M41 の節と `adr/009`「確認した事項」を直した。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：
+
+- `spec/requests/sessions_spec.rb`：共有のデモのアカウントの配置で、ほかのセッションが続く example が `expected: 200 got: 401` で落ちた（9 examples, 1 failure）
+- `spec/platform/production_boot_spec.rb`：4 examples, 4 failures。Set-Cookie が空、production の設定に `host`・`port` が無い、`file_system` を渡しても `sendgrid`、`fake` で起動した
+- `spec/platform/logging_spec.rb`：本番のミドルウェアの並びの example が、先頭の `ActionDispatch::AssumeSSL` の分だけ食い違って落ちた
+- `spec/platform/deploy_manifests_spec.rb`：空の `deploy/` で 16 examples, 15 failures。期待の不一致で落ちたのは、置くものの種類と名前（`expected ["frontend", "jobs", "postgres", "web"] got []`）と、コンテナの資源（`got []`）の 2 つで、ほかはファイルが無いことと `nil` で落ちた
+- 3 つの公開 API の spec（`onboarding_spec.rb`・`stocks_spec.rb`・`demo_world_spec.rb`）：`DEMO_WORLD_ENABLED=1` でも動く example が、`ProductionEnvironment` の例外で落ちた（33 examples, 3 failures）
+
+実装の後に書いた spec と、上の RED のほかの条件は、次の壊して落ちる記録で RED に代える。実装を 1 か所ずつ壊し、壊した箇所を確かめる spec だけを流し、複製から戻した。
+
+| 壊したもの | 流したもの | 落ちたもの |
+|---|---|---|
+| ログアウトの共有のアカウントの条件を外す・常に世代を進めない | `sessions_spec.rb` | それぞれ 1（共有のアカウントの example、世代を進める example） |
+| `DemoWorldGate.open?` を常に真にする・`== "1"` を `present?` にする | 3 つの公開 API の spec | それぞれ 3（無いときと `true` のときの example） |
+| `set_safety_stock` が門を読まずに `Rails.env.production?` で止める | 同上 | 2（`stocks_spec.rb` と、`DemoWorld.build` を最後まで流す example） |
+| `assume_ssl` を偽にする | `production_boot_spec.rb`・`logging_spec.rb` | 2 |
+| `NOTIFICATIONS_PROVIDER` の値の確かめを外す・owner の `host` を外す・`SHARED_DEMO_ACCOUNTS` を `present?` で読む | `production_boot_spec.rb` | それぞれ 1 |
+| `demo:reset` の入口の門を外す | `demo_reset_spec.rb` | 1（入口の example） |
+| `ensure` を外す・`rescue StandardError` にする | 同上 | 3（例外・Pod の待ちの上限・0 にする途中の失敗）、1（SIGTERM） |
+| Pod の待ちを外す・phase を見ない | 同上 | 2（順と待ちの上限）、1（追い出された Pod） |
+| `DISABLE_DATABASE_ENVIRONMENT_CHECK` を自分のプロセスに立てる・子に渡さない | 同上 | それぞれ 1 |
+| ロックを見ない・owner の設定が無いときに止まらない | 同上 | それぞれ 1 |
+| API の応答の時間切れを 60 秒にする・戻しで `Failed` しか拾わない | 同上 | それぞれ 1 |
+| 作り直しが戻せなかったことをログに書かない | 同上 | 1 |
+| rake タスクから `DemoReset.run` の呼び出しを外す | 同上 | 1 |
+| web に `DEMO_WORLD_ENABLED` を足す・jobs のプールを 15 にする・Role に `delete` を足す・PVC を `/var/lib/postgresql/data` に付ける・タグを `latest` にする・daily-reset の `backoffLimit` を 2 にする・web を `NodePort` にする | `deploy_manifests_spec.rb` | それぞれ 1 |
+| 手順書の Secret の表の行を消す・使う列を変える・web に別の名前で `owner-password` を渡す | 同上 | 1・1・2 |
+| 作り直しの対象に frontend を足す・終了の猶予を 30 秒にする | 同上 | それぞれ 1 |
+| 節の参照の spec で、パスの全体が一致する文書の優先を外す | `section_references_spec.rb` | 1 |
+| 環境変数の補助の戻しを外す | `env_helpers_spec.rb` | 2 |
+
+テストの基盤として足したものは、環境変数の補助（`spec/support/env_helpers.rb`）で、戻しを外すと `env_helpers_spec.rb` の 2 つが落ちる。`deploy/preflight.sh --list` の出力は `deploy_manifests_spec.rb` がマニフェストから集めた一覧と比べる。
+
+### 確かめたこと
+
+`844c291` で、Ruby 3.4.11・Node 22.23.3 で流した。この worktree では `bin/ci` の Setup の工程が落ちる（IB-72）ので、`config/ci.rb` の Setup のほかの工程を同じコマンドで 1 つずつ流した。
+
+```sh
+bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_reset_spec.rb spec/platform/production_boot_spec.rb spec/platform/logging_spec.rb spec/scenarios/demo_world_spec.rb packs/partnerships/spec/public/partnerships/onboarding_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb spec/requests/sessions_spec.rb   # 0 failures
+COVERAGE=1 bundle exec rspec                         # 2855 examples, 0 failures
+BASE_REF=origin/main bin/check-branch-coverage       # 一覧は空
+bin/check-open-items --due M41                       # OI-145〜OI-149（blocked-user）で落ちる
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 136 passed
+cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 65 passed・25 skipped
+kubectl kustomize deploy                             # 公開のホスト名が Ingress と FRONTEND_ORIGIN に入る
+```
+
+rubocop・packwerk・brakeman・bundler-audit・`bin/check-structure`・`bin/check-schema-compat`・`bin/check-alerts`・`bin/check-open-items`・`bin/check-commit-refs`・`bin/test-layers` も通った。分岐の網羅率の警告は 2 件（`lib/demo_reset.rb` の、作り直しが失敗した後に戻せなかったときと、owner の設定が無いときの `ensure`）で、2 件とも example を足した。
+
+手元の Docker（arm64 のホストで linux/arm64 をネイティブに組み立てる）で次を確かめた。QEMU の上の組み立ては CI の `images` のジョブに任せた。
+
+- 2 つのイメージが組み立てられる。Rails のイメージで `SECRET_KEY_BASE_DUMMY=1 bin/rails runner` が eager_load で起動する。画面のイメージは uid 1000 で動き、ログインの画面（`/`）にシードのアカウントを描き、ログインしていない `/supplier/dashboard` を `/` へ移す
+- `postgres:18.6` に ConfigMap の初期化のスクリプトを渡すと、2 つのロールが `docker/initdb/01_roles.sql` と同じ属性でできる。引用符と空白を含むパスワードでもログインできる
+- migrate のコマンドで、業務の DB の持ち主が所有ロールになる
+- 本番のイメージの中で `DemoReset` に偽の Kubernetes の API を渡して 2 回続けて流すと、DB を消して作り直し、シードの世界を作って 1 に戻す。`DEMO_WORLD_ENABLED` 無しの `demo:reset` は入口で止まる。子のプロセスを待つ間に SIGTERM（`docker stop`）を送ると、1 秒以内に web と jobs を 1 に戻して終わる
+- web（`bin/rails server`）は `/up` が 200 で、http の `POST /session` が `secure` の Set-Cookie を返す。jobs は async のモードで、スーパーバイザ・ディスパッチャ・スケジューラ・ワーカー 4 つを 1 つのプロセスで登録し、メールを `tmp/mails` に書く
+
+> 参考に、手元の Mac（arm64）の `docker stats` は web 132MiB・jobs 149MiB・postgres 71MiB・frontend 69MiB だった。Raspberry Pi の値は作者が測る（`deploy/README.md`「作者の手順」4）。
+
+PR #60 の CI は、`844c291` で全ジョブが通った（images 25 分 59 秒・test 6 分 1 秒・e2e 4 分 21 秒・frontend 50 秒・lint 38 秒・scan_ruby 19 秒）。`images` のジョブは、マニフェストの描画と kubeconform の照合（4 秒）、Rails のイメージの QEMU の上の組み立て（24 分 47 秒）、本番の環境の起動（26 秒）、画面のイメージの組み立て（13 秒）を通り、PR なので GHCR への push を飛ばした。`5dca71c` の `images` のジョブも通った。Rails のイメージの組み立ては `adr/009`「見直す条件」の 20 分を超えた。2 つの実行が同時に始まり、どちらも GitHub Actions のキャッシュが空のまま組み立てたので、キャッシュが効いた後の時間を見てから判断する（IB-93）。
+
+### 残件の処理
+
+引当先が M41 の行は、着手の前と PR の前に台帳を読んだ。OI-145〜OI-149 は blocked-user のままで、既定で作った（ホスト名 `factory-ops-rails.hayatec.dev`、作り直しは日本時間の 4:30 で猶予 6 時間、資源は見積もりのまま、訪問者の操作はすべて許す、共有のアカウントのログアウトは世代を進めない）。差し替える場所は `deploy/README.md`「作者が決める値」にある。そのため `bin/check-open-items --due M41` は落ちる。M41 で決めたことは OI-168〜OI-176 に judgment で積んだ。実機の確かめ（`deploy/README.md`「作者の手順」1〜6）は M41 の完了条件に入れず、作者が結果を PR か台帳に書くまで公開しない。
