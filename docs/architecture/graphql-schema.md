@@ -559,6 +559,8 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 ```graphql
 type Viewer {
   # ユーザーのフィールドに加えて
+  "自社テナント。取引用コードは含めない"
+  tenant: Tenant!
   "admin だけ。新しいものから"
   auditLogs(first: Int, after: String, filter: AuditLogFilter): AuditLogConnection!
 }
