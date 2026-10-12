@@ -2,10 +2,10 @@ require "rubocop"
 require "rubocop/rspec/support"
 require_relative "../../../../lib/rubocop/cop/factory_ops/no_history_comment"
 
-# コメントに経緯・マイルストーンの番号・予定を書かせない。止める例と通す例は docs/guides/comments.md「このリポジトリの例」「機械で止めるもの」にそろえる
+# コメントに経緯・マイルストーンの番号・台帳の ID・予定を書かせない。止める例と通す例は docs/guides/comments.md「このリポジトリの例」「機械で止めるもの」にそろえる
 RSpec.describe RuboCop::Cop::FactoryOps::NoHistoryComment, :config do
   def message(term)
-    "コメントに経緯・マイルストーンの番号・予定を書かない（#{term}）。いまの振る舞いと理由だけを書く（docs/guides/comments.md）。"
+    "コメントに経緯・マイルストーンの番号・台帳の ID・予定を書かない（#{term}）。いまの振る舞いと理由だけを書く（docs/guides/comments.md）。"
   end
 
   it "guides/comments.md の悪い例を、マイルストーンの番号で落とす" do
@@ -40,6 +40,15 @@ RSpec.describe RuboCop::Cop::FactoryOps::NoHistoryComment, :config do
       ^^^^^^^^ %{d}
       # 当初は同期で送っていた
       ^^^^^^^^^^^^^ %{e}
+    RUBY
+  end
+
+  it "台帳の ID を落とす" do
+    expect_offense(<<~RUBY, oi: message("OI-35"), ib: message("IB-25"))
+      # 文脈をスレッドごとに持つことを前提にする（OI-35）
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ %{oi}
+      # 上限ちょうどと上限 + 1 を仕様の値で書く（IB-25）
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ %{ib}
     RUBY
   end
 
@@ -92,7 +101,7 @@ RSpec.describe RuboCop::Cop::FactoryOps::NoHistoryComment, :config do
       self.enqueue_after_transaction_commit = true
       # 受注側が所有する出荷実績。発注側が経路 3 で読む SupplierShipment とは別の型にする
       #   （docs/architecture/graphql-schema.md「視点ごとに型を分ける」）
-      # M2M の関連、PM10 の値、TODOS の列は、番号でも予定でもない
+      # M2M の関連、PM10 の値、TODOS の列、XOI-1 の型番は、番号でも予定でも台帳の ID でもない
       label = "M14 は文字列なので止めない"
     RUBY
   end
