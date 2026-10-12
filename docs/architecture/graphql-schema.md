@@ -340,7 +340,7 @@ type Invoice {
   items(first: Int, after: String): BillableItemConnection!
 }
 
-"販売単価の 1 行（adr/006）。validTo と recordedTo の空は、上限なしを表す"
+"販売単価の 1 行（adr/006）。validFrom は含み validTo は含まない。validFrom・validTo・recordedTo の空は、上限なしを表す"
 type ItemPrice {
   id: ID!
   unitPrice: BigInt!
@@ -363,13 +363,14 @@ type BillableItem {
   "単価 × 検収数量。税を含まない"
   amount: BigInt!
   inspectedOn: ISO8601Date!
-  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空。販売単価の履歴と一緒に足す（../implementation-plan.md M27）"
+  "請求書の単価の説明。下書きの請求書と未請求の明細では、発行時の単価は空"
   priceExplanation: PriceExplanation!
 }
 
 type PriceExplanation {
-  "受注明細に写した単価と、そのときの有効日"
+  "受注明細に写した単価"
   orderedUnitPrice: BigInt!
+  "受注明細が単価を引いた有効日"
   pricedOn: ISO8601Date!
   "請求書の発行の時点で、pricedOn の単価として信じていた値"
   unitPriceAsOfIssue: BigInt
@@ -536,6 +537,8 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `withdrawPermission` | `partnership.withdraw_permission` | 対象の取引関係 | その取引関係の発注側 |
 | `saveItem` | `item.save` | 成功の値の品目 | 空（カタログを見る全相手に及ぶ） |
 | `setItemPublished` | `item.set_published` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
+| `scheduleItemPrice` | `item_price.schedule` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
+| `correctItemPrice` | `item_price.correct` | 対象の単価の行 | 空（カタログを見る全相手に及ぶ） |
 | `registerPartMapping` | `part_mapping.register` | 成功の値の対応表の行 | 入力の `customerTenantId`（確定させる受注は、すべてこの相手の受注である） |
 | `placePurchaseOrder` | `purchase_order.place` | 成功の値の発注 | 入力の `supplierTenantId` |
 | `requestPurchaseOrderCancellation` | `purchase_order.request_cancellation` | 対象の発注 | その発注の受注側 |
@@ -668,8 +671,8 @@ type SalesOrderStatusCount {
 | mutation | 呼ぶ公開 API | 出すイベント |
 |---|---|---|
 | `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える。`unitPrice` は、作るときは有効期間 `(,)` の単価の行になる。既存の品目の単価は変えず、今日の単価と違う値は役割を問わず `INVALID_INPUT` にする。単価の改定は `scheduleItemPrice` を、入力の誤りは `correctItemPrice` を使う。今日の単価と同じ値は無視する） | なし |
-| `scheduleItemPrice` | `Sales::ItemPrices.schedule`（品目 ID・単価・改定日。改定日は今日以降） | なし |
-| `correctItemPrice` | `Sales::ItemPrices.correct`（単価の行 ID・正しい単価・理由。現在の行でなければ `CONFLICT`） | なし |
+| `scheduleItemPrice` | `Sales::ItemPrices.schedule`（品目 ID・単価・改定日で指定し、品目を返す。改定日は今日以降。改定日を含む行の単価と同じなら何も書かない。単価の行の無い品目は `CONFLICT`） | なし |
+| `correctItemPrice` | `Sales::ItemPrices.correct`（単価の行 ID・正しい単価・理由で指定し、品目を返す。理由は必須。現在の行でなければ `CONFLICT`） | なし |
 | `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類。同じファイルの 2 回目は `CONFLICT`） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
