@@ -1,9 +1,12 @@
 module Fulfillment
   # 受注からのイベントの受け手。受注側テナントの名義で、自社の出荷依頼・出荷指示・出荷停止だけを書く
   # （docs/architecture/data-model.md「イベントの受け口と冪等キー」）。取引関係の状態は見ない。
-  # 届く順が入れ替わっても停止や出荷依頼を取り残さない（docs/architecture/data-model.md「イベントの届く順の入れ替わり」）
+  # 届く順が入れ替わっても停止や出荷依頼を取り残さない（docs/architecture/data-model.md「イベントの届く順の入れ替わり」）。
+  # イベントの受け手は操作者のいない入口なので、テナントの設定を求め、所有の条件を RLS に任せずに書き、値を返さない
+  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
   module SalesEventReceiver
     def self.handle(event)
+      Tenancy.require_tenant!
       case event
       when Contracts::SalesOrderReadyForShipment then create_request(event)
       when Contracts::ShippingHeld then hold(event)
@@ -11,13 +14,14 @@ module Fulfillment
       when Contracts::ShipmentCancelled then cancel(event)
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
+      nil
     end
 
     # 「出荷可能」の写しを作る。冪等キーは sales_order_id で、2 回目の配送では何もしない。同時に届いた配送は一意索引が止める。
     # 出荷依頼の有無を読む前に受注のロックを取り、出荷停止の受け手と直列にする
     def self.create_request(event)
       lock_sales_order(event.sales_order_id)
-      return if ShipmentRequest.exists?(sales_order_id: event.sales_order_id)
+      return if own_requests.exists?(sales_order_id: event.sales_order_id)
 
       ShipmentRequest.transaction(requires_new: true) do
         ShipmentRequest.create!(
@@ -42,7 +46,7 @@ module Fulfillment
     # 出荷依頼がまだ無いときに備えて、先に受注のロックを取る
     def self.hold(event)
       lock_sales_order(event.sales_order_id)
-      ShipmentRequest.lock.find_by(sales_order_id: event.sales_order_id)
+      own_requests.lock.find_by(sales_order_id: event.sales_order_id)
       ShippingHold.insert(hold_row(event.cancellation_review_id, event.sales_order_id, released_at: nil),
         unique_by: :source_cancellation_review_id)
     end
@@ -56,7 +60,7 @@ module Fulfillment
     # 「出荷可能」を出した受注なのに出荷依頼がまだ無ければ、出荷可能より先に届いたので失敗させ、再配送に任せる。
     # 出荷依頼は出荷可能の値からしか作れないので、解除済みの停止のような先回りの行を作らない
     def self.cancel(event)
-      request = ShipmentRequest.lock.find_by(sales_order_id: event.sales_order_id)
+      request = own_requests.lock.find_by(sales_order_id: event.sales_order_id)
       if request.nil? && event.ready_for_shipment
         raise ActiveRecord::RecordNotFound, "出荷取消が出荷可能より先に届いた: #{event.sales_order_id}"
       end
@@ -65,7 +69,7 @@ module Fulfillment
         request.instructions.active.lock.each { _1.update!(status: "cancelled") }
         request.update!(cancelled_at: Time.current)
       end
-      ShippingHold.active.where(sales_order_id: event.sales_order_id).update_all(released_at: Time.current, updated_at: Time.current)
+      ShippingHold.active.where(owner_tenant_id: Current.tenant_id, sales_order_id: event.sales_order_id).update_all(released_at: Time.current, updated_at: Time.current)
       release_hold(event.cancellation_review_id, event.sales_order_id) if event.cancellation_review_id
     end
 
@@ -88,11 +92,13 @@ module Fulfillment
       nil
     end
 
+    def self.own_requests = ShipmentRequest.where(owner_tenant_id: Current.tenant_id)
+
     # insert と upsert は TenantRecord の保存の確認を通らないので、ここでテナントの設定を確かめる
     def self.hold_row(cancellation_review_id, sales_order_id, released_at:)
       Tenancy.require_tenant!
       { owner_tenant_id: Current.tenant_id, source_cancellation_review_id: cancellation_review_id, sales_order_id:, released_at: }
     end
-    private_class_method :create_request, :hold, :release, :cancel, :release_hold, :lock_sales_order, :hold_row
+    private_class_method :create_request, :hold, :release, :cancel, :release_hold, :lock_sales_order, :own_requests, :hold_row
   end
 end

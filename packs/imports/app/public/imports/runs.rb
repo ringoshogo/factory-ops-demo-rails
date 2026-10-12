@@ -55,10 +55,11 @@ module Imports
 
     # ジョブを失って終わっていない取り込みに、新しいジョブを登録する（rake タスク imports:reenqueue）。
     # 動いているジョブがあっても、新しいジョブはテナントの上限で待ち、置き場の結果のある行を飛ばすので結果は変わらない。
-    # 終えた取り込みと見えない取り込みには登録せず、偽を返す
+    # 終えた取り込みと他社の取り込みには登録せず、偽を返す。操作者のいない入口の公開 API なので、テナントの設定を求め、
+    # 所有の条件を RLS に任せずに書く（docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
     def self.reenqueue(import_id)
       Tenancy.require_tenant!
-      import = Import.find_by(id: import_id)
+      import = Import.find_by(id: import_id, owner_tenant_id: Current.tenant_id)
       return false if import.nil? || import.done?
 
       RunJob.perform_later(import.id, import.owner_tenant_id)

@@ -26,7 +26,7 @@ module Sales
     end
 
     # 品目 ID ごとの現在の単価の行。明細ごとに引かず、受注をまとめて照合するときに 1 回で引く
-    def self.prices(item_ids) = ItemPrice.current.where(item_id: item_ids).group_by(&:item_id)
+    def self.prices(item_ids) = ItemPrice.current.where(owner_tenant_id: Current.tenant_id, item_id: item_ids).group_by(&:item_id)
 
     # 全明細が照合できた受注を確定し、「受注確定」を出す。受注・受注明細・品目の ID は運ばない。
     # 明細を読み込み済みの呼び出し元は lines に渡し、受注ごとに明細を引き直さない。

@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 取り込みの開始・読み取り・再登録と、状況の導出（docs/architecture/data-model.md「取り込み（`imports`）」）
 RSpec.describe Imports::Runs do
@@ -152,6 +153,26 @@ RSpec.describe Imports::Runs do
 
     it "テナントを開かずに呼ぶと例外にする" do
       expect { described_class.reenqueue(SecureRandom.uuid) }.to raise_error(Tenancy::MissingTenant)
+    end
+
+    # 操作者のいない入口（rake タスク）の公開 API なので、所有の条件を RLS に任せない
+    # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
+    describe "RLS の SELECT を開いたとき" do
+      include_context "RLS の SELECT を開く"
+
+      it "他社の終わっていない取り込みには登録しない" do
+        theirs = tenancy(other) { FactoryBot.create(:import) }
+
+        result = tenancy do
+          cross_read!
+          # 対照：開いた後は、他社の取り込みが SELECT で見える
+          expect(Imports::Import.where(id: theirs.id).exists?).to be(true)
+          described_class.reenqueue(theirs.id)
+        end
+
+        expect(result).to be(false)
+        expect(SolidQueue::Job.where(class_name: "Imports::RunJob", finished_at: nil).where("arguments LIKE ?", "%#{theirs.id}%")).to be_empty
+      end
     end
   end
 end

@@ -1,12 +1,16 @@
 module Purchasing
   # 請求からの「請求書発行」の受け手（docs/architecture/context-map.md「検収と請求の流れ」6）。
-  # 発注側テナントの名義で、請求書の値を受領請求書と明細に写す。取引関係の状態は見ない。失効の前の取引も請求まで進むからである
+  # 発注側テナントの名義で、請求書の値を受領請求書と明細に写す。取引関係の状態は見ない。失効の前の取引も請求まで進むからである。
+  # イベントの受け手は操作者のいない入口なので、テナントの設定を求め、所有の条件を RLS に任せずに書き、値を返さない
+  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
   module BillingEventReceiver
     def self.handle(event)
+      Tenancy.require_tenant!
       case event
       when Contracts::InvoiceIssued then receive(event)
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
+      nil
     end
 
     # 冪等キーは請求書 ID。同時に届いた配送は一意索引の ON CONFLICT で 1 件にし、見出しを書かなかった配送は明細も通知も書かない。
