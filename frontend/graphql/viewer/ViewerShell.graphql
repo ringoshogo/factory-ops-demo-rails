@@ -1,0 +1,8 @@
+query ViewerShell {
+  viewer {
+    id
+    name
+    role
+    tenant { id name }
+  }
+}

@@ -1,0 +1,300 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * ダークの条件は2つ (仕様 cycle-02 §5):
+ * - Cookie で明示した `.dark`
+ * - Cookie が無く (`.light` でもなく) OS がダーク
+ * インラインスクリプトでクラスを付けずに OS 設定へ追従するため、
+ * shadcn 部品の `dark:` 指定もこの2条件で効かせる。
+ */
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.light), :root:not(.light) *) {
+      @slot;
+    }
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* 英数字は IBM Plex Sans、和文は OS 標準 (macOS/iOS: ヒラギノ、Windows: 游ゴシック UI、
+     Android/Linux: Noto Sans JP)。和文の Web フォントは配信しない (正本 N-15) */
+  --font-sans:
+    var(--font-plex-sans), "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP",
+    Meiryo, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* 通知枠の4つの調子 (状態バナー・注意書き・エラー表示) */
+  --color-danger: var(--tone-danger-bg);
+  --color-danger-foreground: var(--tone-danger-fg);
+  --color-danger-border: var(--tone-danger-border);
+  --color-warning: var(--tone-warning-bg);
+  --color-warning-foreground: var(--tone-warning-fg);
+  --color-warning-border: var(--tone-warning-border);
+  --color-info: var(--tone-info-bg);
+  --color-info-foreground: var(--tone-info-fg);
+  --color-info-border: var(--tone-info-border);
+  --color-notice: var(--tone-neutral-bg);
+  --color-notice-foreground: var(--tone-neutral-fg);
+  --color-notice-border: var(--tone-neutral-border);
+
+  /* 受注ステータスのバッジ (正本 §3-1 の6状態) */
+  --color-status-received: var(--status-received-bg);
+  --color-status-received-foreground: var(--status-received-fg);
+  --color-status-partial: var(--status-partial-bg);
+  --color-status-partial-foreground: var(--status-partial-fg);
+  --color-status-allocated: var(--status-allocated-bg);
+  --color-status-allocated-foreground: var(--status-allocated-fg);
+  --color-status-instructed: var(--status-instructed-bg);
+  --color-status-instructed-foreground: var(--status-instructed-fg);
+  --color-status-shipped: var(--status-shipped-bg);
+  --color-status-shipped-foreground: var(--status-shipped-fg);
+  --color-status-cancelled: var(--status-cancelled-bg);
+  --color-status-cancelled-foreground: var(--status-cancelled-fg);
+  --color-status-received-line: var(--status-received-line);
+  --color-status-partial-line: var(--status-partial-line);
+  --color-status-allocated-line: var(--status-allocated-line);
+  --color-status-instructed-line: var(--status-instructed-line);
+  --color-status-shipped-line: var(--status-shipped-line);
+  --color-status-cancelled-line: var(--status-cancelled-line);
+
+  /* cycle-03 §2 のトークン */
+  --color-surface-raised: var(--surface-raised);
+  --color-sidebar-selected: var(--sidebar-selected);
+  --color-row-hover: var(--row-hover);
+  --color-foreground-2: var(--foreground-2);
+  --color-neutral-chip: var(--neutral-chip-bg);
+  --color-divider-strong: var(--divider-strong);
+  --color-divider: var(--divider);
+  --color-divider-subtle: var(--divider-subtle);
+  --color-control-border: var(--control-border);
+  --color-link: var(--link);
+  --color-link-hover: var(--link-hover);
+  --color-filter-active: var(--filter-active-bg);
+  --color-filter-active-border: var(--filter-active-border);
+  --color-filter-active-foreground: var(--filter-active-foreground);
+  /* 注意色の文字。状態バナーの調子 (warning) とは別 */
+  --color-caution: var(--warning-foreground);
+  --color-demo-notice: var(--notice-bg);
+  --color-demo-notice-foreground: var(--notice-foreground);
+  --color-demo-notice-border: var(--notice-border);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * 影と角丸の段階 (仕様 cycle-03 §2)。`shadow-panel`・`rounded-panel` などで使う。
+ * 影は色の部分だけを light-dark() で書き、影のトークンをテーマごとに持たない。
+ * ダークは影が見えないので、縁の 1px のリング (0 0 0 1px) で面を分ける。
+ */
+@theme {
+  --shadow-panel: 0 1px 2px light-dark(#0000000d, #00000066), 0 0 0 1px light-dark(#09090b0d, #ffffff0f);
+  --shadow-card: 0 1px 2px light-dark(#0000000d, #00000066), 0 0 0 1px light-dark(#09090b0f, #ffffff0f);
+  --shadow-card-hover:
+    0 4px 12px -2px light-dark(#0000001a, #00000080), 0 0 0 1px light-dark(#09090b14, #ffffff1f);
+  --shadow-control: 0 1px 2px light-dark(#0000000d, #00000066), inset 0 0 0 1px var(--control-border);
+  /* 主ボタンの形を示す境界は 1 層目 (面に --primary-edge を重ねた色) */
+  --shadow-primary:
+    inset 0 0 0 1px var(--primary-edge), inset 0 -2px 0 #0000001a, inset 0 1px 0 #ffffff33,
+    0 1px 2px light-dark(#4338ca33, #00000066);
+  --shadow-popup: 0 8px 24px -4px light-dark(#0000001f, #00000099), 0 0 0 1px light-dark(#09090b14, #ffffff1f);
+  /* 値を選んでいる絞り込みボタンの縁取り (見本 orders.html の .fbtn.set) */
+  --shadow-filter-active: inset 0 0 0 1px var(--filter-active-border);
+
+  --radius-badge: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+}
+
+/*
+ * どちらの値が効くかは color-scheme が決める。値は light-dark(ライト, ダーク) で
+ * 1回だけ書き、ダーク用のブロックを別に持たない (handbook「同じ意味を2箇所に実装しない」)。
+ * 対応ブラウザは Chrome・Edge 123 / Safari 17.5 / Firefox 120 以降 (仕様 cycle-02 §5)。
+ *
+ * 値は見本 (docs/design/cycle-03) の 16 進値。見本から変えた値とその理由は
+ * 仕様 cycle-03 §2 の表にある (AA に届かない・アクセントの用途を限る)。
+ * ダークは台 < パネル < 浮いた面の順に明るくし、純黒を使わない。
+ */
+:root {
+  color-scheme: light dark;
+
+  /* 台・面 */
+  --background: light-dark(#f4f4f5, #111113);
+  --card: light-dark(#ffffff, #18181b);
+  --surface-raised: light-dark(#ffffff, #1f1f23);
+  --sidebar-selected: light-dark(#ffffff, #27272a);
+  --row-hover: light-dark(#fafafa, rgb(255 255 255 / 0.03));
+
+  /* 文字 1〜3 */
+  --foreground: light-dark(#09090b, #fafafa);
+  --foreground-2: light-dark(#3f3f46, #d4d4d8);
+  --muted-foreground: light-dark(#68686f, #a1a1aa);
+  --neutral-chip-bg: light-dark(rgb(113 113 122 / 0.1), rgb(161 161 170 / 0.15));
+
+  /* 区切り (装飾。コントラストは測らない) */
+  --divider-strong: light-dark(rgb(9 9 11 / 0.1), rgb(255 255 255 / 0.1));
+  --divider: light-dark(rgb(9 9 11 / 0.08), rgb(255 255 255 / 0.08));
+  --divider-subtle: light-dark(rgb(9 9 11 / 0.05), rgb(255 255 255 / 0.06));
+  /* 入力欄・二次ボタンの縁取り。識別に要る図形なのでパネル・台の上で 3:1 以上 */
+  --control-border: light-dark(#8a8a93, #71717a);
+
+  /* アクセントはインディゴ1色。主ボタン・フォーカス・選択中・リンク・選択中のタブにだけ使う */
+  --primary: light-dark(#4f46e5, #5a53ee);
+  /* 主ボタン・選んでいる日のホバーの面。白文字 4.5:1・台・パネル・浮いた面の上で 3:1 (面の 90% はダークで 3:1 に届かない) */
+  --primary-hover: light-dark(#6159e8, #625cf0);
+  --primary-edge: light-dark(rgb(0 0 0 / 0.18), rgb(255 255 255 / 0.12));
+  --primary-foreground: #ffffff;
+  --link: light-dark(#4338ca, #a5b4fc);
+  --link-hover: light-dark(#3730a3, #c7d2fe);
+  --ring: light-dark(#4f46e5, #818cf8);
+  --filter-active-bg: light-dark(rgb(79 70 229 / 0.06), rgb(99 102 241 / 0.15));
+  --filter-active-border: light-dark(#6366f1, #818cf8);
+  --filter-active-foreground: light-dark(#3730a3, #c7d2fe);
+
+  /* 注意色 (納期の文言・在庫アラートの不足数) と注意書き (正本 N-4) */
+  --warning-foreground: light-dark(#c2410c, #fb923c);
+  --notice-bg: light-dark(#fefce8, rgb(234 179 8 / 0.1));
+  --notice-foreground: light-dark(#854d0e, #fde68a);
+  --notice-border: light-dark(#fde68a, rgb(234 179 8 / 0.3));
+
+  /* shadcn の部品が参照する名前。上のトークンへ寄せ、別の色を持たせない */
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --secondary: light-dark(#f4f4f5, #27272a);
+  --secondary-foreground: var(--foreground);
+  --muted: light-dark(#f4f4f5, #27272a);
+  --accent: light-dark(#f4f4f5, #27272a);
+  --accent-foreground: var(--foreground);
+  --destructive: light-dark(oklch(0.514 0.222 16.935), oklch(0.712 0.194 13.428));
+  --border: var(--divider);
+  --input: var(--control-border);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  /* rounded-lg がボタン・入力欄の角丸 (8px) と同じ値になる */
+  --radius: 0.5rem;
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground-2);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--sidebar-selected);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--divider);
+  --sidebar-ring: var(--ring);
+
+  /* 状態バナー・エラー表示の4つの調子 (サイクル02 の値のまま。見本に対応する表現が無い) */
+  --tone-danger-bg: light-dark(oklch(0.969 0.015 12.422), oklch(0.271 0.105 12.094));
+  --tone-danger-fg: light-dark(oklch(0.41 0.159 10.272), oklch(0.892 0.058 10.001));
+  --tone-danger-border: light-dark(oklch(0.81 0.117 11.638), oklch(0.455 0.188 13.697));
+  --tone-warning-bg: light-dark(oklch(0.987 0.022 95.277), oklch(0.279 0.077 45.635));
+  --tone-warning-fg: light-dark(oklch(0.414 0.112 45.904), oklch(0.924 0.12 95.746));
+  --tone-warning-border: light-dark(oklch(0.879 0.169 91.605), oklch(0.473 0.137 46.201));
+  --tone-info-bg: light-dark(oklch(0.977 0.013 236.62), oklch(0.293 0.066 243.157));
+  --tone-info-fg: light-dark(oklch(0.391 0.09 240.876), oklch(0.901 0.058 230.902));
+  --tone-info-border: light-dark(oklch(0.828 0.111 230.318), oklch(0.443 0.11 240.79));
+  --tone-neutral-bg: light-dark(oklch(0.968 0.007 247.896), oklch(0.279 0.041 260.031));
+  --tone-neutral-fg: light-dark(oklch(0.279 0.041 260.031), oklch(0.929 0.013 255.508));
+  --tone-neutral-border: light-dark(oklch(0.869 0.022 252.894), oklch(0.446 0.043 257.281));
+
+  /* 受注ステータスのバッジ: 淡い面 + 同系の濃い文字 (点も文字と同じ色)。仕様 cycle-03 §2 */
+  --status-received-bg: light-dark(rgb(113 113 122 / 0.1), rgb(161 161 170 / 0.15));
+  --status-received-fg: light-dark(#3f3f46, #e4e4e7);
+  --status-partial-bg: light-dark(rgb(234 179 8 / 0.15), rgb(234 179 8 / 0.15));
+  --status-partial-fg: light-dark(#854d0e, #fde047);
+  /* 引当済は空色 (見本のインディゴはアクセントの用途外) */
+  --status-allocated-bg: light-dark(rgb(14 165 233 / 0.12), rgb(14 165 233 / 0.15));
+  --status-allocated-fg: light-dark(#0369a1, #7dd3fc);
+  --status-instructed-bg: light-dark(rgb(249 115 22 / 0.12), rgb(249 115 22 / 0.15));
+  --status-instructed-fg: light-dark(#9a3412, #fdba74);
+  --status-shipped-bg: light-dark(rgb(34 197 94 / 0.12), rgb(34 197 94 / 0.15));
+  --status-shipped-fg: light-dark(#166534, #86efac);
+  --status-cancelled-bg: light-dark(rgb(239 68 68 / 0.1), rgb(239 68 68 / 0.15));
+  --status-cancelled-fg: light-dark(#b91c1c, #fca5a5);
+  /* かんばんの列見出しの下線: ステータスの色相の 500 番 (装飾。テーマで変えない) */
+  --status-received-line: #a1a1aa;
+  --status-partial-line: #eab308;
+  --status-allocated-line: #0ea5e9;
+  --status-instructed-line: #f97316;
+  --status-shipped-line: #22c55e;
+  --status-cancelled-line: #ef4444;
+}
+
+.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+  }
+  body {
+    @apply bg-background text-foreground text-sm/normal;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* 見出し 1 は全画面で同じ (仕様 cycle-03 §2 文字) */
+  h1 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  /*
+   * フォーカスの輪郭は全部品で同じ: 2px の実線を外側 2px に (仕様 cycle-03 §3)。
+   * 透過させない (文字以外のコントラスト 3:1。正本 US-10)
+   */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}

@@ -1,0 +1,36 @@
+query SupplierSalesOrders(
+  $first: Int
+  $after: String
+  $orderBy: SalesOrderOrder
+  $filter: SalesOrderFilter
+  $allFilter: SalesOrderFilter
+  $openFilter: SalesOrderFilter
+  $shippedFilter: SalesOrderFilter
+  $inspectedFilter: SalesOrderFilter
+  $cancelledFilter: SalesOrderFilter
+) {
+  supplier {
+    dashboard { businessDate }
+    partnerships { id buyer { id name } }
+    salesOrders(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        orderDate
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id customerPartNumber itemName quantity allocatedQuantity unitPrice taxRatePercent }
+        shipmentRequest { id status }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+    all: salesOrders(filter: $allFilter) { totalCount }
+    open: salesOrders(filter: $openFilter) { totalCount }
+    shipped: salesOrders(filter: $shippedFilter) { totalCount }
+    inspected: salesOrders(filter: $inspectedFilter) { totalCount }
+    cancelled: salesOrders(filter: $cancelledFilter) { totalCount }
+  }
+}
