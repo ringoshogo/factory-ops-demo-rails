@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | — |
 | 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | — |
-| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト | 50% を超えたら |
+| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト、シードと E2E の世界（`DemoWorld`）を公開 API とイベントで作り切れること | 50% を超えたら |
 | ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/notifications`・`spec/platform`・`spec/rubocop`・`spec/bin` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制・外部への作用の呼び出し元）と、`bin/` の検査のスクリプト | 数えない |
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
@@ -27,6 +27,8 @@ bin/test-layers tmp/rspec.json
 ## 層への配分
 
 テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。上限（件数・文字列の長さ・ファイルの大きさ・値の型の上限）は、上限ちょうどで受け付ける example と、上限 + 1 で拒む example の両方を、定数から作らず仕様の値で書く。上限 + 1 だけでは上限を誤って 1 つ下げても落ちず、定数から入力を作ると定数を誤って変えても通るからである。計画が名指ししていない、実装の中で増えた上限にも当てる。一覧を返す公開 API の単体のテストでは、親を 2 件以上作る。1 件だと N+1 の検出が働かない（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。request spec の補助（ログインする `login_as`、応答の本文をそのまま返す `graphql_body`、トップレベルのエラーが無いことを確かめて `data` を返す `query`）は `spec/support/request_helpers.rb` にあり、`type: :request` の spec と重要シナリオに取り込まれる。テストを書く人は、補助を spec のファイルに複製しない。
+
+業務の日付を今日で決める公開 API（発注日・検収日のように、入力で受けずに `Date.current` で決めるもの）を足す人は、日本時間の 0〜9 時に `travel_to` して、日付が日本時間の日付になる example を単体に置く。この時間帯だけ UTC の日付と食い違うので、ほかの時刻では時刻帯の誤りが落ちない（時刻帯の決め方は `guides/config.md`「application.rb で変えたこと」）。
 
 `audit` を宣言した mutation を足す人は、結合の spec で、成功の後にできた監査の行の対象（`target_type`・`target_id`）と相手（`counterparty_tenant_id`）を、期待する値と比べる。行の件数だけを見る example は、宣言のラムダが対象か相手を取り違えても落ちない。`spec/graphql/audit_examples_spec.rb` が、スキーマの `audit` の action ごとに、action の文字列と 2 つの列の名前が同じ spec のファイル（`spec/requests`・`spec/scenarios`・`spec/concurrency`）に現れることを確かめる。名前が現れることしか見ないので、比べ方が正しいかは実装レビューの観点 4 で見る。
 
@@ -93,7 +95,9 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 シナリオは、2 社のユーザーとしてログインし、GraphQL の入口を通して操作する。イベントは、Active Job のアダプタを `:solid_queue` のまま、`deliver_enqueued_events` で受け手まで流す（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。補助は `spec/support/scenarios.rb` にある。`deliver_enqueued_events` は、シードと同じ `DemoWorld::Jobs`（`lib/demo_world/jobs.rb`）で流すので、テストとシードでジョブの流し方と後始末が食い違わない。
 
-`spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、置き場から付ける。テストを書く人が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
+イベントの受け手を足す人と、受注・発注・出荷依頼・取り込みの状況の値を足す人は、`DemoWorld` の世界も合わせる。`spec/contracts/receivers_spec.rb` は、シードの世界を作る間にすべての受け手へイベントが届くことを対照にして、受け手の戻り値を確かめる。`spec/scenarios/demo_world_spec.rb` は、E2E の世界が状況の止まっていられる全値の行を持つことを確かめる。世界を合わせないと、受け手や状況を足した変更でこの 2 つが落ちる。
+
+`spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、置き場から付ける。テストを書く人が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。同じ置き場の `demo_world_spec.rb`・`seeds_spec.rb`（シードと E2E の世界）も `--tag scenario` で流れる。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
 
 | | シナリオ | 確かめること | 置き場 | 作るマイルストーン |
 |---|---|---|---|---|

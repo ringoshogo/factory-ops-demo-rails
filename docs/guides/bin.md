@@ -15,7 +15,7 @@
 
 | ファイル | すること | 使う人・時機 | 出自 |
 |---|---|---|---|
-| `bin/setup` | gem の導入、DB の起動とロールの作成、`db:prepare`、ログと一時ファイルの掃除。`--skip-server` を付けないと最後に `bin/dev` を起動する。`--reset` を付けると `db:reset` も流す | 開発者が最初と、Gemfile やマイグレーションが変わった後に。`bin/ci` の最初の工程 | Rails 生成（変更あり） |
+| `bin/setup` | gem の導入、DB の起動とロールの作成、`db:prepare`、ログと一時ファイルの掃除。`--skip-server` を付けないと最後に `bin/dev` を起動する。`--reset` を付けると `db:reset` も流す。`db:reset` はシードも流すので、デモの世界ができる（README「開発環境」） | 開発者が最初と、Gemfile やマイグレーションが変わった後に。`bin/ci` の最初の工程 | Rails 生成（変更あり） |
 | `bin/dev` | `bin/rails server` を起動するだけ | 開発者がサーバーを立てるとき | Rails 生成 |
 | `bin/rails` | `rails` コマンドの入口。`db:*`・`console`・`runner`・`generate` など | 開発者が日常的に | Rails 生成 |
 | `bin/rake` | Rake の入口。`bin/rails` からも同じタスクを呼べる | ほぼ使わない | Rails 生成 |
@@ -32,7 +32,7 @@
 
 ### bin/dev がジョブを処理しないこと
 
-`bin/dev` はサーバーだけを起動し、Solid Queue のワーカーは起動しない。開発環境で、イベントを受け手まで流す・通知のメールを `tmp/mails/` に書く・取り込みを進める・定期のジョブ（`config/recurring.yml`）を流すときは、開発者が別の端末で `bin/jobs` を起動する。ワーカーはキューごとに 4 つ起きる（[config.md「ジョブ」](config.md#ジョブ)）。テストはワーカーを使わず、`spec/support/events.rb` の `deliver_enqueued_events` でイベントを届ける（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。
+`bin/dev` はサーバーだけを起動し、Solid Queue のワーカーは起動しない。開発環境で、イベントを受け手まで流す・通知のメールを `tmp/mails/` に書く・取り込みを進める・定期のジョブ（`config/recurring.yml`）を流すときは、開発者が別の端末で `bin/jobs` を起動する。ワーカーはキューごとに 4 つ起きる（[config.md「ジョブ」](config.md#ジョブ)）。テストはワーカーを使わず、`spec/support/events.rb` の `deliver_enqueued_events` でイベントを届ける（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。シードを流す間は `bin/jobs` を止める（README「開発環境」）。
 
 ## コミットの前に流す検査
 
@@ -40,7 +40,7 @@
 
 | ファイル | すること | 出自 | 動機 |
 |---|---|---|---|
-| `bin/rubocop` | `.rubocop.yml` を明示して RuboCop を動かす。`.rubocop.yml` は rubocop-rails-omakase を継承し、カスタム Cop `FactoryOps/EventJobEnqueue`・`FactoryOps/ExternalEffectEnqueue`・`FactoryOps/NoHistoryComment`（`lib/rubocop/cop/`）を足している | Rails 生成 | `EventJobEnqueue` は [ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3、`ExternalEffectEnqueue` は [ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4、`NoHistoryComment` は [comments.md「機械で止めるもの」](comments.md#機械で止めるもの) |
+| `bin/rubocop` | `.rubocop.yml` を明示して RuboCop を動かす。`.rubocop.yml` は rubocop-rails-omakase を継承し、カスタム Cop `FactoryOps/EventJobEnqueue`・`FactoryOps/ExternalEffectEnqueue`・`FactoryOps/NoHistoryComment`（`lib/rubocop/cop/`）を足し、時刻帯を混ぜる呼び出しを落とす `Rails/Date`・`Rails/TimeZone` を有効にしている（[config.md「application.rb で変えたこと」](config.md#applicationrb-で変えたこと)） | Rails 生成 | `EventJobEnqueue` は [ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3、`ExternalEffectEnqueue` は [ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4、`NoHistoryComment` は [comments.md「機械で止めるもの」](comments.md#機械で止めるもの) |
 | `bin/packwerk` | packwerk の入口。`validate` で設定の整合を、`check` で依存とプライバシーの違反を調べる | Bundler 生成 | [ADR 002](../adr/002-packwerkを初日からCIで強制する.md)、[packs-and-packwerk.md](packs-and-packwerk.md) |
 | `bin/check-structure` | `db/structure.sql` が、マイグレーションを流した結果とも、読み込み直して書き出した結果とも一致することを確かめる | 本デモで書いたもの | [ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) |
 | `bin/check-open-items` | 残件と改善の候補の 2 つの台帳の形と、追跡しているファイルに書いた `OI-NN`・`IB-NN` が台帳にあることを確かめる。`--due M<番号>` を付けると、引当先がそのマイルストーンの `open` と `blocked-user` が残っていれば失敗する。`--text` で PR の本文も確かめる | 本デモで書いたもの | [dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること) |
@@ -78,7 +78,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、3 つ�
 
 ## 本番のコンテナが使うもの
 
-`Dockerfile` は、`ENTRYPOINT` に `bin/docker-entrypoint`、`CMD` に `./bin/thrust ./bin/rails server` を指定する。ジョブのワーカーは、同じイメージを `bin/jobs` で起動する。
+`Dockerfile` は、`ENTRYPOINT` に `bin/docker-entrypoint`、`CMD` に `./bin/thrust ./bin/rails server` を指定する。ジョブのワーカーは、同じイメージを `bin/jobs` で起動する。メトリクスの exporter のために、Web には `METRICS_PROCESS=web`、ワーカーには `METRICS_PROCESS=jobs` と、どちらにも `PROMETHEUS_EXPORTER_PORT` を渡し、Web には `WEB_CONCURRENCY` を設定しない（理由は [config.md「exporter と値の置き場」](config.md#exporter-と値の置き場)）。
 
 | ファイル | すること | 出自 |
 |---|---|---|
