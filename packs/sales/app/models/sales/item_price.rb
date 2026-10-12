@@ -5,7 +5,9 @@ module Sales
   class ItemPrice < TenantRecord
     belongs_to :item
 
-    validates :unit_price, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    # 上限は列の型（bigint）の最大値。超えた値は保存の時点で ActiveModel::RangeError になり、ユーザーエラーに写らない
+    BIGINT_MAX = 9_223_372_036_854_775_807
+    validates :unit_price, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: BIGINT_MAX }
 
     # 記録期間が終わっていない行。パッケージの外からは、記録期間の条件を書き忘れないよう公開 API の price_at を通す
     scope :current, -> { where("upper_inf(item_prices.recorded_period)") }

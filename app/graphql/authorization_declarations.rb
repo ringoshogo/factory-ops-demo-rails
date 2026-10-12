@@ -37,7 +37,7 @@ module AuthorizationDeclarations
       raise error if Rails.env.local?
 
       Rails.error.report(error)
-      raise ForbiddenError
+      raise ForbiddenError.new(reason: "undeclared")
     end
 
     # 欠けている宣言の名前。宣言を足す基底クラスは、これを広げる
@@ -52,6 +52,6 @@ module AuthorizationDeclarations
   def enforce_rule!(record)
     return true if allowed_to?(self.class.authorization_rule, record, with: self.class.authorization_policy)
 
-    raise ForbiddenError
+    raise ForbiddenError.new(reason: "rule")
   end
 end

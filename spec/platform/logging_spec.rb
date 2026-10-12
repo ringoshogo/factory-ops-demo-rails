@@ -49,7 +49,7 @@ RSpec.describe "ログの出口と書式" do
           ActiveRecord::LogSubscriber
           ActiveRecord::StructuredEventSubscriber
         ])
-        expect(production.fetch("event_subscribers")).to eq(%w[Platform::JsonLogSubscriber])
+        expect(production.fetch("event_subscribers")).to eq(%w[Platform::JsonLogSubscriber Platform::MetricsSubscriber])
         expect(production.fetch("middlewares")).to eq(%w[
           Rack::Sendfile
           ActionDispatch::Static
@@ -274,12 +274,13 @@ RSpec.describe "ログの出口と書式" do
 
     it "アプリが出すイベントは、定義した項目を書く" do
       operation = emit("graphql.operation_completed",
-        { operation_name: "Place", result: "user_error", user_error_codes: [ "NOT_FOUND" ], duration_ms: 3.2 })
+        { operation_name: "Place", operation_type: "mutation", result: "error", user_error_codes: [ "NOT_FOUND" ],
+          error_codes: [ "FORBIDDEN" ], forbidden_reasons: [ "rule" ], duration_ms: 3.2 })
       handled = emit("contracts.event_handled",
         { event_name: "Contracts::PurchaseOrderPlaced", receiver: "Sales::PurchaseOrderTranslator", delivery_lag_ms: 12 })
 
-      expect(operation.fetch("payload")).to eq("operation_name" => "Place", "result" => "user_error",
-        "user_error_codes" => [ "NOT_FOUND" ], "duration_ms" => 3.2)
+      expect(operation.fetch("payload")).to eq("operation_name" => "Place", "operation_type" => "mutation", "result" => "error",
+        "user_error_codes" => [ "NOT_FOUND" ], "error_codes" => [ "FORBIDDEN" ], "forbidden_reasons" => [ "rule" ], "duration_ms" => 3.2)
       expect(handled.fetch("payload")).to eq("event_name" => "Contracts::PurchaseOrderPlaced",
         "receiver" => "Sales::PurchaseOrderTranslator", "delivery_lag_ms" => 12)
 
@@ -289,6 +290,14 @@ RSpec.describe "ログの出口と書式" do
         { kind: "new_sales_order", reason: "retries_exhausted:http_503", attempts: 3, to: "leak@example.com" })
 
       expect(failed.fetch("payload")).to eq("kind" => "received_invoice", "delivery_id" => "d1", "reason" => "http_400", "attempts" => 1)
+
+      responded = emit("notifications.provider_responded", { provider: "sendgrid", status: "429", to: "leak@example.com" })
+      accepted = emit("notification.accepted",
+        { kind: "received_invoice", delivery_id: "d1", attempts: 2, acceptance_ms: 90_500, to: "leak@example.com" })
+
+      expect(responded.fetch("payload")).to eq("provider" => "sendgrid", "status" => "429")
+      expect(accepted.fetch("payload")).to eq("kind" => "received_invoice", "delivery_id" => "d1", "attempts" => 2,
+        "acceptance_ms" => 90_500)
       expect(dropped.fetch("payload")).to eq("kind" => "new_sales_order", "reason" => "retries_exhausted:http_503", "attempts" => 3)
 
       chunk = emit("imports.chunk_applied", { kind: "items", import_id: "i1", applied_rows: 499, failed_rows: 1, filename: "顧客.csv" })

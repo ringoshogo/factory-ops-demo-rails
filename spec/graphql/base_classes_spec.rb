@@ -55,6 +55,17 @@ RSpec.describe "GraphQL の基底クラス" do
     schema.execute(query_string, context: { current_user: actor.with(role:) }).to_h
   end
 
+  # FORBIDDEN の出どころは、応答ではなくエラーが持つ。GraphqlController が応答に載ったエラーから集める
+  def forbidden_reasons(schema, query_string, role: "member")
+    schema.execute(query_string, context: { current_user: actor.with(role:) }).context.errors.grep(ForbiddenError).map(&:reason)
+  end
+
+  it "FORBIDDEN の出どころは rule・object・undeclared のどれかに限る" do
+    expect { ForbiddenError.new(reason: "role") }.to raise_error(ArgumentError, /role/)
+    expect(ForbiddenError::REASONS.map { ForbiddenError.new(reason: _1) }.map { [ _1.reason, _1.extensions ] })
+      .to eq(ForbiddenError::REASONS.map { [ _1, { "code" => "FORBIDDEN" } ] })
+  end
+
   describe "型" do
     it "視点の宣言が無ければ例外" do
       type = object_type("Item") { authorization_exempt reason: "spec" }
@@ -81,6 +92,7 @@ RSpec.describe "GraphQL の基底クラス" do
       expect(result["data"]).to eq("item" => nil)
       expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       expect(Rails.error).to have_received(:report).with(an_instance_of(AuthorizationDeclarations::MissingDeclaration))
+      expect(forbidden_reasons(schema, "{ item { name } }")).to eq([ "undeclared" ])
     end
 
     it "policy の show? が偽なら null にし、FORBIDDEN を返してエラー通知に送る" do
@@ -99,6 +111,49 @@ RSpec.describe "GraphQL の基底クラス" do
       expect(result.dig("data", "items")).to eq([ { "name" => "shown" }, nil ])
       expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       expect(Rails.error).to have_received(:report).with(an_instance_of(GraphQL::UnauthorizedError))
+      expect(forbidden_reasons(schema, "{ items { name } }")).to eq([ "object" ])
+    end
+
+    it "フィールドの規則が偽なら null にし、FORBIDDEN を返してエラー通知に送り、出どころを object にする" do
+      allow(Rails.error).to receive(:report)
+      type = object_type("Item") do
+        perspective :supplier
+        authorization_exempt reason: "spec"
+        field_class(Class.new(Types::BaseField) { def authorized?(*) = false })
+        field :secret, String
+      end
+      schema = schema_with(proc { field :item, type, null: true, resolver_method: :item; define_method(:item) { { secret: "x" } } })
+
+      result = run(schema, "{ item { secret } }")
+
+      expect(result["data"]).to eq("item" => { "secret" => nil })
+      expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
+      expect(Rails.error).to have_received(:report).with(an_instance_of(GraphQL::UnauthorizedFieldError))
+      expect(forbidden_reasons(schema, "{ item { secret } }")).to eq([ "object" ])
+    end
+
+    # 非 null の要素のリストで 2 件目を拒否すると、null がリストまで伝わり、2 件目の FORBIDDEN は応答に載らない
+    it "null が伝わって応答から消えた拒否は、出どころにも数えない" do
+      allow(Rails.error).to receive(:report)
+      type = object_type("Item") do
+        perspective :supplier
+        authorize_with SpecPolicy
+      end
+      denied = resolver(type) do
+        perspective :supplier
+        authorize_with SpecPolicy, :read?
+      end
+      schema = schema_with(proc do
+        field :items, [ type ], null: true, resolver_method: :items
+        define_method(:items) { [ { name: "a", visible: false }, { name: "b", visible: false } ] }
+        field :item, resolver: denied
+      end)
+
+      result = run(schema, "{ items { name } item { name } }")
+
+      expect(result["errors"].map { [ _1.dig("extensions", "code"), _1["path"] ] })
+        .to eq([ [ "FORBIDDEN", [ "items", 0 ] ], [ "FORBIDDEN", [ "item" ] ] ])
+      expect(forbidden_reasons(schema, "{ items { name } item { name } }")).to eq(%w[object rule])
     end
 
     it "コネクションとエッジは中身の型の視点を持ち、宣言を持つ PageInfo を返す" do
@@ -138,6 +193,7 @@ RSpec.describe "GraphQL の基底クラス" do
       denied = run(schema, "{ item { name } }")
       expect(denied["data"]).to eq("item" => nil)
       expect(denied["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
+      expect(forbidden_reasons(schema, "{ item { name } }")).to eq([ "rule" ])
 
       expect(run(schema, "{ item { name } }", role: "admin")).to eq("data" => { "item" => { "name" => "item" } })
     end
@@ -190,7 +246,7 @@ RSpec.describe "GraphQL の基底クラス" do
       it "操作者に対して規則を評価し、偽なら FORBIDDEN" do
         result = mutate(save, '{ id: "1" }', role: "member")
 
-        expect(result["data"]).to eq("saveItem" => nil)
+        expect(result).to include("data" => nil)
         expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       end
 
@@ -229,7 +285,7 @@ RSpec.describe "GraphQL の基底クラス" do
       it "引いた対象に対して規則を評価し、偽なら FORBIDDEN" do
         result = mutate(save, '{ id: "other" }')
 
-        expect(result["data"]).to eq("saveItem" => nil)
+        expect(result).to include("data" => nil)
         expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       end
 

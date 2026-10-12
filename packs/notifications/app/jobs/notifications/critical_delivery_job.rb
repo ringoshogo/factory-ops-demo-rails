@@ -27,6 +27,8 @@ module Notifications
         custom_args: { "tenant_id" => delivery.owner_tenant_id, "email_delivery_id" => delivery.id }).public_send(delivery.kind)
       mail.deliver_now
       delivery.update!(accepted_at: Time.current, provider_message_id: mail.delivery_method.response.message_id)
+      Rails.event.notify("notification.accepted", kind: delivery.kind, delivery_id: delivery.id, attempts: delivery.attempts,
+        acceptance_ms: ((delivery.accepted_at - delivery.created_at) * 1000).round)
     rescue Provider::PermanentError => error
       fail!(delivery, error.message)
     rescue Provider::RateLimited, Provider::TransientError => error

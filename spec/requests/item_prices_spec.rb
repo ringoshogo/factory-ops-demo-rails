@@ -116,6 +116,28 @@ RSpec.describe "販売単価の履歴", type: :request do
       expect(audit_rows("item_price.schedule")).to be_empty
     end
 
+    # 単価の列は bigint。上限を超える値は、トップレベルのエラーにせず、項目を指すユーザーエラーにする
+    it "単価は bigint の最大値ちょうどを受け付け、最大値 + 1 は項目を指す INVALID_INPUT で何も書かない" do
+      login_as(supplier_admin)
+
+      expect(mutate("scheduleItemPrice", "item { id }", itemId: item.id, unitPrice: "9223372036854775808", effectiveOn: "2026-11-01"))
+        .to eq("item" => nil, "errors" => [ { "code" => "INVALID_INPUT", "path" => [ "unitPrice" ] } ])
+      expect(prices.size).to eq(1)
+      scheduled = mutate("scheduleItemPrice", "item { id }", itemId: item.id, unitPrice: "9223372036854775807", effectiveOn: "2026-11-01")
+      expect(scheduled["errors"]).to eq([])
+      expect(prices.map { _1["unitPrice"] }).to eq(%w[100 9223372036854775807])
+
+      row_id = query("{ supplier { items { nodes { prices { id validFrom } } } } }")
+        .dig("supplier", "items", "nodes").sole.fetch("prices").find { _1["validFrom"] == "2026-11-01" }.fetch("id")
+      travel 1.hour
+      expect(mutate("correctItemPrice", "item { id }", itemPriceId: row_id, unitPrice: "9223372036854775808", reason: "入力の誤り"))
+        .to eq("item" => nil, "errors" => [ { "code" => "INVALID_INPUT", "path" => [ "unitPrice" ] } ])
+      expect(mutate("correctItemPrice", "item { id }", itemPriceId: row_id, unitPrice: "9223372036854775807", reason: "入力の誤り")["errors"])
+        .to eq([])
+      expect(prices.map { _1.values_at("unitPrice", "reason") }).to eq([ [ "100", nil ], [ "9223372036854775807", "入力の誤り" ] ])
+      expect(audit_rows("item_price.correct").size).to eq(1)
+    end
+
     it "member には FORBIDDEN で、単価の行も監査の行も書かない" do
       login_as(supplier_member)
       row_id = query("{ supplier { items { nodes { prices { id } } } } }").dig("supplier", "items", "nodes").sole.dig("prices", 0, "id")

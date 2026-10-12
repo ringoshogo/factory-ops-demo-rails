@@ -196,7 +196,8 @@ RSpec.describe "GraphQL の入口", type: :request do
     end
   end
 
-  # 操作の終わりに、操作名・結果の種類・ユーザーエラーのコードをログのイベントに出す（docs/guides/config.md「ログ」）
+  # 操作の終わりに、操作名・操作の種類・結果の種類・ユーザーエラーとトップレベルのエラーのコード・FORBIDDEN の出どころを
+  # イベントに出す。ログとメトリクスが同じイベントを読む（docs/guides/config.md「イベントごとに書く項目」）
   describe "操作の終わりのイベント" do
     let(:events) { [] }
     let(:collector) do
@@ -211,19 +212,63 @@ RSpec.describe "GraphQL の入口", type: :request do
 
     after { Rails.event.unsubscribe(collector) }
 
-    it "成功・ユーザーエラー・トップレベルのエラーを分け、ユーザーエラーのコードを書く" do
+    it "成功・ユーザーエラー・トップレベルのエラーを分け、ユーザーエラーとトップレベルのエラーのコードを書く" do
       post "/graphql", params: { query: "query Me { viewer { id } }", operationName: "Me" }, as: :json
       execute_graphql(<<~GRAPHQL)
         mutation { adjustStock(input: { itemId: "#{SecureRandom.uuid}", type: INBOUND, quantity: 1 }) { errors { code } } }
       GRAPHQL
       execute_graphql("{ viewer { unknownField } }")
+      execute_graphql("{ viewer { id }")
 
       expect(events.map { _1.except(:duration_ms) }).to eq([
-        { operation_name: "Me", result: "success", user_error_codes: [] },
-        { operation_name: "anonymous", result: "user_error", user_error_codes: [ "NOT_FOUND" ] },
-        { operation_name: "anonymous", result: "error", user_error_codes: [] }
+        { operation_name: "Me", operation_type: "query", result: "success", user_error_codes: [], error_codes: [],
+          forbidden_reasons: [] },
+        { operation_name: "anonymous", operation_type: "mutation", result: "user_error", user_error_codes: [ "NOT_FOUND" ],
+          error_codes: [], forbidden_reasons: [] },
+        { operation_name: "anonymous", operation_type: "query", result: "error", user_error_codes: [],
+          error_codes: [ "undefinedField" ], forbidden_reasons: [] },
+        { operation_name: "anonymous", operation_type: "none", result: "error", user_error_codes: [], error_codes: [ "none" ],
+          forbidden_reasons: [] }
       ])
       expect(events.map { _1[:duration_ms] }).to all(be_a(Float))
+    end
+
+    it "member が admin に限る mutation を呼ぶと、FORBIDDEN の出どころを rule にする" do
+      execute_graphql('mutation { establishPartnership(input: { partnerCode: "p-b" }) { errors { code } } }')
+
+      expect(response.parsed_body["errors"].map { _1.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
+      expect(events.sole).to include(error_codes: [ "FORBIDDEN" ], forbidden_reasons: [ "rule" ])
+    end
+
+    it "返す型の規則が拒むと、FORBIDDEN の出どころを object にする" do
+      execute_graphql("{ viewer { id } }")
+      allow(Types::ViewerType).to receive(:authorized?).and_return(false)
+      execute_graphql("{ viewer { id } }")
+
+      expect(events.map { _1.slice(:error_codes, :forbidden_reasons) }).to eq([
+        { error_codes: [], forbidden_reasons: [] },
+        { error_codes: [ "FORBIDDEN" ], forbidden_reasons: [ "object" ] }
+      ])
+    end
+
+    it "登録した操作の実行中に例外が上がると、HTTP は失敗し、結果を error にしたイベントを 1 回出してから例外を上げ直す" do
+      during_execution { raise "失敗" }
+
+      expect do
+        post "/graphql", params: { query: "query SupplierDashboard { viewer { id } }", operationName: "SupplierDashboard" }, as: :json
+      end.to raise_error(RuntimeError, "失敗")
+      expect(events.map { _1.except(:duration_ms) }).to eq([
+        { operation_name: "SupplierDashboard", operation_type: "query", result: "error", user_error_codes: [], error_codes: [],
+          forbidden_reasons: [] }
+      ])
+    end
+
+    it "文字列でない query で実行が例外を上げても、操作の種類を none にしたイベントを 1 回出し、元の例外を上げ直す" do
+      expect { post "/graphql", params: { query: 123 }, as: :json }.to raise_error(ArgumentError)
+      expect(events.map { _1.except(:duration_ms) }).to eq([
+        { operation_name: "anonymous", operation_type: "none", result: "error", user_error_codes: [], error_codes: [],
+          forbidden_reasons: [] }
+      ])
     end
 
     it "操作名が GraphQL の名前の形の文字列でなければ、ログの文脈にも操作の終わりにも書かない" do

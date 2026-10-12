@@ -23,8 +23,11 @@ module Platform
       "active_job.retry_scheduled" => %i[job_class job_id executions wait_seconds exception_class],
       "active_job.retry_stopped" => %i[job_class job_id executions exception_class],
       "active_job.discarded" => %i[job_class job_id exception_class],
-      "graphql.operation_completed" => %i[operation_name result user_error_codes duration_ms],
+      "graphql.operation_completed" =>
+        %i[operation_name operation_type result user_error_codes error_codes forbidden_reasons duration_ms],
       "contracts.event_handled" => %i[event_name receiver delivery_lag_ms],
+      "notifications.provider_responded" => %i[provider status],
+      "notification.accepted" => %i[kind delivery_id attempts acceptance_ms],
       "notification.delivery_failed" => %i[kind delivery_id reason attempts],
       "notification.best_effort_dropped" => %i[kind reason attempts],
       "imports.chunk_applied" => %i[kind import_id applied_rows failed_rows],

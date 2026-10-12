@@ -729,6 +729,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `adjustStock` の `reason` の長さ | 200 文字 | `["reason"]` |
 | `requestPurchaseOrderCancellation` の `reason` の長さ | 200 文字。空白だけの理由も `INVALID_INPUT` | `["reason"]` |
 | `correctItemPrice` の `reason` の長さ | 200 文字 | `["reason"]` |
+| `saveItem`・`scheduleItemPrice`・`correctItemPrice` の `unitPrice` | 9,223,372,036,854,775,807（列の型 `bigint` の最大値。取り込みの CSV の `unit_price` も同じ上限で行の失敗にする） | `["unitPrice"]` |
 | `inspectInboundShipment` の `lines` の件数 | 100（発注の明細の上限と同じなので、入荷の全明細は必ず収まる） | `["lines"]` |
 
 ## 状況の enum
@@ -778,6 +779,16 @@ enum UserErrorCode {
   CONFLICT        # 状態と両立しない（出荷済みの受注の取消、回答待ちの取消依頼の重複 など）
 }
 ```
+
+`FORBIDDEN` は 1 つのコードで返し、応答からは出どころを区別させない。運用者は、メトリクス（`graphql_top_level_errors_total` の `reason`。[config.md「メトリクス」](../guides/config.md#メトリクス)）で出どころを分けて見る。出どころは次の 3 つで、拒否した箇所が `ForbiddenError` に持たせ、`GraphqlController` が応答に載ったエラー（`result.context.errors`）から集める。拒否した箇所で数えると、null が伝わって応答から消えた位置の拒否まで数え、応答の `FORBIDDEN` より多くなるからである（graphql 2.6.11 の `lib/graphql/execution/interpreter/runtime.rb`）。
+
+| 出どころ | 拒否する箇所 | 起きる場面 |
+|---|---|---|
+| `rule` | リゾルバと mutation の規則（役割を含む。`AuthorizationDeclarations#enforce_rule!`） | `member` が `admin` に限る操作を呼んだ。画面がボタンを隠していても、利用者の操作で起こりうる |
+| `object` | 返すオブジェクトとフィールドの規則（`FactoryOpsSchema.unauthorized_object`・`unauthorized_field`） | 公開 API の scope と型の規則が食い違った。テナントの境界の不具合の兆しである |
+| `undeclared` | 宣言の無い型・リゾルバ・mutation（本番だけ。開発とテストは例外で落とす） | 宣言を忘れた入口が本番に出た |
+
+mutation の戻り値（payload）は null を許さない（`Payload!`）。規則で拒否した mutation の null は `data` まで伝わり、同じ要求に並べた mutation のうち、先に成功したものの payload も返さない。トップレベルのエラーがある要求は書き込みをすべて戻すので、成功の payload を返すと、戻した書き込みを成功に見せるからである。ユーザーエラーは payload の `errors` で返るので、並べたほかの mutation の payload と書き込みは残る（`spec/requests/mutation_payload_spec.rb`）。
 
 公開 API の操作は、成功なら値、失敗ならエラーコードと対象の入力項目を持つ結果の値（`OperationResult`、`packs/platform`）を返す。基底 mutation が、それを `UserError` に写す。入力項目は `[:lines, 0, :unit_price]` のように公開 API の名前で返し、基底 mutation が `path` の GraphQL の名前（`["lines", "0", "unitPrice"]`）に直す。公開 API の操作は、業務の不変条件の違反で例外を投げない。失敗を返す操作は、書き込みを `transaction(requires_new: true)` の中で行い、失敗を返す前にそのセーブポイントまで戻す。操作はリクエスト全体のトランザクションの中で動くので、入れ子の `transaction` で `ActiveRecord::Rollback` を投げても書き込みは戻らず、リクエストの終わりにコミットされる。セーブポイントまで戻すと、その中で登録したイベントのジョブも一緒に戻る。
 

@@ -24,6 +24,16 @@ gem "solid_queue", "~> 1.2"
 # 取り込みの CSV を読む。Ruby 3.4 で csv は標準添付から外れ、Gemfile に書かないと読み込めない
 gem "csv", "~> 3.3"
 
+# メトリクスを config/initializers/metrics.rb の 1 か所で定義し、Prometheus が引きに来る形で出す。収集器を立てずに手元で確かめられ、
+# OpenTelemetry の Ruby のメトリクスの SDK はまだ 1.0 に達していない（docs/guides/config.md「メトリクス」）
+# [https://github.com/yabeda-rb/yabeda]
+gem "yabeda", "~> 0.16"
+# yabeda-prometheus 0.9.1 は prometheus-client を 5 未満に限るので、prometheus-client は 4 系になる
+gem "yabeda-prometheus", "~> 0.9.1"
+# exporter（Yabeda::Prometheus::Exporter.start_metrics_server!）は Rack 3 では Rackup::Handler::WEBrick で立つが、
+# yabeda-prometheus の依存に webrick が無い（yabeda-prometheus 0.9.1 の lib/yabeda/prometheus/exporter.rb）
+gem "webrick", "~> 1.9"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 gem "bcrypt", "~> 3.1.7"
 

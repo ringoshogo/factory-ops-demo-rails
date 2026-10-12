@@ -9,6 +9,10 @@ module Mutations
     include ActionPolicy::GraphQL::Behaviour
     include AuthorizationDeclarations
 
+    # 戻り値は null を許さない。規則による拒否の null が data まで伝わり、同じ要求で先に成功した mutation の payload も返さない。
+    # トップレベルのエラーがある要求は書き込みをすべて戻すので、成功の payload を返すと、戻した書き込みを成功に見せる
+    null false
+
     field :errors, [ Types::UserErrorType ], null: false
 
     # 成功したときに値を返すフィールド。失敗したときは空になる

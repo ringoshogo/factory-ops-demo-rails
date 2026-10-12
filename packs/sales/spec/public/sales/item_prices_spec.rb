@@ -122,11 +122,18 @@ RSpec.describe Sales::ItemPrices do
       expect(price_on(t1.to_date - 1)).to eq(100)
     end
 
-    it "改定日が今日より前か、単価が負か整数でなければ、項目を指す INVALID_INPUT で何も書かない" do
+    it "改定日が今日より前か、単価が負か整数でないか bigint の最大値を超えれば、項目を指す INVALID_INPUT で何も書かない" do
       expect(failures(schedule(unit_price: 120, effective_on: t1.to_date - 1))).to eq([ [ :invalid_input, [ :effective_on ] ] ])
       expect(failures(schedule(unit_price: -1, effective_on: t1.to_date))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
       expect(failures(schedule(unit_price: 1.5, effective_on: t1.to_date))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
+      expect(failures(schedule(unit_price: 9_223_372_036_854_775_808, effective_on: t1.to_date)))
+        .to eq([ [ :invalid_input, [ :unit_price ] ] ])
       expect(prices.size).to eq(1)
+    end
+
+    it "単価は bigint の最大値ちょうどまでを受け付ける" do
+      expect(schedule(unit_price: 9_223_372_036_854_775_807, effective_on: t1.to_date)).to be_success
+      expect(price_on(t1.to_date)).to eq(9_223_372_036_854_775_807)
     end
 
     it "単価の行が無い品目は CONFLICT、見えない品目は NOT_FOUND" do
@@ -160,12 +167,14 @@ RSpec.describe Sales::ItemPrices do
       expect(prices.map(&:unit_price)).to eq([ 90 ])
     end
 
-    it "理由が空か、単価が負なら、項目を指す INVALID_INPUT" do
+    it "理由が空か、単価が負か bigint の最大値を超えれば、項目を指す INVALID_INPUT。最大値ちょうどは受け付ける" do
       row = prices.sole
 
       expect(failures(correct(row, reason: " "))).to eq([ [ :invalid_input, [ :reason ] ] ])
       expect(failures(correct(row, unit_price: -1))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
+      expect(failures(correct(row, unit_price: 9_223_372_036_854_775_808))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
       expect(prices.map(&:unit_price)).to eq([ 100 ])
+      expect(correct(row, unit_price: 9_223_372_036_854_775_807)).to be_success
     end
 
     it "見えない行は NOT_FOUND" do

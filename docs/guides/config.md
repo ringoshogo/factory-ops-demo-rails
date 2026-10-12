@@ -16,11 +16,13 @@
 | `initializers/event_log.rb` | `Rails.event` のイベントを 1 行の JSON で書く購読者を登録する | 追加 | [ログ](#ログ) |
 | `initializers/filter_parameter_logging.rb` | ログに出さないパラメータ | 生成のまま | [ログ](#ログ) |
 | `initializers/notifications.rb` | 起動時に通知の送信先を作り、本番以外で SendGrid の sandbox mode を外した設定を止める | 追加 | [ジョブ](#ジョブ) |
+| `initializers/metrics.rb` | メトリクスを定義し、`Rails.event` のイベントから値を作る購読者を登録する | 追加 | [メトリクス](#メトリクス) |
 | `initializers/inflections.rb` | 単数形・複数形の規則。全行がコメント | 生成のまま | — |
 | `initializers/strong_migrations.rb` | 危険なマイグレーションを止める gem の設定 | 追加 | [DB の接続](#db-の接続) |
 | `initializers/tenancy.rb` | 接続を貸し出すたびにテナントの設定を空にする | 追加 | [DB の接続](#db-の接続) |
 | `routes.rb` | URL とコントローラの対応 | 変更 | [起動とリクエスト](#起動とリクエスト) |
-| `puma.rb` | Web サーバー Puma の設定 | 生成のまま | — |
+| `puma.rb` | Web サーバー Puma の設定。起動の後にメトリクスの exporter を立てる | 変更 | [メトリクス](#メトリクス) |
+| `graphql_operations.yml` | メトリクスのラベルに使ってよい GraphQL の操作名 | 追加 | [メトリクス](#メトリクス) |
 | `database.yml` | DB の接続先とロール | 変更 | [DB の接続](#db-の接続) |
 | `queue.yml` | Solid Queue のワーカーの設定 | 追加（生成器の後に変更） | [ジョブ](#ジョブ) |
 | `recurring.yml` | Solid Queue の定期実行 | 追加（生成器の後に変更） | [ジョブ](#ジョブ) |
@@ -119,6 +121,8 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 
 取り込みのジョブ（`Imports::RunJob`）は、`ApplicationJob` の `tenant_transaction :per_chunk` を宣言し、実行全体を 1 つの `Tenancy.with_tenant` で包まずに、チャンクごとにテナントのトランザクションを開いて閉じる。同時実行の上限（テナントごとに 1 つ、`duration` は 1 時間）は、ジョブのクラスの `limits_concurrency` に書く。プロセスが強制終了して失敗になった取り込みのジョブは、運用者が rake タスク `imports:reenqueue`（`IMPORT_ID` と `TENANT_ID` に失敗したジョブの引数の値を渡す）で登録し直す（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-4）。
 
+ワーカーのメトリクスの exporter は、`bin/jobs` の supervisor が worker を fork する前に 1 つだけ立てる（[メトリクス](#メトリクス)）。
+
 ジョブを登録する時機（コミットの後か、トランザクションの中か）は設定ではなく、`ApplicationJob`（`packs/platform`）・`Contracts::EventJob`（`packs/contracts`）と、`ExternalEffectJob` のサブクラス（`packs/notifications` の送信のジョブ。書かなければ読み込みで例外になる）の `enqueue_after_transaction_commit` で決める（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4）。
 
 ## ログ
@@ -142,8 +146,10 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 | `action_controller.request_completed` | `controller`・`action`・`status`・`duration_ms` などの数値 | — |
 | `action_controller.rescue_from_handled` | `exception_class` | 例外のメッセージとバックトレース。メッセージは DB のエラーの詳細などに入力の値を含む |
 | `active_job.enqueued`・`enqueued_at`・`started`・`completed`・`retry_scheduled`・`retry_stopped`・`discarded` | `job_class`・`job_id`・`queue`・時間・`exception_class` | ジョブの引数と、例外のメッセージとバックトレース。`ApplicationJob.log_arguments = false` にし、購読者も落とす |
-| `graphql.operation_completed`（アプリが出す） | `operation_name`・`result`（`success`・`user_error`・`error`）・`user_error_codes`・`duration_ms` | — |
+| `graphql.operation_completed`（アプリが出す） | `operation_name`・`operation_type`（`query`・`mutation`。文書を解析できないか、実行する操作を 1 つに決められなければ `none`）・`result`（`success`・`user_error`・`error`）・`user_error_codes`・`error_codes`（トップレベルのエラーの `extensions.code` の一覧。code の無いエラーは `none`）・`forbidden_reasons`（`FORBIDDEN` の出どころの一覧。[graphql-schema.md「エラー」](../architecture/graphql-schema.md#エラー)）・`duration_ms`。スキーマの実行が例外を上げたときも、`result` を `error` にして 1 回だけ出す | — |
 | `contracts.event_handled`（アプリが出す） | `event_name`・`receiver`・`delivery_lag_ms`（受け手の始まりの時刻 − 発行時刻） | — |
+| `notifications.provider_responded`（アプリが出す） | `provider`（`sendgrid`）・`status`（状態コードの百の位の `2xx`・`4xx`・`5xx` など。429 だけは `429`、接続の失敗は `timeout`）。送信 API を呼んだたびに出す | 応答の本文 |
+| `notification.accepted`（アプリが出す） | `kind`・`delivery_id`・`attempts`・`acceptance_ms`（送信記録を作ってから受け付けを書くまで） | 宛先 |
 | `notification.delivery_failed`（アプリが出す） | `kind`・`delivery_id`（送信記録の ID）・`reason`・`attempts` | 宛先。送信記録の ID を `email_delivery_id` と書くと、`filter_parameters` の `email` が名前の一部に当たって値が隠れる |
 | `notification.best_effort_dropped`（アプリが出す） | `kind`・`reason`・`attempts` | 宛先 |
 | `imports.chunk_applied`（アプリが出す） | `kind`・`import_id`・`applied_rows`・`failed_rows`（そのチャンクで新しく結果を書いた行の数） | ファイル名と行の値 |
@@ -232,6 +238,62 @@ Rails は、executor で包まれた処理（Web の要求と、ワーカーが�
 
 ```sh
 grep <相関 ID> log/events.log
+```
+
+## メトリクス
+
+運用者は、GraphQL の操作の時間、キューの滞留と待ち時間、イベントの配送の遅れ、外部の呼び出しの失敗と 429、取り込みの速さを、Prometheus が Web とワーカーの exporter から引いた数値で見る。値はログと同じ `Rails.event` のイベントから作る。`initializers/metrics.rb` が、メトリクスの定義と、イベントを数える購読者 `Platform::MetricsSubscriber`（`packs/platform/lib/platform/`）の登録を 1 か所で行う。キューの滞留だけはイベントが無いので、Prometheus が引きに来た時点で Solid Queue の表を数える。
+
+メトリクスの道具は Yabeda と `yabeda-prometheus` にする。Prometheus が引きに来る形なので、収集器（Collector）を立てずに手元とデモで確かめられる。OpenTelemetry の Ruby のメトリクスの SDK は、まだ 1.0 に達していない。分散トレースが要るか、監視の基盤が OTLP で受けるなら OpenTelemetry に移る。値の出どころは購読者の 1 つなので、移るときは出口のライブラリを替えるだけで済む。
+
+> opentelemetry-metrics-sdk の最新は 0.20.0 だった（2026 年 10 月に rubygems.org で確かめた）。
+
+### メトリクスとラベル
+
+| メトリクス | 種類 | ラベル | 出どころ |
+|---|---|---|---|
+| `graphql_operation_duration_seconds` | ヒストグラム | `operation`・`operation_type`・`outcome`（`ok`・`user_error`・`error`） | `graphql.operation_completed` の `duration_ms` と `result`（`success` を `ok` に写す） |
+| `graphql_top_level_errors_total` | カウンタ | `operation`・`code`・`reason` | 同じイベントの `error_codes` と `forbidden_reasons`。`FORBIDDEN` の 1 件ごとに出どころを 1 つ当て、ほかのコードの `reason` は `none` にする |
+| `job_duration_seconds` | ヒストグラム | `queue`・`job_class` | `active_job.completed` の `duration`（ミリ秒） |
+| `job_queue_latency_seconds` | ヒストグラム | `queue` | `active_job.started` のイベントの時刻 − `enqueued_at`。`enqueued_at` の無いジョブ（登録を通らずに `perform_now` したもの）は数えない |
+| `event_delivery_lag_seconds` | ヒストグラム | `event` | `contracts.event_handled` の `delivery_lag_ms` |
+| `queue_ready_jobs`・`queue_blocked_jobs`・`queue_claimed_jobs`・`queue_failed_jobs` | ゲージ | `queue` | 引きに来た時点で、Solid Queue の 4 つの実行の表をキューごとに数える。`claimed` は実行中のジョブである。`config/queue.yml` のワーカーのキューと、そのプロセスで一度でも数えたキューは、ジョブが無くても 0 を書く。書かないと、最後に数えた値が残る |
+| `external_requests_total` | カウンタ | `provider`・`status` | `notifications.provider_responded` |
+| `notification_acceptance_seconds` | ヒストグラム | `kind` | `notification.accepted` の `acceptance_ms` |
+| `notification_failures_total`・`notification_dropped_total` | カウンタ | `kind`・`reason` | `notification.delivery_failed`・`notification.best_effort_dropped` |
+| `import_rows_total` | カウンタ | `kind`・`result`（`applied`・`failed`） | `imports.chunk_applied` の `applied_rows`・`failed_rows` |
+| `import_duration_seconds` | ヒストグラム | `kind`・`size`（10,000 行以下は `small`、超えれば `large`） | `imports.finished` の `duration_ms` と `total_rows`。行を数える前に失敗した取り込みは `total_rows` が無く、反映した行が無いので `small` にする |
+
+メトリクスを足す人は、ラベルにテナント ID・ユーザー ID・伝票の ID を入れない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログの相関 ID で行う。`spec/platform/metrics_subscriber_spec.rb` が、どのラベルの名前にも `tenant`・`user`・`_id` で終わる名前が無いことを確かめる。
+
+`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、登録の無い名前・名前の無い操作・種類の違う操作に付いた登録の名前は `other` にする。登録の表は `queries` と `mutations` に分ける。`queries` は画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）の操作名と一致させ、spec がそれを確かめる。`mutations` には、画面が送る mutation の操作名を書く。mutation の文書は画面の問い合わせの一覧に置かない。一覧は query だけで、クエリ数の予算と複雑度の spec が query であることを求めるからである。
+
+ヒストグラムのバケットは、SLO の閾値（`graphql_operation_duration_seconds` の 0.5 秒と 1 秒、`event_delivery_lag_seconds` の 60 秒、`notification_acceptance_seconds` の 900 秒、`import_duration_seconds` の 300 秒）を境界に含める。バケットを指定しないと `prometheus-client` の既定（最大 10 秒）になり、閾値の割合を取れない（yabeda-prometheus 0.9.1 の `lib/yabeda/prometheus/adapter.rb` の `register_histogram!`）。閾値を変える人は、バケットも同じ変更で直す。spec は、閾値ちょうどの値と閾値を超える値が別の `le` に数えられることを確かめる。
+
+### exporter と値の置き場
+
+exporter は、Web とワーカーで 1 つずつ、別のポート（Web は 9394、ワーカーは 9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。exporter を立てるのは、環境変数 `METRICS_PROCESS`（`web`・`jobs`）でプロセスの種類を示したプロセスだけである。`METRICS_PROCESS` の無いプロセス（rake タスク・console と、設定しない開発のサーバー）は exporter を立てず、値をプロセスのメモリに置く。test の環境では、設定があっても立てない。
+
+| プロセス | 立てる場所 | 立てる時機 |
+|---|---|---|
+| Web（`METRICS_PROCESS=web`） | `puma.rb` の `after_booted` | 起動の後に 1 回。Puma を単一のモードで動かし、fork しない。`puma.rb` に `workers` を置かず、環境変数 `WEB_CONCURRENCY` も設定しない。Puma は `WEB_CONCURRENCY` があればクラスタのモードで起き（puma 8.0.2 の `lib/puma/configuration.rb`）、`after_booted` が worker の fork の後に動くので、空にしたディレクトリが worker の値を消す。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つ |
+| ワーカー（`METRICS_PROCESS=jobs`） | `initializers/metrics.rb` の `SolidQueue.on_start` | supervisor が worker・dispatcher・scheduler を fork する前に 1 回（solid_queue 1.7.0 の README「Lifecycle hooks」） |
+
+`yabeda-prometheus` の exporter は、ポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`lib/yabeda/prometheus/exporter.rb`）。`PORT` は Puma も使うので、`Platform::Metrics.start_exporter!` は、`PROMETHEUS_EXPORTER_PORT` の無いプロセスと、`METRICS_PROCESS` がプロセスの種類と違うプロセスと、`WEB_CONCURRENCY` を設定した Web のプロセスの起動を止める。Web は `after_booted` の例外で止まる。ワーカーは、solid_queue 1.7.0 の `LifecycleHooks#run_hooks_for` がフックの例外を拾って起動を続けるので、`Platform::Metrics.start_worker_exporter!` が worker を fork する前にプロセスを終える。exporter は Rack 3 では `Rackup::Handler::WEBrick` で立つが、`webrick` は `yabeda-prometheus` の依存に無いので、Gemfile に書く。
+
+fork した子のプロセスも値を書くので、`METRICS_PROCESS` のあるプロセスは、値を `prometheus-client` の `DirectFileStore` で `tmp/metrics/<環境>/<METRICS_PROCESS>` に書き、exporter がまとめて読む。
+
+- **ディレクトリを選ぶ時点**：store はメトリクスを登録する時点で決まる（`adapter.rb` の `store_settings`）ので、`initializers/metrics.rb` が Yabeda の設定より前に選ぶ。
+- **空にする時点**：exporter を立てる直前の 1 回だけである。初期化子で空にすると、同じ設定で後から起きた別のプロセスが、動いているプロセスの値を消す。
+- **キューのゲージ**：収集のブロックは、どちらの exporter の読み出しでも動くので、`METRICS_PROCESS` が `jobs` のプロセスにだけ登録する。ゲージは supervisor の 1 つのプロセスだけが書くので、集計を `aggregation: :most_recent` にする。`DirectFileStore` のゲージの既定の集計は、プロセスごとの値を `pid` のラベルで分けて出す。
+
+開発の環境では、次で値が出ることを確かめる。`queue_ready_jobs` の行に `pid` のラベルが無い。
+
+```sh
+PROMETHEUS_EXPORTER_PORT=9394 METRICS_PROCESS=web bin/rails server   # GraphQL の問い合わせを 1 回流す
+curl -s localhost:9394/metrics | grep graphql_operation_duration_seconds_bucket
+PROMETHEUS_EXPORTER_PORT=9395 METRICS_PROCESS=jobs bin/jobs          # イベントを 1 件流す
+curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready_jobs'
 ```
 
 ## 環境ごとの設定
