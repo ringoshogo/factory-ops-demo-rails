@@ -1537,7 +1537,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 |---|---|---|---|---|---|
 | 1 | `/` ログイン | 共通 | `/`（デモを開始） | `POST /session`・`DELETE /session`（`SessionsController`）、`viewer`（著者判断 3） | M4・M8 |
 | 2 | `/settings` 自社の情報 | 共通 | —（新規） | `viewer`（取引用コード `partnerCode` は `admin` だけ） | M8 |
-| 3 ※ | `/audit-logs` 監査ログ | 共通 | —（新規） | `viewer.auditLogs`（`admin` だけ） | M19 |
+| 3 ※ | `/audit-logs` 監査ログ | 共通 | —（新規） | `viewer.auditLogs`（`admin` だけ）。シードと E2E の世界は監査の行を書かないので、作った直後はイベントの受信の行だけが並ぶ（OI-141） | M19 |
 | 4 ※ | `/supplier/dashboard` ダッシュボード | 受注側 | `/dashboard` | `supplier.dashboard`、かんばんは `supplier.salesOrders`、カードの操作は `allocateSalesOrder`・`createShippingInstruction`・`postShipment` | M26・M10・M12・M13 |
 | 5 | `/supplier/sales-orders` 受注一覧 | 受注側 | `/orders` | `supplier.salesOrders` | M10（状況の「検収済」は M23、取消審査中の印は M21） |
 | 6 ※ | `/supplier/sales-orders/[id]` 受注詳細 | 受注側 | `/orders/[id]` | `supplier.salesOrder`、`allocateSalesOrder`・`createShippingInstruction`・`cancelSalesOrder`・`approveCancellationReview`・`rejectCancellationReview` | M10・M12・M13・M21・M22 |
@@ -1628,6 +1628,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 
   流用元の開発の進め方（台帳・交差レビュー・RED と GREEN の push の規約）と、配信先のエッジに掛かる上限の検査は持ち込まない。本書の「1 つのマイルストーンの進め方」と、`guides/dev-cycle.md` のレビューの回し方に従う。
 - **CI**：`.github/workflows/ci.yml` にジョブを 2 つ足す。`frontend` は、`npm ci`・`npm run codegen:check`・`npm run lint`（コメントの検査を含む）・`npm run typecheck`・`npm run test:unit` を流す。`e2e` は、既存の test のジョブと同じ PostgreSQL 18 のサービスとロールの準備をし、Ruby と Node を入れ、`npx playwright install --with-deps chromium` の後に `npm run test:e2e` を流す。
+- **サイクル 04 の逸脱検査から送った確かめ**：E2E が Rails のサーバーを起こす前に、`WEB_CONCURRENCY` の未設定・`0`・正の数・`auto` で Web（`METRICS_PROCESS=web`）を起こし、Puma が単一のモードで起きて exporter が値を出すかを確かめる（OI-142）。`0` が単一のモードなら、`guides/config.md`「exporter と値の置き場」を「クラスタのモードになる値」に具体化する
 
 **完了条件**
 
