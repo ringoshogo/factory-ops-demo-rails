@@ -302,3 +302,164 @@ bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 f
 ### 残件の処理
 
 引当先が M30 の `open` は OI-119・OI-121 で、どちらも閉じた。OI-124 は judgment のまま、出どころのラベルを実装した。実装で決めたことは OI-129〜OI-133 に judgment で積んだ。実装レビューの違和感は IB-51 に足し、IB-53・IB-54 に積んだ。
+
+## M31 SLO と障害対応の手順書
+
+PR #52（`m31-slo`、base は `main`）。PR #49・#50・#51 が未マージなので、その commit も差分に見える。M31 の差分は `ae0fe20..` である。
+
+Codex は Conditional Go で、High の M31-R1 を名指しした。Claude は Go だった。High と Medium は同じブランチの `c6414a2` で直した。High があったので Codex に読み直しを出し（`aa4c725..c6414a2` を `c6414a2` の版で）、M31-R1 は解消、M31-R2 は未解消（Medium）、High 以上の新しい指摘は無く Go だった。M31-R2 は `0c885e0` で直した。Medium なので、もう一度の読み直しには出していない。
+
+どちらの系統も、`ae0fe20..aa4c725` の diff を `aa4c725` の版で読んだ。Claude は `aa4c725` の worktree を別名のテスト DB で流し（100 examples, 0 failures）、実装を壊して確かめ、警報の式を promtool の追加の系列で確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた控えのファイルから結果を読んだ。Codex は実行の環境から Docker に接続できず、promtool と DB のテストを流さずに、対象の commit を読んで判定した。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Conditional Go（M31-R1） | Go（M31-R2 は未解消の Medium） |
+| Claude | Go | — |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R2） | 指摘なし |
+| 正しさ | 指摘（R1・R2・R4） | 指摘（F-1・F-2・F-6） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R2・R3） | 指摘（F-3・F-4・F-5） |
+| 参照の維持 | 指摘（R4） | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex | M31-R1：RLS の手順書の診断が `relforcerowsecurity` とポリシーの名前だけを比べ、`relrowsecurity`（RLS の有効）を見ない。RLS を無効にした表は強制の属性とポリシーを残すので、差が出ずに「DB の守りは崩れていない」と判断する | 表ごとの `relrowsecurity`・`relforcerowsecurity` と、ポリシーの全項目（対象の操作・ロール・`USING`・`WITH CHECK`）を書き出すスクリプトを手順書に置き、疑いのある環境と、手元で `structure.sql` から作り直したテストの DB の出力を比べる形にした。開発の DB で `import_files` の RLS を無効にすると `table import_files false true` の差が出ることを確かめ、戻した | `c6414a2` |
+| Medium | Codex | M31-R2：`ImportStalled` の `min_over_time(...[15m]) > 0` は 15 分の観測を保証せず、履歴の無い系列で最初の評価から鳴る | `c6414a2` で 15 分前の値（`offset 15m`）も求めたが、読み直しで、窓の途中で収集が途切れて別のジョブで実行中に戻ると 2 分で鳴ると指摘された。`0c885e0` で、1 分ごとに「実行中なら 1、実行中でないか系列が無ければ 0」にした値（サブクエリ `[15m:1m]`）の最小値で見る形にした。履歴の無い系列・30 分の途切れ・窓の途中の 12 分の途切れの系列を `alerts_test.yml` に足した | `c6414a2`・`0c885e0` |
+| Medium | Claude | F-2：M31-R2 と同じ（ワーカーを起こし直した直後に鳴る） | M31-R2 と同じ | `c6414a2`・`0c885e0` |
+| Medium | Claude | F-1：`x unless x offset 10m` は、収集が 1 回抜けて 10 分前の値が欠けると、値の変わらない系列を新しい系列と読み、`page` が鳴る | 2 つの「増えた」警報に `for: 2m` を付け、新しい系列の側を 0 でない値に限った。収集の抜けた系列と 0 で現れた系列をテストに足した | `c6414a2` |
+| Medium | Claude | F-3：鳴る example がどれも新しい系列の側で鳴り、`increase` の側を外してもテストが通る | 10 分より前からある系列が増えて鳴り、増えないまま 10 分で止む example を、通知の失敗と `FORBIDDEN` の両方に足した | `c6414a2` |
+| Medium | Codex | M31-R3：他社のファイルを残す example は RLS が掛かったままで、所有の条件を外しても落ちない | 後始末が流した候補の文（`FOR UPDATE`）を `sql.active_record` で拾い、所有ロールの接続で流し直して、自社のファイルだけを選ぶことを確かめる `files_purge_owner_spec.rb` を足した（`sales_order_policy_spec.rb` と同じ形）。消す文は候補の ID に限り、所有の条件を候補の文の 1 か所にした | `c6414a2` |
+| Low | Claude | F-4：M31-R3 と同じ。加えて、`Tenancy.require_tenant!` を外しても `TenantRecord` の `default_scope` が同じ例外を上げるので落ちない | 所有の条件は M31-R3 と同じ。`require_tenant!` は落ちない守りとして IB-59 に積んだ | `c6414a2` |
+| Medium | Codex | M31-R4：取り込みの手順書が、取り込みはテナントごとに別のワーカーで動くと書くが、`imports` のワーカーは全テナントで 1 つである | 全テナントが 1 つのワーカーを共有し、止まったジョブが他社の取り込みも待たせると書き、ワーカーを起こし直してから登録し直す止血にした | `c6414a2` |
+| Low | Claude | F-5：立てる値の example が `1` だけで、`true` で止まることと、ログアウトを止めないことを確かめていない | `true` で 503 になる example と、立てたときにログアウトが 204 になる確かめを足した | `c6414a2` |
+| Low | Claude | F-6：キューの手順書が「Web かワーカーのコンテナ」と書くが、9395 の exporter はワーカーにしか届かない | exporter を読む手順に、流すコンテナ（9395 はワーカー、9394 は Web）を書いた | `c6414a2` |
+
+違和感は次のように扱った。
+
+- Claude 1：予算の消費の警報が短い窓と組んでいない → IB-55 に積んだ
+- Claude 2：`alerts_test.yml` は規則と同じ `le` の文字列で書くので、取り込みとの食い違いを捕まえない → IB-56 に積んだ
+- Claude 3：キューの手順書のやり直しが、取り込みの失敗したジョブもやり直し、取り込みの手順書の順と食い違う → キューの手順書のやり直しから `Imports::RunJob` を除き、取り込みの手順書で登録し直すと書いた（`c6414a2`）
+- Claude 4：計画の M31 の節が、ファイルの受け口の成功を 200 と書く → 成功の状態コード（GraphQL は 200、ファイルの受け口は 201）に直した（`c6414a2`）
+- Claude 5：後始末のジョブは、1 社の例外で残りの社を回らない → IB-57 に積んだ
+- Claude 6：`JobsFailed` が、残すと決めた失敗のジョブでも鳴り続ける → IB-58 に積んだ
+- Codex：なし
+
+### 実装の記録
+
+#### RED と、壊して落ちる記録
+
+計画が最初に落とすとした 3 つは、`ae0fe20` の上で、後始末のジョブを空の `perform` にした形で、期待の不一致で落ちた（`bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/requests/maintenance_mode_spec.rb packs/imports/spec/jobs/imports/purge_abandoned_files_job_spec.rb`、13 examples, 9 failures）。
+
+- `alerts_runbook_spec.rb`：警報の一覧と手順書の一覧が空（`expected [].empty? to be falsey, got true`）で 3 件
+- `maintenance_mode_spec.rb`：`expected the response to have status code :service_unavailable (503) but it was :ok (200)`
+- `purge_abandoned_files_job_spec.rb`：24 時間 + 1 秒のファイルが残る（`expected: ["item_code,quantity\n", nil] got: ["item_code,quantity\n", "item_code,quantity\n"]`）と、どのテナントのファイルも残るの 2 件。公開 API の 3 件は `NoMethodError` で落ちたので RED に数えず、下の壊して落ちる記録で代える
+
+`lock_sites_spec.rb` は、表に後始末と開始の 2 行を足す前に、表と集めたロックの食い違いで落ちた。ほかの spec と example は実装の後に書いたので、次の壊して落ちる記録で RED に代える。壊したファイルは複製から戻し、壊すときと戻すときに更新時刻を進めた。`343f5c5` の作業ツリーで、壊したファイルを確かめる spec のファイルだけを流した。
+
+後始末と開始（`purge_abandoned_files_job_spec.rb`・`runs_spec.rb`・`purge_lock_spec.rb`、22 examples）：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| 24 時間ちょうどを消す側に含める（`...` を `..` にする） | 1：24 時間ちょうどと 24 時間 + 1 秒 |
+| 消す文の、取り込みの有無の読み直しを外す | 1：`purge_lock_spec.rb` の「開始が先にロック」 |
+| ロックの文と消す文の両方から、取り込みの有無の条件を外す | 2：取り込みを始めたファイルを消さない・「開始が先にロック」 |
+| 後始末のロック（`.lock`）を外す | 1：「開始が先にロック」（後始末が待たない） |
+| ジョブが最初のテナントだけを回る | 2：24 時間の境目・どのテナントのファイルも消す |
+| 開始のロックを外す | 1：`purge_lock_spec.rb` の「後始末が先にロック」（開始が待たない） |
+| 開始の中身の確かめ（`raise FilePurged`）を外す | 2：中身を消したファイルの `CONFLICT`（単体と競合） |
+| 中身の確かめを、取り込み済みの確かめより先にする | 1：取り込みを終えたファイルの 2 回目 |
+
+落ちなかったもの：ロックの文だけから取り込みの有無の条件を外しても落ちない。消す文の読み直しが同じ条件を持つからで、ロックの文の条件は、取り込み済みのファイルをロックしないための絞り込みである。`Tenancy.require_tenant!` を外しても、`TenantRecord` の `default_scope` が同じ例外を上げるので落ちない（IB-59）。所有の条件を外しても、RLS が同じ行を閉じるので落ちなかった。これは実装レビューの M31-R3 で、所有ロールの接続で流し直す example を足した（下の直しの記録）。
+
+メンテナンスの切り替え（`maintenance_mode_spec.rb`、5 examples）：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| `GraphqlController` から外す | 2：503 を返す・形とセッションの検査より先に止める |
+| `ImportFilesController` から外す | 1：503 を返す |
+| `prepend_before_action` を `before_action` にする | 1：形とセッションの検査より先に止める（415 が返る） |
+| 値があれば立てる読み方にする | 1：`false` のとき |
+| ログインのコントローラにも取り込む | 1：ログインは通る |
+| Webhook のコントローラにも取り込む | 1：Webhook は受け取る |
+
+警報と手順書（`alerts_runbook_spec.rb`、4 examples）・CI の検査（`ci_checks_spec.rb`）：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| 警報から `runbook` を消す | 1：手順書のパスを持つ |
+| 警報が無い手順書を指す | 2：手順書のパスを持つ・どの手順書も指される |
+| 警報が手順書を指さなくなる（別の手順書を指す） | 1：どの手順書も指される |
+| 手順書の節の名前を変える | 1：節の順 |
+| 共通の完了条件の一覧から `bin/check-alerts` を外す | `ci_checks_spec.rb` の 1 |
+
+警報の規則（`bin/check-alerts`、`a5888fe` と同じ内容の作業ツリーで `alerts.yml` を壊した）：
+
+| 壊したもの | 落ちたテスト |
+|---|---|
+| 画面の問い合わせの `le="1.0"` を `le="1"` にする | `ScreenQueryLatencyBudgetBurnFast` の 60m |
+| 画面の問い合わせから `operation!="other"` を外す | 同上 |
+| 通知の失敗から、新しい系列の側を外す | `ReceivedInvoiceNotificationFailed` の 22m |
+| `FORBIDDEN` の出どころに `rule` を含める | `ForbiddenByObjectOrUndeclared` の 5m |
+| 取り込みの停滞から `or vector(0)` を外す | `ImportStalled` の 26m（行の系列の無い場合） |
+| 取り込みの停滞を、実行中の今の値だけで見る | `ImportStalled` の 20m |
+| 発注の登録の失敗の閾値の予算を 0.006・0.004 にする | `PlacePurchaseOrderErrorBudgetBurnFast` の 60m（どちらの向きでも） |
+| イベントの滞留から `for: 5m` を外す・`>` を `>=` にする | `EventsQueueBacklog` の 4m・6m |
+
+#### 確かめたこと
+
+`343f5c5` に手順書の直しを足した作業ツリー（`aa4c725` と同じ内容）で、Ruby 3.4.11 で M31 の完了条件と共通の完了条件を流した。
+
+```sh
+bin/check-alerts                                   # check rules は 30 rules、test rules は SUCCESS
+bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_spec.rb spec/requests/maintenance_mode_spec.rb \
+  spec/db/lock_sites_spec.rb packs/imports/spec     # 105 examples, 0 failures
+bin/ci                                             # 全工程が通る（brakeman は警告 0、rspec は 2546 examples, 0 failures）。2 分 8 秒
+BASE_REF=origin/main bin/check-branch-coverage     # 一覧は空
+bin/check-open-items --due M31                     # 終了コード 0
+bundle exec rspec --tag concurrency                # 2 回続けて 61 examples, 0 failures
+```
+
+分岐の網羅率の警告は 0 件で、example を足した件数も 0 件である。
+
+手で確かめたこと（開発の環境、`a5888fe` の後の作業ツリー）：
+
+- Prometheus 3.15.0 のコンテナに、prometheus-client 4.2.5 が書いたヒストグラムの本文を取り込ませると、`le="1"`・`le="60"` は `le="1.0"`・`le="60.0"` になり、`le="0.5"` はそのままだった。規則とテストの `le` はこの表記で書いた
+- `PROMETHEUS_EXPORTER_PORT=9394 METRICS_PROCESS=web bin/rails server` と `PROMETHEUS_EXPORTER_PORT=9395 METRICS_PROCESS=jobs bin/jobs` を起こし、テナントとユーザーを作ってログインし、`SupplierDashboard` を 1 回流し、在庫の CSV を置いて取り込んだ。そのうえで、5 つの手順書の「確かめること」のコマンドを 1 回ずつ流し、どれも動いた。キューの止めと再開、失敗したジョブのやり直し、`imports:reenqueue`（終えた取り込みには登録しない）も流した。外部の呼び出しと通知の失敗のメトリクスは、開発の送信先が外部を呼ばないので行が出なかった
+- 2 つのコマンドを、流した結果から直した（`aa4c725`）。止めたキューは `SolidQueue::Queue.all` がジョブのあるキューしか返さないので、`SolidQueue::Pause` の表から読む。取り込みの `staged_rows` は、見出しを 1 行目に数えた最後の行番号である
+- `MAINTENANCE_MODE=1` で起こした Web は、GraphQL とファイルの受け口が 503、ログインが 204、`/up` が 200 だった
+
+#### 実装レビューの直しの記録
+
+`c6414a2`・`0c885e0` の上で、次のように壊して落ちることを確かめ、戻した。
+
+| 壊したもの | 落ちたもの |
+|---|---|
+| 2 つの「増えた」警報から `for: 2m` を外す | 2 つの警報の 20m（収集の抜けた系列で鳴る） |
+| 通知の失敗・`FORBIDDEN` から `increase` の側を外す | それぞれの 18m・20m・23m |
+| 新しい系列の側から `> 0` を外す | `ReceivedInvoiceNotificationFailed` の 23m（0 で現れた系列で鳴る） |
+| `c6414a2` の取り込みの停滞から `offset 15m` の条件を外す | `ImportStalled` の 1m・41m |
+| `0c885e0` の取り込みの停滞を、系列の値に直に `min_over_time` を掛ける形に戻す | `ImportStalled` の 1m・16m・41m |
+| `0c885e0` の取り込みの停滞から、系列が無いときの 0 を外す | 同上 |
+| 後始末の候補の文から所有の条件を外す | `files_purge_owner_spec.rb` の 1 |
+| `MAINTENANCE_MODE` を `1` のときだけ立てる | `maintenance_mode_spec.rb` の 1：`true` のとき |
+| 立てたときにログアウトを止める | `maintenance_mode_spec.rb` の 1：ログインとログアウトは通る |
+
+M31-R1 の手順書の直しは、開発の DB で `import_files` の RLS を無効にして差が出ることと、戻して差が消えることで確かめた。
+
+`0c885e0` で、共通の完了条件を流し直した。
+
+```sh
+bin/ci                                             # 全工程が通る（brakeman は警告 0、rspec は 2548 examples, 0 failures）。2 分 5 秒
+BASE_REF=origin/main bin/check-branch-coverage     # 一覧は空
+bin/check-open-items --due M31                     # 終了コード 0
+bundle exec rspec --tag concurrency                # 2 回続けて 61 examples, 0 failures
+bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_spec.rb spec/requests/maintenance_mode_spec.rb \
+  spec/db/lock_sites_spec.rb packs/imports/spec     # 107 examples, 0 failures
+```
+
+### 残件の処理
+
+引当先が M31 の `open` は OI-116 で、閉じた。OI-122・OI-126 は judgment のまま、判断どおりに実装した。実装で決めたことは OI-134〜OI-137 に judgment で積んだ。実装レビューの違和感と落ちない守りは IB-55〜IB-59 に積んだ。
