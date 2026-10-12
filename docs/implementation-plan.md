@@ -1293,10 +1293,10 @@ bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.r
 
 1. 試作と分かれ目：別名のテスト DB で、下の 2 の (1)〜(4) が成り立つかを先に確かめる。テストの DB にポリシーを足して外す操作が、世界の固定した接続のロックと待ち合わないこと、2 回目の入口の行列で、scope を外した入口が落ちることを確かめ、結果を証跡に書く。成り立たなければ、判断の裏返る条件に従って止め、取りまとめ役に返す
 2. scope を RLS の外で確かめる（IB-35）：
-   1. テストの環境でだけ、テナントの表ごとに、設定の値（`app.matrix_cross_read`）が `on` のときだけ全行を読ませる SELECT のポリシーを足す。ポリシーを作る SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。補助は、接続先がテストの DB であることを名前で確かめてから、所有ロールの接続で、世界を開く前に足し、世界を閉じた後に外す。足す途中で失敗しても、足した分を外す。`structure.sql` に混ざったときは `bin/check-structure` が落とす
+   1. テストの環境でだけ、テナントの表ごとに、設定の値（`app.matrix_cross_read`）が `on` のときだけ全行を読ませる SELECT のポリシーを足す。ポリシーを作る SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。補助は、接続先がテストの DB であることを名前で確かめてから、所有ロールの接続で、世界を開く前に足し、世界を閉じた後に外す。足す途中で失敗しても、足した分を外す。補助は `MatrixWorld.share_per_file` の引数（`cross_read: true`）にし、世界を開く `before(:context)` の前に足し、世界を閉じる `after(:context)` の後に外す順を、そこで固定する。掛けるのは `graphql_matrix_spec.rb` と `matrix_world_spec.rb` で、`table_matrix_spec.rb` には掛けない。`structure.sql` に混ざったときは `bin/check-structure` が落とす
    2. 設定の値は、example のトランザクションの中で `SET LOCAL` し、ロールや DB の既定には書かない
-   3. 入口の行列の読み取りの行は、同じ example の中で、設定を外した応答と `on` にした応答の本文が一致することで確かめる。結果の種類（値・空・`null`）だけを比べると、集計を返す入口（`supplier.dashboard`）で scope を外しても種類が変わらないからである。順序の決まらない一覧で誤って落ちないよう、比べる応答の並びが決まることも確かめる
-   4. 2 回目が空振りしないことを確かめるガードの example を置く。設定を `on` にした生 SQL が、他社の行を読めることを確かめる。このガードと、足す途中で失敗しても足した分を外すことの example は `spec/matrix/matrix_world_spec.rb` に置く
+   3. 入口の行列の読み取りの行は、同じ example の中で、設定を外した応答と `on` にした応答の本文が一致することで確かめる。結果の種類（値・空・`null`）だけを比べると、集計を返す入口（`supplier.dashboard`）で scope を外しても種類が変わらないからである。順序の決まらない一覧で誤って落ちないよう、比べる応答の並びが決まることも確かめる。比べる本文に集計の差が出るよう、行列の `SupplierView.dashboard` の問い合わせはダッシュボードのすべてのフィールド（`stocksBelowSafetyStock`・`shipmentRequestsDueSoon` を含む）を読み、`MatrixWorld` は、どのペルソナにも各集計に当たる行（有効在庫が安全在庫を下回る在庫、期限が今日から近い未出荷の出荷依頼、未請求の明細）を持たせる
+   4. 2 回目が空振りしないことを確かめるガードの example を置く。設定を `on` にした生 SQL が、他社の行を読めることと、設定を `on` にしてダッシュボードの 4 つの公開 API から scope を外すと、各集計が他社の行を含んで変わることを確かめる。このガードと、足す途中で失敗しても足した分を外すことの example は `spec/matrix/matrix_world_spec.rb` に置く
    5. `spec/db/tenant_enforcement_spec.rb` に、テナントの表のポリシーの集合が `owner_write` と、読む 3 経路の 6 つの表の `partner_read` だけであることの確かめを足す。いまはどちらの spec も、足したポリシーの消し忘れを捕まえない
    6. 確かめるのは GraphQL の入口から届く読み取りだけである。GraphQL を通らない公開 API（通知の宛先・取り込みの再登録・単価の移行）は外に残る（OI-118）。完了を、公開 API 全体の所有の条件を確かめ終えたと書かない
 3. 行列の役割の検査を読み取りに広げる（IB-29）：読み取りの行にも許す役割（`role:`）を持たせ、全ペルソナの `member` で呼ぶ。`member` の期待は行ごとに書く（`viewer.auditLogs` は `FORBIDDEN`、`viewer.partnerCode` は `null`）。`viewer.partnerCode` は型のメソッドで書いたフィールドで、いまの列挙（`Viewer` の下のリゾルバ付きのフィールド）に入らないので、列挙に足し、入口の列挙の完全性の確かめと食い違わない形にする。「ほかの行は役割を持たない」の確かめは、全行が役割を持つ形に書き直す
@@ -1316,7 +1316,7 @@ for seed in 1 2 3; do bundle exec rspec spec/matrix --order rand --seed $seed ||
 bin/check-structure
 ```
 
-M37 は業務の振る舞いを変えないので、期待の不一致で最初に落ちるのは、ポリシーの集合の確かめ（足す前の `tenant_enforcement_spec.rb` に集合の example を書き、補助がポリシーを残した状態で流すと落ちる）と、読み取りの行に `member` の期待を書いた行列の example（`viewer.partnerCode` の `member` を `:value` と書くと落ちる）である。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す（`guides/dev-cycle.md`「テストから書く」）。
+M37 は業務の振る舞いを変えないので、期待の不一致で最初に落ちるのは、`matrix_world_spec.rb` のガード（設定を `on` にした生 SQL が他社の行を読める）である。補助が無いと 0 行で落ちる。読み取りの行の `member` の期待は、仕様の値（`viewer.auditLogs` は `FORBIDDEN`、`viewer.partnerCode` は `null`）で初めから書く。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す（`guides/dev-cycle.md`「テストから書く」）。
 
 - scope：次の 6 つの公開 API から 1 つずつ scope か所有の条件を外すと、2 回目の入口の行列が落ちる。受注の一覧（`Sales::SalesOrders.list`）、在庫の一覧（`Inventory::Stocks.list`）、ダッシュボードの 4 つ（`Sales::SalesOrders.count_by_status`・`Inventory::Stocks.below_safety_stock`・`Fulfillment::ShipmentRequests.due_within`・`Billing::BillableItems.unbilled_total`）。外さなければ 0 failures（落ちたら、いまの scope の抜けとして直す）
 - 2 つの守り：同じ 6 つで、RLS と scope を片方ずつ壊した結果を残す。scope を外しても 1 回目（設定を外した応答）の期待は落ちず、scope を残したまま設定を `on` にしても応答は変わらない
@@ -1336,27 +1336,34 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
 
 **作るもの**
 
-1. `yabeda`・`yabeda-prometheus`。`yabeda-prometheus` 0.9.1 は `prometheus-client` を 5 未満に限るので、`prometheus-client` は 4 系になる。メトリクスの定義は `config/initializers/metrics.rb` の 1 か所に置く。
-2. 値の出どころは、M18 の `Rails.event` の購読者 `Platform::MetricsSubscriber` の 1 つにする。キューの滞留だけは、収集の時点で Solid Queue の表を数える。表の「足すイベント」の列が空でない行は、いまのコードがそのイベントを出していないか、項目が足りないので、このマイルストーンで足す。足したイベントと項目は、`guides/config.md`「イベントごとに書く項目」にも書く。
+1. `yabeda`・`yabeda-prometheus`・`webrick`。`yabeda-prometheus` 0.9.1 は `prometheus-client` を 5 未満に限るので、`prometheus-client` は 4 系になる。exporter（`Yabeda::Prometheus::Exporter.start_metrics_server!`）は Rack 3 では `Rackup::Handler::WEBrick` で立つが、`webrick` は依存に無いので Gemfile に足す（yabeda-prometheus 0.9.1 の `lib/yabeda/prometheus/exporter.rb`）。メトリクスの定義は `config/initializers/metrics.rb` の 1 か所に置く。
+2. 値の出どころは、M18 の `Rails.event` の購読者 `Platform::MetricsSubscriber` の 1 つにする。キューの滞留だけは、収集の時点で Solid Queue の表を数える。表の「足すイベント」の列が空でない行は、いまのコードがそのイベントを出していないか、項目が足りないので、このマイルストーンで足す。足したイベントと項目は、`guides/config.md`「イベントごとに書く項目」にも書く。購読者を足すと、購読者を `Platform::JsonLogSubscriber` の 1 つに固定している `spec/platform/logging_spec.rb` の確かめが落ちるので、2 つにする。
 
-   | メトリクス | 種類 | ラベル | 出どころ | 足すイベント |
-   |---|---|---|---|---|
-   | `graphql_operation_duration_seconds` | ヒストグラム | `operation`・`outcome`（`ok`・`user_error`・`error`） | `graphql.operation_completed` の `result`・`duration_ms` | |
-   | `graphql_top_level_errors_total` | カウンタ | `operation`・`code`・`reason` | 同上 | トップレベルのエラーの `extensions.code` の一覧（`error_codes`）と、`FORBIDDEN` の出どころ（`forbidden_reasons`）を足す。出どころは、操作の規則の拒否（役割を含む）を `rule`、返すオブジェクトの規則の拒否（`FactoryOpsSchema.unauthorized_object`。scope と規則の食い違い）を `object` とし、拒否した箇所が `result.context` に積む。`FORBIDDEN` のほかのコードの `reason` は `none` にする |
-   | `job_duration_seconds` | ヒストグラム | `queue`・`job_class` | `active_job.completed` の `duration` | |
-   | `job_queue_latency_seconds` | ヒストグラム | `queue` | `active_job.started`（受け取った時刻 − `enqueued_at`） | |
-   | `event_delivery_lag_seconds` | ヒストグラム | `event` | `contracts.event_handled` の `delivery_lag_ms` | |
-   | `queue_ready_jobs`・`queue_blocked_jobs`・`queue_failed_jobs` | ゲージ | `queue` | 収集の時点で `solid_queue_ready_executions`・`solid_queue_blocked_executions`・`solid_queue_failed_executions` を数える。ワーカー側の exporter だけが数える | |
-   | `external_requests_total` | カウンタ | `provider`・`status`（`2xx`・`429`・`4xx`・`5xx`・`timeout`） | `notifications.provider_responded` | `Notifications::Provider::Sendgrid#deliver` が、応答の状態コードを分けた値か、`CONNECTION_ERRORS` のときの `timeout` を出す |
-   | `notification_acceptance_seconds` | ヒストグラム | `kind` | `notification.accepted`（受け付けの時刻 − 送信記録の作成時刻） | `Notifications::CriticalDeliveryJob` が `accepted_at` を書いた後に出す |
-   | `notification_failures_total` | カウンタ | `kind`・`reason` | `notification.delivery_failed` | |
-   | `notification_dropped_total` | カウンタ | `kind`・`reason` | `notification.best_effort_dropped` | |
-   | `import_rows_total` | カウンタ | `kind`・`result`（`applied`・`failed`） | `imports.chunk_applied` の `applied_rows`・`failed_rows` | |
-   | `import_duration_seconds` | ヒストグラム | `kind`・`size`（10,000 行以下は `small`、超えれば `large`） | `imports.finished` の `duration_ms`・`total_rows` | |
+   イベントの値は次のとおりに写す。時間の項目はミリ秒なので秒に直す（`active_job.completed` の `duration` は activejob 8.1.4 の `lib/active_job/structured_event_subscriber.rb` で `event.duration.round(2)`）。`active_job.started` の `enqueued_at` は ISO 8601 の文字列なので、時刻に直してから差を取る。`graphql.operation_completed` の `result` の `success` はラベル `outcome` の `ok` にする。ヒストグラムのバケットは、M31 の SLO の閾値が `le` の境界になるように、表の「バケット（秒）」の列で決める。指定しないと `prometheus-client` の既定（最大 10 秒）になり、60 秒・300 秒・900 秒の割合を取れない（yabeda-prometheus 0.9.1 の `lib/yabeda/prometheus/adapter.rb` の `register_histogram!`）。
 
-3. ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録する名前は、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）の操作名と一致させる。M31 の SLO が測る発注の登録の文書（操作名 `PlacePurchaseOrder`）を、このマイルストーンで一覧に足す。
-4. 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーでそれぞれ 1 つずつ、別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。`bin/jobs` は、supervisor が worker・dispatcher・scheduler を別のプロセスに fork するので、ワーカーの側は `prometheus-client` の `DirectFileStore` に値を書き、exporter は supervisor が fork の前に呼ぶ `SolidQueue.on_start` で 1 つだけ立てる（solid_queue 1.7.0 の README「Lifecycle hooks」）。値を書くディレクトリは、プロセスの種類ごとに分け、起動のたびに空にする。Puma を複数のプロセスで動かすときも、同じく `DirectFileStore` を使う。
-5. `spec/platform/metrics_subscriber_spec.rb`：構造化イベントごとに、対応するメトリクスが増える。登録していない `operationName` は `other` になる。登録した名前と画面の問い合わせの一覧の操作名が一致する。定義したすべてのメトリクスのラベルに、`tenant`・`user`・`_id` で終わる名前が無い。足したイベントは、`spec/requests/graphql_entry_spec.rb`（`error_codes` と `forbidden_reasons`。`member` が `admin` に限る mutation を呼ぶと `rule`、scope と規則が食い違う型を返すと `object`）と、`packs/notifications/spec/models/notifications/provider/sendgrid_spec.rb`（`notifications.provider_responded`）・`packs/notifications/spec/jobs/notifications/critical_delivery_job_spec.rb`（`notification.accepted`）で確かめる。
+   | メトリクス | 種類 | ラベル | バケット（秒） | 出どころ | 足すイベント |
+   |---|---|---|---|---|---|
+   | `graphql_operation_duration_seconds` | ヒストグラム | `operation`・`operation_type`（`query`・`mutation`）・`outcome`（`ok`・`user_error`・`error`） | 0.05・0.1・0.25・0.5・1・2.5・5・10 | `graphql.operation_completed` の `result`・`duration_ms` | 操作の種類（`operation_type`）を足す。`FactoryOpsSchema.execute` が例外を上げたときも、`ensure` で `result` を `error` にして 1 回だけ出してから、例外を上げ直す。いまは正常に戻ったときだけ出すので、500 になった操作が成功の割合の分母から抜ける |
+   | `graphql_top_level_errors_total` | カウンタ | `operation`・`code`・`reason` | — | 同上 | トップレベルのエラーの `extensions.code` の一覧（`error_codes`）と、`FORBIDDEN` の出どころ（`forbidden_reasons`）を足す。出どころは、操作の規則の拒否（役割を含む。`AuthorizationDeclarations` の `enforce_rule!`）を `rule`、返すオブジェクトとフィールドの規則の拒否（`FactoryOpsSchema.unauthorized_object`・`unauthorized_field`。scope と規則の食い違い）を `object`、宣言の無い型・リゾルバ・mutation の拒否を `undeclared` とし、拒否した箇所が `result.context` に積む。`FORBIDDEN` のほかのコードの `reason` は `none` にする（OI-124） |
+   | `job_duration_seconds` | ヒストグラム | `queue`・`job_class` | 0.1・0.5・1・5・30・60・300・900・3600 | `active_job.completed` の `duration` | |
+   | `job_queue_latency_seconds` | ヒストグラム | `queue` | 0.5・1・5・15・60・300・900 | `active_job.started`（受け取った時刻 − `enqueued_at`） | |
+   | `event_delivery_lag_seconds` | ヒストグラム | `event` | 1・5・15・60・300・900 | `contracts.event_handled` の `delivery_lag_ms` | |
+   | `queue_ready_jobs`・`queue_blocked_jobs`・`queue_claimed_jobs`・`queue_failed_jobs` | ゲージ | `queue` | — | 収集の時点で `solid_queue_ready_executions`・`solid_queue_blocked_executions`・`solid_queue_claimed_executions`・`solid_queue_failed_executions` を数える。ワーカー側の exporter だけが数える（作るもの 4）。`claimed` は実行中のジョブで、M31 の取り込みの停滞の警報が使う | |
+   | `external_requests_total` | カウンタ | `provider`・`status`（`2xx`・`429`・`4xx`・`5xx`・`timeout`） | — | `notifications.provider_responded` | `Notifications::Provider::Sendgrid#deliver` が、応答の状態コードを分けた値か、`CONNECTION_ERRORS` のときの `timeout` を出す |
+   | `notification_acceptance_seconds` | ヒストグラム | `kind` | 5・30・60・300・900・3600 | `notification.accepted`（受け付けの時刻 − 送信記録の作成時刻） | `Notifications::CriticalDeliveryJob` が `accepted_at` を書いた後に出す |
+   | `notification_failures_total` | カウンタ | `kind`・`reason` | — | `notification.delivery_failed` | |
+   | `notification_dropped_total` | カウンタ | `kind`・`reason` | — | `notification.best_effort_dropped` | |
+   | `import_rows_total` | カウンタ | `kind`・`result`（`applied`・`failed`） | — | `imports.chunk_applied` の `applied_rows`・`failed_rows` | |
+   | `import_duration_seconds` | ヒストグラム | `kind`・`size`（10,000 行以下は `small`、超えれば `large`） | 10・30・60・300・900・3600 | `imports.finished` の `duration_ms`・`total_rows` | |
+
+3. ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録の表は `queries` と `mutations` の 2 つに分ける。`queries` は、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）の操作名と一致させる。`mutations` は、画面が送る mutation の操作名を書き、M31 の SLO が測る発注の登録（`PlacePurchaseOrder`）をこのマイルストーンで足す。mutation の文書は画面の問い合わせの一覧に置かない。一覧は query だけで、クエリ数の予算（`spec/graphql/query_budget_spec.rb`）と複雑度（`spec/graphql/query_complexity_spec.rb`）が query であることを求めるからである。
+4. 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーでそれぞれ 1 つずつ、別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。exporter はポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`exporter.rb`）。`PORT` は Puma も使うので、exporter を立てるプロセスでは `PROMETHEUS_EXPORTER_PORT` を必ず設定し、無ければ起動を止める。
+   - Web：Puma の起動のフック（`config/puma.rb`）で立てる。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つからである
+   - ワーカー：`bin/jobs` は、supervisor が worker・dispatcher・scheduler を別のプロセスに fork するので、exporter は supervisor が fork の前に呼ぶ `SolidQueue.on_start` で 1 つだけ立てる（solid_queue 1.7.0 の README「Lifecycle hooks」）
+   - 値の置き場：どちらのプロセスも `prometheus-client` の `DirectFileStore` に書く。store はメトリクスを登録する時点で決まる（`adapter.rb` の `store_settings`）ので、ディレクトリは Yabeda の設定より前（初期化子）に、プロセスの種類を表す環境変数（`METRICS_PROCESS`：`web`・`jobs`）で選ぶ。ディレクトリを空にするのは、exporter を持つプロセスが fork の前に 1 回だけ行う（Puma の起動のフックと `SolidQueue.on_start`）。初期化子で空にすると、後から起きた別のプロセスが動いている値を消す
+   - キューのゲージ：収集のブロック（`Yabeda.configure` の `collect`）は、`METRICS_PROCESS` が `jobs` のときだけ登録する。どちらの exporter の読み出しでも収集のブロックは動くからである。ゲージは supervisor の 1 つのプロセスだけが書くので、集計は `aggregation: :most_recent` にし、`pid` のラベルを付けない
+   - test の環境では exporter を立てない（M33 の E2E は test の環境で `bin/jobs` を起こす）
+5. `spec/platform/metrics_subscriber_spec.rb`：構造化イベントごとに、対応するメトリクスが増える。登録していない `operationName` は `other` になる。登録の表の `queries` と画面の問い合わせの一覧の操作名が一致する。ヒストグラムごとに、M31 の SLO の閾値がバケットの境界にあり、閾値ちょうどの値と閾値を超える値が別の `le` に数えられる。定義したすべてのメトリクスのラベルに、`tenant`・`user`・`_id` で終わる名前が無い。足したイベントは、`spec/requests/graphql_entry_spec.rb`（`error_codes` と `forbidden_reasons`。`member` が `admin` に限る mutation を呼ぶと `rule`、scope と規則が食い違う型を返すと `object`。登録した操作の実行中に例外を起こすと、HTTP は失敗し、`result` が `error` のイベントが 1 回出る）と、`packs/notifications/spec/models/notifications/provider/sendgrid_spec.rb`（`notifications.provider_responded`）・`packs/notifications/spec/jobs/notifications/critical_delivery_job_spec.rb`（`notification.accepted`）で確かめる。
 6. サイクル 03 の逸脱検査から送った確かめ：mutation の戻り値の null の伝わり方（OI-119）を `spec/requests/mutation_payload_spec.rb` で、`unitPrice` に `bigint` の最大値ちょうどと最大値 + 1（`"9223372036854775807"`・`"9223372036854775808"`）を送ったときの結果（OI-121）を `spec/requests/item_prices_spec.rb`（`scheduleItemPrice`・`correctItemPrice`）と `spec/requests/catalog_spec.rb`（`saveItem`）で確かめる。確かめた結果に、`graphql-schema.md` の SDL か実装を合わせる。最大値 + 1 がトップレベルのエラーになるなら、公開 API の検証に上限を足し、取り込みの CSV の同じ値を行の失敗にする（`packs/imports/spec`）。
 
 **判断**：Yabeda と Prometheus にするか、OpenTelemetry にするか
@@ -1372,12 +1379,12 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
 最初に落とすテストは、`metrics_subscriber_spec.rb` の「`graphql.operation_completed` で `graphql_operation_duration_seconds` が増える」example（メトリクスの定義を空のままにして、期待の不一致で落とす）と、`mutation_payload_spec.rb`・`item_prices_spec.rb` の OI-119・OI-121 の example である。OI-119・OI-121 の example は、いまの振る舞いを確かめる段階では通りうるので、通ったら、確かめた振る舞いを SDL か実装に合わせた後に、合わせた側を壊して落ちる記録を残す。
 
 ```sh
-bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/requests/graphql_entry_spec.rb \
+bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/platform/logging_spec.rb spec/requests/graphql_entry_spec.rb \
   spec/requests/mutation_payload_spec.rb spec/requests/item_prices_spec.rb spec/requests/catalog_spec.rb \
   packs/notifications/spec packs/imports/spec
 ```
 
-`bin/rails server` で GraphQL の問い合わせを 1 回流し、`curl -s localhost:9394/metrics | grep graphql_operation_duration_seconds_bucket` に値が出ることを、`bin/jobs` を起こしてイベントを 1 件流し、`curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready_jobs'` に値が出ることを、手で確かめる。
+`spec/platform/logging_spec.rb` も流す（購読者を 2 つにした確かめ）。`PROMETHEUS_EXPORTER_PORT=9394 METRICS_PROCESS=web bin/rails server` で GraphQL の問い合わせを 1 回流し、`curl -s localhost:9394/metrics | grep graphql_operation_duration_seconds_bucket` に値が出ることを、`PROMETHEUS_EXPORTER_PORT=9395 METRICS_PROCESS=jobs bin/jobs` を起こしてイベントを 1 件流し、`curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready_jobs'` に値が出て、`queue_ready_jobs` に `pid` のラベルが無いことを、手で確かめる。
 
 **範囲外**：分散トレース、ダッシュボードの定義、ログの集約基盤。
 
@@ -1395,30 +1402,30 @@ bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/requests/graphql
 
   | SLI | 測り方（M30 のメトリクス） | SLO（28 日） |
   |---|---|---|
-  | 発注の登録の速さ | `operation="PlacePurchaseOrder"`（M30 で画面の問い合わせの一覧に足した発注の登録の文書）の `graphql_operation_duration_seconds` が 500 ms 以内の割合 | 95% |
+  | 発注の登録の速さ | `operation="PlacePurchaseOrder"`（M30 で登録の表の `mutations` に足した発注の登録）の `graphql_operation_duration_seconds` が 500 ms 以内の割合 | 95% |
   | 発注の登録の成功 | 同じ操作で `outcome` が `error` でない割合 | 99.5% |
-  | 画面の問い合わせの速さ | 登録した query（`operation` が `other` でも mutation の文書でもないもの）が 1 秒以内の割合 | 95% |
+  | 画面の問い合わせの速さ | `operation_type="query"` で `operation` が `other` でない操作が 1 秒以内の割合 | 95% |
   | イベントの配送の遅れ | `event_delivery_lag_seconds` が 60 秒以内の割合 | 99% |
   | 確実な通知の受け付け | `notification_acceptance_seconds{kind="received_invoice"}` が 15 分以内の割合 | 99% |
   | 取り込みの完了 | `import_duration_seconds{size="small"}` が 5 分以内の割合 | 95% |
 
 - 警報の規則（`config/prometheus/alerts.yml`）：
-  - **誤差の予算の消費**：SLO ごとに、1 時間で予算の 2% を消費する速さ（14.4 倍）で呼び出し、6 時間で 5%（6 倍）でチケットにする。
-  - **状態の警報**：`queue_failed_jobs` が 10 分続けて 0 より大きい。`queue_ready_jobs{queue="events"}` が 5 分続けて 1,000 を超える。`notification_failures_total{kind="received_invoice"}` が増えた。`external_requests_total{status="429"}` の割合が 10 分続けて 20% を超える。`graphql_top_level_errors_total{code="FORBIDDEN",reason="object"}` が増えた（返すオブジェクトの規則の拒否は scope と規則の食い違いで、テナントの境界の不具合の兆しである。`member` が `admin` に限る操作を呼んだ `reason="rule"` は、画面がボタンを隠していても起こりうる利用者の操作なので、警報にしない）。実行中の取り込みで、`import_rows_total` が 15 分増えない。
+  - **誤差の予算の消費**：SLO ごとに、1 時間で 28 日の予算の 2% を消費する速さ（13.44 倍）で呼び出し、6 時間で 5%（5.6 倍）でチケットにする。倍率は、消費する割合 × SLO の期間の時間数（28 日 = 672 時間）÷ 窓の時間数で、SLO の期間を変えたら倍率も直す。
+  - **状態の警報**：`queue_failed_jobs` が 10 分続けて 0 より大きい。`queue_ready_jobs{queue="events"}` が 5 分続けて 1,000 を超える。`notification_failures_total{kind="received_invoice"}` が増えた。`external_requests_total{status="429"}` の割合が 10 分続けて 20% を超える。`graphql_top_level_errors_total{code="FORBIDDEN",reason=~"object|undeclared"}` が増えた（返すオブジェクトの規則の拒否は scope と規則の食い違いで、テナントの境界の不具合の兆しである。宣言の無い拒否は、宣言を忘れた入口が本番に出た兆しである。`member` が `admin` に限る操作を呼んだ `reason="rule"` は、画面がボタンを隠していても起こりうる利用者の操作なので、警報にしない）（OI-124）。`imports` のキューに実行中のジョブがある（`queue_claimed_jobs{queue="imports"} > 0`）のに、`import_rows_total` の合計が 15 分増えない。
   - どの警報も `annotations.runbook` に手順書のパスを持つ。
-- 警報の規則のテスト（`config/prometheus/alerts_test.yml`）：`promtool test rules` で、イベントのキューの滞留と、確実な通知の失敗の 2 つの警報が、条件を満たした系列で発火することを確かめる。`FORBIDDEN` の警報が `reason="rule"` の系列では発火しないことも確かめる。
+- 警報の規則のテスト（`config/prometheus/alerts_test.yml`）：`promtool test rules` で、次の警報が条件を満たした系列で発火し、満たさない系列で発火しないことを確かめる。イベントのキューの滞留と、確実な通知の失敗。`FORBIDDEN`（`reason="object"` で発火し、`reason="rule"` では発火しない）。取り込みの停滞（実行中のジョブが無い・実行中で行が増える・実行中で 15 分増えない、の 3 つの系列のうち最後だけで発火する）。誤差の予算の消費の 1 つ（倍率の境目の前後）。
 - `bin/check-alerts`：`promtool check rules` と `promtool test rules` を、`prom/prometheus` のイメージの `docker run` で流す。CI のワークフローはこのスクリプトを呼び、`implementation-plan.md`「共通の完了条件」の一覧と `config/ci.rb` の工程にも足す。ワークフローに `docker run` を直に書くと、`spec/platform/ci_checks_spec.rb` が照らす `bin/` のコマンドに入らず、手元の完了条件から漏れる。
-- 取り込まれないファイルの後始末（OI-116）：置いてから 24 時間を過ぎても `startImport` されないファイルの中身を、定期のジョブ `Imports::PurgeAbandonedFilesJob`（`config/recurring.yml`、1 時間ごと）が消す（OI-122）。ジョブは `tenants` の ID を順に読み、テナントごとに `Tenancy.with_tenant` を開いて公開 API `Imports::Files.purge_abandoned` を呼ぶ（`notifications:redeliver` と同じ回り方）。公開 API は操作者を取らない入口なので、OI-118 のどちらの案でも成り立つ形にする。所有の条件を `Current.tenant_id` で明示し、レコードではなく消した件数を返す。OI-118 が (b)（システムの操作者を渡す）に決まったら、M32 で既存の入口と一緒に直す。消すまでの時間と回り方を `data-model.md`「取り込み（`imports`）」に書く。単体は `packs/imports/spec/jobs/imports/purge_abandoned_files_job_spec.rb` で、24 時間ちょうどのファイルは残り、24 時間 + 1 秒のファイルは消え、取り込み中のファイルと他社のファイルは消えないことを確かめる。
+- 取り込まれないファイルの後始末（OI-116）：置いてから 24 時間を過ぎても `startImport` されないファイルの中身を、定期のジョブ `Imports::PurgeAbandonedFilesJob`（`config/recurring.yml`、1 時間ごと）が消す（OI-122）。ジョブは `tenants` の ID を順に読み、テナントごとに `Tenancy.with_tenant` を開いて公開 API `Imports::Files.purge_abandoned` を呼ぶ（`notifications:redeliver` と同じ回り方）。公開 API は操作者を取らない入口なので、OI-118 のどちらの案でも成り立つ形にする。所有の条件を `Current.tenant_id` で明示し、レコードではなく消した件数を返す。OI-118 が (b)（システムの操作者を渡す）に決まったら、M32 で既存の入口と一緒に直す。後始末と `startImport` の競合は、ファイルの行ロックで直列にする。後始末は、候補のファイルの行を `FOR UPDATE` でロックしてから、別の文でそのファイルを使う取り込みが無いことを確かめ直して中身を消す。`Imports::Runs.start` も、取り込みの行を書く前に同じファイルの行をロックし、中身が消えていれば `CONFLICT`（`path` は `["fileId"]`、置き直しを促す文言）を返す。READ COMMITTED では文ごとに新しいスナップショットを取るので、ロックを待った後の確かめ直しは、先にコミットした取り込みを見る。消すまでの時間・回り方・ロックの順と、消えたファイルへの `startImport` の結果を `data-model.md`「取り込み（`imports`）」と `graphql-schema.md`「mutation の一覧」に書く。単体は `packs/imports/spec/jobs/imports/purge_abandoned_files_job_spec.rb` で、24 時間ちょうどのファイルは残り、24 時間 + 1 秒のファイルは消え、取り込み中のファイルと他社のファイルは消えないことを確かめる。競合は `packs/imports/spec/concurrency/imports/purge_lock_spec.rb` で、後始末が先にロックした順と開始が先にロックした順の両方を `hold_open` の決まった順で流し、開始が成立したファイルの中身が残り、消えたファイルへの開始が `CONFLICT` になることを確かめる。足したロックを取る箇所は `spec/db/lock_sites_spec.rb` の表にも足す。
 - 手順書（`docs/runbooks/`）：各手順書は「警報 → 確かめること（流すコマンド）→ 止血 → 復旧 → 事後にすること」の順に書く。
 
   | 手順書 | 障害 | 止血と復旧の要点 |
   |---|---|---|
-  | `queue-backlog.md` | キューが詰まる | キューごとの滞留と失敗を数え、ワーカーのプロセスを確かめる。`imports` のキューを止めて（`SolidQueue::Queue.find_by_name("imports").pause`）`events` を先に流す。原因を直してから、失敗したジョブをやり直す。受け手は冪等なので、やり直してよい |
-  | `sendgrid-outage.md` | SendGrid の障害・429 の連続 | 応答の種類の内訳を見る。401・403 なら API キーを確かめる。429 が続けば `external_mail` のキューを止め、同時実行の上限を下げてから再開する。再試行を使い切った確実な通知は、`notifications:redeliver` で送り直す |
+  | `queue-backlog.md` | キューが詰まる | キューごとの滞留と失敗を数え、ワーカーのプロセスを確かめる。キューはワーカーを分けている（`config/queue.yml`）ので、`events` が `imports` を待つことは無い。DB の負荷が原因なら、`imports` のキューを止めて（`SolidQueue::Queue.find_by_name("imports").pause`）新しいジョブの受け取りを止める。実行中のジョブは止まらない。原因を直してから、失敗したジョブをやり直す。受け手は冪等なので、やり直してよい |
+  | `sendgrid-outage.md` | SendGrid の障害・429 の連続 | 応答の種類の内訳を見る。401・403 なら API キーを確かめる。429 が続けば `external_mail` のキューを止め、待ち時間のヘッダが過ぎてから再開する。同時実行の上限はジョブのクラスに書いた値（`limits_concurrency`）なので、下げるにはデプロイが要る。再試行を使い切った確実な通知は、`notifications:redeliver` で送り直す |
   | `import-stuck.md` | 取り込みが進まない | 取り込みの行の状況と、ジョブの有無を見る。ジョブを失った「待機中」の取り込みは、`imports:reenqueue` で登録し直す。中断を繰り返していれば、取り込みの ID でログを引く |
-  | `rls-misconfiguration.md` | RLS の設定の誤りが疑われる | アプリの接続のロール（`pg_stat_activity`）、ロールの属性（`rolbypassrls`・`rolsuper`）、`relforcerowsecurity` とポリシーを `structure.sql` と比べる。疑いが消えるまで、メンテナンスの切り替え（環境変数 `MAINTENANCE_MODE`）で GraphQL を 503 にする。影響を受けたテナントは、監査ログとログの相関 ID で洗い出す |
+  | `rls-misconfiguration.md` | RLS の設定の誤りが疑われる | アプリの接続のロール（`pg_stat_activity`）、ロールの属性（`rolbypassrls`・`rolsuper`）、`relforcerowsecurity` とポリシーを `structure.sql` と比べる。疑いが消えるまで、メンテナンスの切り替え（環境変数 `MAINTENANCE_MODE`）で GraphQL とファイルの受け口を 503 にする。ログインと SendGrid の Webhook は止まらない。ワーカーは止まらないので、`bin/jobs` も止める。影響を受けたテナントは、監査ログとログの相関 ID で洗い出す |
 
-- メンテナンスの切り替え：`MAINTENANCE_MODE` が立っていれば、`GraphqlController` は実行せずに 503 を返す。`spec/requests/maintenance_mode_spec.rb` で、立てたときは 503 で何も書かれず、立てないときは同じ要求が 200 になることを確かめる。
+- メンテナンスの切り替え：`MAINTENANCE_MODE` が立っていれば、`GraphqlController` と `ImportFilesController`（`POST /imports/files`）は実行せずに 503 を返す。ログイン（`SessionsController`）と SendGrid の Webhook は止めない。Webhook は受信の表に書くだけで、止めると配信結果を失うからである。`spec/requests/maintenance_mode_spec.rb` で、立てたときは GraphQL とファイルの受け口が 503 で何も書かれず、ログインは通り、立てないときは同じ要求が 200 になることを確かめる。
 - `spec/platform/alerts_runbook_spec.rb`：`alerts.yml` のどの警報も `runbook` を持ち、そのファイルが `docs/runbooks/` にあることを確かめる。
 
 **完了条件**
@@ -1428,7 +1435,7 @@ bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/requests/graphql
 ```sh
 bin/check-alerts
 bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_spec.rb spec/requests/maintenance_mode_spec.rb \
-  packs/imports/spec/jobs/imports/purge_abandoned_files_job_spec.rb
+  spec/db/lock_sites_spec.rb packs/imports/spec
 ```
 
 `promtool` のイメージの版は、`bin/check-alerts` に固定して書く。各手順書の「確かめること」のコマンドを、開発環境で 1 回ずつ流して動くことを、手で確かめる。
@@ -1447,38 +1454,50 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
 
 **作るもの**
 
-1. 世界の作り方 `DemoWorld`（`lib/demo_world.rb`）と、それを呼ぶ `db/seeds.rb`。M33 の E2E の世界（`bin/rails e2e:prepare`）も同じ `DemoWorld` で作る。シードと E2E の世界を別々に書くと、片方だけが古くなる。
+1. 世界の作り方 `DemoWorld`（`lib/demo_world.rb`）と、それを呼ぶ `db/seeds.rb`。M33 の E2E の世界（`bin/rails e2e:prepare`）も同じ `DemoWorld` で作る。シードと E2E の世界を別々に書くと、片方だけが古くなる。`DemoWorld.build(namespace:, variant:)` は次の契約を持つ。
+   - `namespace`：テナントのコード・取引用コード・会社名の接尾辞・メールアドレスの接尾辞に入れる文字列。テナントのコード・取引用コード・ユーザーのメールアドレスは DB 全体で一意なので、同じ DB に複数の世界を作るときは別の値を渡す。シードは空の文字列を渡す
+   - `variant`：`:seed` か `:e2e`。`:e2e` は、シードの中身に加えて、M33 が求める中身の違うデータ（最も長い品目名と取引先名、ボタンのある行と無い行、状況の enum の全値の行）を足す
+   - 返り値：作ったテナントの ID とアカウント（ペルソナごとのメールアドレスとパスワード）。M33 の E2E は、これでログインする
+   - 冪等：同じ `namespace` の受注側のテナントがあれば、何も作らずに、あるテナントとアカウントを返す。冪等は `namespace` ごとに判定する
 2. 中身：受注側に青嵐精機工業、発注側に架空の組立メーカー 2 社（全権限の付与ありと、失効済み）を作る。流用元（factory-ops-demo の `958de71`）の `backend/internal/seed/default.go` から品目（`ITM-001`〜`ITM-020`、単価・安全在庫・初期在庫）を写し、発注側の 2 社の名前に得意先の `CUS-001`・`CUS-002` を使う（OI-123）。得意先の住所と担当者、ほかの 3 社は写さない。本デモの得意先はテナントで、住所と担当者を持たないからである。受注・出荷・検収・請求書の確定まで進んだ取引と、途中の取引を混ぜる。品目には、単価の改定の予約と訂正を 1 件ずつ含める。取り込みも 1 件（一部の行が失敗したもの）含める。
-3. 書き方：シードは公開 API とイベントを通して作り、表へ直接書かない。公開 API は、テナントごとに `Tenancy.with_tenant` を開き、そのテナントの `admin` のユーザーを操作者にして呼ぶ。イベントは、各段の後に、登録済みのイベントのジョブを発行元のトランザクションの外で古い順に実行し、無くなるまで繰り返す（`spec/support/events.rb` の `deliver_enqueued_events` と同じ形。`solid_queue_jobs` の行を読み、`ActiveJob::Base.execute` で動かして `finished!` にする）。この流し方を `DemoWorld` に置き、`spec/support/events.rb` もそれを呼ぶ形にして 1 つにする。
-4. 役割の制限：シードは GraphQL を通らない入口なので、`admin` に限る操作（`graphql-schema.md`「役割による制限」の表の、取引関係・取消・検収・請求・単価の改定と訂正・品目の取り込み）の公開 API を呼ぶ前に、mutation と同じ policy の規則を操作者で評価し、拒否なら例外で止める（同じ節の「GraphQL を通らない入口」の規則）。`DemoWorld` の単体で、操作者を `member` に替えると、これらの段がどれも例外で止まることを確かめる。
-5. アカウント：シードのアカウント（メールアドレスと、共通のパスワード）を `db/seeds/demo_accounts.json` の 1 か所に置き、`DemoWorld` はそこから読む。M33 のログインの画面がこの一覧を並べるか（OI-09）にかかわらず、ここに置く。パスワードはデモの手元で使う値で、本番の資格情報を書かない。シードは `production` の環境では動かない。
-6. 冪等：`bin/rails db:seed` を 2 回流すと、2 回目は何も作らずに終わる（青嵐精機工業のテナントがあれば止まる）。
+3. 日付：発注日・検収日・請求書の発行日は、公開 API が `Date.current`・`Time.current` で決める。シードはこれを動かさず、シードを流した日の日付にする。入力で渡す日付（希望納期 `desired_delivery_on`・出荷日 `shipped_on`・単価の改定日）だけを、今日からの差で書く。流用元のように受注日を過去にずらすことはしない。表へ直接書くことになるからである。
+4. 書き方：シードは公開 API とイベントを通して作り、業務の表へ直接書かない。公開 API は、テナントごとに `Tenancy.with_tenant` を開き、そのテナントの `admin` のユーザーを操作者にして呼ぶ。各段の後に、登録済みのジョブのうち、イベント（`Contracts::EventJob`）と取り込み（`Imports::RunJob`）を、発行元のトランザクションの外で古い順に実行し、無くなるまで繰り返す（`spec/support/events.rb` の `deliver_enqueued_events` と同じ形。`solid_queue_jobs` の行を読み、`ActiveJob::Base.execute` で動かして `finished!` にする）。通知のジョブは実行せず、`bin/jobs` に任せる（開発の配送先は `tmp/mails/`）。この流し方を `DemoWorld` に置き、`spec/support/events.rb` もそれを呼ぶ形にして 1 つにする。
+5. 公開 API が無い 2 つの書き込み：いまはテナントとユーザーを作る公開 API と、安全在庫を設定する公開 API が無い（テストは factory で表へ書く）。次の 2 つを足す（OI-125）。
+   - `Partnerships::Onboarding.register(name:, code:, partner_code:, users:)`：テナントと、`admin`・`member` のユーザーを作り、テナントの ID を返す。テナントがまだ無いので、操作者を取らず、テナントの設定の外で呼ぶ（`tenants` への書き込みは追加だけを許す、`data-model.md`「RLS」）。ユーザーは作ったテナントの `Tenancy.with_tenant` の中で書く。`production` の環境では呼べない（例外）。サインアップの入口ではなく、シードと E2E の準備のためのものである
+   - `Inventory::Stocks.set_safety_stock(actor, item_id:, safety_stock:)`：自社の在庫の安全在庫を変える。所有の条件を scope で明示する。役割は問わない（在庫の調整 `adjustStock` と同じ）。GraphQL の入口は足さない
+   - どちらも単体の spec（`packs/partnerships/spec/public/partnerships/onboarding_spec.rb`・`packs/inventory/spec/public/inventory/stocks_spec.rb`）で、他社の行を書けないこと（生 SQL の対照つき）と、`production` で呼べないことを確かめる
+6. 境界：`lib/demo_world.rb` はルートパッケージに属し、各パッケージの `app/public` だけを呼ぶ（packwerk の privacy）。業務の表へ直接書かないので RLS と policy を通り、GraphQL の入口を足さないので入口の行列の行は増えない。作るもの 5 の 2 つの公開 API は GraphQL を通らない入口なので、表の行列（生 SQL）と単体で確かめる。
+7. 役割の制限：シードは GraphQL を通らない入口なので、`admin` に限る操作（`graphql-schema.md`「役割による制限」の表の、取引関係・取消・検収・請求・単価の改定と訂正・品目の取り込み）の公開 API を呼ぶ前に、mutation と同じ policy の規則を操作者で評価し、拒否なら例外で止める（同じ節の、GraphQL を通らない入口の規則）。
+8. アカウント：シードのアカウント（メールアドレスと、共通のパスワード）を `db/seeds/demo_accounts.json` の 1 か所に置き、`DemoWorld` はそこから読む（`namespace` を接尾辞として足す）。M33 のログインの画面がこの一覧を並べるか（OI-09）にかかわらず、ここに置く。パスワードはデモの手元で使う値で、本番の資格情報を書かない。シードは `production` の環境では動かない。
 
-作者の判断を待つ次の 4 つは、決まった形でこのマイルストーンが直す。決まるまでこのマイルストーンを終えない（`bin/check-open-items --due M32`）。作るもの 1〜6 は、どの案でも同じに作れるので、先に進めてよい。
+作者の判断を待つ次の 3 つは、決まった形でこのマイルストーンが直す。決まるまでこのマイルストーンを終えない（`bin/check-open-items --due M32`）。作るもの 1〜8 は、どの案でも同じに作れるので、先に進めてよい。M33 は、着手の前に作者に著者判断（OI-07〜OI-14）を確かめるので、3 つの答えもそのときまでにそろう。
 
-- 業務の日付をどの時刻帯の今日で決めるか（OI-117）：シードの受注日・出荷日・検収日は、流用元と同じく今日からの差で書き、今日は業務の今日を返す 1 か所から取る。決まった案に、アプリの日付の決め方（`Date.current` の呼び出しと、ダッシュボードの `Asia/Tokyo`）を合わせる。(a)(b) なら、テストの日付の比較を、決めた時刻帯の今日で書き直す
-- 操作者を取らない公開 API の規則（OI-118）：シードの流し方（作るもの 3）はテナントと操作者を明示するので、どちらの案でも変わらない。(a) なら規則を `graphql-schema.md`「認可」に足し、OI-118 が挙げる公開 API と M31 の `Imports::Files.purge_abandoned` に所有の条件を足す。(b) なら、それらにシステムの操作者を渡す形に直す。どちらも、直した公開 API の単体で、他社の行を数えないことを生 SQL の対照つきで確かめる
+- 業務の日付をどの時刻帯の今日で決めるか（OI-117）：決まった案に、アプリの日付の決め方（`Date.current` の呼び出しと、ダッシュボードの `Asia/Tokyo`）を合わせる。(a)(b) なら、テストの日付の比較を、決めた時刻帯の今日で書き直し、`spec/requests/dashboard_spec.rb` に日本時間の 0〜9 時の操作で受注日とダッシュボードの今日が一致する example を足す。(b) なら、業務の今日を返す入口の単体を足す。(c) なら、ダッシュボードの今日を UTC にし、同じ example で一致を確かめる
+- 操作者を取らない公開 API の規則（OI-118）：シードの流し方（作るもの 4）はテナントと操作者を明示するので、どちらの案でも変わらない。作るもの 5 の `Onboarding.register` は、テナントが無い段の入口なので、どちらの案でも例外として規則に書く。(a) なら規則を `graphql-schema.md`「認可」に足し、OI-118 が挙げる公開 API と M31 の `Imports::Files.purge_abandoned` に所有の条件を足す。(b) なら、それらにシステムの操作者を渡す形に直す。どちらも、直した公開 API の単体（`packs/partnerships/spec/public/partnerships/authentication_spec.rb`・`packs/notifications/spec/public/notifications/email_spec.rb`・`packs/imports/spec/public/imports/runs_spec.rb`・`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`・`Partnerships::Recipients` の spec）で、他社の行を数えないことを生 SQL の対照つきで確かめる
 - `correctItemPrice` の理由の上限（OI-120）：決まった値で、`graphql-schema.md`「mutation の一覧」の上限の表に行を足し、公開 API で検証する。`spec/requests/item_prices_spec.rb` に、上限ちょうどと上限 + 1 の example を足す。シードの訂正の理由は、どの値になっても収まる長さ（20 文字以内）にする
-- GitHub のリポジトリを public にする時期（OI-06）：シードとリポジトリに、公開して困る値（実在の会社名・資格情報）が無いことを確かめてから、作者に答えを求める
 
 **完了条件**
 
 最初に落とすテストは、`spec/scenarios/seeds_spec.rb` の「シードの後、受注側の `admin` で `supplier.dashboard` を読むと、状況ごとの件数が空でない」example である（シードが空の状態で、期待の不一致で落とす）。
 
 ```sh
-bundle exec rspec spec/scenarios/seeds_spec.rb spec/scenarios/demo_world_spec.rb
+bundle exec rspec spec/scenarios/seeds_spec.rb spec/scenarios/demo_world_spec.rb \
+  packs/partnerships/spec/public/partnerships/onboarding_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb \
+  spec/requests/item_prices_spec.rb spec/requests/dashboard_spec.rb spec/matrix/table_matrix_spec.rb
 bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行が増えない
 ```
 
-- `spec/scenarios/seeds_spec.rb`：`DemoWorld` で世界を作り、両社の `admin` と `member` でログインして、`supplier.dashboard`・`supplier.salesOrders`・`supplier.invoices`・`supplier.imports`、`buyer.suppliers`（失効済みの相手を含む）・`buyer.purchaseOrders`・`buyer.receivedInvoices` が値を返し、失効した取引関係の相手のカタログと出荷が空であることを確かめる
-- `spec/scenarios/demo_world_spec.rb`：2 回目の呼び出しが行を増やさないこと、操作者を `member` に替えると `admin` に限る段が止まること
+OI-118 の直しは、決まった案で直した公開 API の spec（上の一覧）もコマンドに足す。
+
+- `spec/scenarios/seeds_spec.rb`：`DemoWorld.build(namespace: "", variant: :seed)` の後、両社の `admin` と `member` でログインして確かめる。受注側は `supplier.dashboard`・`supplier.salesOrders`・`supplier.invoices`・`supplier.imports` が値を返す。全権限の付与がある発注側は、`buyer.suppliers` とそのカタログ・出荷が値を返す。失効済みの発注側は、`buyer.suppliers` とカタログ・出荷が空になり（`graphql-schema.md`「発注側の視点」の経路 2）、自社の `buyer.purchaseOrders`・`buyer.receivedInvoices` は値を返す
+- `spec/scenarios/demo_world_spec.rb`：同じ DB に `namespace` の違う 2 組を作れ、それぞれの 2 回目は行を増やさない。操作者を `member` に替えると、`admin` に限る段がどれも例外で止まる。`variant: :e2e` は、状況の enum の全値の行を持つ
 - 置き場：2 つとも `spec/scenarios` に置く。どの層の置き場にも当たらないファイルは `bin/test-layers` が落とす
 
-**範囲外**：公開の配置と訪問者ごとのデータ（M33 の著者判断 8）、性能の測定のための大量のデータ。
+**範囲外**：公開の配置と訪問者ごとのデータ（M33 の著者判断 8）、性能の測定のための大量のデータ、サインアップの入口。
 
-**実装する文書の節**：`graphql-schema.md`「役割による制限」、`adr/005`（イベントの配送）、`guides/testing.md`「テストの層」
+**実装する文書の節**：`graphql-schema.md`「役割による制限」「発注側の視点」、`data-model.md`「RLS」、`adr/005`（イベントの配送）、`guides/testing.md`「テストの層」
 
-**文書に残すこと**：シードの流し方と `DemoWorld` を `README.md`「開発環境」に書く。`DemoWorld` が GraphQL を通らない入口として規則を評価することを、`graphql-schema.md`「役割による制限」の GraphQL を通らない入口の例に足す。
+**文書に残すこと**：シードの流し方と `DemoWorld` を `README.md`「開発環境」に書く。`DemoWorld` が GraphQL を通らない入口として規則を評価することを、`graphql-schema.md`「役割による制限」の GraphQL を通らない入口の例に足す。作るもの 5 の `Partnerships::Onboarding.register` を、`tenants` へ追加する入口として `data-model.md`「RLS」に書く。
 
 ## M33 フロントエンド
 
@@ -1524,12 +1543,14 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 | 15 ※ | `/supplier/invoices/[id]` 請求書詳細 | 受注側 | —（新規） | `supplier.invoice`・`Invoice.items`・`BillableItem.priceExplanation`・`discardDraftInvoice`・`issueInvoice` | M24・M25・M27 |
 | 16 ※ | `/supplier/imports` 取り込みの一覧と開始 | 受注側 | —（新規） | `POST /imports/files`・`startImport`・`supplier.imports` | M29 |
 | 17 ※ | `/supplier/imports/[id]` 取り込みの進み具合 | 受注側 | —（新規） | `supplier.import`・`Import.rowErrors`。進行中は数秒ごとに `router.refresh()` で読み直す | M29 |
-| 18 | `/buyer/suppliers` 取引先とカタログ | 発注側 | —（新規） | `buyer.suppliers`・`SupplierPartnership.catalog` | M8・M9 |
+| 18 | `/buyer/suppliers` 取引先とカタログ | 発注側 | —（新規） | `buyer.suppliers`（取引先の一覧。カタログを入れ子にしない）、選んだ 1 社のカタログは `buyer.supplier(supplierTenantId:)` の `SupplierPartnership.catalog`（画面の問い合わせ `BuyerSupplierCatalog`、OI-17） | M8・M9 |
 | 19 | `/buyer/purchase-orders` 発注一覧 | 発注側 | `/orders` | `buyer.purchaseOrders`。入荷を待つ発注は「入荷予定」のタブで見る（著者判断 7） | M10（状況の「入荷予定」は M14、「検収済」は M23、取消は M21・M22） |
-| 20 | `/buyer/purchase-orders/new` 発注登録 | 発注側 | `/orders/new` | `buyer.suppliers`（`place_orders` の付与のある相手）・`SupplierPartnership.catalog`（参照に並べる）・`placePurchaseOrder`。品番は自社品番を入力する | M8・M9・M10 |
+| 20 | `/buyer/purchase-orders/new` 発注登録 | 発注側 | `/orders/new` | `buyer.suppliers`（`place_orders` の付与のある相手）、選んだ相手のカタログは `buyer.supplier(supplierTenantId:)` の `SupplierPartnership.catalog`（参照に並べる。画面 18 と同じ問い合わせ）・`placePurchaseOrder`（操作名 `PlacePurchaseOrder`、M30 の登録の表）。品番は自社品番を入力する | M8・M9・M10 |
 | 21 ※ | `/buyer/purchase-orders/[id]` 発注詳細（入荷・検収・取消依頼） | 発注側 | `/orders/[id]` | `buyer.purchaseOrder`（`inboundShipments`・`supplierShipments`・`cancellationRequests`）・`inspectInboundShipment`・`requestPurchaseOrderCancellation` | M10・M14・M21・M23 |
 | 22 ※ | `/buyer/received-invoices` 受領請求書一覧 | 発注側 | —（新規） | `buyer.receivedInvoices` | M25 |
 | 23 ※ | `/buyer/received-invoices/[id]` 受領請求書詳細 | 発注側 | —（新規） | `buyer.receivedInvoice` | M25 |
+
+`admin` に限る操作（`graphql-schema.md`「役割による制限」の表）のボタンは、`viewer.role` が `admin` のときだけ出す。画面 2・3・12 のほか、画面 6 の取消と審査、11 の単価の改定と訂正、13 と 15 の請求の操作、21 の検収と取消依頼が当たる。画面 16 の取り込みの開始は種類で許す役割が変わるので、種類 `items` の選択肢だけを `admin` に出し、`stocks` は役割を問わず出す。
 
 流用元にあって API に無い操作は、画面から外す。受注側による受注の登録（受注は発注からイベントで作られる）、明細ごとの引当と引当の解除（`allocateSalesOrder` は受注の単位で引き当てる）、品目と得意先の削除、得意先の住所と担当者がこれに当たる。流用元の品目の安全在庫は、在庫の値（`Stock.safetyStock`）として在庫の画面に出す。
 
@@ -1540,7 +1561,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 流用元は、サーバーコンポーネントで読み、server action で書き、どちらも Next のサーバーから API を呼ぶ。この形を保ち、呼び先だけを Rails の GraphQL に替える。
 
 - **呼び出し口**：`lib/graphql/request.ts` の 1 か所だけが Rails を呼ぶ。流用元の `lib/api-client.ts`・`api.ts`・`api-types.ts` と、`lib/*-actions.ts` の REST の呼び出しを、これに置き換える。`fetch` は `cache: "no-store"` で呼び、Next のデータのキャッシュ（`"use cache"`・`unstable_cache`・`fetch` の `next.revalidate`）は使わない。キャッシュの鍵にセッションが入らないので、あるテナントへの応答を別のテナントに返すからである。ESLint の `no-restricted-syntax` と `no-restricted-imports` で、これらを書くと落ちるようにする。
-- **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next のサーバーが、OI-117 で決めた時刻帯の今日として出す。Rails の業務の今日と食い違うと、画面の今日と受注日がずれるからである。
+- **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next では決めず、API が返す業務の今日（`supplier.dashboard.businessDate`）を使う。業務の今日を決める場所が Rails と Next の 2 か所になると、OI-117 で決めた形と画面の今日がずれるからである。API に無い画面で要るときは、著者判断 6 と同じく足すだけの変更として入口に足す。
 - **画面の問い合わせ**：`frontend/graphql/<視点>/<操作名>.graphql` に 1 ファイル 1 つで置き、断片（fragment）はそのファイルの中でだけ使う。一覧は絞り込みの引数を使わず、`first: 100` で `pageInfo.hasNextPage` が偽になるまで読み、流用元の並べ替え・絞り込み・タブの純関数にそのまま渡す（著者判断 1）。
 - **一覧の絞り込みの引数**：画面の検索の項目が決まったら、その一覧に `filter` の入力型を定義して足し、`graphql-schema.md` の SDL と「ページングと N+1」、行列テストの期待値、`schema.graphql` を同じ変更で直す。いまの一覧は、親を ID で選ぶ引数と監査ログの絞り込みのほかに引数を持たない。項目が決まらない一覧には足さない
 - **認証**：ログインの server action が、Rails の `POST /session` に JSON で資格情報を送り、応答の `Set-Cookie` にあるセッションの Cookie（`_factory_ops_session`）を、同じ属性（`HttpOnly`・`SameSite=Lax`・本番は `Secure`・期限）で `cookies().set` に写す。`request.ts` は、ブラウザから届いた Cookie のうちセッションの Cookie だけを Rails へ送る。ログアウトの server action は `DELETE /session` を呼び、Cookie を消す。Rails が応答のたびに延ばす期限の扱いは、著者判断 5 による。
@@ -1573,22 +1594,22 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 
 **判断**：画面の問い合わせの正本をどこに置くか
 
-- **既定の推奨**：`frontend/graphql/` を正本にする。M17 の `spec/fixtures/graphql/screens/` を消し、クエリ数の予算（M17）・複雑度のテスト（M26）・操作名の登録の一致のテスト（M30）が `frontend/graphql/` を読むように替える。画面が実際に送る問い合わせと、検査する問い合わせが 1 つになる。
+- **既定の推奨**：`frontend/graphql/` を正本にする。M17 の `spec/fixtures/graphql/screens/` を消し、クエリ数の予算（M17）・複雑度のテスト（M26）・操作名の登録の一致のテスト（M30）が `frontend/graphql/` を読むように替える。画面が実際に送る問い合わせと、検査する問い合わせが 1 つになる。`frontend/graphql/` には mutation の文書と詳細の問い合わせも入るので、クエリ数の予算と複雑度のテストは query の文書だけを対象にし、予算の表（`SCREENS`）に、一覧の問い合わせのすべての行を足す。操作名の登録の一致のテストは、query を登録の表の `queries` と、mutation を `mutations` と照らす。
 - **裏返る条件**：`frontend/` を別のリポジトリに置く → `spec/fixtures/graphql/screens/` を残し、フロントエンドの CI で両者の一致を確かめる。
-- **撤退コスト**：小。3 つのテストの読み先を 1 行ずつ替えるだけである。
+- **撤退コスト**：中。3 つのテストの読み先を替え、予算と複雑度のテストに query だけを選ぶ条件を足し、予算の表に画面の一覧の行を足す。
 
 **作るもの 4：テストとゲート**
 
 流用元の E2E は、Go の API に当てる live と、REST のスタブに当てる stub の 2 系統である。本デモは、Rails に当てる 1 系統にする。stub が作っていた「API に届かない」状態は、届かない URL を向いた Next のサーバーをもう 1 つ立てて作る。
 
-- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 の `DemoWorld` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作る。テストは、自分のワーカー番号の世界のユーザーでログインし、他の世界に書かない。
+- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 の `DemoWorld.build(namespace: "w<ワーカー番号>", variant: :e2e)` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作り、返ったアカウントを JSON に書き出す。テストは、自分のワーカー番号の世界のアカウントでログインし、他の世界に書かない。
 - **画面の通し試験**：E2E に次の 2 本を置く。1 本目は、重要シナリオ S2（M26）を画面で通す。失効の後、発注側の取引先とカタログと出荷が空になり、発注登録が `NOT_PERMITTED` の文言になる。2 本目は、発注側の 2 社のユーザーで続けてログインし、前のテナントの伝票番号が画面に出ないことを確かめる。
 - **流用元の規則**：流用元の `handbook/README.md` の E2E と見た目の規則を、次のとおり持ち込む。
 
   | 流用元の規則 | 本デモでの置き方 |
   |---|---|
   | 同じ種類の要素の寸法・そろえ・はみ出しを、最初のタスクで全画面について測る | 流用元の `e2e/support/tokens.ts`・`table-align.ts`・`contrast.ts` と、カードの高さ・はみ出し（`scrollWidth <= clientWidth`）の検査を写し、M33 の最初の作業で置く。測る画面の一覧は `app/` のルートのファイルから作り、手で並べない。足した画面が測られないまま通らないようにするためである |
-  | 中身の違うデータを作ってから測る | E2E の世界に、最も長い品目名と取引先名、ボタンのある行と無い行、各状況の enum の全値の行を入れる。シードの短くそろった中身だけで測らない |
+  | 中身の違うデータを作ってから測る | `DemoWorld` の `variant: :e2e` が、最も長い品目名と取引先名、ボタンのある行と無い行、各状況の enum の全値の行を入れる（M32）。シードの短くそろった中身だけで測らない |
   | 寸法・色・フォーカスは、アニメーションと色の遷移が終わってから測る。キーは 1 つ押すごとにフォーカスの移りを待つ | 流用元の `e2e/support/style.ts`・`router.ts` の待ち方をそのまま使う |
   | 数える前に画面の変化を待ち、遷移の後は着いたことを先に確かめる | 同上。イベントで進む表示（発注 → 受注確定）はワーカーの処理を待つので、`expect.poll` と再読み込みで待ち、固定の時間は待たない |
   | 1 回だけ落ちたテストを、再実行で緑にして流さない | CPU の遅延（CDP の `Emulation.setCPUThrottlingRate`）で再現率を測り、待ち方の誤りか製品の競合かを分ける。Playwright の `retries` は 0 にする |
@@ -1604,7 +1625,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 ```sh
 cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
 cd frontend && npm run test:e2e
-bundle exec rspec spec/graphql/query_budget_spec.rb   # 画面の問い合わせを frontend/graphql から読む
+bundle exec rspec spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb spec/platform/metrics_subscriber_spec.rb   # 画面の問い合わせを frontend/graphql から読む
 ```
 
 次を、手で確かめる。`schema.graphql` から画面が使うフィールドを 1 つ消すと、`npm run codegen:check` か `npm run typecheck` が落ちる。`request.ts` に `"use cache"` を足すと、`npm run lint` が落ちる。作者が検収表のスクリーンショットを見て受け入れる。
@@ -1618,7 +1639,7 @@ bundle exec rspec spec/graphql/query_budget_spec.rb   # 画面の問い合わせ
 5. **セッションの期限**：Rails は、応答のたびにセッションの Cookie を書き直して期限を延ばす。サーバーコンポーネントは Cookie を書けないので、延びた Cookie は server action の応答でだけブラウザに写す。読むだけの利用では、期限はログインか最後の書き込みから 12 時間になる。
 6. **入口に足すフィールド**：品目を ID で引く `supplier.item(id:)` と、サイドバーに自社の名前を出す `viewer.tenant` が無い。どちらも足すだけの変更なので、M33 で足し、`graphql-schema.md` と行列テストの期待値（許す役割と、RLS を開いた 2 回目の比較を含む。M37）に行を足す。
 7. **入荷の一覧**：発注をまたいだ入荷の一覧の入口（`buyer.inboundShipments`）は足さず、発注一覧の「入荷予定」のタブで代える。検収は発注詳細で行う。
-8. **公開の配置**：手元（`bin/rails server` と `next start`）で見せるところまでにする。公開する配置と、訪問者ごとのデータの分離（流用元のデモの開始に当たるもの）は作らない。
+8. **公開の配置**：手元（`bin/rails server` と `next start`）で見せるところまでにする。公開する配置と、訪問者ごとのデータの分離（流用元のデモの開始に当たるもの）は作らない。GitHub のリポジトリを public にする時期（OI-06）も、このときに確かめる。
 
 **範囲外**：公開の配置と訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
