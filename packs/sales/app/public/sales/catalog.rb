@@ -3,17 +3,17 @@ module Sales
   # 品目の値の単価は、今日の単価を item_prices から引く（docs/adr/006 決定 5）
   module Catalog
     def self.items(actor, first:, after:)
-      Page.of(Scope.call(actor, :own), first:, after:) { |items| to_values(items) }
+      Page.of(Scope.call(actor, :own), first:, after:) { |items| to_values(actor, items) }
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
     def self.item(actor, id)
-      to_values(Scope.call(actor, :own).where(id:)).first
+      to_values(actor, Scope.call(actor, :own).where(id:)).first
     end
 
     # 品目 ID ごとの自社の品目。見えない ID は含まない
     def self.items_for(actor, ids)
-      to_values(Scope.call(actor, :own).where(id: ids)).index_by(&:id)
+      to_values(actor, Scope.call(actor, :own).where(id: ids)).index_by(&:id)
     end
 
     # 品目コードで自社の品目を引き、無ければ作り、あれば更新する。公開の状態は set_published だけが変える。
@@ -24,16 +24,16 @@ module Sales
     def self.save(actor, code:, name:, unit:, unit_price:, tax_rate_percent:)
       item = Item.transaction(requires_new: true) do
         record = Scope.call(actor, :own).lock.find_or_initialize_by(code:)
-        if record.persisted? && ItemPrice.current.where(item_id: record.id).valid_on(ItemPrice.today).pick(:unit_price) != unit_price
-          next
-        end
+        next if record.persisted? && ItemPrices.price_at(actor, [ record.id ], valid_on: ItemPrice.today)[record.id] != unit_price
 
         created = record.new_record?
         record.update!(name:, unit:, tax_rate_percent:)
-        ItemPrice.add!(item_id: record.id, unit_price:, valid_from: nil, valid_to: nil, at: Time.current) if created
+        if created
+          ItemPrice.add!(item_id: record.id, unit_price:, valid_from: nil, valid_to: nil, at: Time.current, recorded_by_user_id: actor.user_id)
+        end
         record
       end
-      return OperationResult.success(to_values([ item ]).first) if item
+      return OperationResult.success(to_values(actor, [ item ]).first) if item
 
       OperationResult.failure(:invalid_input, path: [ :unit_price ],
         message: "既存の品目の単価は変えられない。単価の改定は scheduleItemPrice を、入力の誤りの訂正は correctItemPrice を使う")
@@ -49,13 +49,13 @@ module Sales
       return OperationResult.failure(:not_found, path: [ :item_id ]) unless item
 
       item.update!(published:)
-      OperationResult.success(to_values([ item ]).first)
+      OperationResult.success(to_values(actor, [ item ]).first)
     end
 
-    # 単価は品目の一覧に対して 1 回で引く
-    def self.to_values(items)
+    # 今日の単価は品目の一覧に対して 1 回で引く
+    def self.to_values(actor, items)
       items = items.to_a
-      prices = ItemPrice.current.valid_on(ItemPrice.today).where(item_id: items.map(&:id)).pluck(:item_id, :unit_price).to_h
+      prices = ItemPrices.price_at(actor, items.map(&:id), valid_on: ItemPrice.today)
       items.map do |item|
         ItemValue.new(**item.slice(*(ItemValue.members - [ :unit_price ]).map(&:to_s)).symbolize_keys, unit_price: prices.fetch(item.id))
       end

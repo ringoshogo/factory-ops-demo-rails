@@ -56,6 +56,10 @@ RSpec.describe Sales::ItemPrices do
       end
     end
 
+    it "記録時点が訂正の時刻ちょうどなら、訂正の後の行だけを信じていた" do
+      expect(prices(as_of: t2).map { [ _1.unit_price, _1.recorded_from ] }).to eq([ [ 90, t2 ], [ 120, t1 ] ])
+    end
+
     it "品目を作る前の記録時点では、単価が無い" do
       expect(price_on(Date.new(2026, 10, 15), as_of: Time.zone.local(2026, 9, 30))).to be_nil
     end

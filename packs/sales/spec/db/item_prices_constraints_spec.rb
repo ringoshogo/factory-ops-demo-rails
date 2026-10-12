@@ -76,9 +76,17 @@ RSpec.describe "item_prices の制約" do
       expect(connection.select_value("SELECT count(*) FROM item_prices")).to eq(1)
     end
 
-    it "閉じた行と、記録期間の始まりの無い行は足せない" do
+    it "閉じた行と、記録期間の始まりの無い行と、始まりを含まない行は足せない" do
       rejected { insert(valid_period: "[2027-01-01,)", recorded_period: "[2026-10-01 00:00:00+00,2026-10-02 00:00:00+00)") }
       rejected { insert(valid_period: "[2027-01-01,)", recorded_period: "(,)") }
+      rejected { insert(valid_period: "[2027-01-01,)", recorded_period: "(2026-10-01 00:00:00+00,)") }
+    end
+
+    # 端を含むかどうかを変えると、閉じた行の終わりと、同じ時刻に足した行の始まりが重なるか、作った時刻が記録から抜ける
+    it "記録期間の端の含み方を変えて閉じる UPDATE を拒む" do
+      rejected { update(id, "recorded_period = tstzrange(lower(recorded_period), '2026-10-05 00:00:00+00', '[]')") }
+      rejected { update(id, "recorded_period = tstzrange(lower(recorded_period), '2026-10-05 00:00:00+00', '()')") }
+      rejected { update(id, "recorded_period = tstzrange(lower(recorded_period), lower(recorded_period), '[]')") }
     end
   end
 

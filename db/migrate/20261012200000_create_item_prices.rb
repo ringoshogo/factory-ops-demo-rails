@@ -18,6 +18,8 @@ class CreateItemPrices < ActiveRecord::Migration[8.1]
 
       t.check_constraint "unit_price >= 0", name: "item_prices_unit_price_non_negative"
       t.check_constraint "NOT isempty(valid_period)", name: "item_prices_valid_period_not_empty"
+      # 記録期間は始まりを含み終わりを含まない。閉じた行の終わりと、同じ時刻に足した行の始まりが重ならずに接する
+      t.check_constraint "lower_inc(recorded_period) AND NOT upper_inc(recorded_period)", name: "item_prices_recorded_period_half_open"
     end
     add_tenant_reference :item_prices, :items
 

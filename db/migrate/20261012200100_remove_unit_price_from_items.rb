@@ -23,12 +23,13 @@ class RemoveUnitPriceFromItems < ActiveRecord::Migration[8.1]
     end
   end
 
-  # 列には、いま信じている今日の単価を戻す（docs/adr/006「撤退コスト」）
+  # 列には、いま信じている今日の単価を戻す（docs/adr/006「撤退コスト」）。今日はカタログと同じ Date.current で決め、
+  # セッションの時刻帯で変わる SQL の CURRENT_DATE は使わない（docs/adr/006 決定 6）
   def down
     add_column :items, :unit_price, :bigint
     execute <<~SQL
       UPDATE items i SET unit_price = p.unit_price FROM item_prices p
-      WHERE p.item_id = i.id AND upper_inf(p.recorded_period) AND p.valid_period @> CURRENT_DATE
+      WHERE p.item_id = i.id AND upper_inf(p.recorded_period) AND p.valid_period @> #{connection.quote(Date.current)}::date
     SQL
     remove_check_constraint :sales_order_lines, name: "sales_order_lines_matched_together"
     safety_assured do

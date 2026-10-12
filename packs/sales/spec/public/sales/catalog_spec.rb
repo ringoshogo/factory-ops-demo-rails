@@ -4,7 +4,9 @@ require "rails_helper"
 # 新しい品目は最初の単価を持ち、既存の品目の単価は変えない（docs/architecture/graphql-schema.md「mutation の一覧」）
 RSpec.describe Sales::Catalog do
   let(:supplier) { FactoryBot.create(:tenant) }
-  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
+  let(:actor) do
+    Partnerships::Actor.new(user_id: SecureRandom.uuid, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "")
+  end
 
   around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
 
@@ -18,6 +20,7 @@ RSpec.describe Sales::Catalog do
     created = save.value
     expect(created).to have_attributes(code: "N-1", name: "新品目", unit_price: 300, tax_rate_percent: 10, published: false)
     expect(price_rows).to eq([ [ 300, -Float::INFINITY...Float::INFINITY ] ])
+    expect(Sales::ItemPrice.sole.recorded_by_user_id).to eq(actor.user_id)
 
     updated = save(name: "改名", tax_rate_percent: 8).value
 

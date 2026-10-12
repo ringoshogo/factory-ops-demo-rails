@@ -11,7 +11,10 @@ RSpec.describe "Sales::ItemPrices.backfill" do
 
   self.use_transactional_tests = false
 
-  # 受注明細の「揃って空か揃って埋まる」CHECK 制約。db/structure.sql と同じ定義に戻す
+  # 受注明細の「揃って空か揃って埋まる」CHECK 制約の、移行の前の定義（priced_on を含まない）
+  matched_before = "(item_id IS NULL AND item_name IS NULL AND unit_price IS NULL AND tax_rate_percent IS NULL) OR " \
+    "(item_id IS NOT NULL AND item_name IS NOT NULL AND unit_price IS NOT NULL AND tax_rate_percent IS NOT NULL)"
+  # 同じ制約の、db/structure.sql と同じいまの定義
   matched_together = "(item_id IS NULL AND item_name IS NULL AND unit_price IS NULL AND priced_on IS NULL AND tax_rate_percent IS NULL) OR " \
     "(item_id IS NOT NULL AND item_name IS NOT NULL AND unit_price IS NOT NULL AND priced_on IS NOT NULL AND tax_rate_percent IS NOT NULL)"
 
@@ -39,6 +42,7 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     delete_owned_rows([ tenant.id, other.id ], %w[item_prices sales_order_lines sales_orders items])
     reshape(<<~SQL)
       ALTER TABLE items DROP COLUMN IF EXISTS unit_price;
+      ALTER TABLE sales_order_lines DROP CONSTRAINT IF EXISTS sales_order_lines_matched_together;
       ALTER TABLE sales_order_lines ADD CONSTRAINT sales_order_lines_matched_together CHECK (#{matched_together});
     SQL
   end
@@ -105,6 +109,34 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     expect(price_rows(tenant.id).map(&:first)).to eq([ mine[:item].id ])
     expect(price_rows(other.id)).to be_empty
     expect(priced_on(theirs[:line].id)).to be_nil
+  end
+
+  # 列を消すマイグレーションを、所有ロールのトランザクションの中で流し、ブロックの後に巻き戻す。
+  # bin/rails db:rollback では strong_migrations は down を検査しない。exec_migration は向きを伝えないので、ここで合わせる
+  def run_removal(*directions)
+    require Rails.root.join("db/migrate/20261012200100_remove_unit_price_from_items").to_s
+    owner.transaction do
+      directions.each do |direction|
+        migration = RemoveUnitPriceFromItems.new
+        run = -> { migration.exec_migration(owner, direction) }
+        ActiveRecord::Migration.suppress_messages { direction == :down ? migration.safety_assured(&run) : run.call }
+      end
+      yield if block_given?
+      raise ActiveRecord::Rollback
+    end
+  end
+
+  it "列を消すマイグレーションは、移行の前には止まり、移行の後に通り、巻き戻すと今日の単価を列に戻す" do
+    rows = legacy_rows(tenant.id, unit_price: 150)
+    expect { run_removal(:up) }.to raise_error(/先に bin\/rails sales:backfill_item_prices を流す/)
+
+    backfill(tenant.id)
+    # 移行の前の DB にあった制約を戻す。マイグレーションはこれを外して priced_on を含む制約を足す
+    reshape("ALTER TABLE sales_order_lines ADD CONSTRAINT sales_order_lines_matched_together CHECK (#{matched_before})")
+    run_removal(:up) { expect(owner.column_exists?(:items, :unit_price)).to be(false) }
+    run_removal(:up, :down) do
+      expect(owner.select_value("SELECT unit_price FROM items WHERE id = #{owner.quote(rows[:item].id)}")).to eq(150)
+    end
   end
 
   def actor_of(tenant)

@@ -605,6 +605,7 @@ CREATE TABLE public.item_prices (
     reason character varying,
     recorded_by_user_id uuid,
     item_id uuid NOT NULL,
+    CONSTRAINT item_prices_recorded_period_half_open CHECK ((lower_inc(recorded_period) AND (NOT upper_inc(recorded_period)))),
     CONSTRAINT item_prices_unit_price_non_negative CHECK ((unit_price >= 0)),
     CONSTRAINT item_prices_valid_period_not_empty CHECK ((NOT isempty(valid_period)))
 );
