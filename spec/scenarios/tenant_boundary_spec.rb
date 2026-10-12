@@ -6,7 +6,7 @@ require_relative "../support/scenarios"
 # 下の表に無い入口があれば落ちる（docs/architecture/graphql-schema.md「ID と `node`」）
 RSpec.describe "テナントの境界", type: :request do
   # 受注側の伝票の ID と、イベントで受け取った出荷実績・受注・受注明細の ID
-  documents = %i[shipment sales_order sales_order_line shipment_request item item_price partnership cancellation_review invoice]
+  documents = %i[shipment sales_order sales_order_line shipment_request item item_price partnership cancellation_review invoice import_file import]
   not_found = { "errors" => [ { "code" => "NOT_FOUND" } ] }
 
   # 入口（型.フィールド(引数の道)）ごとに、相手の ID を入れる引数と、入れる ID の種類と、届かないときの結果。
@@ -40,6 +40,14 @@ RSpec.describe "テナントの境界", type: :request do
         query("query($id: ID) { supplier { partMappings(customerTenantId: $id) { nodes { id } } } }", id:)
           .dig("supplier", "partMappings", "nodes")
       end
+    },
+    "SupplierView.import(id)" => {
+      ids: documents, reach: nil,
+      run: ->(id) { query("query($id: ID!) { supplier { import(id: $id) { id } } }", id:).dig("supplier", "import") }
+    },
+    # 相手が置いたファイルの ID も、相手の取り込みの ID も、自社のファイルではないので NOT_FOUND になる
+    "Mutation.startImport(input.fileId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("startImport", fileId: id, kind: "STOCKS") }
     },
     "SupplierView.invoice(id)" => {
       ids: documents, reach: nil,
@@ -191,6 +199,10 @@ RSpec.describe "テナントの境界", type: :request do
       item_price_id = item.fetch("prices").sole.fetch("id")
       mutate!("registerPartMapping", "partMapping { id }", customerTenantId: buyer.id, customerPartNumber: "MY-BOLT", itemId: item_id)
       mutate!("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
+      post "/imports/files", params: { file: Rack::Test::UploadedFile.new(StringIO.new("item_code,quantity\n"), "text/csv", original_filename: "stocks.csv") },
+        headers: { "Origin" => Rails.configuration.x.frontend_origin }
+      import_file_id = response.parsed_body.fetch("id")
+      import_id = mutate!("startImport", "import { id }", fileId: import_file_id, kind: "STOCKS").dig("import", "id")
 
       login_as(buyer_admin)
       purchase_order_id, billed_order_id = [ 4, 2 ].map do |quantity|
@@ -253,7 +265,8 @@ RSpec.describe "テナントの境界", type: :request do
       @partner_ids = {
         shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
         sales_order_line: posted.fetch("lines").sole.fetch("sales_order_line_id"), shipment_request: request_id, item: item_id,
-        item_price: item_price_id, partnership: partnership_id, cancellation_review: review_id, invoice: invoice_id, supplier_tenant: supplier.id,
+        item_price: item_price_id, partnership: partnership_id, cancellation_review: review_id, invoice: invoice_id, import_file: import_file_id,
+        import: import_id, supplier_tenant: supplier.id,
         buyer_tenant: buyer.id, outsider_tenant: outsider.id
       }
       expect(partner_ids.values).to all(be_present)

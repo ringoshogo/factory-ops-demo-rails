@@ -436,6 +436,95 @@ COMMENT ON TABLE public.email_deliveries IS '[通知] 確実な送信の送信�
 
 
 --
+-- Name: import_files; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_files (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    filename character varying NOT NULL,
+    byte_size integer NOT NULL,
+    content bytea,
+    uploaded_by_user_id uuid NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT import_files_byte_size_limit CHECK (((byte_size >= 0) AND (byte_size <= 10485760))),
+    CONSTRAINT import_files_content_size CHECK (((content IS NULL) OR (octet_length(content) = byte_size)))
+);
+
+ALTER TABLE ONLY public.import_files FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE import_files; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.import_files IS '[取り込み] 受注側が送った CSV のファイル。取り込みを終えたら中身を消す';
+
+
+--
+-- Name: import_rows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_rows (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    row_number integer NOT NULL,
+    data jsonb NOT NULL,
+    applied_at timestamp(6) without time zone,
+    error character varying,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    import_id uuid NOT NULL,
+    CONSTRAINT import_rows_single_result CHECK (((applied_at IS NULL) OR (error IS NULL)))
+);
+
+ALTER TABLE ONLY public.import_rows FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE import_rows; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.import_rows IS '[取り込み] 置き場の行。CSV の 1 行の値と、反映の結果を持つ';
+
+
+--
+-- Name: imports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.imports (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    kind character varying NOT NULL,
+    total_rows integer,
+    applied_rows integer DEFAULT 0 NOT NULL,
+    failed_rows integer DEFAULT 0 NOT NULL,
+    started_at timestamp(6) without time zone,
+    staged_at timestamp(6) without time zone,
+    finished_at timestamp(6) without time zone,
+    failed_at timestamp(6) without time zone,
+    failure_reason character varying,
+    requested_by_user_id uuid NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    import_file_id uuid NOT NULL,
+    CONSTRAINT imports_counts_not_negative CHECK (((applied_rows >= 0) AND (failed_rows >= 0))),
+    CONSTRAINT imports_failure_reason CHECK (((failed_at IS NULL) = (failure_reason IS NULL))),
+    CONSTRAINT imports_kind CHECK (((kind)::text = ANY ((ARRAY['items'::character varying, 'stocks'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.imports FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE imports; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.imports IS '[取り込み] ファイルごとの取り込み。状況は時刻列と件数から導出する';
+
+
+--
 -- Name: inbound_shipment_lines; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1964,6 +2053,30 @@ ALTER TABLE ONLY public.email_deliveries
 
 
 --
+-- Name: import_files import_files_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_files
+    ADD CONSTRAINT import_files_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: import_rows import_rows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_rows
+    ADD CONSTRAINT import_rows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: imports imports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.imports
+    ADD CONSTRAINT imports_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: inbound_shipment_lines inbound_shipment_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2609,6 +2722,69 @@ CREATE UNIQUE INDEX index_email_deliveries_on_owner_tenant_id_and_id ON public.e
 --
 
 CREATE UNIQUE INDEX index_email_deliveries_on_owner_tenant_id_and_notification_key ON public.email_deliveries USING btree (owner_tenant_id, notification_key);
+
+
+--
+-- Name: index_import_files_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_import_files_on_owner_tenant_id_and_id ON public.import_files USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_import_rows_failed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_rows_failed ON public.import_rows USING btree (import_id, row_number) WHERE (error IS NOT NULL);
+
+
+--
+-- Name: index_import_rows_on_import_id_and_row_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_import_rows_on_import_id_and_row_number ON public.import_rows USING btree (import_id, row_number);
+
+
+--
+-- Name: index_import_rows_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_import_rows_on_owner_tenant_id_and_id ON public.import_rows USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_import_rows_on_owner_tenant_id_and_import_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_rows_on_owner_tenant_id_and_import_id ON public.import_rows USING btree (owner_tenant_id, import_id);
+
+
+--
+-- Name: index_import_rows_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_import_rows_pending ON public.import_rows USING btree (import_id, row_number) WHERE ((applied_at IS NULL) AND (error IS NULL));
+
+
+--
+-- Name: index_imports_on_import_file_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_imports_on_import_file_id ON public.imports USING btree (import_file_id);
+
+
+--
+-- Name: index_imports_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_imports_on_owner_tenant_id_and_id ON public.imports USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_imports_on_owner_tenant_id_and_import_file_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_imports_on_owner_tenant_id_and_import_file_id ON public.imports USING btree (owner_tenant_id, import_file_id);
 
 
 --
@@ -3428,11 +3604,27 @@ ALTER TABLE ONLY public.inbound_shipment_lines
 
 
 --
+-- Name: import_rows fk_rails_126fa5916c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_rows
+    ADD CONSTRAINT fk_rails_126fa5916c FOREIGN KEY (owner_tenant_id, import_id) REFERENCES public.imports(owner_tenant_id, id);
+
+
+--
 -- Name: sales_order_lines fk_rails_151983be39; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sales_order_lines
     ADD CONSTRAINT fk_rails_151983be39 FOREIGN KEY (owner_tenant_id, sales_order_id) REFERENCES public.sales_orders(owner_tenant_id, id);
+
+
+--
+-- Name: import_rows fk_rails_16b9930843; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_rows
+    ADD CONSTRAINT fk_rails_16b9930843 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3449,6 +3641,14 @@ ALTER TABLE ONLY public.items
 
 ALTER TABLE ONLY public.shipment_request_lines
     ADD CONSTRAINT fk_rails_1a94872e8b FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: import_files fk_rails_1e3325f4d4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_files
+    ADD CONSTRAINT fk_rails_1e3325f4d4 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3628,11 +3828,27 @@ ALTER TABLE ONLY public.cancellation_requests
 
 
 --
+-- Name: imports fk_rails_6087bee060; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.imports
+    ADD CONSTRAINT fk_rails_6087bee060 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: receipt_inspection_lines fk_rails_645673c657; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.receipt_inspection_lines
     ADD CONSTRAINT fk_rails_645673c657 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: imports fk_rails_67840225ad; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.imports
+    ADD CONSTRAINT fk_rails_67840225ad FOREIGN KEY (owner_tenant_id, import_file_id) REFERENCES public.import_files(owner_tenant_id, id);
 
 
 --
@@ -4028,6 +4244,24 @@ ALTER TABLE public.customer_part_mappings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_deliveries ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: import_files; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_files ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: import_rows; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_rows ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: imports; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.imports ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: inbound_shipment_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4129,6 +4363,27 @@ CREATE POLICY owner_write ON public.customer_part_mappings USING ((owner_tenant_
 --
 
 CREATE POLICY owner_write ON public.email_deliveries USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: import_files owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.import_files USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: import_rows owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.import_rows USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: imports owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.imports USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -4515,6 +4770,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261013000000'),
 ('20261012200100'),
 ('20261012200000'),
 ('20261012100000'),

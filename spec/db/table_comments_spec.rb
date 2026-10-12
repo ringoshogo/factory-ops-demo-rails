@@ -3,7 +3,7 @@ require "rails_helper"
 # 全表に、コンテキストの接頭辞で始まる 1 行の説明（COMMENT ON TABLE）があることを、テスト DB のカタログで確かめる。
 # 書式は docs/architecture/data-model.md「全テーブルに共通の規則」。
 RSpec.describe "表の説明" do
-  PREFIXES = %w[取引関係 購買 受注 在庫 出荷 請求 イベント 通知 基盤 キュー].freeze
+  PREFIXES = %w[取引関係 購買 受注 在庫 出荷 請求 イベント 通知 取り込み 基盤 キュー].freeze
 
   let(:comments) do
     ActiveRecord::Base.lease_connection.select_rows(<<~SQL).to_h

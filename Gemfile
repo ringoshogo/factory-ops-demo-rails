@@ -21,6 +21,9 @@ gem "action_policy-graphql", "~> 0.6"
 # ジョブ基盤。業務 DB と同じ接続に置き、イベントのジョブを業務のトランザクションの中で登録する（docs/adr/005）
 gem "solid_queue", "~> 1.2"
 
+# 取り込みの CSV を読む。Ruby 3.4 で csv は標準添付から外れ、Gemfile に書かないと読み込めない
+gem "csv", "~> 3.3"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 gem "bcrypt", "~> 3.1.7"
 

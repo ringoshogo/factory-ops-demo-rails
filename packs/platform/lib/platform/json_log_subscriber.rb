@@ -26,7 +26,9 @@ module Platform
       "graphql.operation_completed" => %i[operation_name result user_error_codes duration_ms],
       "contracts.event_handled" => %i[event_name receiver delivery_lag_ms],
       "notification.delivery_failed" => %i[kind delivery_id reason attempts],
-      "notification.best_effort_dropped" => %i[kind reason attempts]
+      "notification.best_effort_dropped" => %i[kind reason attempts],
+      "imports.chunk_applied" => %i[kind import_id applied_rows failed_rows],
+      "imports.finished" => %i[kind import_id result total_rows applied_rows failed_rows duration_ms]
     }.freeze
 
     # GraphQL の名前の形。操作名と変数の名前は利用者が送る値なので、この形の文字列でなければ、中の値ごと書かない

@@ -16,6 +16,15 @@ RSpec.describe "キューとワーカーの設定" do
       .to eq("events" => 3, "external_mail" => 2, "imports" => 1, "default" => 2)
   end
 
+  # 取り込みは数万行を分の単位で処理するので、ワーカーを分け、イベントの配送とメールを待たせない（docs/adr/007 決定 7）
+  it "imports のワーカーは imports だけを持ち、ほかのワーカーは imports を持たない。取り込みのジョブは imports に載る" do
+    queues = workers.map { _1.fetch("queues").to_s.split(",").map(&:strip) }
+
+    expect(queues.select { _1.include?("imports") }).to eq([ [ "imports" ] ])
+    expect(queues.reject { _1 == [ "imports" ] }.flatten).not_to include("imports", "*")
+    expect("Imports::RunJob".constantize.queue_name).to eq("imports")
+  end
+
   it "どのジョブも、ワーカーのあるキューに載る" do
     Rails.application.eager_load!
     jobs = ApplicationJob.descendants.select { _1.name&.safe_constantize == _1 }

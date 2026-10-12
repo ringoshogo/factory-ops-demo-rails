@@ -12,6 +12,7 @@ module Types
     field :set_item_published, mutation: Mutations::SetItemPublished
     field :schedule_item_price, mutation: Mutations::ScheduleItemPrice
     field :correct_item_price, mutation: Mutations::CorrectItemPrice
+    field :start_import, mutation: Mutations::StartImport
     field :register_part_mapping, mutation: Mutations::RegisterPartMapping
     field :allocate_sales_order, mutation: Mutations::AllocateSalesOrder
     field :cancel_sales_order, mutation: Mutations::CancelSalesOrder

@@ -18,5 +18,7 @@ module Types
     field :invoices, resolver: Resolvers::Supplier::InvoicesResolver
     field :invoice, resolver: Resolvers::Supplier::InvoiceResolver
     field :dashboard, resolver: Resolvers::Supplier::DashboardResolver
+    field :imports, resolver: Resolvers::Supplier::ImportsResolver
+    field :import, resolver: Resolvers::Supplier::ImportResolver
   end
 end

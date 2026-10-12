@@ -83,6 +83,10 @@ module MatrixExpectations
     # 監査ログは書いたテナントだけが読む。相手テナントへの写しは作らない
     "audit_logs" => OWNER_ONLY,
     # 送信記録は送ったテナントだけが読む。宛先は自社のユーザーで、相手テナントへ送る通知は無い
-    "email_deliveries" => OWNER_ONLY
+    "email_deliveries" => OWNER_ONLY,
+    # 取り込みは書いたテナントだけが読む。ファイルも置き場の行も、相手テナントから読む経路は無い
+    "import_files" => OWNER_ONLY,
+    "imports" => OWNER_ONLY,
+    "import_rows" => OWNER_ONLY
   }.freeze
 end
