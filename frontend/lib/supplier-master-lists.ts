@@ -47,5 +47,5 @@ export function stockMovementVariables(params: URLSearchParams) {
 
 /** 品番の対応表。取引先 (`customer`) で絞る。 */
 export function partMappingVariables(params: URLSearchParams) {
-  return { ...pageArgs(params), customerTenantId: single(params, "customer") };
+  return { ...pageArgs(params), customerTenantId: single(params, "customer"), itemKeyword: single(params, "item_q") };
 }

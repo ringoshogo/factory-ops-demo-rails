@@ -7,23 +7,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { startImport } from "@/lib/actions/imports";
+import { EXPIRED_PATH } from "@/lib/session";
 
 // lib/graphql/user-errors.ts の同じ文言は next/cache を読み込むので、クライアント部品からは読み込めない
 const UNREACHABLE_MESSAGE = "API に接続できませんでした。時間をおいてもう一度お試しください。";
 
-/** 応答の状態ごとの文言。413 と 400 は Rails の ImportFilesController が返す。 */
+/** 応答の状態ごとの文言。413 と 400 と 403 は Rails の ImportFilesController が返す。 */
 const UPLOAD_ERRORS: Record<number, string> = {
   400: "ファイルを選んでください。",
-  401: "セッションが切れました。もう一度ログインしてください。",
   403: "この画面のオリジンからは送れません。画面を開き直してください。",
   413: "ファイルが大きすぎます。",
 };
 
 /**
- * 取り込みの開始。ファイルはブラウザから同じオリジンの /imports/files へ multipart/form-data で送り
- * (next.config.mjs の rewrites が Rails へ送る)、返ったファイルの ID で取り込みを始める server action を呼ぶ。
- * ファイルの中身を Next のサーバーに通さないので、server action の本文の上限に掛からない。Rails は Origin ヘッダを
- * 許可したフロントエンドのオリジンと比べて、他サイトからの送信を拒む。
+ * 取り込みの開始。ファイルはブラウザから同じオリジンの /imports/files (app/imports/files/route.ts が Rails へ
+ * そのまま送る) へ multipart/form-data で送り、返ったファイルの ID で取り込みを始める server action を呼ぶ。
+ * server action に渡さないので、server action の本文の上限に掛からない。Rails は Origin ヘッダを許可した
+ * フロントエンドのオリジンと比べて、他サイトからの送信を拒む。セッションが切れていれば (401)、ほかの画面と同じく
+ * Cookie を消してログインの画面へ移す。
  *
  * 種類 ITEMS (品目と単価) は admin に限る操作なので、admin にだけ選択肢を出す。STOCKS (在庫) は役割を問わない。
  */
@@ -48,6 +49,10 @@ export function ImportUpload({ admin }: { admin: boolean }) {
         res = await fetch("/imports/files", { method: "POST", body });
       } catch {
         setMessage(UNREACHABLE_MESSAGE);
+        return;
+      }
+      if (res.status === 401) {
+        window.location.assign(EXPIRED_PATH);
         return;
       }
       if (!res.ok) {

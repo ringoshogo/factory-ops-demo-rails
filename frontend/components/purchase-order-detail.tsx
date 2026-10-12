@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { DateText, DueDate } from "@/components/date-text";
 import { ErrorNotice } from "@/components/error-notice";
+import { FieldError } from "@/components/form-errors";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,8 @@ const CANCELLABLE = new Set(["SENT", "AWAITING_SUPPLIER_CONFIRMATION", "ACCEPTED
 
 /**
  * 発注詳細。明細・入荷と検収・受注側の出荷 (経路 3)・取消依頼を 1 画面に置く。検収と取消依頼は admin だけに出す。
- * 失敗の文言は最後の操作の結果だけを 1 か所に出す。操作ごとに持つと、後の操作が成功しても前の失敗が残る。
+ * 失敗の文言は最後の操作の結果だけを出す。操作ごとに持つと、後の操作が成功しても前の失敗が残る。入力の誤りは、
+ * 最後に送ったフォーム (入荷ごとの検収か、取消依頼) の、path の指す入力欄の下に出す。
  */
 export function PurchaseOrderDetail({
   order,
@@ -36,14 +38,15 @@ export function PurchaseOrderDetail({
   businessDate: string;
   admin: boolean;
 }) {
-  const [last, setLast] = useState<FormState>(IDLE);
+  const [last, setLast] = useState<{ state: FormState; form: string }>({ state: IDLE, form: "" });
   const track =
     (action: (prev: FormState, form: FormData) => Promise<FormState>) =>
     async (prev: FormState, form: FormData) => {
       const next = await action(prev, form);
-      setLast(next);
+      setLast({ state: next, form: String(form.get("inboundShipmentId") ?? "cancel") });
       return next;
     };
+  const errorsFor = (form: string): FormState => (last.form === form ? last.state : IDLE);
   const [, inspect, inspecting] = useActionState(track(inspectInboundShipment), IDLE);
   const [, requestCancel, requesting] = useActionState(track(requestPurchaseOrderCancellation), IDLE);
   const open = OPEN_PURCHASE_ORDER_STATUSES.includes(order.status);
@@ -85,10 +88,8 @@ export function PurchaseOrderDetail({
         </div>
       </dl>
 
-      {last.status === "error" && (
-        <ErrorNotice data-testid="detail-error">
-          {last.message ?? Object.values(last.fieldErrors ?? {}).join(" ")}
-        </ErrorNotice>
+      {last.state.status === "error" && last.state.message && (
+        <ErrorNotice data-testid="detail-error">{last.state.message}</ErrorNotice>
       )}
 
       <div className="space-y-3">
@@ -151,7 +152,7 @@ export function PurchaseOrderDetail({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {inbound.lines.map((line) => (
+                  {inbound.lines.map((line, i) => (
                     <TableRow key={line.id}>
                       <TableCell>{line.purchaseOrderLine.partNumber}</TableCell>
                       <TableCell truncate>{line.purchaseOrderLine.confirmedItemName ?? "—"}</TableCell>
@@ -171,6 +172,7 @@ export function PurchaseOrderDetail({
                               aria-label={`${line.purchaseOrderLine.partNumber} の受け入れ数量`}
                               className="ml-auto w-24 text-right"
                             />
+                            <FieldError state={errorsFor(inbound.id)} name={`lines.${i}.acceptedQuantity`} />
                           </>
                         )}
                       </TableCell>
@@ -248,6 +250,7 @@ export function PurchaseOrderDetail({
             <div className="min-w-64 flex-1 space-y-1.5">
               <Label htmlFor="reason">取消の理由</Label>
               <Input id="reason" name="reason" required />
+              <FieldError state={errorsFor("cancel")} name="reason" />
             </div>
             <Button type="submit" variant="outline" disabled={requesting}>
               取消を依頼する

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { INTEGER_MESSAGE, parseInt32 } from "@/lib/form-input";
 import type { FormState } from "@/lib/form-state";
 import {
   CloseBillingPeriodDocument,
@@ -17,13 +18,13 @@ const INVOICES = "/supplier/invoices";
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 
 /**
- * 取引先ごとの締め日を設定する。締め日の範囲 (1〜28 か月末の 31) は API が確かめ、画面では数に直すだけにする。
- * 数に直せない値は、API の INVALID_INPUT と同じく入力欄の下に出す。
+ * 取引先ごとの締め日を設定する。締め日の範囲 (1〜28 か月末の 31) は API が確かめ、画面では Int に送れるかだけを確かめる。
+ * 送れない値は、API の INVALID_INPUT と同じく入力欄の下に出す。
  */
 export async function setBillingTerm(_prev: FormState, form: FormData): Promise<FormState> {
-  const closingDay = Number(str(form, "closingDay"));
-  if (!Number.isInteger(closingDay)) {
-    return { status: "error", fieldErrors: { closingDay: "締め日は整数で入力してください。" } };
+  const closingDay = parseInt32(str(form, "closingDay"));
+  if (closingDay === null) {
+    return { status: "error", fieldErrors: { closingDay: INTEGER_MESSAGE } };
   }
   const result = await mutate(SetBillingTermDocument, {
     input: { customerTenantId: str(form, "customerTenantId"), closingDay },

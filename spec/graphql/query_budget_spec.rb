@@ -73,8 +73,8 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     "SupplierPartMappings" => {
       actor: :supplier_member, list: %w[supplier partMappings nodes],
       nested: { "customer" => 1, "item" => 1 },
-      # 登録の品目の候補（品目を first: 100 で読む）と、照合待ちの受注（first: 10）
-      more_lists: [ { list: %w[supplier candidates nodes], nested: {}, page_size: 100 },
+      # 登録の品目の候補（品目を first: 20 で読む）と、照合待ちの受注（first: 10）
+      more_lists: [ { list: %w[supplier candidates nodes], nested: {}, page_size: 20 },
                     { list: %w[supplier awaiting nodes], nested: { "customer" => 1, "lines" => 2 }, page_size: 10 } ],
       sources: { "customer" => [ Partnerships::Directory, :tenants ], "item" => [ Sales::Catalog, :items_for ],
                  "lines" => [ Sales::SalesOrders, :lines_for ] }

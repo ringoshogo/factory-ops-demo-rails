@@ -15,7 +15,7 @@ test.skip(process.env.E2E_SCREENSHOTS !== "1", "検収表のスクリーンシ�
 for (const screen of screenPlans()) {
   test(`検収表: ${screen.route}${screen.variant}`, async ({ page }, testInfo) => {
     test.setTimeout(120_000);
-    await login(page, testInfo, screen.persona);
+    if (screen.persona) await login(page, testInfo, screen.persona);
     for (const theme of THEMES) {
       // テーマは Cookie で選ぶ (lib/theme.ts)。サーバーが描く時点で決まる
       await page.context().addCookies([{ name: "theme", value: theme, url: APP_URL }]);

@@ -1,4 +1,5 @@
 require "rails_helper"
+require "rake"
 require Rails.root.join("lib/e2e_prepare").to_s
 
 # E2E の世界の準備の守り（lib/e2e_prepare.rb）。準備は DB を作り直すので、rspec のテスト DB を指していれば止まる。
@@ -39,6 +40,45 @@ RSpec.describe E2ePrepare do
       expect(worlds.map { _1[:index] }).to eq([ 0 ])
       expect(worlds.sole[:accounts].map { _1[:email] }).to all(include("+w0@"))
       expect(worlds.sole[:accounts].map { _1[:persona] }).to include("supplier_admin", "revoked_buyer_admin")
+    end
+  end
+
+  # rake タスクが守りを呼ぶこと。守りの関数だけを確かめても、タスクから呼び出しを外したことは捕まらない
+  describe "rake タスク" do
+    before(:context) { Rails.application.load_tasks unless Rake::Task.task_defined?("e2e:check") }
+
+    def with_env(values)
+      previous = values.keys.to_h { [ _1, ENV[_1] ] }
+      values.each { |key, value| ENV[key] = value }
+      yield
+    ensure
+      previous.each { |key, value| ENV[key] = value }
+    end
+
+    def register_live_worker = SolidQueue::Process.register(kind: "Worker", pid: 12_346, name: "worker-e2e-task", hostname: "spec")
+
+    it "e2e:check は、E2E の DB を指していないときと、心拍の生きているワーカーがいるときに止まる" do
+      with_env("TEST_DATABASE" => "factory_ops_e2e") do
+        expect { Rake::Task["e2e:check"].execute }.not_to raise_error
+        register_live_worker
+        expect { Rake::Task["e2e:check"].execute }.to raise_error(SystemExit).and output(/前に Solid Queue のプロセスが 1 件/).to_stderr
+      end
+      with_env("TEST_DATABASE" => nil) do
+        expect { Rake::Task["e2e:check"].execute }.to raise_error(SystemExit).and output(/TEST_DATABASE/).to_stderr
+      end
+    end
+
+    it "e2e:prepare は、世界を作った後に心拍の生きているワーカーがいれば、アカウントを書き出さずに止まる" do
+      allow(described_class).to receive(:worlds) do
+        register_live_worker
+        []
+      end
+      expect(described_class).not_to receive(:write)
+
+      with_env("TEST_DATABASE" => "factory_ops_e2e") do
+        expect { Rake::Task["e2e:prepare"].execute(Rake::TaskArguments.new([ :workers ], [ "1" ])) }
+          .to raise_error(SystemExit).and output(/後に Solid Queue のプロセスが 1 件/).to_stderr
+      end
     end
   end
 

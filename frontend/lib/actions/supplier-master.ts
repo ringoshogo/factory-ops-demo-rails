@@ -1,5 +1,6 @@
 "use server";
 
+import { INTEGER_MESSAGE, parseInt32, parseIntegerText } from "@/lib/form-input";
 import type { FormState } from "@/lib/form-state";
 import {
   AdjustStockDocument,
@@ -25,16 +26,13 @@ function str(form: FormData, key: string): string {
   return String(form.get(key) ?? "").trim();
 }
 
-/**
- * 整数の入力。GraphQL の Int と BigInt に数でない値を送ると、入力の誤りではなくトップレベルのエラーになり、どの欄の
- * 誤りかを返せない。そのため形だけを送る前に確かめ、範囲は API の検証に任せる。
- */
-function integer(form: FormData, key: string): string | null {
-  const value = str(form, key);
-  return /^-?\d+$/.test(value) ? value : null;
-}
+/** 金額の入力 (BigInt)。形だけを送る前に確かめる (lib/form-input.ts)。 */
+const amount = (form: FormData, key: string) => parseIntegerText(str(form, key));
 
-function invalid(key: string, message = "整数で入力してください"): FormState {
+/** Int の入力。形と Int の範囲を送る前に確かめる (lib/form-input.ts)。 */
+const int = (form: FormData, key: string) => parseInt32(str(form, key));
+
+function invalid(key: string, message = INTEGER_MESSAGE): FormState {
   return { status: "error", fieldErrors: { [key]: message } };
 }
 
@@ -42,9 +40,9 @@ const ITEM_PATHS = ["/supplier/items", "/supplier/stocks", "/supplier/part-mappi
 
 /** 品目の登録と更新。コードが同じ品目があれば名前・単位・税率を書き換える。既存の品目の単価はこの操作では変えない。 */
 export async function saveItem(_prev: FormState, form: FormData): Promise<FormState> {
-  const unitPrice = integer(form, "unitPrice");
+  const unitPrice = amount(form, "unitPrice");
   if (unitPrice === null) return invalid("unitPrice");
-  const taxRatePercent = integer(form, "taxRatePercent");
+  const taxRatePercent = int(form, "taxRatePercent");
   if (taxRatePercent === null) return invalid("taxRatePercent");
   const result = await mutate(SaveItemDocument, {
     input: {
@@ -52,7 +50,7 @@ export async function saveItem(_prev: FormState, form: FormData): Promise<FormSt
       name: str(form, "name"),
       unit: str(form, "unit"),
       unitPrice,
-      taxRatePercent: Number(taxRatePercent),
+      taxRatePercent,
     },
   });
   const id = result.kind === "ok" ? result.data.saveItem.item?.id : undefined;
@@ -71,7 +69,7 @@ export async function setItemPublished(_prev: FormState, form: FormData): Promis
 /** 単価の改定の予約。改定日から新しい単価が効き、それより前の受注の単価は変わらない。 */
 export async function scheduleItemPrice(_prev: FormState, form: FormData): Promise<FormState> {
   const itemId = str(form, "itemId");
-  const unitPrice = integer(form, "unitPrice");
+  const unitPrice = amount(form, "unitPrice");
   if (unitPrice === null) return invalid("unitPrice");
   const result = await mutate(ScheduleItemPriceDocument, {
     input: { itemId, unitPrice, effectiveOn: str(form, "effectiveOn") },
@@ -82,7 +80,7 @@ export async function scheduleItemPrice(_prev: FormState, form: FormData): Promi
 /** 入力の誤りの訂正。行を書き換えず、記録期間を閉じて新しい行を足すので、訂正の前に信じていた単価も履歴に残る。 */
 export async function correctItemPrice(_prev: FormState, form: FormData): Promise<FormState> {
   const itemId = str(form, "itemId");
-  const unitPrice = integer(form, "unitPrice");
+  const unitPrice = amount(form, "unitPrice");
   if (unitPrice === null) return invalid("unitPrice");
   const result = await mutate(CorrectItemPriceDocument, {
     input: { itemPriceId: str(form, "itemPriceId"), unitPrice, reason: str(form, "reason") },
@@ -92,12 +90,12 @@ export async function correctItemPrice(_prev: FormState, form: FormData): Promis
 
 /** 入庫と出庫。出庫で現在庫が引当を下回るかどうかは、表示が古いことがあるので画面で判定せず API に任せる。 */
 export async function adjustStock(_prev: FormState, form: FormData): Promise<FormState> {
-  const quantity = integer(form, "quantity");
+  const quantity = int(form, "quantity");
   if (quantity === null) return invalid("quantity");
   const type: StockAdjustmentType = str(form, "type") === "OUTBOUND" ? "OUTBOUND" : "INBOUND";
   const reason = str(form, "reason");
   const result = await mutate(AdjustStockDocument, {
-    input: { itemId: str(form, "itemId"), type, quantity: Number(quantity), reason: reason === "" ? null : reason },
+    input: { itemId: str(form, "itemId"), type, quantity, reason: reason === "" ? null : reason },
   });
   return settle(result, (d) => d.adjustStock, ["/supplier/stocks", "/supplier/items", "/supplier/dashboard"]);
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { INTEGER_MESSAGE, parseInt32 } from "@/lib/form-input";
 import type { FormState } from "@/lib/form-state";
 import {
   InspectInboundShipmentDocument,
@@ -11,11 +12,6 @@ import { mutate } from "@/lib/graphql/request";
 import { settle } from "@/lib/graphql/user-errors";
 
 const text = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
-
-/** 数の入力欄の値。空は null にし、整数でない値は API の検証に任せるため NaN のまま渡さず null にする。 */
-function integer(value: string): number | null {
-  return /^-?\d+$/.test(value) ? Number(value) : null;
-}
 
 /**
  * 発注を登録する。明細は自社品番と数量の組で、両方が空の行は送らない。空の行を送ると、どの行が原因か分からない
@@ -29,10 +25,10 @@ export async function placePurchaseOrder(_prev: FormState, form: FormData): Prom
     .map((partNumber, row) => ({ row, partNumber: partNumber.trim(), quantity: (quantities[row] ?? "").trim() }))
     .filter((line) => line.partNumber !== "" || line.quantity !== "");
 
-  const quantity = rows.map((line) => integer(line.quantity));
+  const quantity = rows.map((line) => parseInt32(line.quantity));
   if (quantity.some((q) => q === null)) {
     const fieldErrors = Object.fromEntries(
-      rows.flatMap((line, i) => (quantity[i] === null ? [[`lines.${line.row}.quantity`, "数量は整数で入力してください"]] : [])),
+      rows.flatMap((line, i) => (quantity[i] === null ? [[`lines.${line.row}.quantity`, INTEGER_MESSAGE]] : [])),
     );
     return { status: "error", fieldErrors };
   }
@@ -63,13 +59,19 @@ function toRowKeys(fieldErrors: Record<string, string> | undefined, rows: number
   );
 }
 
-/** 入荷を検収する。明細ごとの受け入れ数量を送る。0 は全量の不合格で、出荷数量を超えれば API が入力の誤りにする。 */
+/**
+ * 入荷を検収する。明細ごとの受け入れ数量を、入荷の明細の並びのまま送る。0 は全量の不合格で、出荷数量を超えれば API が
+ * 入力の誤り (`lines.<番号>.acceptedQuantity`) にし、画面はその番号の明細の入力欄の下に出す。
+ */
 export async function inspectInboundShipment(_prev: FormState, form: FormData): Promise<FormState> {
   const purchaseOrderId = text(form, "purchaseOrderId");
   const lineIds = form.getAll("inboundShipmentLineId").map(String);
-  const accepted = form.getAll("acceptedQuantity").map((v) => integer(String(v).trim()));
+  const accepted = form.getAll("acceptedQuantity").map((v) => parseInt32(String(v)));
   if (accepted.some((q) => q === null)) {
-    return { status: "error", message: "受け入れ数量は 0 以上の整数で入力してください" };
+    const fieldErrors = Object.fromEntries(
+      accepted.flatMap((q, i) => (q === null ? [[`lines.${i}.acceptedQuantity`, INTEGER_MESSAGE]] : [])),
+    );
+    return { status: "error", fieldErrors };
   }
   const result = await mutate(InspectInboundShipmentDocument, {
     input: {

@@ -4,15 +4,17 @@ import { expect, type Page } from "@playwright/test";
 import type { Persona } from "./world";
 
 /**
- * 寸法とそろえを測る画面の一覧。画面は app/(app) の page.tsx のファイルから集め、手で並べない。足した画面が
- * 測られないまま通らないように、集めた画面に下の表の行が無ければ落ちる (screenPlans)。
+ * 寸法とそろえを測る画面の一覧。画面は app/ の全部のルートのグループの page.tsx のファイルから集め、手で並べない。
+ * 足した画面が測られないまま通らないように、集めた画面に下の表の行が無ければ落ちる (screenPlans)。
  *
- * 表の行は、その画面を開く役 (受注側の画面は受注側の管理者、発注側の画面は全権限の付与がある発注側の管理者) と、
- * 動的な [id] を決める一覧の画面 (その一覧の最初の行のリンクを開く)、同じ画面のタブの変種を持つ。
+ * 表の行は、その画面を開く役 (受注側の画面は受注側の管理者、発注側の画面は全権限の付与がある発注側の管理者。
+ * ログインの画面は役を持たず、ログインせずに開く) と、動的な [id] を決める一覧の画面 (その一覧の最初の行のリンクを開く)、
+ * 同じ画面のタブの変種を持つ。
  */
-type Plan = { persona: Persona; from?: string; variants?: string[] };
+type Plan = { persona?: Persona; from?: string; variants?: string[] };
 
 const PLANS: Record<string, Plan> = {
+  "/": {},
   "/settings": { persona: "supplier_admin" },
   "/audit-logs": { persona: "supplier_admin" },
   "/missing": { persona: "supplier_admin" },
@@ -38,9 +40,9 @@ const PLANS: Record<string, Plan> = {
   "/buyer/received-invoices/[id]": { persona: "granted_buyer_admin", from: "/buyer/received-invoices" },
 };
 
-const APP_DIR = join(process.cwd(), "app/(app)");
+const APP_DIR = join(process.cwd(), "app");
 
-/** app/(app) の page.tsx から作った画面の道 (/supplier/items/[id] の形)。 */
+/** app/ の page.tsx から作った画面の道 (/supplier/items/[id] の形)。ルートのグループ ((app)・(entry)) は道に入れない。 */
 export function screenRoutes(dir = APP_DIR): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -51,7 +53,7 @@ export function screenRoutes(dir = APP_DIR): string[] {
   }).sort();
 }
 
-export type Screen = { route: string; persona: Persona; from?: string; variant: string };
+export type Screen = { route: string; persona?: Persona; from?: string; variant: string };
 
 /** 測る画面と変種。表に行の無い画面と、画面の無い表の行があれば、ここで落ちる。 */
 export function screenPlans(): Screen[] {
@@ -65,7 +67,7 @@ export function screenPlans(): Screen[] {
 
 /** 画面の名前 (スクリーンショットのファイル名に使う)。 */
 export const screenName = (s: Screen) =>
-  `${s.route.replace(/^\//, "").replace(/[/[\]]+/g, "_").replace(/_+$/, "")}${s.variant.replace(/[?=&]/g, "_")}`;
+  `${s.route.replace(/^\//, "").replace(/[/[\]]+/g, "_").replace(/_+$/, "") || "login"}${s.variant.replace(/[?=&]/g, "_")}`;
 
 /** 画面を開く。動的な [id] は、一覧の画面の最初の行のリンクから決める。 */
 export async function openScreen(page: Page, s: Screen): Promise<void> {

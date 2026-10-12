@@ -8,8 +8,6 @@ const { headers } = JSON.parse(readFileSync(new URL("./security-headers.json", i
 
 const staticHeaders = headers.filter((h) => !h.value.includes("{nonce}"));
 
-const RAILS_URL = process.env.RAILS_URL ?? "http://127.0.0.1:3000";
-
 // ログインの画面が、シードと同じアカウントの一覧 (db/seeds/demo_accounts.json) を読む。frontend/ の外のファイルを
 // 読み込めるように、ビルドの根をリポジトリの根にする
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -20,12 +18,6 @@ const nextConfig = {
   outputFileTracingRoot: REPO_ROOT,
   async headers() {
     return [{ source: "/(.*)", headers: staticHeaders }];
-  },
-  // 取り込みのファイルだけは、ブラウザから multipart/form-data で Rails へ送る。同じオリジンの下に出すので、
-  // ブラウザは Rails の CORS を要さず、Rails は Origin ヘッダを許可したフロントエンドのオリジンと比べて
-  // 他サイトからの送信を拒む (docs/guides/config.md「CSRF を防ぐ前提：CORS を開けない」)
-  async rewrites() {
-    return [{ source: "/imports/files", destination: `${RAILS_URL}/imports/files` }];
   },
 };
 

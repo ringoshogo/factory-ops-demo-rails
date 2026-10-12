@@ -65,7 +65,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 
 画面（`frontend/`）は、ブラウザから見えるオリジンを Next の 1 つだけにする。ブラウザは Next のサーバーだけを呼び、Next のサーバー（サーバーコンポーネントと server action）が Rails へ `application/json` で送る。ブラウザからの書き込みは server action を通り、Next が `Origin` と `Host` の一致を確かめる。Rails のセッションの Cookie は、Next がフロントエンドのオリジンの Cookie として同じ属性で写す（`frontend/lib/session.ts`）。
 
-例外は、取り込むファイルの受け口（`POST /imports/files`、`ImportFilesController`）である。ブラウザが `multipart/form-data` で CSV を直接送るので、2 の `application/json` の制限を外す。代わりに、`Origin` ヘッダが `config.x.frontend_origin` と一致しない要求と、`Origin` の無い要求を 403 で拒む。ブラウザは別のオリジンからの POST に必ず `Origin` を付けるので、他サイトのフォームからの送信はここで止まる。画面は `frontend/next.config.mjs` の `rewrites` でこの受け口を同じオリジンの下に出し、ブラウザから送る。本番では `FRONTEND_ORIGIN` にフロントエンドのオリジンを渡す。渡さなければ開発の値のままになり、本番のブラウザからの送信はすべて拒まれる。
+例外は、取り込むファイルの受け口（`POST /imports/files`、`ImportFilesController`）である。ブラウザが `multipart/form-data` で CSV を直接送るので、2 の `application/json` の制限を外す。代わりに、`Origin` ヘッダが `config.x.frontend_origin` と一致しない要求と、`Origin` の無い要求を 403 で拒む。ブラウザは別のオリジンからの POST に必ず `Origin` を付けるので、他サイトのフォームからの送信はここで止まる。画面は、ブラウザから同じオリジンの `/imports/files` へ送らせ、Next の route handler（`frontend/app/imports/files/route.ts`）が本文とブラウザの `Origin` をそのまま Rails へ送る。他サイトのフォームからの送信は、Next を通っても他サイトの `Origin` を運ぶので、ここで止まる。本番では `FRONTEND_ORIGIN` にフロントエンドのオリジンを渡す。渡さなければ開発の値のままになり、本番のブラウザからの送信はすべて拒まれる。
 
 フロントエンドを別のオリジンから呼ぶことになったら、`cors.rb` を有効にする前に、この前提を見直す。
 

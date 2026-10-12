@@ -3,7 +3,7 @@ import { openScreen, screenPlans, settle } from "./support/screens";
 import { expectTablesAligned, FIT_WIDTHS } from "./support/table-align";
 import { login } from "./support/world";
 
-// 同じ種類の要素の寸法・そろえ・はみ出しを、全画面について測る。測る画面は app/(app) の page.tsx から集める
+// 同じ種類の要素の寸法・そろえ・はみ出しを、全画面について測る。測る画面は app/ の page.tsx から集める
 // (e2e/support/screens.ts)。中身の違うデータ (最も長い品目名と取引先名、ボタンのある行と無い行、状況の全値) は
 // E2E の世界 (DemoWorld の variant: :e2e) が持つ
 
@@ -36,11 +36,13 @@ async function expectKanbanCards(page: Page, at: string) {
 for (const screen of screenPlans()) {
   const label = `${screen.route}${screen.variant}`;
   test(`${label}: 1280・1024・390 で、はみ出さず、表の見出しとセルがそろう`, async ({ page }, testInfo) => {
-    await login(page, testInfo, screen.persona);
+    if (screen.persona) await login(page, testInfo, screen.persona);
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 900 });
       await openScreen(page, screen);
       await expect(page.locator("main h1").first()).toBeVisible();
+      // かんばんの寸法を測る画面では、カードが描かれていることを先に確かめる。描かれないと、測る対象が無いまま通る
+      if (screen.route === "/supplier/dashboard") expect(await page.getByTestId("kanban-card").count()).toBeGreaterThan(0);
       await settle(page);
       const at = `${label} @${width}`;
       await expectNoPageOverflow(page, at);

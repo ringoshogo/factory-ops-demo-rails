@@ -3,10 +3,10 @@ import { print } from "graphql";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { RAILS_TIMEOUT_MS, RAILS_URL, SESSION_COOKIE } from "@/lib/config";
-import { copySessionCookie, EXPIRED_PATH, readSessionCookie, type SessionCookie } from "@/lib/session";
+import { copySessionCookie, EXPIRED_PATH, readSessionCookie, writeSessionCookie, type SessionCookie } from "@/lib/session";
 
 /**
- * Rails の GraphQL を呼ぶ唯一の口。画面は応答を次の 3 つに分けた結果だけを見る。
+ * Rails を呼ぶ唯一の口。GraphQL の応答は、画面が次の 3 つに分けた結果だけを見る。
  *
  * - `ok`: data が返った。mutation のユーザーエラー (`errors: [UserError]`) は data の中にあり、画面が `lib/graphql/user-errors.ts` で分ける
  * - `unreachable`: 接続できない・5xx・時間切れ。画面は「API に届かない」の表示を出す
@@ -45,7 +45,9 @@ export async function mutate<TData, TVariables extends Variables>(
 
 /**
  * ログインの直後の読み取り。server action が書いたばかりの Cookie を、ブラウザから届いた Cookie の代わりに送る。
- * 同じ action の中では、書いた Cookie が届いた Cookie として読める保証が Next の文書に無いからである。
+ * next 16.4.0 の server action の cookies() は、届いた Cookie を写した ResponseCookies を返し
+ * (next/dist/server/web/spec-extension/adapters/request-cookies.js の MutableRequestCookiesAdapter.wrap)、
+ * 書いた値も読めるが、この振る舞いは Next の文書に無いので、ログインの成否を当てにしない。
  */
 export async function queryAs<TData, TVariables extends Variables>(
   session: SessionCookie,
@@ -115,7 +117,7 @@ async function execute<TData, TVariables extends Variables>(
       headers: { "Content-Type": "application/json", Cookie: sessionHeader(session) },
       body: JSON.stringify({ query: print(document), variables, operationName: operationName(document) }),
       // Next のデータのキャッシュに載せない。応答はセッションと書き込みのたびに変わり、キャッシュは書き込みの後の画面に
-      // 古い値を出す (どのキャッシュも使わないことは eslint.config.mjs が守る)
+      // 古い値を出す (fetch の cache を no-store 以外にする書き方と、キャッシュの関数・指示は eslint.config.mjs が止める)
       cache: "no-store",
       signal: AbortSignal.timeout(RAILS_TIMEOUT_MS),
     });
@@ -148,10 +150,11 @@ function operationName(document: TypedDocumentNode<unknown, never>): string | un
 
 /**
  * Rails へ送るセッションの Cookie のヘッダ。Rails は Cookie の値を URL の形で書く (`+` を `%2B`、`=` を `%3D`)。
- * ブラウザから届いた値はその形のまま読めるが、server action が同じ要求の中で書いた値を読み直すと、Next は復号した
- * 値を返す。復号した値の `+` を Rails は空白と読み、セッションを解けずに 401 を返すので、復号してから書き直してそろえる。
+ * next 16.4.0 の cookies().get は値を decodeURIComponent で復号して返す (next/dist/compiled/@edge-runtime/cookies の
+ * parseCookie)。復号した値の `+` を Rails は空白と読み、セッションを解けずに 401 を返すので、URL の形に戻して送る。
+ * 復号できない値 (URL の形でない値) が来ても、そのまま符号化して送る。
  */
-function sessionHeader(value: string): string {
+export function sessionHeader(value: string): string {
   let decoded = value;
   try {
     decoded = decodeURIComponent(value);
@@ -159,4 +162,40 @@ function sessionHeader(value: string): string {
     // 復号できない値は、そのまま書き直す
   }
   return `${SESSION_COOKIE}=${encodeURIComponent(decoded)}`;
+}
+
+/**
+ * 取り込みのファイルを Rails の POST /imports/files へ送る (app/imports/files/route.ts が呼ぶ)。ブラウザの
+ * multipart/form-data の本文と Content-Type をそのまま送り、Next のサーバーでファイルを読み直さない。
+ * Rails はこの受け口だけ application/json の制限を外し、Origin ヘッダをフロントエンドのオリジンと比べて他サイトからの
+ * 送信を拒む (docs/guides/config.md「CSRF を防ぐ前提：CORS を開けない」) ので、ブラウザの Origin を書き換えずに渡す。
+ * 接続できなければ 502 を返す。
+ */
+export async function forwardImportFile(request: Request): Promise<Response> {
+  const session = (await cookies()).get(SESSION_COOKIE)?.value;
+  const headers: Record<string, string> = { "Content-Type": request.headers.get("content-type") ?? "" };
+  const origin = request.headers.get("origin");
+  if (origin) headers.Origin = origin;
+  if (session) headers.Cookie = sessionHeader(session);
+
+  let res: Response;
+  try {
+    res = await fetch(`${RAILS_URL}/imports/files`, {
+      method: "POST",
+      headers,
+      body: await request.arrayBuffer(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(RAILS_TIMEOUT_MS),
+    });
+  } catch {
+    return new Response(null, { status: 502 });
+  }
+  const forwarded = new Response(await res.arrayBuffer(), {
+    status: res.status,
+    headers: { "Content-Type": res.headers.get("content-type") ?? "application/json" },
+  });
+  // Rails が期限を延ばして書き直した Cookie を、ブラウザへ写す
+  const cookie = readSessionCookie(res);
+  if (cookie) writeSessionCookie(await cookies(), cookie);
+  return forwarded;
 }

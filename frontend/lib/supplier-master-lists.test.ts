@@ -58,4 +58,9 @@ describe("品番の対応表の変数", () => {
     expect(partMappingVariables(p("customer=t1")).customerTenantId).toBe("t1");
     expect(partMappingVariables(p("")).customerTenantId).toBeNull();
   });
+
+  it("登録の品目の候補を、item_q の語で絞る。無ければ絞らない", () => {
+    expect(partMappingVariables(p("item_q=ベア")).itemKeyword).toBe("ベア");
+    expect(partMappingVariables(p("")).itemKeyword).toBeNull();
+  });
 });

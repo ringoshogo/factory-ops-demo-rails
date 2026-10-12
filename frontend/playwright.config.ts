@@ -43,7 +43,7 @@ export default defineConfig({
         FRONTEND_ORIGIN: APP_URL,
       },
       url: `http://127.0.0.1:${RAILS_PORT}/up`,
-      // 既定の SIGKILL では bin/jobs が Solid Queue の登録を消さずに終わり、次の実行の e2e:check が心拍の途絶えるまで止まる。
+      // 既定の SIGKILL では bin/jobs が Solid Queue の登録を消さずに終わり、次の実行の e2e:check が、登録の心拍のしきい値 (既定 5 分) を過ぎるまで失敗する。
       // SIGTERM で止め、登録を消させる
       gracefulShutdown: { signal: "SIGTERM", timeout: 15_000 },
       // 使い回さない。前の実行の世界を残したまま流すと、テストが前の実行の書き込みを見る

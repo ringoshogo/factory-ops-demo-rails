@@ -1,5 +1,5 @@
 import { TextLink } from "@/components/app-link";
-import { FilterBar } from "@/components/filter-bar";
+import { FilterBar, SearchForm } from "@/components/filter-bar";
 import { FilterMenu } from "@/components/filter-menu";
 import { ListError } from "@/components/list-error";
 import { PageHeader } from "@/components/page-header";
@@ -47,6 +47,19 @@ export default async function PartMappingsPage({ searchParams }: { searchParams:
   return (
     <section className="flex flex-col gap-8">
       <PageHeader title="品番の対応表" />
+
+      <div className="space-y-2">
+        <h2 className="text-base font-semibold">自社の品目を探す</h2>
+        {/* 登録の品目の候補は 20 件までなので、品目が多ければ語で絞ってから選ぶ。取引先の絞り込みは保つ */}
+        <SearchForm name="item_q" defaultValue={variables.itemKeyword ?? ""} placeholder="コード・品目名で候補を絞る">
+          {variables.customerTenantId && <input type="hidden" name="customer" value={variables.customerTenantId} />}
+        </SearchForm>
+        <p data-testid="candidate-count" className="text-muted-foreground text-[13px]">
+          候補 {data.candidates.totalCount} 件
+          {data.candidates.totalCount > nodesOf(data.candidates).length &&
+            `のうち、品目コードの順に ${nodesOf(data.candidates).length} 件を選べます。ほかの品目は語で絞ってください`}
+        </p>
+      </div>
 
       <PartMappingForm
         customers={active.map((p) => ({ id: p.buyer.id, label: p.buyer.name }))}

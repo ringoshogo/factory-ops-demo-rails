@@ -76,7 +76,8 @@ test("失効で、発注側の取引先・カタログ・出荷が空になり�
   await expect(buyer.getByTestId("empty-suppliers")).toBeVisible();
   await buyer.goto(`/buyer/suppliers?supplier=${supplierId}`);
   await expect(buyer.getByTestId("catalog-row")).toHaveCount(0);
-  await expect(buyer.getByTestId("list-error")).toBeVisible();
+  // 届かないときとトップレベルのエラーも同じ list-error に出るので、見られないことの文言で確かめる
+  await expect(buyer.getByTestId("list-error")).toHaveText(/この取引先のカタログは見られません/);
   await buyer.goto(orderUrl);
   await expect(buyer.getByTestId("supplier-shipments-empty")).toBeVisible();
   await expect(buyer.getByTestId("supplier-shipment-row")).toHaveCount(0);

@@ -28,6 +28,7 @@ const eslintConfig = defineConfig([
         "error",
         { selector: "ExpressionStatement[directive=/^use cache/]", message: NO_CACHE },
         { selector: "CallExpression[callee.name='fetch'] Property[key.name='next']", message: NO_CACHE },
+        { selector: "CallExpression[callee.name='fetch'] Property[key.name='cache'][value.value!='no-store']", message: NO_CACHE },
         {
           selector: "ExportNamedDeclaration VariableDeclarator[id.name=/^(revalidate|dynamic|fetchCache)$/]",
           message: NO_CACHE,
@@ -45,7 +46,8 @@ const eslintConfig = defineConfig([
     rules: { "no-restricted-imports": "off" },
   },
   {
-    // 呼び出し口と、ブラウザから同じオリジンの /imports/files へファイルを送る部品だけが fetch を使う
+    // 呼び出し口と、ブラウザから同じオリジンの /imports/files (Rails ではなく Next の route handler) へファイルを送る
+    // 部品だけが fetch を使う
     files: ["lib/graphql/request.ts", "components/import-upload.tsx"],
     rules: { "no-restricted-globals": "off" },
   },

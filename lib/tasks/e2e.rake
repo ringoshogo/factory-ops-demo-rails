@@ -9,8 +9,11 @@ namespace :e2e do
     E2ePrepare.check_target!(env: Rails.env, database: ENV["TEST_DATABASE"])
     begin
       E2ePrepare.check_no_workers!("前")
-    rescue ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid
-      # DB か表がまだ無ければ、ワーカーも登録されていない
+    rescue ActiveRecord::NoDatabaseError
+      # DB がまだ無ければ、ワーカーも登録されていない
+    rescue ActiveRecord::StatementInvalid => error
+      # 表がまだ無ければ、ワーカーも登録されていない。権限の不足のような別の失敗では、守りを外さずに止まる
+      raise unless error.cause.is_a?(PG::UndefinedTable)
     end
   rescue E2ePrepare::Refused => error
     abort "e2e:check: #{error.message}"

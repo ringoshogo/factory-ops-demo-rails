@@ -8,7 +8,8 @@
 #
 # Playwright は webServer を globalSetup より先に起こすので、準備を globalSetup に置くと bin/jobs が先に動く。
 # 順はこのスクリプトの並びだけで決め、e2e:prepare は作る前と後に Solid Queue のプロセスが無いことを確かめる。
-# Playwright は終わるときにプロセスのグループごと止めるので、裏で起こした bin/jobs も一緒に止まる。
+# Playwright は終わるときに webServer のプロセスのグループごとシグナルを送る (playwright 1.64 の types/test.d.ts の
+# TestConfigWebServer.gracefulShutdown の説明) ので、裏で起こした bin/jobs も一緒に止まる。
 set -eu
 cd "$(dirname "$0")/../.."
 

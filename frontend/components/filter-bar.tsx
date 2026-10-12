@@ -58,10 +58,13 @@ export function FilterButtonLabel({
  * hidden input で持たせる。
  */
 export function SearchForm({
+  name = "q",
   defaultValue,
   placeholder,
   children,
 }: {
+  /** URL の鍵。1 つの画面に 2 つの検索欄を置くときに替える。 */
+  name?: string;
   defaultValue: string;
   placeholder: string;
   children?: React.ReactNode;
@@ -69,7 +72,7 @@ export function SearchForm({
   return (
     <form method="get" className="flex w-full gap-2 sm:w-auto">
       <Input
-        name="q"
+        name={name}
         type="search"
         aria-label="検索"
         defaultValue={defaultValue}

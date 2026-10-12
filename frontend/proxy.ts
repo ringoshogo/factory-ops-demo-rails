@@ -24,6 +24,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // 静的なファイルは Next が直接返し、nonce も要らないので通さない。取り込みのファイルは Rails へ書き換えて送るので通さない
+  // 静的なファイルは Next が直接返し、nonce も要らないので通さない。取り込みのファイルの受け口は HTML を返さず、本文を読まずに Rails へ送りたいので通さない
   matcher: ["/((?!_next/static|_next/image|favicon.ico|imports/files).*)"],
 };
