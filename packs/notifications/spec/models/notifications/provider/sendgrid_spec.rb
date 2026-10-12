@@ -117,6 +117,43 @@ RSpec.describe Notifications::Provider::Sendgrid do
     end
   end
 
+  # メトリクスの external_requests_total の出どころ（docs/guides/config.md「メトリクス」）
+  describe "応答の種類のイベント" do
+    let(:events) { [] }
+    let(:collector) { Struct.new(:events) { def emit(event) = events << event }.new(events) }
+
+    around do |example|
+      Rails.event.subscribe(collector)
+      example.run
+    ensure
+      Rails.event.unsubscribe(collector)
+    end
+
+    def responded = events.select { _1[:name] == "notifications.provider_responded" }.map { _1[:payload] }
+
+    it "状態コードを百の位で分け、429 だけを別にし、接続の失敗を timeout にして 1 回ずつ出す" do
+      [ 202, 200, 429, 400, 413, 500, 503 ].each do |status|
+        stub_status(status)
+        failure
+      end
+      stub_request(:post, endpoint).to_raise(Net::ReadTimeout)
+      failure
+
+      expect(responded.map { _1[:status] }).to eq(%w[2xx 2xx 429 4xx 4xx 5xx 5xx timeout])
+      expect(responded.map { _1[:provider] }.uniq).to eq([ "sendgrid" ])
+    end
+
+    it "API キーが無く送らなかったときは出さない" do
+      provider = described_class.new(api_key: nil, sandbox: true, production: false)
+      stub_status(202)
+
+      expect { provider.deliver(message) }.to raise_error(Notifications::Provider::PermanentError)
+      provider = described_class.new(api_key: "SG.test-key", sandbox: true, production: false)
+      provider.deliver(message)
+      expect(responded).to eq([ { provider: "sendgrid", status: "2xx" } ])
+    end
+  end
+
   it "API キーが無ければ、送らずに再試行しない失敗にする" do
     provider = described_class.new(api_key: nil, sandbox: true, production: false)
 

@@ -6,7 +6,7 @@ module Resolvers
     include AuthorizationDeclarations
 
     def authorized?(**args)
-      self.class.check_declarations!
+      self.class.check_declarations!(context)
       super && enforce_rule!(current_user)
     end
   end

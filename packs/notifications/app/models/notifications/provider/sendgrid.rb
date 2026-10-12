@@ -32,11 +32,15 @@ module Notifications
         @sandbox = sandbox
       end
 
+      # 応答の種類を、メトリクスの経路が数えるイベントに出す。接続の失敗は相手に届いたかが分からないので timeout にまとめる
       def deliver(message)
         raise PermanentError, "missing_api_key" if @api_key.blank?
 
-        classify(post(body(message)))
+        response = post(body(message))
+        responded(status_class(response.code.to_i))
+        classify(response)
       rescue *CONNECTION_ERRORS => error
+        responded("timeout")
         raise TransientError, error.class.name
       end
 
@@ -67,6 +71,15 @@ module Notifications
           request.body = json
           http.request(request)
         end
+      end
+
+      def responded(status)
+        Rails.event.notify("notifications.provider_responded", provider: "sendgrid", status:)
+      end
+
+      # 状態コードの百の位で分け、429 だけは別にする。コードごとに分けると、ラベルの値の種類が増える
+      def status_class(status)
+        status == 429 ? "429" : "#{status / 100}xx"
       end
 
       # 応答の本文は宛先のアドレスを含みうるので、失敗の理由には状態コードだけを書く。

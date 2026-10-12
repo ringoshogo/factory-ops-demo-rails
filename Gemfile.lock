@@ -83,6 +83,8 @@ GEM
       uri (>= 0.13.1)
     addressable (2.9.0)
       public_suffix (>= 2.0.2, < 8.0)
+    anyway_config (2.8.1)
+      ruby-next-core (~> 1.0)
     ast (2.4.3)
     base64 (0.3.0)
     bcrypt (3.1.22)
@@ -150,6 +152,7 @@ GEM
       reline (>= 0.3.8)
     diff-lcs (1.6.2)
     drb (2.2.3)
+    dry-initializer (3.2.0)
     erb (6.0.7)
     erubi (1.13.1)
     et-orbi (1.4.2)
@@ -278,6 +281,8 @@ GEM
       prettyprint
     prettyprint (0.2.1)
     prism (1.9.0)
+    prometheus-client (4.2.5)
+      base64
     public_suffix (7.0.5)
     puma (8.0.2)
       nio4r (~> 2.0)
@@ -425,11 +430,20 @@ GEM
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
       hashdiff (>= 0.4.0, < 2.0.0)
+    webrick (1.9.2)
     websocket-driver (0.8.2)
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
     wisper (2.0.1)
+    yabeda (0.16.0)
+      anyway_config (>= 1.0, < 3)
+      concurrent-ruby
+      dry-initializer
+    yabeda-prometheus (0.9.1)
+      prometheus-client (>= 3.0, < 5.0)
+      rack
+      yabeda (~> 0.10)
     zeitwerk (2.8.3)
 
 PLATFORMS
@@ -469,6 +483,9 @@ DEPENDENCIES
   thruster
   tzinfo-data
   webmock (~> 3.25)
+  webrick (~> 1.9)
+  yabeda (~> 0.16)
+  yabeda-prometheus (~> 0.9.1)
 
 BUNDLED WITH
    2.5.3

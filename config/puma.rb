@@ -37,3 +37,7 @@ plugin :tmp_restart
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.
 pidfile ENV["PIDFILE"] if ENV["PIDFILE"]
+
+# メトリクスの Web の exporter を立てる（docs/guides/config.md「メトリクス」）。初期化子に置くと、config/environment を読む
+# bin/jobs・rake タスク・console でも立つ。この設定は workers を置かない単一のモードで fork しないので、起動の後に 1 回だけ呼ぶ
+after_booted { Platform::Metrics.start_exporter!("web") }

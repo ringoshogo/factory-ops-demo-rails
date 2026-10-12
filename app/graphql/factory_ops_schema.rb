@@ -25,12 +25,12 @@ class FactoryOpsSchema < GraphQL::Schema
     # graphql-ruby は authorized? が偽なら値を null にするだけなので、FORBIDDEN のエラーにする
     def unauthorized_object(error)
       Rails.error.report(error)
-      raise ForbiddenError
+      raise ForbiddenError.new(error.context, reason: "object")
     end
 
     def unauthorized_field(error)
       Rails.error.report(error)
-      raise ForbiddenError
+      raise ForbiddenError.new(error.context, reason: "object")
     end
   end
 end

@@ -1,0 +1,19 @@
+# メトリクスのラベル operation に使う GraphQL の操作名。operationName はクライアントが自由に付けるので、ここに無い名前と、
+# 種類の違う操作に付いた名前は other にする。値の種類が増え続けると、メトリクスの保存が膨らむからである
+# （docs/guides/config.md「メトリクス」）。
+# queries は画面の問い合わせの一覧（spec/fixtures/graphql/screens/）の操作名と一致させる。mutation の文書は一覧に置かない
+queries:
+  - BuyerPurchaseOrders
+  - BuyerSupplierCatalog
+  - BuyerSuppliers
+  - SupplierDashboard
+  - SupplierItems
+  - SupplierPartMappings
+  - SupplierPartnerships
+  - SupplierSalesOrders
+  - SupplierShipmentRequests
+  - SupplierStockMovements
+  - SupplierStocks
+# 画面が送る mutation の操作名
+mutations:
+  - PlacePurchaseOrder

@@ -55,6 +55,18 @@ RSpec.describe "GraphQL の基底クラス" do
     schema.execute(query_string, context: { current_user: actor.with(role:) }).to_h
   end
 
+  # FORBIDDEN の出どころは、応答ではなく要求の文脈に積まれる（ForbiddenError）
+  def forbidden_reasons(schema, query_string, role: "member")
+    context = { current_user: actor.with(role:) }
+    schema.execute(query_string, context:)
+    context[:forbidden_reasons]
+  end
+
+  it "FORBIDDEN の出どころは rule・object・undeclared のどれかに限る" do
+    expect { ForbiddenError.new({}, reason: "role") }.to raise_error(ArgumentError, /role/)
+    expect(ForbiddenError::REASONS.map { ForbiddenError.new({}, reason: _1).extensions }).to all(eq("code" => "FORBIDDEN"))
+  end
+
   describe "型" do
     it "視点の宣言が無ければ例外" do
       type = object_type("Item") { authorization_exempt reason: "spec" }
@@ -81,6 +93,7 @@ RSpec.describe "GraphQL の基底クラス" do
       expect(result["data"]).to eq("item" => nil)
       expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       expect(Rails.error).to have_received(:report).with(an_instance_of(AuthorizationDeclarations::MissingDeclaration))
+      expect(forbidden_reasons(schema, "{ item { name } }")).to eq([ "undeclared" ])
     end
 
     it "policy の show? が偽なら null にし、FORBIDDEN を返してエラー通知に送る" do
@@ -99,6 +112,25 @@ RSpec.describe "GraphQL の基底クラス" do
       expect(result.dig("data", "items")).to eq([ { "name" => "shown" }, nil ])
       expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       expect(Rails.error).to have_received(:report).with(an_instance_of(GraphQL::UnauthorizedError))
+      expect(forbidden_reasons(schema, "{ items { name } }")).to eq([ "object" ])
+    end
+
+    it "フィールドの規則が偽なら null にし、FORBIDDEN を返してエラー通知に送り、出どころを object にする" do
+      allow(Rails.error).to receive(:report)
+      type = object_type("Item") do
+        perspective :supplier
+        authorization_exempt reason: "spec"
+        field_class(Class.new(Types::BaseField) { def authorized?(*) = false })
+        field :secret, String
+      end
+      schema = schema_with(proc { field :item, type, null: true, resolver_method: :item; define_method(:item) { { secret: "x" } } })
+
+      result = run(schema, "{ item { secret } }")
+
+      expect(result["data"]).to eq("item" => { "secret" => nil })
+      expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
+      expect(Rails.error).to have_received(:report).with(an_instance_of(GraphQL::UnauthorizedFieldError))
+      expect(forbidden_reasons(schema, "{ item { secret } }")).to eq([ "object" ])
     end
 
     it "コネクションとエッジは中身の型の視点を持ち、宣言を持つ PageInfo を返す" do
@@ -138,6 +170,7 @@ RSpec.describe "GraphQL の基底クラス" do
       denied = run(schema, "{ item { name } }")
       expect(denied["data"]).to eq("item" => nil)
       expect(denied["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
+      expect(forbidden_reasons(schema, "{ item { name } }")).to eq([ "rule" ])
 
       expect(run(schema, "{ item { name } }", role: "admin")).to eq("data" => { "item" => { "name" => "item" } })
     end

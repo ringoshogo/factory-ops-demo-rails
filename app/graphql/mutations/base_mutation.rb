@@ -40,7 +40,7 @@ module Mutations
     end
 
     def authorized?(**inputs)
-      self.class.check_declarations!
+      self.class.check_declarations!(context)
       super && (targeted? || enforce_rule!(current_user))
     end
 

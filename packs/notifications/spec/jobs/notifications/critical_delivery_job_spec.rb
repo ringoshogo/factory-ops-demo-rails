@@ -42,6 +42,20 @@ RSpec.describe Notifications::CriticalDeliveryJob do
     expect(reloaded.provider_message_id).to start_with("fake-")
   end
 
+  # メトリクスの notification_acceptance_seconds の出どころ（docs/guides/config.md「メトリクス」）
+  it "受け付けを書いた後に、送信記録を作ってから受け付けるまでのミリ秒を出す。失敗では出さない" do
+    accepted = -> { events.select { _1[:name] == "notification.accepted" }.map { _1[:payload] } }
+    Notifications::FakeProvider.fail_next(Notifications::Provider::TransientError.new("http_503"))
+    run
+    expect(accepted.()).to eq([])
+
+    travel_to(reloaded.created_at + 90.5, with_usec: true) do
+      run(executions: 1)
+    end
+
+    expect(accepted.()).to eq([ { kind: "received_invoice", delivery_id: delivery.id, attempts: 2, acceptance_ms: 90_500 } ])
+  end
+
   it "受け付けの後にもう一度流しても、送らない" do
     run
     run

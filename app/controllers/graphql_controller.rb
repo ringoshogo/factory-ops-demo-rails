@@ -40,18 +40,35 @@ class GraphqlController < ApplicationController
     Rails.error.set_context(**context)
   end
 
+  # 操作の終わりのイベントは、スキーマの実行が例外を上げたときも ensure で 1 回だけ出す。正常に戻ったときだけ出すと、
+  # 500 になった操作がメトリクスの成功の割合の分母から抜ける。context は graphql-ruby がそのまま持つハッシュなので、
+  # 例外の後も、実行中に積んだユーザーエラーのコードと FORBIDDEN の出どころを読める
   def execute_operation(actor)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    result = FactoryOpsSchema.execute(params[:query], variables: variables, operation_name: params[:operationName],
-      context: { current_user: actor })
-    codes = result.context[:user_error_codes] || []
-    Rails.event.notify("graphql.operation_completed", operation_name:, result: outcome(result, codes), user_error_codes: codes,
+    context = { current_user: actor }
+    result = FactoryOpsSchema.execute(params[:query], variables: variables, operation_name: params[:operationName], context:)
+  ensure
+    user_error_codes = context[:user_error_codes] || []
+    Rails.event.notify("graphql.operation_completed", operation_name:, operation_type: operation_type(result),
+      result: outcome(result, user_error_codes), user_error_codes:, error_codes: error_codes(result),
+      forbidden_reasons: context[:forbidden_reasons] || [],
       duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(2))
-    result
+  end
+
+  # 文書を解析できないか、実行する操作を 1 つに決められないときは none にする。例外のときは結果が無いので、文書を解析し直す
+  def operation_type(result)
+    query = result&.query || GraphQL::Query.new(FactoryOpsSchema, params[:query], operation_name: params[:operationName])
+    query.selected_operation&.operation_type || "none"
+  end
+
+  # トップレベルのエラーの extensions.code。解析の失敗のように code を持たないエラーは none にする
+  def error_codes(result)
+    errors = result ? result["errors"].to_a : []
+    errors.map { _1.dig("extensions", "code") || "none" }
   end
 
   def outcome(result, user_error_codes)
-    if result["errors"].present? then "error"
+    if result.nil? || result["errors"].present? then "error"
     elsif user_error_codes.any? then "user_error"
     else "success"
     end

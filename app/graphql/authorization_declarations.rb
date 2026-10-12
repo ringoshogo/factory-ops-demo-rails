@@ -29,7 +29,7 @@ module AuthorizationDeclarations
     end
 
     # 宣言が無ければ、開発とテストでは例外で落とし、本番では拒否してエラー通知に送る
-    def check_declarations!
+    def check_declarations!(context)
       missing = missing_declarations
       return if missing.empty?
 
@@ -37,7 +37,7 @@ module AuthorizationDeclarations
       raise error if Rails.env.local?
 
       Rails.error.report(error)
-      raise ForbiddenError
+      raise ForbiddenError.new(context, reason: "undeclared")
     end
 
     # 欠けている宣言の名前。宣言を足す基底クラスは、これを広げる
@@ -52,6 +52,6 @@ module AuthorizationDeclarations
   def enforce_rule!(record)
     return true if allowed_to?(self.class.authorization_rule, record, with: self.class.authorization_policy)
 
-    raise ForbiddenError
+    raise ForbiddenError.new(context, reason: "rule")
   end
 end
