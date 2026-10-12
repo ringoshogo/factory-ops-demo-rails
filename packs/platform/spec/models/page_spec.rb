@@ -1,0 +1,164 @@
+require "rails_helper"
+
+# 一覧の 1 ページ（docs/architecture/graphql-schema.md「ページングと N+1」）。並べ替えの列と id の組でたどり、
+# 値の無い行を向きによらず最後に置く。どの表でも同じ形なので、基盤が持つ監査ログの表で確かめる
+RSpec.describe Page do
+  let!(:tenant) { FactoryBot.create(:tenant) }
+
+  def tenancy(&) = Tenancy.with_tenant(tenant.id, &)
+
+  def create_log(**attributes) = tenancy { FactoryBot.create(:audit_log, **attributes) }
+
+  def request_id_sort(direction) = Page::Sort.of({ field: :request_id, direction: }, request_id: [ AuditLog.arel_table[:request_id], :string ])
+
+  def page(first:, after: nil, sort: nil)
+    tenancy do
+      described_class.of(AuditLog.all, first:, after:, sort:) { |rows| rows.map(&:id) }.then do |page|
+        { values: page.values, cursors: page.cursors, has_next_page: page.has_next_page }
+      end
+    end
+  end
+
+  # 最後のページまで first 件ずつたどり、ページごとの値を返す
+  def walk(first:, sort:)
+    pages = []
+    after = nil
+    loop do
+      current = page(first:, after:, sort:)
+      pages << current[:values]
+      break unless current[:has_next_page]
+
+      after = current[:cursors].last
+    end
+    pages
+  end
+
+  describe "並べ替えの列と id の組でたどる" do
+    # 列の値が同じ 3 行と値の無い 2 行を、2 件ずつのページの境目にまたがせる
+    let!(:logs) do
+      { first: create_log(request_id: "r-1"), same: Array.new(3) { create_log(request_id: "r-2") }, last: create_log(request_id: "r-3"),
+        blank: Array.new(2) { create_log(request_id: nil) } }
+    end
+
+    it "ASC は列の昇順で、値の同じ行を id の昇順に並べ、値の無い行を最後に置く。行は抜けも重なりもしない" do
+      pages = walk(first: 2, sort: request_id_sort(:asc))
+
+      expect(pages).to eq([ [ logs[:first].id, logs[:same][0].id ], [ logs[:same][1].id, logs[:same][2].id ],
+        [ logs[:last].id, logs[:blank][0].id ], [ logs[:blank][1].id ] ])
+    end
+
+    it "DESC は列の降順で、値の同じ行を id の降順に並べ、値の無い行を最後に置く。行は抜けも重なりもしない" do
+      pages = walk(first: 2, sort: request_id_sort(:desc))
+
+      expect(pages).to eq([ [ logs[:last].id, logs[:same][2].id ], [ logs[:same][1].id, logs[:same][0].id ],
+        [ logs[:first].id, logs[:blank][1].id ], [ logs[:blank][0].id ] ])
+    end
+
+    it "列から計算する式でも並べ、カーソルに式の値を書く" do
+      length = Page::Sort.of({ field: :request_id_length, direction: :desc },
+        request_id_length: [ Arel::Nodes::NamedFunction.new("length", [ AuditLog.arel_table[:request_id] ]), :integer ])
+      longer = create_log(request_id: "r-10")
+
+      expect(walk(first: 2, sort: length).flatten)
+        .to eq([ longer.id, logs[:last].id, *logs[:same].reverse.map(&:id), logs[:first].id, *logs[:blank].reverse.map(&:id) ])
+    end
+
+    it "sort を省くと、id の降順でたどり、カーソルは id のまま" do
+      first = page(first: 2)
+
+      expect(first[:cursors]).to eq(first[:values])
+      expect(walk(first: 2, sort: nil).flatten).to eq(logs.values.flatten.map(&:id).sort.reverse)
+    end
+  end
+
+  describe "カーソルの拒否" do
+    before { Array.new(3) { create_log(request_id: "r-1") } }
+
+    let(:cursor) { page(first: 1, sort: request_id_sort(:asc))[:cursors].sole }
+
+    def forge(*parts) = Base64.urlsafe_encode64(JSON.generate(parts), padding: false)
+
+    it "向きだけを変えたカーソルを拒む" do
+      expect(page(first: 1, after: cursor, sort: request_id_sort(:asc))[:values].size).to eq(1)
+      expect { page(first: 1, after: cursor, sort: request_id_sort(:desc)) }.to raise_error(Page::InvalidCursor)
+    end
+
+    it "列だけを変えたカーソルを拒む" do
+      other = Page::Sort.of({ field: :action, direction: :asc }, action: [ AuditLog.arel_table[:action], :string ])
+
+      expect { page(first: 1, after: cursor, sort: other) }.to raise_error(Page::InvalidCursor)
+    end
+
+    it "並べ替えを省いた一覧のカーソルと、並べ替えた一覧のカーソルを取り違えると拒む" do
+      plain = page(first: 1)[:cursors].sole
+
+      expect { page(first: 1, after: plain, sort: request_id_sort(:asc)) }.to raise_error(Page::InvalidCursor)
+      expect { page(first: 1, after: cursor) }.to raise_error(Page::InvalidCursor)
+    end
+
+    it "形の誤ったカーソルと、値の型が列と合わないカーソルを拒む" do
+      id = SecureRandom.uuid
+      integer = Page::Sort.of({ field: :size, direction: :asc }, size: [ Arel::Nodes::NamedFunction.new("length", [ AuditLog.arel_table[:action] ]), :integer ])
+      date = Page::Sort.of({ field: :day, direction: :asc }, day: [ Arel::Nodes::NamedFunction.new("date", [ AuditLog.arel_table[:occurred_at] ]), :date ])
+
+      [ "x", Base64.urlsafe_encode64("[", padding: false), forge("request_id", "asc", "r-1"), forge("request_id", "asc", "r-1", "x"),
+        forge("request_id", "asc", 1, id), forge("request_id", "asc", "r\u0000", id) ].each do |after|
+        expect { page(first: 1, after:, sort: request_id_sort(:asc)) }.to raise_error(Page::InvalidCursor), after
+      end
+      expect { page(first: 1, after: forge("size", "asc", "3", id), sort: integer) }.to raise_error(Page::InvalidCursor)
+      expect { page(first: 1, after: forge("size", "asc", 2**31, id), sort: integer) }.to raise_error(Page::InvalidCursor)
+      expect { page(first: 1, after: forge("day", "asc", "2026-02-30", id), sort: date) }.to raise_error(Page::InvalidCursor)
+      # 対照：型の合う値は受け付ける
+      expect(page(first: 1, after: forge("size", "asc", 2**31 - 1, id), sort: integer)[:values]).to eq([])
+      expect(page(first: 1, after: forge("day", "asc", "2000-01-01", id), sort: date)[:values].size).to eq(1)
+    end
+  end
+
+  describe "Page::Sort.of" do
+    it "表に無い列と、ASC・DESC でない向きを引数の誤りにする" do
+      columns = { request_id: [ AuditLog.arel_table[:request_id], :string ] }
+
+      expect(Page::Sort.of(nil, columns)).to be_nil
+      expect { Page::Sort.of({ field: :action, direction: :asc }, columns) }.to raise_error(ArgumentError)
+      expect { Page::Sort.of({ field: :request_id, direction: :up }, columns) }.to raise_error(ArgumentError)
+    end
+  end
+
+  describe "件数" do
+    before { Array.new(3) { create_log } }
+
+    def count_sql(&)
+      names = []
+      counter = ->(*, payload) { names << payload[:sql] unless payload[:cached] || %w[SCHEMA TRANSACTION Tenancy].include?(payload[:name]) }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record", &)
+      names
+    end
+
+    it "first と after によらず、ページと同じ relation の行を数える" do
+      first = tenancy { described_class.of(AuditLog.all, first: 1, after: nil) { _1 } }
+      second = tenancy { described_class.of(AuditLog.all, first: 1, after: tenancy { first.cursors.sole }) { _1 } }
+
+      expect(tenancy { [ first.total_count, second.total_count ] }).to eq([ 3, 3 ])
+    end
+
+    it "件数だけを読むと、件数の 1 つの SQL だけを流し、行も値への写しも読まない。行だけを読むと、件数を数えない" do
+      mapped = false
+      sql = count_sql do
+        tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { mapped = true }.total_count }
+      end
+
+      expect(sql).to contain_exactly(a_string_matching(/\ASELECT COUNT\(\*\)/))
+      expect(mapped).to be(false)
+      expect(count_sql { tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1 }.values } })
+        .to contain_exactly(a_string_matching(/LIMIT/))
+    end
+
+    it "Tenancy.with_tenant の外で行と件数を読むと例外にする" do
+      built = tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1 } }
+
+      expect { built.values }.to raise_error(Tenancy::MissingTenant)
+      expect { built.total_count }.to raise_error(Tenancy::MissingTenant)
+      expect(tenancy { built.values.size }).to eq(2)
+    end
+  end
+end

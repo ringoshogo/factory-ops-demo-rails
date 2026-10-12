@@ -38,9 +38,9 @@ RSpec.describe "請求の読み取り" do
 
   describe Billing::Invoices do
     it "一覧は自社の請求書を新しい順に返し、下書きは番号が空で状態が DRAFT になる" do
-      page = as_supplier { described_class.list(actor, first: 10, after: nil) }
+      values = as_supplier { described_class.list(actor, first: 10, after: nil).values }
 
-      expect(page.values.map { [ _1.id, _1.state, _1.invoice_number, _1.total ] })
+      expect(values.map { [ _1.id, _1.state, _1.invoice_number, _1.total ] })
         .to eq([ [ issued.id, :issued, issued.invoice_number, 216 ], [ draft.id, :draft, nil, 330 ] ])
     end
 
@@ -63,27 +63,27 @@ RSpec.describe "請求の読み取り" do
 
   describe Billing::BillableItems do
     it "一覧は自社の未請求明細だけを返し、取引先で絞れる" do
-      all = as_supplier { described_class.list(actor, customer_tenant_id: nil, first: 10, after: nil) }
-      one = as_supplier { described_class.list(actor, customer_tenant_id: customers[1].id, first: 10, after: nil) }
+      all = as_supplier { described_class.list(actor, customer_tenant_id: nil, first: 10, after: nil).values }
+      one = as_supplier { described_class.list(actor, customer_tenant_id: customers[1].id, first: 10, after: nil).values }
 
-      expect(all.values.map(&:id)).to match_array(unbilled.map(&:id))
-      expect(all.values.map(&:amount)).to eq([ 360, 360 ])
-      expect(one.values.map(&:id)).to eq([ unbilled[1].id ])
+      expect(all.map(&:id)).to match_array(unbilled.map(&:id))
+      expect(all.map(&:amount)).to eq([ 360, 360 ])
+      expect(one.map(&:id)).to eq([ unbilled[1].id ])
     end
 
     it "相手テナントや存在しないテナントで絞ると空になる" do
       [ supplier.id, SecureRandom.uuid ].each do |id|
-        expect(as_supplier { described_class.list(actor, customer_tenant_id: id, first: 10, after: nil) }.values).to be_empty
+        expect(as_supplier { described_class.list(actor, customer_tenant_id: id, first: 10, after: nil).values }).to be_empty
       end
     end
 
     it "請求書の明細を返し、見えない請求書は空になる" do
-      draft_items = as_supplier { described_class.for_invoice(actor, draft.id, first: 10, after: nil) }
-      issued_items = as_supplier { described_class.for_invoice(actor, issued.id, first: 10, after: nil) }
+      draft_items = as_supplier { described_class.for_invoice(actor, draft.id, first: 10, after: nil).values }
+      issued_items = as_supplier { described_class.for_invoice(actor, issued.id, first: 10, after: nil).values }
 
-      expect(draft_items.values.map { [ _1.invoice_id, _1.amount ] }).to eq([ [ draft.id, 150 ] ] * 2)
-      expect(issued_items.values.map { [ _1.invoice_id, _1.tax_rate_percent, _1.amount ] }).to eq([ [ issued.id, 8, 200 ] ])
-      expect(as_supplier { described_class.for_invoice(actor, foreign.id, first: 10, after: nil) }.values).to be_empty
+      expect(draft_items.map { [ _1.invoice_id, _1.amount ] }).to eq([ [ draft.id, 150 ] ] * 2)
+      expect(issued_items.map { [ _1.invoice_id, _1.tax_rate_percent, _1.amount ] }).to eq([ [ issued.id, 8, 200 ] ])
+      expect(as_supplier { described_class.for_invoice(actor, foreign.id, first: 10, after: nil).values }).to be_empty
     end
   end
 end

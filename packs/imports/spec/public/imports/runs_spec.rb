@@ -124,11 +124,11 @@ RSpec.describe Imports::Runs do
       end
       theirs = tenancy(other) { FactoryBot.create(:import_row, error: "x").import_id }
 
-      first = tenancy { described_class.row_errors(actor, import.id, first: 2, after: nil) }
-      rest = tenancy { described_class.row_errors(actor, import.id, first: 2, after: first.cursors.last) }
+      first = tenancy { described_class.row_errors(actor, import.id, first: 2, after: nil).then { [ _1.values, _1.cursors, _1.has_next_page ] } }
+      rest = tenancy { described_class.row_errors(actor, import.id, first: 2, after: first[1].last).then { [ _1.values, _1.has_next_page ] } }
 
-      expect(first.values.map(&:row_number) + rest.values.map(&:row_number)).to eq([ 2, 4, 5 ])
-      expect([ first.has_next_page, rest.has_next_page ]).to eq([ true, false ])
+      expect(first[0].map(&:row_number) + rest[0].map(&:row_number)).to eq([ 2, 4, 5 ])
+      expect([ first[2], rest[1] ]).to eq([ true, false ])
       expect(tenancy { described_class.row_errors(actor, theirs, first: 10, after: nil).values }).to be_empty
       expect { tenancy { described_class.row_errors(actor, import.id, first: 2, after: "x") } }.to raise_error(Page::InvalidCursor)
     end

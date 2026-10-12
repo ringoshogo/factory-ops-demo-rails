@@ -20,9 +20,9 @@ RSpec.describe Purchasing::ReceivedInvoices do
   def as_buyer(&) = Tenancy.with_tenant(buyer.id, &)
 
   it "一覧は自社の受領請求書を新しい順に返す" do
-    page = as_buyer { described_class.list(actor, first: 10, after: nil) }
+    values = as_buyer { described_class.list(actor, first: 10, after: nil).values }
 
-    expect(page.values.map { [ _1.id, _1.invoice_number, _1.supplier_tenant_id ] })
+    expect(values.map { [ _1.id, _1.invoice_number, _1.supplier_tenant_id ] })
       .to eq(invoices.reverse.map { [ _1.id, _1.invoice_number, _1.supplier_tenant_id ] })
   end
 

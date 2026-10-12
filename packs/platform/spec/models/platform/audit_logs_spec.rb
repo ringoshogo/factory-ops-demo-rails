@@ -12,14 +12,14 @@ RSpec.describe Platform::AuditLogs do
   end
 
   def list(**options)
-    Tenancy.with_tenant(tenant.id) { described_class.list(actor, first: 10, after: nil, **options) }
+    Tenancy.with_tenant(tenant.id) { described_class.list(actor, first: 10, after: nil, **options).values }
   end
 
   it "自社の行だけを、新しいものから返す" do
     older, newer = Array.new(2) { create_log }
     create_log(other.id)
 
-    expect(list.values.map(&:id)).to eq([ newer.id, older.id ])
+    expect(list.map(&:id)).to eq([ newer.id, older.id ])
   end
 
   # RLS も他社の行を閉じるので、上の example は scope の条件を外しても通る。条件そのものを確かめる
@@ -33,11 +33,13 @@ RSpec.describe Platform::AuditLogs do
 
   it "first と after でページを送る" do
     logs = Array.new(3) { create_log }.reverse
-    first_page = Tenancy.with_tenant(tenant.id) { described_class.list(actor, first: 2, after: nil) }
-    second_page = Tenancy.with_tenant(tenant.id) { described_class.list(actor, first: 2, after: first_page.cursors.last) }
+    first_page, second_page = Tenancy.with_tenant(tenant.id) do
+      first_page = described_class.list(actor, first: 2, after: nil)
+      [ first_page, described_class.list(actor, first: 2, after: first_page.cursors.last) ].map { [ _1.values.map(&:id), _1.has_next_page ] }
+    end
 
-    expect([ first_page.values.map(&:id), first_page.has_next_page ]).to eq([ logs.first(2).map(&:id), true ])
-    expect([ second_page.values.map(&:id), second_page.has_next_page ]).to eq([ [ logs.last.id ], false ])
+    expect(first_page).to eq([ logs.first(2).map(&:id), true ])
+    expect(second_page).to eq([ [ logs.last.id ], false ])
   end
 
   it "action と相関 ID の一致で絞る" do
@@ -45,13 +47,13 @@ RSpec.describe Platform::AuditLogs do
     create_log(action: "purchase_order.place", correlation_id: "c-2")
     create_log(action: "item.save", correlation_id: "c-1")
 
-    expect(list(filter: { action: "purchase_order.place", correlation_id: "c-1" }).values.map(&:id)).to eq([ target.id ])
+    expect(list(filter: { action: "purchase_order.place", correlation_id: "c-1" }).map(&:id)).to eq([ target.id ])
   end
 
   it "時刻は occurred_from 以上・occurred_to 未満で絞る" do
     at = Time.zone.parse("2026-10-10 09:00")
     logs = [ at - 1.second, at, at + 1.hour - 1.second, at + 1.hour ].map { create_log(occurred_at: _1) }
 
-    expect(list(filter: { occurred_from: at, occurred_to: at + 1.hour }).values.map(&:id)).to eq(logs[1..2].reverse.map(&:id))
+    expect(list(filter: { occurred_from: at, occurred_to: at + 1.hour }).map(&:id)).to eq(logs[1..2].reverse.map(&:id))
   end
 end
