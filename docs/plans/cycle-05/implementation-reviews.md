@@ -259,3 +259,83 @@ rubocop・packwerk・brakeman・bundler-audit・`bin/check-structure`・`bin/che
 ### 残件の処理
 
 引当先が M39 の行は、着手の前と PR の前に台帳を読み、OI-12 だけだった。`supplier.item(id:)` と `viewer.tenant` を足して閉じた（`8f63a4d`）。OI-07・OI-78 の作者の判断（サーバーで並べ替えと絞り込み、件数）はこの PR で反映し、OI-144（並べ替えの列を一覧の表の列に限る）は既定のまま進めた（引当先は M33）。実装で決めたことは OI-153〜OI-157 に judgment で積み、違和感は IB-73〜IB-78 に積んだ。件数とページを同じ relation から引く形は、`Page.of` が relation を 1 つだけ受け取ることで守っており、IB-68 の候補と関わる。
+
+## M40 状況での絞り込み
+
+`m40-status-filter`（base は `main`）の PR。PR #55（`cycle-05-plan`）・#56（`m38-update-policy`）・#57（`m39-list-ordering`）が未マージなので、その commit も差分に見える。M40 の差分は `48dd2a1..` である。
+
+### 実装の記録
+
+#### 計画との違い
+
+計画に書かれていないことを決めたものは、OI-158〜OI-160 に judgment で積んだ。入口の行列の出荷依頼の変種の行を `#orderBy` から `#filter` に変え、並べ替えと状況を渡す（OI-158）。ダッシュボードの出荷期限の「出荷も取消もしていない」を、状況の式の絞り込みで書き直す（OI-159）。状況の式が子の行を読む副問い合わせに policy の scope を掛けず、外部キーの無い出荷停止だけ所有テナントを出荷依頼にそろえる（OI-160、`adr/010` 決定 3）。
+
+ほかに、次の 3 つを計画の書き方から変えた。どれも作るものの意味は変えていない。
+
+- 計画の壊して落ちる記録は、優先順の入れ替えを「取消済みで出荷済みの受注」で確かめると書くが、受注の取消済と出荷済、発注の受注側による取消と取消済は、DB の CHECK 制約（`sales_orders_cancelled_or_shipped`・`purchase_orders_single_cancellation`）で同時に持てない。計画の例を「検収済で出荷済の受注」に直し、作れない組は組まないと書いた（`1f44023`）。受注の品番照合待ちの行は、照合前の明細にも全量の引当を作り、引当済の条件にも当たる形にした。実際の引当は照合の後にしかできないが、優先順を確かめるには両方に当たる行が要る
+- `Page.of` に、行と一緒に読む式（`columns:`）を足した。状況の式を行の `SELECT` に載せ、件数の `COUNT(*)` には入れない。公開 API が `select` を掛けた relation を渡すと、件数の SQL が複数の列を数えようとして失敗するからである
+- 受注の状況の式は、`Sales::SalesOrderStatus.expression(actor)` が在庫の公開 API から副問い合わせを受け取って作る。一覧・1 件・件数・取消の可否の 4 か所が同じ呼び方で式を得る
+
+Brakeman は副問い合わせを結ぶ箇所に警告を出さなかったので、`config/brakeman.ignore` は足していない。副問い合わせの文字列は `SqlSubquery#as` が `Arel.sql` で包み、Arel のノードとして結ぶ。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：
+
+- 3 つの状況の spec（導出表の行ごとに 1 件ずつ作り、`statuses` で絞る形に書き直したもの）は、公開 API が `statuses` を受け取るだけで無視する仮の形で、9 examples のうち 8 が落ちた。`got:` には、絞られずに全行が返った（受注の導出表の example は、取消済で絞って 7 件が返った）。落ちなかった 1 つ（取り消した出荷指示と解除した出荷停止を数えない）は、絞る状況が全行を覆っていたので、下の壊して落ちる記録で RED に代える。最初に書いた準備は CHECK 制約に当たったので、準備を直してから流し直した
+
+ほかの example は実装の後に書いたので、次の壊して落ちる記録で RED に代える。実装を 1 か所ずつ壊し、壊した箇所を確かめる spec のファイルだけを流し、複製から戻して更新時刻を進めた。`c38eea2` の上で壊し、`allocation_spec.rb` の対照を直した後の副問い合わせの scope は `ae7adbb` の上で壊し直した。
+
+| 壊したもの | 流した spec | 落ちた example |
+|---|---|---|
+| 受注の式の検収済と出荷済を入れ替える | `sales_order_status_spec.rb` | 1（導出表の行ごと） |
+| 受注の式の品番照合待ちと引当済を入れ替える | 同上 | 1 |
+| 受注の式の出荷済と品番照合待ちを入れ替える | 同上 | 1 |
+| 受注の式の引当済と一部引当を入れ替える | 同上 | 2（導出表の行ごと、解除した引当） |
+| 一部引当の条件を「引当数量 > 1」にする | 同上 | 1 |
+| 引当済の条件を「引当数量 ≦ 明細の数量の明細が無い」にする | 同上 | 2 |
+| 引当の副問い合わせを内部結合にする | 同上 | 3（引当の無い明細が消える） |
+| 発注の式の検収済と入荷予定を入れ替える | `purchase_order_status_spec.rb` | 1 |
+| 発注の式の受注済と受注側で確認中を入れ替える | 同上 | 1 |
+| 出荷依頼の式の出荷済と出荷停止中を入れ替える | `shipment_request_status_spec.rb` | 1 |
+| 出荷依頼の式の出荷停止中と出荷指示済を入れ替える | 同上 | 1 |
+| 取り消した出荷指示も数える（`active` の scope を外す） | 同上 | 1（取り消した出荷指示と解除した出荷停止） |
+| 解除した出荷停止も数える | 同上 | 1（同上） |
+| 出荷停止を受注で結ばない | 同上 | 3 |
+| 出荷停止の所有テナントを出荷依頼にそろえない | 同上と `spec/matrix` | 1（RLS を開いた example。行列は落ちない） |
+| 引当の副問い合わせから解除済みを除く条件を外す（`quantities_for` と共通） | `sales_order_status_spec.rb`・`allocation_spec.rb` | 3（解除した引当、`quantities_for` の解除、副問い合わせ） |
+| 引当の副問い合わせから scope を外す | `allocation_spec.rb`・`spec/matrix` | 1（RLS を開いた example。行列は落ちない） |
+| `count_by_status` を取消済を除いて数える | `sales_orders_spec.rb`・`dashboard_spec.rb` | 4（件数と絞った一覧の比較、状況ごとの件数 2、ダッシュボード） |
+| 受注・発注・出荷依頼の `statuses` の空の配列を絞らない扱いにする | 3 つの状況の spec | どれも 1 |
+| 受注の `statuses` の絞り込みを外す | `sales_order_status_spec.rb`・`spec/matrix` | 3（行列は受注日でも絞るので落ちない） |
+| 発注の `statuses` の絞り込みを外す | `purchase_order_status_spec.rb`・`spec/matrix` | 2（同上） |
+| 出荷依頼の `statuses` の絞り込みを外す | `shipment_request_status_spec.rb`・`spec/matrix` | 4（うち行列の「変種の行が世界を絞る」確かめ 1） |
+| 出荷期限から出荷停止中を外す | `shipment_requests_spec.rb` | 1 |
+| 取消の可否で状況を記号と比べる（常に偽） | `packs/sales/spec` | 2（`order_cancellation_spec.rb`・`cancellation_reviews_spec.rb` の出荷可能を出した受注の取消） |
+
+2 つの守りが同じ条件を持つのは、副問い合わせの scope と RLS、出荷停止の所有テナントのそろえと RLS である。どちらも RLS を開かない限り他社の行が見えないので、式の側を壊したときは RLS を開いた単体だけが落ち、行列は落ちない。RLS の側を壊すのは表の行列（`table_matrix_spec.rb`）が確かめる。
+
+テストの基盤として足したものは、`MatrixWorld#add_filter_rows` の取消済と取消していない受注・発注と、取消済の出荷依頼である。出荷依頼の `statuses` を外すと、行列の「変種の行が世界を絞る」確かめが落ちる（上の表）。受注と発注は受注日・発注日でも絞るので、状況を外しても行列のこの確かめは落ちず、状況の spec が落とす。
+
+### 確かめたこと
+
+`ae7adbb` のコードで、Ruby 3.4.11 で M40 の完了条件と共通の完了条件を流した。この worktree では `bin/ci` の Setup の工程が落ちる（IB-72）ので、`config/ci.rb` の Setup のほかの工程を同じコマンドで 1 つずつ流した。
+
+```sh
+bundle exec rspec <完了条件の 1 つ目のコマンド>      # 10 examples, 0 failures
+bundle exec rspec <完了条件の 2 つ目のコマンド>      # 30 examples, 0 failures
+bundle exec rspec <完了条件の 3 つ目のコマンド>      # 1445 examples, 0 failures
+bin/check-schema-compat                              # 落とす変更なし（足したのは省いてよい引数と型だけ）
+COVERAGE=1 bundle exec rspec                         # 2746 examples, 0 failures（2 分 16 秒）
+BASE_REF=origin/main bin/check-branch-coverage       # 一覧は空
+bin/check-open-items --due M40                       # 終了コード 0
+bundle exec rspec --tag concurrency                  # 2 回続けて 61 examples, 0 failures
+```
+
+rubocop・packwerk・brakeman・bundler-audit・`bin/check-structure`・`bin/check-alerts`・`bin/check-commit-refs`・`bin/test-layers` も通った。分岐の網羅率の警告は 0 件で、example を足した件数も 0 件である。
+
+行列の spec の時間（手元、`bundle exec rspec <ファイル>` を 2 回ずつ、`ae7adbb`）は、`graphql_matrix_spec.rb` が 578 examples で 10.17 秒・9.49 秒、`table_matrix_spec.rb` が 804 examples で 7.30 秒・7.17 秒である。M39 の記録（577 examples、9.11 秒・9.40 秒）より入口の行列が 1 example と 1 秒弱増えた。2 ファイルを合わせて約 17 秒で、IB-50 の調べ直す条件（合わせて 30 秒を超える）には当たらない。
+
+### 残件の処理
+
+引当先が M40 の行は、着手の前と PR の前に台帳を読み、無かった。OI-07 の作者の判断（サーバーで並べ替えと絞り込み、件数）の残り（状況での絞り込み）をこの PR で反映した。OI-144（並べ替えの列を一覧の表の列に限る）は、状況での並べ替えを足さず既定のまま進めた（引当先は M33）。実装で決めたことは OI-158〜OI-160 に judgment で積んだ。
