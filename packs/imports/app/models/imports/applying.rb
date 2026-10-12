@@ -107,9 +107,10 @@ module Imports
         failed_rows: errors.size)
     end
 
+    # 反映で呼ぶ公開 API の失敗は、どれも入力の項目を指す
     def self.message(result)
       failure = result.failures.first
-      [ failure.path&.last, failure.message ].compact.join(": ")
+      "#{failure.path.last}: #{failure.message}"
     end
 
     private_class_method :apply_items, :schedule!, :apply_stocks, :parse, :first_rows_by_code, :record, :message
