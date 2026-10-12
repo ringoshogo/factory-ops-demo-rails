@@ -1,0 +1,196 @@
+# 警報の規則のテスト（bin/check-alerts が promtool test rules で流す）。条件を満たす系列で鳴り、満たさない系列で鳴らないことを、
+# 警報ごとに確かめる。ヒストグラムの le は、Prometheus 3 が取り込みでそろえた浮動小数の表記で書く（alerts.yml の冒頭）
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # イベントのキューの滞留：1,000 件を超えて 5 分続くと鳴る。1,000 件ちょうどと、ほかのキューの滞留では鳴らない
+  - interval: 1m
+    input_series:
+      - series: 'queue_ready_jobs{queue="events"}'
+        values: '1001x10'
+      - series: 'queue_ready_jobs{queue="imports"}'
+        values: '5000x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: EventsQueueBacklog
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: EventsQueueBacklog
+        exp_alerts:
+          - exp_labels: { severity: page, queue: events }
+            exp_annotations:
+              summary: イベントのキューの待ちが 5 分続けて 1,000 件を超えている
+              runbook: docs/runbooks/queue-backlog.md
+  - interval: 1m
+    input_series:
+      - series: 'queue_ready_jobs{queue="events"}'
+        values: '1000x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: EventsQueueBacklog
+        exp_alerts: []
+
+  # 確実な通知の失敗：失敗が増えると鳴り、増えないまま 10 分が過ぎると止む。プロセスの起動の後の最初の 1 件で現れた系列でも鳴る
+  - interval: 1m
+    input_series:
+      - series: 'notification_failures_total{kind="received_invoice",reason="http_400"}'
+        values: '0 0 1x30'
+      - series: 'notification_failures_total{kind="received_invoice",reason="retries_exhausted:http_503"}'
+        values: '_x20 1x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ReceivedInvoiceNotificationFailed
+        exp_alerts:
+          - exp_labels: { severity: page, kind: received_invoice, reason: http_400 }
+            exp_annotations:
+              summary: 受領請求書の通知が、再試行しない応答か再試行を使い切って失敗した
+              runbook: docs/runbooks/sendgrid-outage.md
+      - eval_time: 15m
+        alertname: ReceivedInvoiceNotificationFailed
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: ReceivedInvoiceNotificationFailed
+        exp_alerts:
+          - exp_labels: { severity: page, kind: received_invoice, reason: "retries_exhausted:http_503" }
+            exp_annotations:
+              summary: 受領請求書の通知が、再試行しない応答か再試行を使い切って失敗した
+              runbook: docs/runbooks/sendgrid-outage.md
+
+  # FORBIDDEN：出どころが object と undeclared の拒否で鳴り、rule の拒否では鳴らない
+  - interval: 1m
+    input_series:
+      - series: 'graphql_top_level_errors_total{operation="other",code="FORBIDDEN",reason="object"}'
+        values: '0 0 0 1x30'
+      - series: 'graphql_top_level_errors_total{operation="PlacePurchaseOrder",code="FORBIDDEN",reason="rule"}'
+        values: '0 0 0 5x30'
+      - series: 'graphql_top_level_errors_total{operation="other",code="NOT_FOUND",reason="none"}'
+        values: '0 0 0 5x30'
+      - series: 'graphql_top_level_errors_total{operation="other",code="FORBIDDEN",reason="undeclared"}'
+        values: '_x20 1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ForbiddenByObjectOrUndeclared
+        exp_alerts:
+          - exp_labels: { severity: page, operation: other, code: FORBIDDEN, reason: object }
+            exp_annotations:
+              summary: 返すオブジェクトの規則か、宣言の無い入口が FORBIDDEN を返した
+              runbook: docs/runbooks/rls-misconfiguration.md
+      - eval_time: 18m
+        alertname: ForbiddenByObjectOrUndeclared
+        exp_alerts: []
+      - eval_time: 22m
+        alertname: ForbiddenByObjectOrUndeclared
+        exp_alerts:
+          - exp_labels: { severity: page, operation: other, code: FORBIDDEN, reason: undeclared }
+            exp_annotations:
+              summary: 返すオブジェクトの規則か、宣言の無い入口が FORBIDDEN を返した
+              runbook: docs/runbooks/rls-misconfiguration.md
+
+  # 取り込みの停滞：実行中で 15 分行が増えない系列だけで鳴る。実行中は 10 分目から始まる
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '0x9 1x40'
+      - series: 'import_rows_total{kind="stocks",result="applied"}'
+        values: '100x50'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ImportStalled
+        exp_alerts: []
+      - eval_time: 26m
+        alertname: ImportStalled
+        exp_alerts:
+          - exp_labels: { severity: ticket, queue: imports }
+            exp_annotations:
+              summary: 取り込みのジョブが 15 分実行中のまま、反映した行が増えない
+              runbook: docs/runbooks/import-stuck.md
+  # 実行中で行が増える
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '0x9 1x40'
+      - series: 'import_rows_total{kind="stocks",result="applied"}'
+        values: '100x9 100+500x40'
+    alert_rule_test:
+      - eval_time: 26m
+        alertname: ImportStalled
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: ImportStalled
+        exp_alerts: []
+  # 実行中のジョブが無い
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '0x50'
+      - series: 'import_rows_total{kind="stocks",result="applied"}'
+        values: '100x50'
+    alert_rule_test:
+      - eval_time: 26m
+        alertname: ImportStalled
+        exp_alerts: []
+  # プロセスの起動の後に、まだ 1 行も反映していない（行のカウンタの系列が無い）
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '0x9 1x40'
+    alert_rule_test:
+      - eval_time: 26m
+        alertname: ImportStalled
+        exp_alerts:
+          - exp_labels: { severity: ticket, queue: imports }
+            exp_annotations:
+              summary: 取り込みのジョブが 15 分実行中のまま、反映した行が増えない
+              runbook: docs/runbooks/import-stuck.md
+
+  # 誤差の予算の消費：発注の登録の失敗の割合（SLO 99.5%）の 1 時間の窓。閾値は 13.44 × 0.005 = 0.0672 で、
+  # 失敗の割合 0.068 で鳴り、0.066 で鳴らない
+  - interval: 1m
+    input_series:
+      - series: 'graphql_operation_duration_seconds_count{operation="PlacePurchaseOrder",operation_type="mutation",outcome="ok"}'
+        values: '0+932x70'
+      - series: 'graphql_operation_duration_seconds_count{operation="PlacePurchaseOrder",operation_type="mutation",outcome="error"}'
+        values: '0+68x70'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: PlacePurchaseOrderErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: page, slo: place_purchase_order_errors }
+            exp_annotations:
+              summary: 発注の登録の失敗の割合が、1 時間で 28 日の誤差の予算の 2% を消費する速さを超えた
+              runbook: docs/runbooks/graphql-degradation.md
+  - interval: 1m
+    input_series:
+      - series: 'graphql_operation_duration_seconds_count{operation="PlacePurchaseOrder",operation_type="mutation",outcome="ok"}'
+        values: '0+934x70'
+      - series: 'graphql_operation_duration_seconds_count{operation="PlacePurchaseOrder",operation_type="mutation",outcome="error"}'
+        values: '0+66x70'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: PlacePurchaseOrderErrorBudgetBurnFast
+        exp_alerts: []
+
+  # 誤差の予算の消費：画面の問い合わせの速さ（SLO 95%）の 1 時間の窓。le="1.0" のバケットを読むことを確かめる。
+  # 閾値は 13.44 × 0.05 = 0.672 で、1 秒を超えた割合 0.7 で鳴る。速い操作が多い other を分母に入れると割合が 0.007 に薄まって
+  # 鳴らないので、鳴ることで other を除いていることも確かめる
+  - interval: 1m
+    input_series:
+      - series: 'graphql_operation_duration_seconds_bucket{operation="SupplierDashboard",operation_type="query",outcome="ok",le="1.0"}'
+        values: '0+30x70'
+      - series: 'graphql_operation_duration_seconds_count{operation="SupplierDashboard",operation_type="query",outcome="ok"}'
+        values: '0+100x70'
+      - series: 'graphql_operation_duration_seconds_bucket{operation="other",operation_type="query",outcome="ok",le="1.0"}'
+        values: '0+10000x70'
+      - series: 'graphql_operation_duration_seconds_count{operation="other",operation_type="query",outcome="ok"}'
+        values: '0+10000x70'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: ScreenQueryLatencyBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: page, slo: screen_query_latency }
+            exp_annotations:
+              summary: 画面の問い合わせが 1 秒を超える割合が、1 時間で 28 日の誤差の予算の 2% を消費する速さを超えた
+              runbook: docs/runbooks/graphql-degradation.md
