@@ -52,7 +52,7 @@ RSpec.describe Platform::Metrics do
 
     it "METRICS_PROCESS が web と jobs のどちらでもなければ、起動を止める" do
       with_env("METRICS_PROCESS" => "worker", "PROMETHEUS_EXPORTER_PORT" => "9394") do
-        expect { described_class.start_exporter!("web") }.to raise_error(described_class::ConfigurationError, /worker/)
+        expect { described_class.start_exporter!("web") }.to raise_error(described_class::ConfigurationError, /web・jobs のどれか/)
       end
     end
 
@@ -89,6 +89,7 @@ RSpec.describe Platform::Metrics do
       enqueue("imports", :claimed)
       enqueue("spec_queue", :failed)
       Yabeda.queue_claimed_jobs.set({ queue: "events" }, 7)
+      Yabeda.queue_ready_jobs.set({ queue: "default" }, 5)
 
       described_class.collect_queue_depths
 
