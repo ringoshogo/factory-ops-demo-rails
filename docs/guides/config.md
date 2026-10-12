@@ -23,6 +23,7 @@
 | `routes.rb` | URL とコントローラの対応 | 変更 | [起動とリクエスト](#起動とリクエスト) |
 | `puma.rb` | Web サーバー Puma の設定。起動の後にメトリクスの exporter を立てる | 変更 | [メトリクス](#メトリクス) |
 | `graphql_operations.yml` | メトリクスのラベルに使ってよい GraphQL の操作名 | 追加 | [メトリクス](#メトリクス) |
+| `prometheus/alerts.yml`・`alerts_test.yml` | Prometheus の警報の規則と、そのテスト。`bin/check-alerts` が promtool で流す | 追加 | [../slo.md](../slo.md) |
 | `database.yml` | DB の接続先とロール | 変更 | [DB の接続](#db-の接続) |
 | `queue.yml` | Solid Queue のワーカーの設定 | 追加（生成器の後に変更） | [ジョブ](#ジョブ) |
 | `recurring.yml` | Solid Queue の定期実行 | 追加（生成器の後に変更） | [ジョブ](#ジョブ) |
@@ -74,6 +75,19 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 - `post "imports/files"`：取り込むファイルの受け口（`ImportFilesController`）。セッションで認証し、`Origin` で CSRF を防ぐ。10 MB を超えるファイルは読む前に 413 で拒む。ファイルを置くだけで、取り込みは `startImport` で始める
 - `post "webhooks/sendgrid/events"`：SendGrid のイベント Webhook の受け口（`Webhooks::SendgridEventsController`）。セッションを読まず、署名で認証する（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-3）
 
+### メンテナンスの切り替え
+
+運用者は、テナントの境界の不具合が疑われる間（[runbooks/rls-misconfiguration.md](../runbooks/rls-misconfiguration.md)）、Web のプロセスに環境変数 `MAINTENANCE_MODE` を設定して起動し直し、業務の表を読み書きする入口を止める。`GraphqlController` と `ImportFilesController` は `MaintenanceMode`（`app/controllers/concerns/`）を取り込み、立っていれば何も実行せずに 503 を返す。本文の形の検査とセッションの確かめより先に止めるので、どの要求も同じ 503 になる。
+
+| 入口 | 立てたとき | 理由 |
+|---|---|---|
+| `POST /graphql`・`POST /imports/files` | 503 | 業務の表を読み書きする |
+| `POST /session`・`DELETE /session` | 止めない | ログインはメールアドレスでユーザーを引く認証の関数だけを通り、ログアウトは自分のセッションの世代を進めるだけで、業務の表を読み書きしない。ログアウトを止めると、利用者が漏れたセッションを無効にできない |
+| `POST /webhooks/sendgrid/events` | 止めない | 受信の表に書くだけで、止めると配信結果を失う |
+| `GET /up` | 止めない | 死活監視が、止めた Web をプロセスの障害と取り違えて起動し直す |
+
+値は Rails の真偽値の読み方（`ActiveModel::Type::Boolean`）で読み、`0`・`false`・`off` は立てない側に、それ以外の値は立てる側に倒す。環境変数はプロセスの起動の時に決まるので、切り替えはプロセスの再起動で効く。ワーカー（`bin/jobs`）は切り替えで止まらないので、止めるなら別に止める。`spec/requests/maintenance_mode_spec.rb` が、立てたときに GraphQL とファイルの受け口が 503 で何も書かず、ログインと Webhook が通り、立てないときに同じ要求が書くことを確かめる。
+
 ## DB の接続
 
 ### database.yml：同じ DB に 2 つのロールで接続する
@@ -115,7 +129,7 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 - **`application.rb` の `queue_adapter = :solid_queue`**：全環境で同じアダプタにする。テストでも `:test` アダプタに差し替えない（ADR 005 決定 1・6）。
 - **`connects_to` を書かない**：Rails 8 の既定は、`production.rb` の `config.solid_queue.connects_to` でキューを別の DB に置く。本デモはこれを書かず、`database.yml` にもキューの DB を置かない。`SolidQueue::Record` は業務と同じ接続を使うので、業務のトランザクションの中で登録したジョブは、業務データと一緒に確定するか一緒に消える。
 - **`queue.yml`**：ワーカーをキューごとに分け、`events`（3 スレッド）・`external_mail`（2）・`imports`（1）・`default`（2）の 4 つにする。重い取り込みが、イベントの配送とメールを待たせないためである（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 7）。SendGrid への同時の送信の上限は、設定ではなく送信のジョブの `limits_concurrency` に書く。`bin/jobs` が読み、`spec/jobs/queue_config_spec.rb` が、どのジョブもワーカーのあるキューに載ることを確かめる。
-- **`recurring.yml`**：開発と本番で、Webhook の受信の未処理を毎分拾うジョブと、処理を終えた行を毎日消すジョブを流す。本番だけは、生成のままの、終わったジョブの行を毎時消すタスクも流す。
+- **`recurring.yml`**：開発と本番で、Webhook の受信の未処理を毎分拾うジョブと、処理を終えた行を毎日消すジョブと、置いてから 24 時間を過ぎても取り込みを始めないファイルの中身を毎時消すジョブ（`Imports::PurgeAbandonedFilesJob`。[data-model.md「取り込み（`imports`）」](../architecture/data-model.md#取り込みimports)）を流す。本番だけは、生成のままの、終わったジョブの行を毎時消すタスクも流す。
 
 通知のメールの送信先は、環境ごとに `config.x.notifications.provider` で選ぶ。本番は SendGrid（API キーと Webhook の署名の公開鍵は credentials）、開発は `tmp/mails/` に 1 通 1 ファイルで書くもの、テストはメモリに積むもので、テストと開発は外部へ送らない。`initializers/notifications.rb` が起動時に送信先を作り、本番以外で SendGrid を選んで sandbox mode を外した設定を例外にする。テストは、これとは別に WebMock で外部への HTTP を止める（`spec/spec_helper.rb`）。
 
@@ -317,6 +331,7 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 | Tests: branch coverage | — | `bin/check-branch-coverage` | `origin/main` との分岐点からの差分の、どの example も通らない分岐を警告にする（[testing.md「分岐の網羅率の警告」](testing.md#分岐の網羅率の警告)） |
 | Tests: layers | — | `bin/test-layers tmp/rspec.json` | テストの層ごとの件数・割合・時間を報告し、未分類のファイルを止める（[testing.md「テストの層」](testing.md#テストの層)） |
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
+| Alerts | — | `bin/check-alerts` | 警報の規則の式と、テストの系列での発火と不発火を、Prometheus のイメージの promtool で確かめる（[../slo.md](../slo.md)） |
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 
