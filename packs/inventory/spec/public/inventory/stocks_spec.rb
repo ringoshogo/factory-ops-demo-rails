@@ -115,4 +115,77 @@ RSpec.describe Inventory::Stocks do
       expect(safety_stock_seen_by(supplier, own.item_id)).to eq(3)
     end
   end
+
+  # 一覧の並べ替えと絞り込み（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe ".list" do
+    def list(first: 2, **options)
+      Tenancy.with_tenant(supplier.id) do
+        values = []
+        after = nil
+        loop do
+          page = described_class.list(actor, first:, after:, **options)
+          values.concat(page.values)
+          break [ values.map(&:item_id), page.total_count ] unless page.has_next_page
+
+          after = page.cursors.last
+        end
+      end
+    end
+
+    it "並べ替えの列ごとに、列の値（有効在庫は現在庫 - 引当）と ID の組で並べる" do
+      a, b, c, d = Tenancy.with_tenant(supplier.id) do
+        [ [ 5, 0, 9 ], [ 8, 4, 2 ], [ 7, 1, 2 ], [ 6, 2, 1 ] ].map do |on_hand, allocated, safety_stock|
+          FactoryBot.create(:stock, on_hand:, allocated:, safety_stock:)
+        end
+      end
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:stock) }
+
+      expect(list(order_by: { field: :on_hand, direction: :asc })).to eq([ [ a, d, c, b ].map(&:item_id), 4 ])
+      expect(list(order_by: { field: :allocated, direction: :desc })).to eq([ [ b, d, c, a ].map(&:item_id), 4 ])
+      expect(list(order_by: { field: :available, direction: :desc })).to eq([ [ c, a, d, b ].map(&:item_id), 4 ])
+      expect(list(order_by: { field: :safety_stock, direction: :asc })).to eq([ [ d, b, c, a ].map(&:item_id), 4 ])
+    end
+
+    # 集計と、そこから飛ぶ一覧が同じ条件で絞ることを、同じ在庫で両方を読んで確かめる
+    it "belowSafetyStock は、ダッシュボードの安全在庫と同じ在庫に絞り、件数も同じ。偽か省けば絞らない" do
+      Tenancy.with_tenant(supplier.id) do
+        [ [ 4, 0, 5 ], [ 5, 0, 5 ], [ 6, 0, 5 ], [ 10, 6, 5 ], [ 10, 5, 5 ] ].each do |on_hand, allocated, safety_stock|
+          FactoryBot.create(:stock, on_hand:, allocated:, safety_stock:)
+        end
+      end
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:stock, on_hand: 0, safety_stock: 1) }
+      below = below_safety_stock.map(&:item_id)
+
+      expect(below.size).to eq(2)
+      expect(list(filter: { below_safety_stock: true }).then { [ _1.sort, _2 ] }).to eq([ below.sort, below.size ])
+      expect(list(filter: { below_safety_stock: false })[1]).to eq(5)
+      expect(list[1]).to eq(5)
+    end
+  end
+
+  describe ".movements" do
+    def movements(**options)
+      Tenancy.with_tenant(supplier.id) do
+        page = described_class.movements(actor, first: 10, after: nil, **options)
+        [ page.values.map(&:type), page.total_count ]
+      end
+    end
+
+    it "移動の種類で絞り、件数も同じ条件で数える。空の配列は 0 件で、省くか nil なら絞らない" do
+      item_id = Tenancy.with_tenant(supplier.id) do
+        FactoryBot.create(:stock).item_id.tap do |id|
+          %w[inbound outbound inbound].each { FactoryBot.create(:stock_movement, item_id: id, type: _1) }
+          FactoryBot.create(:stock_movement, type: "outbound")
+        end
+      end
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:stock_movement, type: "inbound") }
+
+      expect(movements(filter: { types: %w[inbound] })).to eq([ %w[inbound inbound], 2 ])
+      expect(movements(item_id:, filter: { types: %w[outbound] })).to eq([ %w[outbound], 1 ])
+      expect(movements(filter: { types: %w[inbound outbound] })[1]).to eq(4)
+      expect(movements(filter: { types: [] })).to eq([ [], 0 ])
+      expect(movements(filter: { types: nil })[1]).to eq(4)
+      expect(movements[1]).to eq(4)
+    end
+  end
 end

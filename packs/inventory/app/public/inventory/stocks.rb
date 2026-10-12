@@ -6,8 +6,20 @@ module Inventory
     # 安全在庫の上限。列の型（integer）の最大値で、超えた値は保存の時点で ActiveModel::RangeError になる
     MAX_SAFETY_STOCK = 2_147_483_647
 
-    def self.list(actor, first:, after:)
-      Page.of(Scope.call(actor, Stock.all), first:, after:) { |stocks| stocks.map { to_value(_1) } }
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。有効在庫は現在庫 - 引当の式で並べる
+    ORDER_COLUMNS = {
+      on_hand: [ Stock.arel_table[:on_hand], :integer ],
+      allocated: [ Stock.arel_table[:allocated], :integer ],
+      available: [ Stock.arel_table[:on_hand] - Stock.arel_table[:allocated], :integer ],
+      safety_stock: [ Stock.arel_table[:safety_stock], :integer ]
+    }.freeze
+
+    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
+    # filter の below_safety_stock が真なら、ダッシュボードの安全在庫（below_safety_stock）と同じ条件で絞る
+    def self.list(actor, first:, after:, order_by: nil, filter: {})
+      Page.of(filtered(Scope.call(actor, Stock.all), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |stocks|
+        stocks.map { to_value(_1) }
+      end
     end
 
     # 品目 ID ごとの在庫。在庫の行が無い品目は含まない
@@ -18,13 +30,14 @@ module Inventory
     # 有効在庫が安全在庫より小さい在庫。等しい在庫は返さない（docs/architecture/data-model.md「在庫（`inventory`）」）。
     # 在庫は品目コードを持たないので、並べ替えと件数の上限はルートパッケージが品目コードで行う
     def self.below_safety_stock(actor)
-      Scope.call(actor, Stock.where("on_hand - allocated < safety_stock")).order(:item_id).map { to_value(_1) }
+      Scope.call(actor, Stock.below_safety_stock).order(:item_id).map { to_value(_1) }
     end
 
-    def self.movements(actor, item_id: nil, first:, after:)
+    # filter の types は移動の種類で絞る。空の配列は 0 件で、nil なら絞らない
+    def self.movements(actor, item_id: nil, first:, after:, filter: {})
       relation = Scope.call(actor, StockMovement.all)
       relation = relation.where(item_id:) if item_id
-      Page.of(relation, first:, after:) do |movements|
+      Page.of(movements_filtered(relation, **filter), first:, after:) do |movements|
         movements.map { StockMovementValue.new(**_1.slice(*StockMovementValue.members.map(&:to_s)).symbolize_keys) }
       end
     end
@@ -46,6 +59,15 @@ module Inventory
         OperationResult.success(to_value(stock))
       end
     end
+
+    def self.filtered(relation, below_safety_stock: nil)
+      below_safety_stock ? relation.below_safety_stock : relation
+    end
+
+    def self.movements_filtered(relation, types: nil)
+      types.nil? ? relation : relation.where(type: types)
+    end
+    private_class_method :filtered, :movements_filtered
 
     def self.to_value(stock)
       StockValue.new(owner_tenant_id: stock.owner_tenant_id, item_id: stock.item_id, on_hand: stock.on_hand,
