@@ -242,7 +242,7 @@ RSpec.describe MatrixWorld do
       MatrixCrossRead.with_policies do
         results = run_inner_group(cross_read: true) { it("走らない") { nil } }
 
-        expect(results.first.last).to include("matrix_cross_read のポリシーがすでにある")
+        expect(results.first.last).to include("matrix_cross_read か matrix_cross_update のポリシーがすでにある")
         expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
       end
     end
