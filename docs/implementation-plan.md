@@ -104,9 +104,9 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M28 | 外部サービスの呼び出しと非同期の型 | 外部への作用が 1 つの登録口からだけ登録され、テストと開発で本物の SendGrid を呼べない |
 | M29 | 大量データの取り込み | 取り込みが他のキューを待たせず、中断しても続きから再開し、他社の名義で書けない |
 | M37 | RLS が隠す scope の抜けと、読み取りの役割を行列で捕まえる | 入口の scope を外すと、RLS が同じ行を隠していても行列が落ちる。`admin` に限る読み取りを `member` で呼ぶと行列が確かめる |
-| M30 | メトリクス | メトリクスのラベルにテナントとユーザーが入らない。操作者のいない入口の公開 API が所有の条件を明示し、RLS を開いても他社の行を数えない |
+| M30 | メトリクス | メトリクスのラベルにテナントとユーザーが入らない |
 | M31 | SLO と障害対応の手順書 | どの警報も手順書を持ち、警報の規則が CI で検査される |
-| M32 | シードデータ | シードと E2E の世界が 1 つの作り方から、公開 API とイベントだけで作られ、`admin` に限る段は mutation と同じ規則を通る。業務の日付が日本時間の今日で決まり、システムの時刻帯で決まる呼び出しを Cop が落とす |
+| M32 | シードデータ | シードと E2E の世界が 1 つの作り方から、公開 API とイベントだけで作られ、`admin` に限る段は mutation と同じ規則を通る。業務の日付が日本時間の今日で決まり、システムの時刻帯で決まる呼び出しを Cop が落とす。操作者のいない入口の公開 API が所有の条件を明示し、RLS を開いても他社の行を数えない |
 | M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる（計画済み。実装は M32 の後） |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
@@ -1298,7 +1298,7 @@ bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.r
    3. 入口の行列の読み取りの行は、同じ example の中で、設定を外した応答と `on` にした応答の本文が一致することで確かめる。結果の種類（値・空・`null`）だけを比べると、集計を返す入口（`supplier.dashboard`）で scope を外しても種類が変わらないからである。順序の決まらない一覧で誤って落ちないよう、比べる応答の並びが決まることも確かめる。比べる本文に集計の差が出るよう、行列の `SupplierView.dashboard` の問い合わせはダッシュボードのすべてのフィールド（`stocksBelowSafetyStock`・`shipmentRequestsDueSoon` を含む）を読み、`MatrixWorld` は、どのペルソナにも各集計に当たる行（有効在庫が安全在庫を下回る在庫、期限が今日から近い未出荷の出荷依頼、未請求の明細）を持たせる
    4. 2 回目が空振りしないことを確かめるガードの example を置く。設定を `on` にした生 SQL が、他社の行を読めることと、設定を `on` にしてダッシュボードの 4 つの公開 API から scope を外すと、各集計が他社の行を含んで変わることを確かめる。このガードと、足す途中で失敗しても足した分を外すことの example は `spec/matrix/matrix_world_spec.rb` に置く
    5. `spec/db/tenant_enforcement_spec.rb` に、テナントの表のポリシーの集合が `owner_write` と、読む 3 経路の 6 つの表の `partner_read` だけであることの確かめを足す。いまはどちらの spec も、足したポリシーの消し忘れを捕まえない
-   6. 確かめるのは GraphQL の入口から届く読み取りだけである。GraphQL を通らない公開 API（通知の宛先・取り込みの再登録・単価の移行）は外に残り、M30 の作るもの 7 が操作者のいない入口の規則を当てる（OI-118）。完了を、公開 API 全体の所有の条件を確かめ終えたと書かない
+   6. 確かめるのは GraphQL の入口から届く読み取りだけである。GraphQL を通らない公開 API（通知の宛先・取り込みの再登録・単価の移行）は外に残り、M32 の作るもの 10 が操作者のいない入口の規則を当てる（OI-118）。完了を、公開 API 全体の所有の条件を確かめ終えたと書かない
 3. 行列の役割の検査を読み取りに広げる（IB-29）：読み取りの行にも許す役割（`role:`）を持たせ、全ペルソナの `member` で呼ぶ。`member` の期待は行ごとに書く（`viewer.auditLogs` は `FORBIDDEN`、`viewer.partnerCode` は `null`）。`viewer.partnerCode` は型のメソッドで書いたフィールドで、いまの列挙（`Viewer` の下のリゾルバ付きのフィールド）に入らないので、列挙に足し、入口の列挙の完全性の確かめと食い違わない形にする。「ほかの行は役割を持たない」の確かめは、全行が役割を持つ形に書き直す
 
 **判断**：scope の抜けを、RLS の SELECT を開いた 2 回目の行列で捕まえるか
@@ -1366,11 +1366,6 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
 5. `spec/platform/metrics_subscriber_spec.rb`：構造化イベントごとに、対応するメトリクスが増える。登録していない `operationName` は `other` になる。登録の表の `queries` と画面の問い合わせの一覧の操作名が一致する。ヒストグラムごとに、M31 の SLO の閾値がバケットの境界にあり、閾値ちょうどの値と閾値を超える値が別の `le` に数えられる。定義したすべてのメトリクスのラベルに、`tenant`・`user`・`_id` で終わる名前が無い。足したイベントは、`spec/requests/graphql_entry_spec.rb`（`error_codes` と `forbidden_reasons`。`member` が `admin` に限る mutation を呼ぶと `rule`、scope と規則が食い違う型を返すと `object`。登録した操作の実行中に例外を起こすと、HTTP は失敗し、`result` が `error` のイベントが 1 回出る）と、`packs/notifications/spec/models/notifications/provider/sendgrid_spec.rb`（`notifications.provider_responded`）・`packs/notifications/spec/jobs/notifications/critical_delivery_job_spec.rb`（`notification.accepted`）で確かめる。
 6. サイクル 03 の逸脱検査から送った確かめ：mutation の戻り値の null の伝わり方（OI-119）を `spec/requests/mutation_payload_spec.rb` で、`unitPrice` に `bigint` の最大値ちょうどと最大値 + 1（`"9223372036854775807"`・`"9223372036854775808"`）を送ったときの結果（OI-121）を `spec/requests/item_prices_spec.rb`（`scheduleItemPrice`・`correctItemPrice`）と `spec/requests/catalog_spec.rb`（`saveItem`）で確かめる。確かめた結果に、`graphql-schema.md` の SDL か実装を合わせる。最大値 + 1 がトップレベルのエラーになるなら、公開 API の検証に上限を足し、取り込みの CSV の同じ値を行の失敗にする（`packs/imports/spec`）。
 
-7. 操作者のいない入口の規則（OI-118）：`graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の規則に合わない既存の公開 API を直す。対象は `Partnerships::Recipients.admin_ids`・`emails`、`Partnerships::Authentication.acting_user`・`actor`、`Notifications::Email` の 3 つの操作、`Imports::Runs.reenqueue`、`Sales::ItemPrices.backfill` と、イベントの受け手（`Contracts::Subscriptions` の配送表に並ぶ受け手）である。実装者は、操作者を取らない公開 API を `app/public` から列挙し、証跡の「実装の記録」に一覧を残してから直す。それぞれ、`Tenancy.require_tenant!` を通し、所有の条件を `Current.tenant_id` で明示し、レコードを返しているものは ID・件数・真偽値・値に替える。認証の `actor`・`acting_user` は `Tenancy.with_tenant` の中で呼ぶので、同じ規則を当てる。テナントが決まる前のログイン（`authenticate`）は、規則の例外として直さない。
-   - RLS が他社の行を隠すので、所有の条件を外しても単体は落ちない。直した公開 API の単体は、M37 の補助（設定 `app.matrix_cross_read` で開く SELECT のポリシー）を `before(:context)` で掛け、設定を `on` にした example で、他社の行を数えないことと、条件を外すと数えることを確かめる。spec は各パッケージの `spec/public`（`partnerships/recipients_spec.rb`・`partnerships/authentication_spec.rb`・`notifications/email_spec.rb`・`imports/runs_spec.rb`・`sales/item_prices_backfill_spec.rb`）と、受け手ごとの既存の spec に置く
-   - 役割の制限は変えない。監査の行は、操作者のいない入口の書き込みを、いまのとおり `actor_type` の `system` で書く
-8. `correctItemPrice` の理由の上限（OI-120）：200 文字にする（`graphql-schema.md`「mutation の一覧」の上限の表）。`Sales::ItemPrices.correct` が定数で持ち、超えたら何も書かずに `INVALID_INPUT`（`path` は `["reason"]`）を返す。理由を書く入口は `correctItemPrice` だけで、取り込みと `sales:backfill_item_prices` は訂正の理由を書かない。`spec/requests/item_prices_spec.rb` と `packs/sales/spec/public/sales/item_prices_spec.rb` に、200 文字ちょうどと 201 文字の example を足す
-
 **判断**：Yabeda と Prometheus にするか、OpenTelemetry にするか
 
 - **既定の推奨**：Yabeda と Prometheus にする。メトリクスを 1 か所の Ruby の定義から出し、Prometheus が引きに来る形なので、収集器（Collector）を立てずに手元とデモで確かめられる。OpenTelemetry の Ruby のメトリクスの SDK は、まだ安定版でない。
@@ -1386,10 +1381,8 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
 ```sh
 bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/platform/logging_spec.rb spec/requests/graphql_entry_spec.rb \
   spec/requests/mutation_payload_spec.rb spec/requests/item_prices_spec.rb spec/requests/catalog_spec.rb \
-  packs/notifications/spec packs/imports/spec packs/partnerships/spec packs/sales/spec spec/contracts
+  packs/notifications/spec packs/imports/spec
 ```
-
-作るもの 7 で最初に落とすテストは、直す公開 API の単体の「設定を `on` にしても他社の行を数えない」example（所有の条件が無いので、他社の行を数えて落ちる）、作るもの 8 は `item_prices_spec.rb` の 201 文字の example（`INVALID_INPUT` の期待で落ちる）である。
 
 `spec/platform/logging_spec.rb` も流す（購読者を 2 つにした確かめ）。`PROMETHEUS_EXPORTER_PORT=9394 METRICS_PROCESS=web bin/rails server` で GraphQL の問い合わせを 1 回流し、`curl -s localhost:9394/metrics | grep graphql_operation_duration_seconds_bucket` に値が出ることを、`PROMETHEUS_EXPORTER_PORT=9395 METRICS_PROCESS=jobs bin/jobs` を起こしてイベントを 1 件流し、`curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready_jobs'` に値が出て、`queue_ready_jobs` に `pid` のラベルが無いことを、手で確かめる。
 
@@ -1482,6 +1475,10 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
    - 時刻帯を混ぜる呼び出しを止める：`.rubocop.yml` で `Rails/Date` と `Rails/TimeZone` を有効にし、`Date.today`・`Time.now`・`Time.parse` などシステムの時刻帯で決まる呼び出しを落とす。`spec/rubocop/` に、2 つの Cop が有効であることを確かめる example を足す
    - テストの時刻の比較：`spec/requests/dashboard_spec.rb` に、日本時間の 0〜9 時（UTC の前日の 15〜24 時）に `travel_to` で受注を作り、受注日とダッシュボードの `businessDate` がどちらも日本時間の日付で一致する example を足す。`packs/purchasing/spec`・`packs/sales/spec`・`packs/billing/spec`・`packs/imports/spec` の、日付を決める公開 API（発注日・受注日・検収日・発行日・単価の有効日・取り込みの改定日）に、同じ境目の example を 1 つずつ足す。UTC を前提に書いた既存の比較は、全件を流して落ちたものを日本時間の今日で書き直す
    - 影響：シードの日付（作るもの 3）と M33 の画面の日付は、どれも日本時間の今日になる。`guides/config.md`「application.rb で変えたこと」に時刻帯を書く
+10. 操作者のいない入口の規則（OI-118）：`graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の規則に合わない既存の公開 API を直す。対象は `Partnerships::Recipients.admin_ids`・`emails`、`Partnerships::Authentication.acting_user`・`actor`、`Notifications::Email` の 3 つの操作、`Imports::Runs.reenqueue`、`Sales::ItemPrices.backfill` と、イベントの受け手（`Contracts::Subscriptions` の配送表に並ぶ受け手）である。実装者は、操作者を取らない公開 API を `app/public` から列挙し、証跡の「実装の記録」に一覧を残してから直す。それぞれ、`Tenancy.require_tenant!` を通し、所有の条件を `Current.tenant_id` で明示し、レコードを返しているものは ID・件数・真偽値・値に替える。認証の `actor`・`acting_user` は `Tenancy.with_tenant` の中で呼ぶので、同じ規則を当てる。テナントが決まる前のログイン（`authenticate`）は、規則の例外として直さない。
+    - RLS が他社の行を隠すので、所有の条件を外しても単体は落ちない。直した公開 API の単体は、M37 の補助（設定 `app.matrix_cross_read` で開く SELECT のポリシー）を `before(:context)` で掛け、設定を `on` にした example で、他社の行を数えないことと、条件を外すと数えることを確かめる。spec は各パッケージの `spec/public`（`partnerships/recipients_spec.rb`・`partnerships/authentication_spec.rb`・`notifications/email_spec.rb`・`imports/runs_spec.rb`・`sales/item_prices_backfill_spec.rb`）と、受け手ごとの既存の spec に置く
+    - 役割の制限は変えない。監査の行は、操作者のいない入口の書き込みを、いまのとおり `actor_type` の `system` で書く
+11. `correctItemPrice` の理由の上限（OI-120）：200 文字にする（`graphql-schema.md`「mutation の一覧」の上限の表）。`Sales::ItemPrices.correct` が定数で持ち、超えたら何も書かずに `INVALID_INPUT`（`path` は `["reason"]`）を返す。理由を書く入口は `correctItemPrice` だけで、取り込みと `sales:backfill_item_prices` は訂正の理由を書かない。`spec/requests/item_prices_spec.rb` と `packs/sales/spec/public/sales/item_prices_spec.rb` に、200 文字ちょうどと 201 文字の example を足す
 
 **完了条件**
 
@@ -1490,12 +1487,12 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
 ```sh
 bundle exec rspec spec/scenarios/seeds_spec.rb spec/scenarios/demo_world_spec.rb \
   packs/partnerships/spec/public/partnerships/onboarding_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb \
-  spec/requests/dashboard_spec.rb spec/matrix/table_matrix_spec.rb spec/rubocop \
-  packs/purchasing/spec packs/sales/spec packs/billing/spec packs/imports/spec
+  spec/requests/dashboard_spec.rb spec/requests/item_prices_spec.rb spec/matrix/table_matrix_spec.rb spec/rubocop spec/contracts \
+  packs/purchasing/spec packs/sales/spec packs/billing/spec packs/imports/spec packs/partnerships/spec packs/notifications/spec
 bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行が増えない
 ```
 
-業務の今日（作るもの 9）で最初に落とすテストは、`dashboard_spec.rb` の日本時間の 0〜9 時の example（受注日が UTC の前日になり、期待の不一致で落ちる）である。
+業務の今日（作るもの 9）で最初に落とすテストは、`dashboard_spec.rb` の日本時間の 0〜9 時の example（受注日が UTC の前日になり、期待の不一致で落ちる）である。作るもの 10 は、直す公開 API の単体の「設定を `on` にしても他社の行を数えない」example（所有の条件が無いので、他社の行を数えて落ちる）、作るもの 11 は `item_prices_spec.rb` の 201 文字の example（`INVALID_INPUT` の期待で落ちる）である。
 
 - `spec/scenarios/seeds_spec.rb`：`DemoWorld.build(namespace: "", variant: :seed)` の後、両社の `admin` と `member` でログインして確かめる。受注側は `supplier.dashboard`・`supplier.salesOrders`・`supplier.invoices`・`supplier.imports` が値を返す。全権限の付与がある発注側は、`buyer.suppliers` とそのカタログ・出荷が値を返す。失効済みの発注側は、`buyer.suppliers` とカタログ・出荷が空になり（`graphql-schema.md`「発注側の視点」の経路 2）、自社の `buyer.purchaseOrders`・`buyer.receivedInvoices` は値を返す
 - `spec/scenarios/demo_world_spec.rb`：同じ DB に `namespace` の違う 2 組を作れ、それぞれの 2 回目は行を増やさない。操作者を `member` に替えると、`admin` に限る段がどれも例外で止まる。`variant: :e2e` は、状況の enum の全値の行を持つ。作った後に、実行したジョブの `solid_queue_ready_executions` の行が残らず、取り込みの同時実行の鍵のセマフォ（`solid_queue_semaphores`）が上限の値（1）に戻り、同じテナントで次の取り込みを始めると、そのジョブが blocked にならずに ready になる。セマフォの行は返した後も残る（solid_queue 1.7.0 の `app/models/solid_queue/semaphore.rb` の `signal` は値を足すだけで、行を消さない）
