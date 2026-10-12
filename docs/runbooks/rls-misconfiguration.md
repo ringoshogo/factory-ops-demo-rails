@@ -1,6 +1,6 @@
 # RLS の設定の誤りが疑われる
 
-あるテナントの利用者が他社の行を読めたか書けた疑いがあるときの手順。本デモは、テナントの境界を RLS（PostgreSQL の行単位のセキュリティ）と公開 API の scope の 2 つで守る（`../architecture/data-model.md`「RLS」、`../architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。どちらかが崩れた兆しを見たら、疑いが消えるまで業務の入口を止めてから調べる。コマンドは、アプリと同じ環境変数を持つ場所で流す。
+あるテナントの利用者が他社の行を読めたか書けた疑いがあるときの手順。本デモは、テナントの境界を RLS（PostgreSQL の行単位のセキュリティ）と公開 API の scope の 2 つで守る（`../architecture/data-model.md`「RLS」、`../architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。どちらかが崩れた兆しを見たら、疑いが消えるまで業務の入口を止めてから調べる。コマンドは、アプリと同じ環境変数を持つ場所で流す。Web の exporter（9394）を読むコマンドは Web のコンテナで流す。
 
 ## 警報
 
@@ -27,19 +27,29 @@
    echo "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;" | bin/rails dbconsole -p
    ```
 
-4. RLS を強制する表（`FORCE ROW LEVEL SECURITY`）とポリシーの名前を、`db/structure.sql` と比べる。差が出なければ、表とポリシーの組は揃っている。
+4. 表ごとの RLS の状態（有効か `relrowsecurity`、所有者にも強制するか `relforcerowsecurity`）と、ポリシーの全項目（対象の操作・ロール・`USING` と `WITH CHECK` の式）を、`db/structure.sql` から作った DB と比べる。RLS を無効にした表は、強制の属性とポリシーを残したまま行を隠さなくなるので、強制とポリシーの名前だけを比べても見逃す。まず、状態を書き出すスクリプトを置く。
 
    ```sh
-   bin/rails runner 'puts ActiveRecord::Base.connection.select_values("SELECT relname FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relforcerowsecurity")' | LC_ALL=C sort > tmp/rls_forced_live.txt
-   grep -oE '^ALTER TABLE ONLY public\.[a-z0-9_]+ FORCE ROW LEVEL SECURITY' db/structure.sql | awk '{sub(/^public\./, "", $4); print $4}' | LC_ALL=C sort > tmp/rls_forced_expected.txt
-   diff tmp/rls_forced_expected.txt tmp/rls_forced_live.txt
-
-   bin/rails runner 'ActiveRecord::Base.connection.select_rows("SELECT tablename, policyname FROM pg_policies WHERE schemaname = current_schema()").each { puts _1.join(" ") }' | LC_ALL=C sort > tmp/rls_policies_live.txt
-   grep -oE '^CREATE POLICY [a-z0-9_]+ ON public\.[a-z0-9_]+' db/structure.sql | awk '{sub(/^public\./, "", $5); print $5, $3}' | LC_ALL=C sort > tmp/rls_policies_expected.txt
-   diff tmp/rls_policies_expected.txt tmp/rls_policies_live.txt
+   cat > tmp/rls_state.rb <<'RUBY'
+   connection = ActiveRecord::Base.connection
+   connection.select_rows(<<~SQL).each { puts "table #{_1.join(" ")}" }
+     SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class
+     WHERE relnamespace = current_schema()::regnamespace AND relkind = 'r' ORDER BY relname
+   SQL
+   connection.select_rows(<<~SQL).each { puts "policy #{_1.join(" | ")}" }
+     SELECT tablename, policyname, permissive, roles::text, cmd, qual, with_check FROM pg_policies
+     WHERE schemaname = current_schema() ORDER BY tablename, policyname
+   SQL
+   RUBY
    ```
 
-   名前が揃っていても、式が書き換わっていることがある。疑いが残るなら、`pg_policies` の `qual` と `with_check` を、`structure.sql` の `CREATE POLICY` の行と見比べる。
+   疑いのある環境（本番なら Web のコンテナ）で書き出し、手元の、デプロイした commit の作業ツリーで、`structure.sql` から作り直したテストの DB の状態を書き出して比べる。差が出なければ、DB の守りは `structure.sql` のとおりである。
+
+   ```sh
+   bin/rails runner tmp/rls_state.rb > tmp/rls_state_live.txt                                                  # 疑いのある環境で
+   bin/rails db:test:prepare && RAILS_ENV=test bin/rails runner tmp/rls_state.rb > tmp/rls_state_expected.txt   # 手元で
+   diff tmp/rls_state_expected.txt tmp/rls_state_live.txt
+   ```
 
 5. 1〜4 のどれにも差が無ければ、DB の守りは崩れていない。`object` の `FORBIDDEN` は、公開 API の scope と、返す型の規則が食い違った入口で起きている。操作の終わりのイベント（`graphql.operation_completed`）の `forbidden_reasons` と `context` の `graphql_operation` から、入口を特定する。本番はログの基盤で、開発の環境では次で引く。
 

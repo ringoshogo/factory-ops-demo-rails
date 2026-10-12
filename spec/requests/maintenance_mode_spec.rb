@@ -45,7 +45,7 @@ RSpec.describe "メンテナンスの切り替え", type: :request do
   context "MAINTENANCE_MODE が立っているとき" do
     let(:maintenance_mode) { "1" }
 
-    it "ログインは通り、GraphQL とファイルの受け口は 503 を返して何も書かない" do
+    it "ログインとログアウトは通り、GraphQL とファイルの受け口は 503 を返して何も書かない" do
       login_as(admin)
 
       save_item
@@ -53,6 +53,8 @@ RSpec.describe "メンテナンスの切り替え", type: :request do
       upload
       expect(response).to have_http_status(:service_unavailable)
       expect([ count("items"), count("import_files") ]).to eq([ 0, 0 ])
+      delete "/session", as: :json
+      expect(response).to have_http_status(:no_content)
     end
 
     # 本文の形の検査（415）とセッションの確かめ（401）より先に止める
@@ -87,6 +89,17 @@ RSpec.describe "メンテナンスの切り替え", type: :request do
   end
 
   # 値は Rails の真偽値の読み方に従う。0・false・off は立てない側に、それ以外の値は立てる側に読む
+  context "MAINTENANCE_MODE が true のとき" do
+    let(:maintenance_mode) { "true" }
+
+    it "GraphQL を止める" do
+      login_as(admin)
+
+      save_item
+      expect(response).to have_http_status(:service_unavailable)
+    end
+  end
+
   context "MAINTENANCE_MODE が false のとき" do
     let(:maintenance_mode) { "false" }
 

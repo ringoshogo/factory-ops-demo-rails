@@ -1428,7 +1428,7 @@ bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/platform/logging
   | `graphql-degradation.md` | GraphQL の操作が遅いか失敗する（OI-134） | 操作ごとの時間とトップレベルのエラーのコード、DB の長い問い合わせとロックの待ちを見る。デプロイの後からなら前の版に戻し、取り込みが DB に負荷をかけていれば `imports` のキューを止める |
   | `rls-misconfiguration.md` | RLS の設定の誤りが疑われる | アプリの接続のロール（`pg_stat_activity`）、ロールの属性（`rolbypassrls`・`rolsuper`）、`relforcerowsecurity` とポリシーを `structure.sql` と比べる。疑いが消えるまで、メンテナンスの切り替え（環境変数 `MAINTENANCE_MODE`）で GraphQL とファイルの受け口を 503 にする。ログインと SendGrid の Webhook は止まらない。ワーカーは止まらないので、`bin/jobs` も止める。影響を受けたテナントは、監査ログとログの相関 ID で洗い出す |
 
-- メンテナンスの切り替え：`MAINTENANCE_MODE` が立っていれば、`GraphqlController` と `ImportFilesController`（`POST /imports/files`）は実行せずに 503 を返す。値の読み方と、止める前の検査の順は OI-135 にある。ログイン（`SessionsController`）と SendGrid の Webhook は止めない。Webhook は受信の表に書くだけで、止めると配信結果を失うからである。`spec/requests/maintenance_mode_spec.rb` で、立てたときは GraphQL とファイルの受け口が 503 で何も書かれず、ログインは通り、立てないときは同じ要求が 200 になることを確かめる。
+- メンテナンスの切り替え：`MAINTENANCE_MODE` が立っていれば、`GraphqlController` と `ImportFilesController`（`POST /imports/files`）は実行せずに 503 を返す。値の読み方と、止める前の検査の順は OI-135 にある。ログイン（`SessionsController`）と SendGrid の Webhook は止めない。Webhook は受信の表に書くだけで、止めると配信結果を失うからである。`spec/requests/maintenance_mode_spec.rb` で、立てたときは GraphQL とファイルの受け口が 503 で何も書かれず、ログインは通り、立てないときは同じ要求が成功の状態コード（GraphQL は 200、ファイルの受け口は 201）になることを確かめる。
 - `spec/platform/alerts_runbook_spec.rb`：`alerts.yml` のどの警報も `runbook` を持ち、そのファイルが `docs/runbooks/` にあることを確かめる。
 
 **完了条件**

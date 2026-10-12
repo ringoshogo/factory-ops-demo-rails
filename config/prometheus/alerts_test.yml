@@ -33,61 +33,86 @@ tests:
         alertname: EventsQueueBacklog
         exp_alerts: []
 
-  # 確実な通知の失敗：失敗が増えると鳴り、増えないまま 10 分が過ぎると止む。プロセスの起動の後の最初の 1 件で現れた系列でも鳴る
+  # 確実な通知の失敗：前からある系列で失敗が増えると、2 分続いた後に鳴り、増えないまま 10 分が過ぎると止む。
+  # プロセスの起動の後の最初の 1 件で現れた系列でも鳴る。収集が 1 回抜けた、値の変わらない系列と、0 で現れた系列では鳴らない
   - interval: 1m
     input_series:
       - series: 'notification_failures_total{kind="received_invoice",reason="http_400"}'
-        values: '0 0 1x30'
+        values: '1x15 2x30'
+      - series: 'notification_failures_total{kind="received_invoice",reason="http_413"}'
+        values: '_x20 0x20'
       - series: 'notification_failures_total{kind="received_invoice",reason="retries_exhausted:http_503"}'
-        values: '_x20 1x10'
+        values: '_x20 1x20'
+      - series: 'notification_failures_total{kind="received_invoice",reason="http_401"}'
+        values: '3x9 stale 3x30'
     alert_rule_test:
-      - eval_time: 3m
+      - eval_time: 14m
+        alertname: ReceivedInvoiceNotificationFailed
+        exp_alerts: []
+      - eval_time: 18m
         alertname: ReceivedInvoiceNotificationFailed
         exp_alerts:
           - exp_labels: { severity: page, kind: received_invoice, reason: http_400 }
-            exp_annotations:
+            exp_annotations: &notification_failed
               summary: 受領請求書の通知が、再試行しない応答か再試行を使い切って失敗した
               runbook: docs/runbooks/sendgrid-outage.md
-      - eval_time: 15m
-        alertname: ReceivedInvoiceNotificationFailed
-        exp_alerts: []
-      - eval_time: 22m
+      # 収集の抜けた系列は 20m の評価だけで当たり、2 分続かないので鳴らない
+      - eval_time: 20m
         alertname: ReceivedInvoiceNotificationFailed
         exp_alerts:
+          - exp_labels: { severity: page, kind: received_invoice, reason: http_400 }
+            exp_annotations: *notification_failed
+      - eval_time: 23m
+        alertname: ReceivedInvoiceNotificationFailed
+        exp_alerts:
+          - exp_labels: { severity: page, kind: received_invoice, reason: http_400 }
+            exp_annotations: *notification_failed
           - exp_labels: { severity: page, kind: received_invoice, reason: "retries_exhausted:http_503" }
-            exp_annotations:
-              summary: 受領請求書の通知が、再試行しない応答か再試行を使い切って失敗した
-              runbook: docs/runbooks/sendgrid-outage.md
+            exp_annotations: *notification_failed
+      - eval_time: 31m
+        alertname: ReceivedInvoiceNotificationFailed
+        exp_alerts: []
 
-  # FORBIDDEN：出どころが object と undeclared の拒否で鳴り、rule の拒否では鳴らない
+  # FORBIDDEN：出どころが object と undeclared の拒否で鳴り、rule の拒否とほかのコードでは鳴らない。鳴り方と止み方は
+  # 確実な通知の失敗と同じ
   - interval: 1m
     input_series:
       - series: 'graphql_top_level_errors_total{operation="other",code="FORBIDDEN",reason="object"}'
-        values: '0 0 0 1x30'
+        values: '1x15 2x30'
       - series: 'graphql_top_level_errors_total{operation="PlacePurchaseOrder",code="FORBIDDEN",reason="rule"}'
-        values: '0 0 0 5x30'
+        values: '1x15 9x30'
       - series: 'graphql_top_level_errors_total{operation="other",code="NOT_FOUND",reason="none"}'
-        values: '0 0 0 5x30'
+        values: '1x15 9x30'
       - series: 'graphql_top_level_errors_total{operation="other",code="FORBIDDEN",reason="undeclared"}'
-        values: '_x20 1x10'
+        values: '_x20 1x20'
+      - series: 'graphql_top_level_errors_total{operation="SupplierItems",code="FORBIDDEN",reason="object"}'
+        values: '3x9 stale 3x30'
     alert_rule_test:
-      - eval_time: 5m
+      - eval_time: 14m
+        alertname: ForbiddenByObjectOrUndeclared
+        exp_alerts: []
+      - eval_time: 18m
         alertname: ForbiddenByObjectOrUndeclared
         exp_alerts:
           - exp_labels: { severity: page, operation: other, code: FORBIDDEN, reason: object }
-            exp_annotations:
+            exp_annotations: &forbidden
               summary: 返すオブジェクトの規則か、宣言の無い入口が FORBIDDEN を返した
               runbook: docs/runbooks/rls-misconfiguration.md
-      - eval_time: 18m
-        alertname: ForbiddenByObjectOrUndeclared
-        exp_alerts: []
-      - eval_time: 22m
+      - eval_time: 20m
         alertname: ForbiddenByObjectOrUndeclared
         exp_alerts:
+          - exp_labels: { severity: page, operation: other, code: FORBIDDEN, reason: object }
+            exp_annotations: *forbidden
+      - eval_time: 23m
+        alertname: ForbiddenByObjectOrUndeclared
+        exp_alerts:
+          - exp_labels: { severity: page, operation: other, code: FORBIDDEN, reason: object }
+            exp_annotations: *forbidden
           - exp_labels: { severity: page, operation: other, code: FORBIDDEN, reason: undeclared }
-            exp_annotations:
-              summary: 返すオブジェクトの規則か、宣言の無い入口が FORBIDDEN を返した
-              runbook: docs/runbooks/rls-misconfiguration.md
+            exp_annotations: *forbidden
+      - eval_time: 31m
+        alertname: ForbiddenByObjectOrUndeclared
+        exp_alerts: []
 
   # 取り込みの停滞：実行中で 15 分行が増えない系列だけで鳴る。実行中は 10 分目から始まる
   - interval: 1m
@@ -130,6 +155,33 @@ tests:
         values: '100x50'
     alert_rule_test:
       - eval_time: 26m
+        alertname: ImportStalled
+        exp_alerts: []
+  # 実行中の系列が初めて現れた。15 分前の観測が無いうちは鳴らさず、15 分続いた時点で鳴る
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ImportStalled
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: ImportStalled
+        exp_alerts:
+          - exp_labels: { severity: ticket, queue: imports }
+            exp_annotations:
+              summary: 取り込みのジョブが 15 分実行中のまま、反映した行が増えない
+              runbook: docs/runbooks/import-stuck.md
+  # 収集が 30 分途切れた後、ワーカーを起こし直してすぐに実行中になった
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '0x9 _x30 1x10'
+      - series: 'import_rows_total{kind="stocks",result="applied"}'
+        values: '100x9'
+    alert_rule_test:
+      - eval_time: 41m
         alertname: ImportStalled
         exp_alerts: []
   # プロセスの起動の後に、まだ 1 行も反映していない（行のカウンタの系列が無い）

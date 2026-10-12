@@ -21,6 +21,7 @@ module Imports
     # 開いたテナントの、置いてから ABANDONED_AFTER を過ぎても取り込みを始めないファイルの中身を消し、消した件数を返す
     # （docs/architecture/data-model.md「取り込み（`imports`）」）。操作者のいない入口から呼ぶので、テナントの設定を求め、
     # 所有の条件を RLS に任せずに書く（docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。
+    # 所有の条件は候補を選ぶ文に書き、消す文はその候補の ID に限る。
     # 候補の行をロックしてから、取り込みが無いことを別の文で確かめ直す。READ COMMITTED は文ごとにスナップショットを取り直すので、
     # ロックを待つ間にコミットした Runs.start の取り込みは 2 つ目の文に見える。ロックの文の条件だけでは、ロックを待った後に
     # 読み直すのは行そのものだけで、取り込みの有無は読み直さない
@@ -31,7 +32,7 @@ module Imports
         .where(created_at: ...ABANDONED_AFTER.ago).where(not_started).order(:id).lock.pluck(:id)
       return 0 if ids.empty?
 
-      ImportFile.where(owner_tenant_id: Current.tenant_id, id: ids).where(not_started).update_all(content: nil, updated_at: Time.current)
+      ImportFile.where(id: ids).where(not_started).update_all(content: nil, updated_at: Time.current)
     end
   end
 end

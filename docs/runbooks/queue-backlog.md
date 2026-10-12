@@ -1,6 +1,6 @@
 # キューが詰まる
 
-ジョブがキューに溜まるか失敗したまま残り、イベントの配送・メール・取り込みが遅れるときの手順。コマンドは、アプリと同じ環境変数を持つ場所（Web かワーカーのコンテナ）で流す。
+ジョブがキューに溜まるか失敗したまま残り、イベントの配送・メール・取り込みが遅れるときの手順。コマンドは、アプリと同じ環境変数を持つ場所で流す。ワーカーの exporter（9395）を読む確かめることの 1 は、ワーカーのコンテナで流す。
 
 ## 警報
 
@@ -55,14 +55,12 @@
 
 ## 復旧
 
-原因を直してから、止めたキューを再開し、失敗したジョブをやり直す。イベントの受け手と送信のジョブは冪等なので、やり直してよい（`../architecture/data-model.md`「イベントの受け口と冪等キー」、`../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md` 決定 6）。
+原因を直してから、止めたキューを再開し、失敗したジョブをやり直す。取り込みのジョブ（`Imports::RunJob`）は、ここではやり直さず、`import-stuck.md`「復旧」で登録し直す。やり直したうえで登録し直すと、同じ取り込みのジョブが 2 つになる。イベントの受け手と送信のジョブは冪等なので、やり直してよい（`../architecture/data-model.md`「イベントの受け口と冪等キー」、`../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md` 決定 6）。
 
 ```sh
 bin/rails runner 'SolidQueue::Queue.find_by_name("imports").resume'
-bin/rails runner 'SolidQueue::FailedExecution.retry_all(SolidQueue::Job.where(id: SolidQueue::FailedExecution.select(:job_id)))'
+bin/rails runner 'SolidQueue::FailedExecution.retry_all(SolidQueue::Job.where(id: SolidQueue::FailedExecution.select(:job_id)).where.not(class_name: "Imports::RunJob"))'
 ```
-
-取り込みのジョブ（`Imports::RunJob`）は、やり直す代わりに `imports:reenqueue` で登録し直してもよい（`import-stuck.md`）。
 
 ## 事後にすること
 
