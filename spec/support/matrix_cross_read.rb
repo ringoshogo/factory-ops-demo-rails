@@ -11,7 +11,8 @@ module MatrixCrossRead
   SETTING = "app.matrix_cross_read".freeze
 
   # 所有ロールの接続で、全表のポリシーを 1 つのトランザクションで足す。途中で失敗すると全部が巻き戻り、足した分は残らない。
-  # 世界を開く前に呼ぶ。世界の外側のトランザクションは全表に行ロックと表のロックを持つので、開いた後に足すと待ち合う
+  # 世界を開く前に呼ぶ。ポリシーの足し外しは表のロックを取るので、全表に書いた世界の外側のトランザクションが開いている間は、
+  # それが閉じるまで待ち、世界と同じスレッドから呼ぶと終わらない
   def self.add!
     with_owner_connection do |connection|
       connection.transaction do

@@ -30,16 +30,12 @@ class MatrixWorld
   # example ごとに作ると、表の数に比例する世界を表の数に比例する example ぶん作り、時間が表の数の 2 乗で伸びる。
   # 各 example は、rspec-rails が世界と同じ接続の上に開くセーブポイントの中で動き、終わりに巻き戻る。
   # cross_read: true は、世界を開く前に RLS の SELECT を開くポリシーを足し、世界を閉じた後に外す（MatrixCrossRead）。
-  # 世界のトランザクションが表のロックを持つ間は足し外しが待ち合うので、順を 1 つのフックの中で固定する
+  # 世界のトランザクションが表のロックを持つ間は足し外しが待ち合うので、順を 1 つのフックの中で固定する。
+  # rspec は before(:context) が失敗しても after(:context) を走らせるので、世界を開く途中の失敗でもポリシーは外れる
   def self.share_per_file(group, cross_read: false)
     group.before(:context) do
       MatrixCrossRead.add! if cross_read
-      begin
-        @matrix_world = MatrixWorld.open
-      rescue StandardError
-        MatrixCrossRead.remove! if cross_read
-        raise
-      end
+      @matrix_world = MatrixWorld.open
     end
     group.after(:context) do
       MatrixWorld.close if @matrix_world
