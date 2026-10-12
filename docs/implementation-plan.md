@@ -1474,7 +1474,7 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
 8. アカウント：シードのアカウント（メールアドレスと、共通のパスワード）を `db/seeds/demo_accounts.json` の 1 か所に置き、`DemoWorld` はそこから読む（`namespace` を接尾辞として足す）。M33 のログインの画面がこの一覧を並べるか（OI-09）にかかわらず、ここに置く。パスワードはデモの手元で使う値で、本番の資格情報を書かない。シードは `production` の環境では動かない。
 9. 業務の今日（OI-117）：作るもの 1〜8 より先に作る。シードと画面に出る日付が、これで決まるからである。
    - `config/application.rb` で `config.time_zone = "Asia/Tokyo"` にする。業務の日付は、どれも `Date.current`（と `Time.current` の日付）で決め、日本時間の今日になる（`context-map.md`「検収と請求の流れ」）。ダッシュボードのリゾルバの `Time.current.in_time_zone("Asia/Tokyo")` を外し、`Date.current` にする（`graphql-schema.md`「読み取りの一覧」）
-   - 既存の行は書き換えない。時刻の列（`timestamptz`）は時刻帯を持つので変わらず、日付の列（受注日・検収日など）は書いたときの日付のまま残る。DB のセッションの時刻帯は UTC のままにし、SQL で今日を取らない（いまの SQL に `CURRENT_DATE`・`now()::date` は無い）
+   - 既存の行は書き換えない。時刻の列は Rails が UTC で書く（`ActiveRecord.default_timezone` の既定）ので変わらず、日付の列（受注日・検収日など）は書いたときの日付のまま残る。DB のセッションの時刻帯は UTC のままにし、SQL で今日を取らない（いまの SQL に `CURRENT_DATE`・`now()::date` は無い）
    - 時刻帯を混ぜる呼び出しを止める：`.rubocop.yml` で `Rails/Date` と `Rails/TimeZone` を有効にし、`Date.today`・`Time.now`・`Time.parse` などシステムの時刻帯で決まる呼び出しを落とす。`spec/rubocop/` に、2 つの Cop が有効であることを確かめる example を足す
    - テストの時刻の比較：`spec/requests/dashboard_spec.rb` に、日本時間の 0〜9 時（UTC の前日の 15〜24 時）に `travel_to` で受注を作り、受注日とダッシュボードの `businessDate` がどちらも日本時間の日付で一致する example を足す。`packs/purchasing/spec`・`packs/sales/spec`・`packs/billing/spec`・`packs/imports/spec` の、日付を決める公開 API（発注日・受注日・検収日・発行日・単価の有効日・取り込みの改定日）に、同じ境目の example を 1 つずつ足す。UTC を前提に書いた既存の比較は、全件を流して落ちたものを日本時間の今日で書き直す
    - 影響：シードの日付（作るもの 3）と M33 の画面の日付は、どれも日本時間の今日になる。`guides/config.md`「application.rb で変えたこと」に時刻帯を書く

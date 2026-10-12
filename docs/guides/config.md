@@ -44,10 +44,11 @@ Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `appl
 
 ### application.rb で変えたこと
 
-`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 7 つを足した。DB・ジョブ・ログに関わる 4 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
+`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 8 つを足した。DB・ジョブ・ログに関わる 4 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
 
 - **`autoload_lib` の除外に `rubocop` と `schema_compat.rb` を足す。** `lib/rubocop/` はカスタム Cop で、`lib/schema_compat.rb` はスキーマの互換の判定である。どちらも開発とテストのグループにしかない gem（rubocop・graphql-schema_comparator）を読むので、本番の起動では読めない。自動読み込みの対象から外す。
 - **Cookie とセッションのミドルウェアを足す。** API モードの Rails は、Cookie とセッションのミドルウェアを持たない。本デモはログインを Cookie のセッションで保つので、`ActionDispatch::Cookies` とセッションのストアを明示的に足す。セッションの Cookie は `SameSite=Lax` にし、本番では `secure` を付け、最後のリクエストから 12 時間で切れるようにする（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 1）。
+- **`config.time_zone = "Asia/Tokyo"` にする。** 業務の今日（受注日・発注日・検収日・請求書の発行日・単価の有効日・取り込みの改定日・ダッシュボードの今日）は、どれも `Date.current` で決まるので、使う会社のある日本時間にする（[context-map.md「検収と請求の流れ」](../architecture/context-map.md#検収と請求の流れ)）。UTC のままだと、日本時間の 0〜9 時の操作が前日の日付になる。DB に書く時刻は `ActiveRecord.default_timezone` の既定の UTC のままで、DB のセッションの時刻帯も UTC のままにするので、既存の行は書き換えない。そのため、SQL で今日を取らない（`CURRENT_DATE`・`now()::date` はセッションの UTC の日付になる）。システムの時刻帯で決まる `Date.today`・`Time.now`・`Time.parse` は、`.rubocop.yml` で有効にした `Rails/Date`・`Rails/TimeZone` の Cop が落とす。アプリの時刻帯が UTC でないと、activerecord 8.1 は始まりが時刻の終わりの無い範囲の終わりを `infinity` で書くので、販売単価の記録期間（`tstzrange`）は、終わりを空で書く型（`Sales::RecordedPeriodType`）で持つ
 - **`schema_format = :sql`**（[DB の接続](#db-の接続)）
 - **`queue_adapter = :solid_queue`**（[ジョブ](#ジョブ)）
 - **`config.x.notifications.from`**：通知のメールの差出人（[ジョブ](#ジョブ)）

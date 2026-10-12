@@ -11,7 +11,7 @@ module Types
     DUE_SOON_DAYS = 7
     STOCKS_LIMIT = 100
 
-    field :business_date, GraphQL::Types::ISO8601Date, null: false, description: "集計の基準にした今日（Asia/Tokyo）"
+    field :business_date, GraphQL::Types::ISO8601Date, null: false, description: "集計の基準にした業務の今日（日本時間）"
     field :sales_order_counts, [ SalesOrderStatusCountType ], null: false, description: "受注の 7 つの状況ごとの件数。0 件の状況も返す"
     field :stocks_below_safety_stock, [ StockType ], null: false,
       description: "有効在庫が安全在庫より小さい在庫。品目コードの昇順で最大 100 件"

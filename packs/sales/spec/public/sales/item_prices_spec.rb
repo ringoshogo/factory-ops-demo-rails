@@ -131,6 +131,16 @@ RSpec.describe Sales::ItemPrices do
       expect(prices.size).to eq(1)
     end
 
+    # 単価の有効日の今日は日本時間で決まる（docs/adr/006 決定 6、docs/architecture/context-map.md「検収と請求の流れ」）
+    it "日本時間の 0〜9 時には、日本時間の今日からの改定を受け付け、その前日からの改定を INVALID_INPUT にする" do
+      now = Time.utc(2026, 10, 11, 16, 0)
+
+      # 対照：この時刻の UTC の日付は前日である
+      expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+      expect(failures(schedule(unit_price: 120, effective_on: Date.new(2026, 10, 11), at: now))).to eq([ [ :invalid_input, [ :effective_on ] ] ])
+      expect(schedule(unit_price: 120, effective_on: Date.new(2026, 10, 12), at: now)).to be_success
+    end
+
     it "単価は bigint の最大値ちょうどまでを受け付ける" do
       expect(schedule(unit_price: 9_223_372_036_854_775_807, effective_on: t1.to_date)).to be_success
       expect(price_on(t1.to_date)).to eq(9_223_372_036_854_775_807)

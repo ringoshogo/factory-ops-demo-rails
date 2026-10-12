@@ -9,8 +9,8 @@ module Resolvers
 
       type Types::SupplierDashboardType, null: false
 
-      # 業務の日付は日本時間で決める。アプリの時刻帯は UTC のままなので、Date.current では日本時間の 0〜9 時が前日になる
-      def resolve = Types::SupplierDashboardType::Dashboard.new(business_date: Time.current.in_time_zone("Asia/Tokyo").to_date)
+      # 今日は、受注日・検収日と同じ業務の今日（アプリの時刻帯の Date.current）で決める（docs/architecture/graphql-schema.md「読み取りの一覧」）
+      def resolve = Types::SupplierDashboardType::Dashboard.new(business_date: Date.current)
     end
   end
 end

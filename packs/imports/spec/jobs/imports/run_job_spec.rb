@@ -3,6 +3,8 @@ require "rails_helper"
 # 取り込みのジョブ（docs/adr/007 決定 5 の A-4、docs/architecture/data-model.md「取り込み（`imports`）」）。
 # 置き場へ写す・反映する・締めるの 3 段階で、中断しても、継続の情報を失っても続きから進み、全行が 1 回ずつ反映される
 RSpec.describe Imports::RunJob do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:tenant) { FactoryBot.create(:tenant).id }
   let(:admin) { Tenancy.with_tenant(tenant) { FactoryBot.create(:user, :admin) } }
   let(:actor) { Tenancy.with_tenant(tenant) { Partnerships::Authentication.acting_user(admin.id) } }
@@ -234,6 +236,24 @@ RSpec.describe Imports::RunJob do
 
       expect(import_of(import)).to have_attributes(status: :succeeded, applied_rows: 2)
       expect(items).to eq("OLD-1" => 150, "NEW-1" => 10)
+    end
+
+    # 改定日の今日は、単価の改定の予約と同じく日本時間で決まる（docs/adr/006 決定 6、docs/architecture/context-map.md「検収と請求の流れ」）
+    it "日本時間の 0〜9 時の取り込みは、空の改定日を日本時間の今日にし、その前日の改定日を失敗にする" do
+      now = Time.utc(2026, 10, 11, 16, 0)
+
+      travel_to(now - 1.minute) { tenancy { %w[OLD-1 OLD-2].each { FactoryBot.create(:item, code: _1, unit_price: 100) } } }
+      travel_to(now) do
+        import = start("items", items_csv("OLD-1,改名,個,10,false,150,", "OLD-2,改名,個,10,false,150,2026-10-11"))
+        run_all(import)
+        expect(row_errors(import)).to eq([ [ 3, "price_effective_on: must be today or later" ] ])
+      end
+
+      # 対照：この時刻の UTC の日付は前日である
+      expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+      id = tenancy { Sales::Catalog.ids_by_codes(actor, %w[OLD-1]).fetch("OLD-1") }
+      expect(tenancy { Sales::ItemPrices.history(actor, [ id ]).fetch(id).map { [ _1.valid_from, _1.unit_price ] } })
+        .to eq([ [ nil, 100 ], [ Date.new(2026, 10, 12), 150 ] ])
     end
 
     it "単価の改定日が今日より前の行と、日付の形でない行は失敗にする" do
