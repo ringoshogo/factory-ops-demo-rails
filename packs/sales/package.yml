@@ -5,3 +5,4 @@ dependencies:
   - packs/partnerships
   - packs/contracts
   - packs/inventory
+  - packs/notifications

@@ -35,6 +35,18 @@ RSpec.describe Sales::PartMappings do
     expect(confirmed.map { _1.lines.map { |line| line["item_name"] } }).to all(include("六角ボルト M8"))
   end
 
+  it "照合し直して確定した受注ごとに、自社の admin への新しい受注の通知を撃ちっぱなしで送る（docs/adr/007 決定 5 の B-1）" do
+    orders = pending_orders(2)
+    allow(Notifications::Email).to receive(:deliver_best_effort).and_call_original
+
+    described_class.register(actor, customer_tenant_id: customer.id, customer_part_number: "MY-BOLT", item_id: item.id)
+
+    orders.each do |order|
+      expect(Notifications::Email).to have_received(:deliver_best_effort).with(:new_sales_order, params: { order_no: order.order_no })
+    end
+    expect(Notifications::Email).to have_received(:deliver_best_effort).twice
+  end
+
   def register(customer_tenant_id: customer.id, customer_part_number: "MY-BOLT", item_id: item.id)
     described_class.register(actor, customer_tenant_id:, customer_part_number:, item_id:)
   end

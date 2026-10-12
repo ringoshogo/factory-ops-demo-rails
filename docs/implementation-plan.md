@@ -1183,17 +1183,17 @@ bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb
 - `ExternalEffectJob`（`packs/platform`）と、`Notifications::CriticalDeliveryJob`・`BestEffortMailJob`・`ProcessInboxJob`（`adr/007` 決定 4〜6）。
 - 公開 API `Notifications::Email.deliver_critical`・`deliver_best_effort` と、通知の種類の登録 `Notifications::Catalog`。種類は 2 つにする。
   - `received_invoice`（確実）：購買の「請求書発行」の受け手が、受領請求書を書くのと同じトランザクションで、自社の `admin` へ送る。
-  - `new_sales_order`（撃ちっぱなし）：受注側の ACL が受注を確定したときに、自社の `admin` へ送る（OI-83）。
+  - `new_sales_order`（撃ちっぱなし）：受注側が受注を確定したとき（ACL と、対応表の登録による照合のやり直しの両方）に、自社の `admin` へ送る（OI-83・OI-98）。
 - メールの本文は Action Mailer のテンプレート（`Notifications::Mailer`、text だけ）で書き、送信はジョブの中で `deliver_now` を呼ぶ。
 - 送信先の切り替え：`Notifications::Provider` の実装を 3 つ置き、`config.x.notifications.provider` で選ぶ。
-  - `Sendgrid`：v3 の送信 API を `Net::HTTP` で呼ぶ。`Net::HTTP` の既定の時間切れ（`open_timeout`・`read_timeout`・`write_timeout` はどれも 60 秒）は `external_mail` の 2 本のスレッドを長く塞ぐので、`open_timeout` を 5 秒、`read_timeout`・`write_timeout` を 10 秒にする。`Net::OpenTimeout`・`Net::ReadTimeout`・`Net::WriteTimeout`・`Errno::ECONNREFUSED`・`Errno::ECONNRESET`・`SocketError` を、A-2 の表の「タイムアウト・接続の失敗」に当てる。API キーは credentials に置き、ログに書かない。本番以外の環境では、SendGrid の sandbox mode（受け付けの検査だけを行い、配信しない）を有効にしないと起動時に例外にする。
+  - `Sendgrid`：v3 の送信 API を `Net::HTTP` で呼ぶ。`Net::HTTP` の既定の時間切れ（`open_timeout`・`read_timeout`・`write_timeout` はどれも 60 秒）は `external_mail` の 2 本のスレッドを長く塞ぐので、`open_timeout` を 5 秒、`read_timeout`・`write_timeout` を 10 秒にする。`Net::OpenTimeout`・`Net::ReadTimeout`・`Net::WriteTimeout`・`SocketError` と、`SystemCallError`（`Errno::ECONNREFUSED`・`Errno::ECONNRESET` などをまとめる）・`IOError`・`OpenSSL::SSL::SSLError`・`Net::HTTPBadResponse`・`Net::ProtocolError` を、A-2 の表の「タイムアウト・接続の失敗」に当てる（OI-102）。API キーは credentials に置き、ログに書かない。本番以外の環境では、SendGrid の sandbox mode（受け付けの検査だけを行い、配信しない）を有効にしないと起動時に例外にする。
   - `FileSystem`（開発）：`tmp/mails/` に 1 通 1 ファイルで書く。
   - `Fake`（テスト）：メモリに積み、テストから読める。
 - WebMock を test のグループに入れ、`spec/spec_helper.rb` で全テストに `WebMock.disable_net_connect!(allow_localhost: true)` を掛ける。
 - Webhook：`Webhooks::SendgridEventsController`（ルートパッケージ）と `POST /webhooks/sendgrid/events`。セッションを使わず、署名で認証する（`adr/007` 決定 5 の A-3）。
 - キューの設定：`config/queue.yml` を `adr/007` 決定 7 の 4 つのワーカーに分け、`Contracts::EventJob` を `events` に載せる。定期のジョブ（`config/recurring.yml`）に、inbox の未処理を拾う（毎分）と処理済みを消す（毎日）を足す。
 - カスタム Cop `FactoryOps/ExternalEffectEnqueue` と、`spec/notifications/call_sites_spec.rb`（`adr/007` 決定 4）。
-- 再送の操作 `Notifications::Email.redeliver_failed(since:)`：再試行を使い切った確実な送信の `failed_at` を空に戻し、同じ送信記録のジョブを登録し直す。新しい送信記録は作らない。運用者は rake タスク `notifications:redeliver` から呼び、タスクはテナントを明示して 1 つずつ回る（`decisions.md` 2 章）。
+- 再送の操作 `Notifications::Email.redeliver_failed(since:)`：再試行を使い切ったか、再試行しない応答で失敗した確実な送信の `failed_at` を空に戻し（OI-99）、同じ送信記録のジョブを登録し直す。新しい送信記録は作らない。運用者は rake タスク `notifications:redeliver` から呼び、タスクはテナントを明示して 1 つずつ回る（`decisions.md` 2 章）。
 - ガードテスト：`spec/jobs/event_job_atomicity_spec.rb` を広げ、`enqueue_after_transaction_commit` が `false` のクラスが `Contracts::EventJob` と `Notifications::CriticalDeliveryJob` の 2 つだけであることと、`ExternalEffectJob` のどのサブクラスもその値と保証を自分のクラスで宣言していることを確かめる。
 - テスト：
   - `Sendgrid` のアダプタ：WebMock のスタブで 202・sandbox mode の 200・429（待ち時間のヘッダ付き）・500・400・401・タイムアウトを返し、`adr/007` 決定 5 の A-2 の表のとおりに分類される。200 と 202 は、メッセージ ID のヘッダが無くても受け付けとして扱う。

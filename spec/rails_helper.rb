@@ -82,6 +82,8 @@ RSpec.configure do |config|
   # HTTP の要求は Bullet::Rack が包むので、要求を流す example（type: :request）を spec/support/bullet.rb の包みから外す。
   # 置き場では決めない。spec/requests の外にも、シナリオや行列テストのように要求を流す spec がある
   config.define_derived_metadata(type: :request) { |metadata| metadata[:bullet] = false }
+  # テストの送信先に積んだメールと、仕込んだ失敗を example ごとに空にする（config/environments/test.rb）
+  config.before { Notifications::FakeProvider.clear }
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
 end

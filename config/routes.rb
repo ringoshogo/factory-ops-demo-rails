@@ -5,4 +5,6 @@ Rails.application.routes.draw do
 
   resource :session, only: %i[create destroy]
   post "graphql", to: "graphql#execute"
+  # SendGrid のイベント Webhook。セッションを使わず、署名で認証する（docs/adr/007 決定 5 の A-3）
+  post "webhooks/sendgrid/events", to: "webhooks/sendgrid_events#create"
 end

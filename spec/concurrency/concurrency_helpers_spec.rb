@@ -73,6 +73,22 @@ RSpec.describe ConcurrencyHelpers do
     SQL
   end
 
+  it "後始末は、そのテナントの名義で登録した送信のジョブも消し、別のテナントのジョブは残す" do
+    other = FactoryBot.create(:tenant)
+    [ tenant, other ].each do |owner|
+      Tenancy.with_tenant(owner.id) { Notifications::Email.deliver_best_effort(:new_sales_order, params: { order_no: "SO-000001" }) }
+    end
+    jobs = -> { SolidQueue::Job.where(class_name: "Notifications::BestEffortMailJob").pluck(Arel.sql("arguments::json->>'tenant_id'")) }
+    expect(jobs.call).to include(tenant.id, other.id)
+
+    delete_owned_rows([ tenant.id ], [])
+
+    expect(jobs.call).to include(other.id)
+    expect(jobs.call).not_to include(tenant.id)
+  ensure
+    SolidQueue::Job.where(class_name: "Notifications::BestEffortMailJob").where("arguments LIKE ?", "%#{other.id}%").delete_all if other
+  end
+
   # 監査の行は所有ロールでも消せないので、それが指すテナントとユーザーも残す（docs/guides/testing.md「競合テスト」）
   it "後始末はテナントを残し、テナント・ユーザー・監査の行の表を渡すと失敗する" do
     delete_owned_rows([ tenant.id ], [])

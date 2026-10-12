@@ -306,3 +306,92 @@ CI の test のジョブ（Run tests の時間は括弧の中）：
 ### 残件の処理
 
 OI-79 は、起きることを確かめてアドバイザリロックで閉じた（`closed`）。OI-81 は、決めた集計の境界のとおりに実装し、judgment のまま残した。
+
+## M28 外部サービスの呼び出しと非同期の型
+
+PR #45（`m28-external-calls`、base は `main`）。M27 は作者の判断（OI-89）待ちなので、依存の無い M28 を M26 の上に先に積んだ。PR #42（M36）・#43（M25）・#44（M26）が未マージなので、その commit も差分に見える。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの commit で直し、違和感は改善の候補に移すか文書を直した。High 以上が無いので、読み直しには出していない。どちらの系統も、`151ffca..2e66ff9` の diff を `2e66ff9` の版で読んだ。Codex は read-only で読み、テストを流さず、依頼に書いた実行結果を前提にした。Claude は `2e66ff9` の worktree を別名のテスト DB で流し、壊して落ちることと、列挙に無い接続の失敗で送信記録が待機中のまま残ることを確かめた（worktree と DB は消した）。Claude の報告によると、壊して確かめる途中で worktree の DB 名の書き換えが戻り、3 回分がテストの DB に流れた。どれもトランザクションを戻すテストで、流した後のテストの DB に残りものは無かった。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（F4） | 指摘なし |
+| 正しさ | 指摘（F1） | 指摘（M-1） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（F1〜F3） | 指摘（L-1） |
+| 参照の維持 | 指摘（F4・F5） | 指摘（L-2・L-3） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | F1：同じ送信記録を指す別々の受信の行を 2 つの処理が取ると、両方が時刻列の空を読み、後の処理が先の時刻を上書きする。`SKIP LOCKED` が守るのは受信の行だけである | 処理が送信記録を `FOR UPDATE` でロックしてから時刻列を読む形にした。同じ送信記録・同じ種類・別の時刻の 2 行を 2 つの処理で取り、後の処理が送信記録のロックを待って先の時刻が残る競合テストと、`spec/db/lock_sites_spec.rb` の行を足した。ロックを外すとこの example が落ちる。`adr/007` 決定 5 の A-3 と data-model.md も合わせた | `7db2143`・`031f0fe` |
+| Medium | Claude | M-1：列挙に無い接続の失敗（`OpenSSL::SSL::SSLError`・`EOFError`・`Errno::EHOSTUNREACH`・`Errno::ETIMEDOUT`・`Net::HTTPBadResponse`）はジョブから上がり、テナントのトランザクションが戻って、送信記録が試行回数 0 の待機中のまま残る。失敗の時刻も警報も出ず、再送の操作でも拾えない | 再試行する例外に `SystemCallError`・`IOError`・`OpenSSL::SSL::SSLError`・`Net::HTTPBadResponse`・`Net::ProtocolError` を足し、5 つを sendgrid_spec に足した。足した例外を外すと落ちる。ワーカーが落ちたときと、どれにも当たらない例外で残った待機中の送信記録は、運用者が失敗したジョブをやり直して拾うと `adr/007` 決定 5 の A-2 に書いた。計画の例外の列挙を合わせ、OI-102 に judgment で積んだ | `7db2143`・`031f0fe` |
+| Medium | Codex | F2：呼び出し元の列挙が、先頭に `::` を付けた `::Notifications::Email.deliver_*` を数えない | 受け手の名前の先頭の `::` を外して比べ、その表記を集めるガードの example を足した。外すと落ちる | `7db2143` |
+| Medium | Codex | F3：Webhook のテストの補助が公開鍵の設定を戻すことを確かめるものが無い | 設定と復元を `SendgridWebhookHelpers.with_public_key` に切り出し、通常の終わりと例外の終わりの両方で元に戻ることを確かめる `spec/notifications/sendgrid_webhook_helpers_spec.rb` を足した。`ensure` を外すと 2 件とも落ちる | `7db2143` |
+| Medium | Codex・Claude | F4・L-2：計画が「実装する文書の節」に挙げた decisions.md 5 章が、`false` のクラスを `EventJob` だけ、外部へ作用するジョブの基底クラスを仮の名前、`after_commit` からの `deliver_later` を許すと書いたままである | `false` のクラスに `Notifications::CriticalDeliveryJob` を、基底クラスと登録口に `ExternalEffectJob` と `Notifications::Email` を書き、本デモは Action Mailer の `deliver_later` を Cop で禁止すると足した | `031f0fe` |
+| Low | Codex・Claude | F5・L-3：config.md の登録の時機を決めるクラスに送信のジョブが無く、「アプリのコードは credentials を読まない」が本番の SendGrid の設定と食い違う | 登録の時機に `ExternalEffectJob` のサブクラスを足し、credentials を読むのは本番の SendGrid の 2 つの値だけと書いた | `031f0fe` |
+| Low | Claude | L-1：再送の操作の `where(accepted_at: nil)` を外しても、どの spec も落ちない | 受け付けと失敗の時刻を両方持つ送信記録を spec に足し、送り直さないことを確かめた。条件を外すと落ちる | `7db2143` |
+
+違和感は次のように扱った。
+
+- Claude 1：inbox の処理が行ごとに例外を捕まえず、書けない行が後ろの行を止める → IB-36 に積んだ
+- Claude 2：送信のジョブが、DB のトランザクションと送信記録のロックを持ったまま HTTP を呼ぶ → IB-37 に積んだ
+- Claude 3：本番で API キーが空でも起動する → IB-38 に積んだ
+- Claude 4：`ExternalEffectJob` の TracePoint が、本体が例外で終わると無効にならない → IB-39 に積んだ
+- Claude 5：inbox の競合テストが、本番と違ってテナントのある状態で動く → IB-40 に積んだ
+- Claude 6：`deliver_critical` の `Tenancy.require_tenant!` は、外しても spec が落ちない → 移さない。宛先の読み取りとテナントの表への書き込みも同じ例外を上げるが、呼び出し元に分かる位置で止めるために残す
+- Codex：宛先が複数の送信記録で、1 人にでも届かなければ状況が不達になることが文書に無い → data-model.md「通知（`notifications`）」に、時刻列と状況の意味を 1 文書いた（`031f0fe`）
+
+### 実装の記録
+
+実装と spec を並べて書いたので、テストを先に流して落ちることを見たのは次の 3 つだけである。`sendgrid_spec.rb` は WebMock を入れる前に流して 31 examples, 12 failures で、どれも `stub_request` が無い `NoMethodError` だった。呼び出し元の 2 ファイル（購買の「請求書発行」の受け手と受注の確定）を `151ffca` の版に戻して流すと、23 examples, 5 failures だった（送信記録とジョブが書かれない）。`packs/notifications` のジョブと公開 API の `email.rb`・`inbox.rb` と Webhook のコントローラを外して流すと、spec の読み込みで 6 errors になった。そのほかの spec は書いた時点で通ったので、検出力は壊して確かめた。壊したファイルは複製から戻して更新時刻を進めた。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 確実な送信のジョブ | 受け付けか失敗の確かめを外す・送信記録の行ロックを外す・再試行の境界を `<=` にする・429 の待ち時間を使わない・登録の時機を `true` にする・試行回数を書かずに登録し直す・失敗のイベントの名前を変える、のどれでも spec が落ちる |
+| 宛先 | `Partnerships::Recipients.admin_ids` が `admin` で絞らないと、確実な送信と撃ちっぱなしの spec が落ちる |
+| inbox | `SKIP LOCKED` を外すと競合テストが落ちる（`FOR UPDATE` で待つ）。送信記録のロックを外すと、別の競合テストが落ちる。時刻列を上書きにする・UUID の確かめを外す・1 回のトランザクションの件数で止める、のどれでも単体が落ちる。保持期間を 0 にすると削除の spec が落ちる |
+| SendGrid の応答 | 200 を受け付けにしない・接続の時間切れを 60 秒にする・待ち時間を 1 時間で頭打ちにしない・500 を再試行しない・接続の失敗を外す・本番以外の sandbox の確かめを外す・宛先を 1 つの personalization にまとめる、のどれでも落ちる |
+| Webhook の受け口 | 残す項目で絞らない・時刻の幅を確かめない・署名を確かめない・書いた行が無くても処理のジョブを登録する、のどれでも落ちる |
+| 登録口 | 通知キーの重複でもジョブを登録する・宛先を空にする・再送の `since` の絞り込みや失敗の時刻の消去を外す・本文の値の型や保証の確かめを外す、のどれでも落ちる |
+| 宣言と Cop | `ExternalEffectJob` の宣言の確かめを外すと、ガードの example が落ちる。Cop の短い名前の照合を外すと Cop の spec が落ちる。購買の受け手に `CriticalDeliveryJob.perform_later` を足すと `bin/rubocop` が 1 件を出し、`deliver_critical(:received_invoice, ...)` の 2 か所目を足すと `call_sites_spec.rb` が落ちる |
+| 設定とテストの基盤 | `Contracts::EventJob` の `queue_as :events` を外す・撃ちっぱなしの同時実行の `group` を外す、のどちらでも `queue_config_spec.rb` が落ちる。`FakeProvider.clear` を外すとジョブの spec が 8 件落ちる。WebMock の遮断を外すと `spec/platform/external_http_spec.rb` が落ちる。競合テストの後始末が送信のジョブを消さないと、`concurrency_helpers_spec.rb` が落ちる |
+
+計画からの細部の決定は台帳に積んだ。送信記録に本文の値を持つことを OI-96、再試行をジョブの中で登録し直すことを OI-97、`new_sales_order` を受注の確定の 1 か所から送ることを OI-98、再送の範囲を OI-99、受信の表に残す項目と署名の時刻の幅を OI-100、宛先の公開 API とテストの送信先の置き場を OI-101、再試行する接続の失敗の範囲を OI-102 に、judgment で積んだ。
+
+計画の「`bin/jobs` を動かして請求書を発行し、`tmp/mails/` に受領請求書の通知が 1 通できる」は、開発の DB に発注側のテナント・`admin`・発注明細を作り、購買の「請求書発行」の受け手を `bin/rails runner` で動かしてから `bin/jobs` を起動して確かめた。`tmp/mails/` に、宛先が `admin`、件名が「請求書が届きました（INV-000042）」の 1 通ができた。scheduler は `process_webhook_inbox`・`purge_webhook_inbox` を登録し、ワーカーは 4 つ起きた。受注側で請求書を発行するところからは流していない。
+
+### 確かめたこと
+
+`7db2143` で、Ruby 3.4.11 で共通の完了条件と M28 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/notifications/spec spec/notifications spec/jobs spec/requests/sendgrid_webhook_spec.rb spec/rubocop   # 131 examples, 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 2022 examples, 0 failures
+BASE_REF=origin/main bin/check-branch-coverage # 4 件（下に書く）
+bundle exec rspec --tag concurrency            # 2 回続けて 53 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk validate && bin/packwerk check    # 違反なし
+bin/check-structure                            # 終了コード 0
+bin/check-schema-compat                        # 終了コード 0
+bin/check-open-items --due M28                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし。単体 379・結合 173・シナリオ 89
+```
+
+分岐の網羅率の警告は、最初の全件（`2e66ff9` の前の作業ツリー）で 12 件出て、example を足した件数は 6 件である。Cop の受け手の無い呼び出し、Webhook で書く行が 1 つも無いとき（3 件）、`ExternalEffectJob` の保証の誤りと無名のクラスに example を足した。`deliver_critical` のトランザクションの確かめは、テナントがあればトランザクションの中にいるので届かず、分岐ごと消した。撃ちっぱなしの使い切りの腕は、先に残ったジョブで同じ実行の別の example が落ちて通らなかっただけで、example は既にあった。残る 4 件は `ExternalEffectJob` の 37〜41 行で、TracePoint のコールバックの中にある。Ruby はコールバックの中でイベントのフックを止めるので、分岐の網羅率が数えない。宣言の書き忘れで例外になることは、`spec/jobs/event_job_atomicity_spec.rb` が確かめている。
+
+行列の時間（手元）：`bundle exec rspec spec/matrix` は 988 examples、12.3 秒（M26 の後は 968 examples、14.0 秒）。足した 20 examples は `email_deliveries` の表の行である。
+
+CI の test のジョブ（Run tests の時間は括弧の中）：
+
+| | 時間 |
+|---|---|
+| #45 の 1 回目（`2e66ff9`） | 3 分 13 秒（2 分 12 秒） |
+| #45 の 2 回目（`031f0fe`、レビューの指摘を直した後） | 3 分 14 秒（2 分 21 秒） |
+
+### 残件の処理
+
+OI-15 は、SendGrid の文書と sendgrid-ruby で確かめて `adr/007`「確認した事項」に移し、閉じた（`closed`）。OI-83 は、決めた宛先（自社の `admin`）のとおりに実装し、judgment のまま残した。

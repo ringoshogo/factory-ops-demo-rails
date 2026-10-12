@@ -68,6 +68,46 @@ RSpec.describe Purchasing::BillingEventReceiver do
     expect(received).to be_empty
   end
 
+  describe "受領請求書の通知（docs/adr/007 決定 5 の A-2）" do
+    let!(:admin) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user, :admin) } }
+    let!(:member) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user) } }
+
+    # 送信記録のモデルはパッケージの外から参照できないので、表を読む
+    def notifications
+      Tenancy.with_tenant(buyer.id) do
+        ApplicationRecord.connection.select_rows("SELECT notification_key, kind, recipient_user_ids::text, params::text FROM email_deliveries")
+          .map { |key, kind, recipients, params| [ key, kind, recipients, JSON.parse(params) ] }
+      end
+    end
+
+    def mail_jobs = SolidQueue::Job.where(class_name: "Notifications::CriticalDeliveryJob", finished_at: nil).where("arguments LIKE ?", "%#{buyer.id}%")
+    def counts = [ Tenancy.with_tenant(buyer.id) { Purchasing::ReceivedInvoice.count }, notifications.size, mail_jobs.count ]
+
+    it "受領請求書を書くと、自社の admin への確実な送信を登録する。同じ請求書を 2 回流しても送信記録は 1 件" do
+      2.times { handle(event) }
+
+      received_invoice_id = Tenancy.with_tenant(buyer.id) { Purchasing::ReceivedInvoice.sole.id }
+      expect(notifications).to eq([ [ "received_invoice:#{received_invoice_id}", "received_invoice", "{#{admin.id}}",
+        { "invoice_number" => "INV-000001", "issued_on" => "2026-10-12", "total" => "559" } ] ])
+      expect(mail_jobs.count).to eq(1)
+    end
+
+    it "通知を登録した後に受け手が例外で失敗すると、受領請求書・送信記録・送信のジョブがどれも残らない" do
+      in_transaction = nil
+      allow(Notifications::Email).to receive(:deliver_critical).and_wrap_original do |original, *args, **options|
+        original.call(*args, **options)
+        # コミットの前に、送信のジョブが受領請求書と同じトランザクションの中にある
+        in_transaction = counts
+        raise "通知の後に失敗した"
+      end
+
+      expect { handle(event) }.to raise_error("通知の後に失敗した")
+
+      expect(in_transaction).to eq([ 1, 1, 1 ])
+      expect(counts).to eq([ 0, 0, 0 ])
+    end
+  end
+
   it "配送表に無い種類のイベントは、何も書かずに ArgumentError で失敗する" do
     unexpected = Contracts::PartMatchPending.new(purchase_order_id: SecureRandom.uuid, buyer_tenant_id: buyer.id,
       supplier_tenant_id: supplier.id)

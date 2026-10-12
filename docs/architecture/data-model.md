@@ -13,7 +13,7 @@
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
 - **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`・`invoice_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
 - **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。追記だけの `audit_logs` は、どちらも持たず、DB の `now()` で埋める `occurred_at` が作成の時刻を兼ねる（「監査ログ（`platform`）」）。以下の表では省略する。
-- **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 9 つである。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
+- **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[通知]`（`packs/notifications` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 10 個である。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
 ## 状態は保存せず、時刻列から導出する
 
@@ -216,11 +216,12 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `email_deliveries`（送信記録） | `notification_key`・`kind`・`recipient_user_ids`（`uuid[]`）・`attempts`・`provider_message_id`・`accepted_at`・`delivered_at`・`bounced_at`・`dropped_at`・`failed_at`・`failure_reason` | `(owner, notification_key)` 一意（同じ通知の送信記録は 1 件）。確実な送信の種類だけが作る |
-| `webhook_inbox_events`（Webhook の受信） | `provider`・`provider_event_id`・`received_at`・`payload`（`jsonb`、メールアドレスを除く）・`processed_at` | `(provider, provider_event_id)` 一意。テナントの表ではない |
+| `email_deliveries`（送信記録） | `notification_key`・`kind`・`recipient_user_ids`（`uuid[]`）・`params`（`jsonb`、本文に差し込む値）・`attempts`・`provider_message_id`・`accepted_at`・`delivered_at`・`bounced_at`・`dropped_at`・`failed_at`・`failure_reason` | `(owner, notification_key)` 一意（同じ通知の送信記録は 1 件）。確実な送信の種類だけが作る。`failed_at` と `failure_reason` は揃って空か揃って埋まる |
+| `webhook_inbox_events`（Webhook の受信） | `provider`・`provider_event_id`・`received_at`・`payload`（`jsonb`、処理に使う項目だけ）・`processed_at` | `(provider, provider_event_id)` 一意。テナントの表ではない |
 
-- **宛先**：送信記録はユーザー ID だけを持ち、メールアドレスを持たない。ジョブが送るときに、自社の `users` から引く。
-- **状況**：送信記録の状況は、時刻列から優先順で導出する（失敗・不達・配信済・受付済・待機中）。Webhook の結果は、時刻列が空のときだけ書く。
+- **宛先**：送信記録はユーザー ID だけを持ち、メールアドレスを持たない。宛先のユーザーは、確実な送信では送信記録を書く時点の自社の `admin`、撃ちっぱなしでは送る時点の自社の `admin` で、どちらもジョブが送るときに自社の `users` からメールアドレスを引く。引けるユーザーが 1 人もいなければ、確実な送信は `failure_reason` を `no_recipients` にして失敗にする。
+- **本文の値**：呼び出し元は、通知の種類ごとに決めた項目（`Notifications::Catalog`）の文字列だけを渡す。確実な送信は、再送でも同じ本文を作れるよう、送信記録の `params` に持つ。メールアドレスと自由記述は入れない。
+- **状況**：送信記録の状況は、時刻列から優先順で導出する（失敗・不達・配信済・受付済・待機中）。Webhook の結果は、送信記録をロックしてから、時刻列が空のときだけ書く。宛先が複数の送信記録では、時刻列は宛先のどれか 1 人に最初に起きた結果の時刻で、1 人にでも届かなければ状況は不達になる。
 - **受信の表をテナントの表にしない理由**：Webhook が届いた時点では、テナントが決まらない。処理のジョブが、送信のときに付けたテナント ID で `Tenancy.with_tenant` を開いてから送信記録を書く。処理を終えた行は 30 日で消す。
 
 ### 取り込み（`imports`）

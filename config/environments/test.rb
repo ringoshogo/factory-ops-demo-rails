@@ -35,6 +35,9 @@ Rails.application.configure do
   # ActionMailer::Base.deliveries array.
   config.action_mailer.delivery_method = :test
 
+  # 通知のメールをメモリに積む（Notifications::FakeProvider）。外部への HTTP は WebMock も止める（spec/spec_helper.rb）
+  config.x.notifications.provider = :fake
+
   # Set host to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "example.com" }
 

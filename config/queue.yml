@@ -1,10 +1,28 @@
+# キューごとに別のワーカーを置き、重い処理がイベントの配送とメールを待たせないようにする（docs/adr/007 決定 7）。
+# 同時実行の上限はジョブのクラスに書く（limits_concurrency）。各ワーカーのプロセスの接続プールはスレッド数より大きくする
 default: &default
   dispatchers:
     - polling_interval: 1
       batch_size: 500
   workers:
-    - queues: "*"
+    # A-1 コンテキスト間のイベント（Contracts::EventJob）
+    - queues: events
       threads: 3
+      processes: 1
+      polling_interval: 1
+    # A-2 確実な外部送信・B-1 撃ちっぱなし。SendGrid への同時の送信は、ジョブの limits_concurrency が 2 つに抑える
+    - queues: external_mail
+      threads: 2
+      processes: 1
+      polling_interval: 1
+    # A-4 取り込み
+    - queues: imports
+      threads: 1
+      processes: 1
+      polling_interval: 1
+    # A-3 inbox の処理・定期のジョブ・その他
+    - queues: default
+      threads: 2
       processes: <%= ENV.fetch("JOB_CONCURRENCY", 1) %>
       polling_interval: 1
 

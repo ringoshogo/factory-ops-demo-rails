@@ -34,6 +34,7 @@ layers:
       - spec/db
       - spec/packwerk
       - spec/jobs
+      - spec/notifications
       - spec/platform
       - spec/rubocop
       - spec/bin

@@ -34,6 +34,13 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     "Inventory::Allocation.locked_allocations" => {
       spec: "spec/concurrency/cancel_vs_ship_spec.rb", mentions: %w[OrderCancellation.cancel Shipping.post]
     },
+    "Notifications::CriticalDeliveryJob.perform" => { spec: "packs/notifications/spec/concurrency/notifications/delivery_lock_spec.rb" },
+    "Notifications::Email.redeliver_failed" => {
+      reason: "運用者が rake タスクから流す再送の操作。同時の再送は送信記録の行ロックで直列になり、待った側は失敗の時刻を消した行を" \
+        "条件で外すので、同じ送信記録のジョブを 2 つ登録しない。2 つ登録しても、送信のジョブが受け付けを見て 2 通目を送らない"
+    },
+    "Notifications::ProcessInboxJob.apply" => { spec: "packs/notifications/spec/concurrency/notifications/delivery_lock_spec.rb" },
+    "Notifications::ProcessInboxJob.process_batch" => { spec: "packs/notifications/spec/concurrency/notifications/delivery_lock_spec.rb" },
     "Partnerships::Access.lock_pair!" => { spec: "packs/purchasing/spec/concurrency/purchasing/ordering_lock_spec.rb", mentions: %w[Ordering.place] },
     "Partnerships::Access.permitted?" => { spec: "packs/purchasing/spec/concurrency/purchasing/ordering_lock_spec.rb", mentions: %w[Ordering.place] },
     "Partnerships::Management.with_active_partnership" => {

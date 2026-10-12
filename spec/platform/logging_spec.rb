@@ -282,6 +282,14 @@ RSpec.describe "ログの出口と書式" do
         "user_error_codes" => [ "NOT_FOUND" ], "duration_ms" => 3.2)
       expect(handled.fetch("payload")).to eq("event_name" => "Contracts::PurchaseOrderPlaced",
         "receiver" => "Sales::PurchaseOrderTranslator", "delivery_lag_ms" => 12)
+
+      failed = emit("notification.delivery_failed",
+        { kind: "received_invoice", delivery_id: "d1", reason: "http_400", attempts: 1, to: "leak@example.com" })
+      dropped = emit("notification.best_effort_dropped",
+        { kind: "new_sales_order", reason: "retries_exhausted:http_503", attempts: 3, to: "leak@example.com" })
+
+      expect(failed.fetch("payload")).to eq("kind" => "received_invoice", "delivery_id" => "d1", "reason" => "http_400", "attempts" => 1)
+      expect(dropped.fetch("payload")).to eq("kind" => "new_sales_order", "reason" => "retries_exhausted:http_503", "attempts" => 3)
     end
 
     it "表に無いイベントは、name・context・timestamp だけを書く" do
