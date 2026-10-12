@@ -15,18 +15,20 @@ Rails のアプリは、どのクラスからどのクラスでも呼べる。�
 
 ## packs/ に並ぶもの
 
-`packs/` の下には 8 つのパッケージがある。6 つのコンテキストに、イベントの置き場 `contracts` と、Rails の基底クラスの置き場 `platform` を足したものである。
+`packs/` の下には 10 のパッケージがある。6 つのコンテキストに、イベントの置き場 `contracts`、Rails の基底クラスの置き場 `platform`、外部へのメールの送信 `notifications`、CSV の取り込み `imports` を足したものである。
 
 | パッケージ | 中身 | 公開 API の例（`app/public/`） |
 |---|---|---|
-| `platform` | `ApplicationRecord`・`ApplicationJob`・`TenantRecord`・`Current`・`Tenancy` などの基底クラスとテナントの仕組み、監査ログ（`AuditLog`・`Platform::AuditLogs`）、構造化ログの基盤（`Platform::Logging`・文脈のミドルウェア） | （公開を限定しない） |
+| `platform` | `ApplicationRecord`・`ApplicationJob`・`ExternalEffectJob`・`ApplicationMailer`・`TenantRecord`・`Current`・`Tenancy` などの基底クラスとテナントの仕組み、監査ログ（`AuditLog`・`Platform::AuditLogs`）、構造化ログの基盤（`Platform::Logging`・文脈のミドルウェア） | （公開を限定しない） |
 | `contracts` | コンテキスト間のイベントと、その配送（`Contracts.publish`・`EventJob`・配送表 `Subscriptions`） | すべて `app/public/` にある |
 | `partnerships` | テナント・ユーザー・取引関係・権限付与 | `Partnerships::Actor`・`Authentication`・`Access` |
 | `purchasing` | 発注と入荷 | `Purchasing::Ordering`・`PurchaseOrders` |
 | `sales` | 品目・受注・品番の対応表 | `Sales::OrderAllocation`・`PublishedCatalog` |
 | `inventory` | 在庫・引当・在庫の移動 | `Inventory::Allocation`・`Stocks` |
 | `fulfillment` | 出荷依頼・出荷指示・出荷 | `Fulfillment::Shipping`・`PartnerShipments` |
-| `billing` | 請求条件・請求対象明細・請求書（締めと下書きの破棄） | `Billing::Closing`・`Invoices` |
+| `billing` | 請求条件・請求対象明細・請求書（締め・下書きの破棄・確定） | `Billing::Closing`・`Invoices` |
+| `notifications` | メールの送信記録と送信のジョブ、配信結果の Webhook の受信（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md)） | `Notifications::Email`・`Inbox` |
+| `imports` | 取り込みのファイル・取り込み・置き場の行と、取り込みのジョブ | `Imports::Files`・`Runs` |
 
 GraphQL の層（`app/graphql/`）やコントローラなど、どのコンテキストにも属さないコードは、リポジトリの直下の `app/` に置く。直下はルートパッケージ（`package.yml` がリポジトリの直下にある、名前が `.` のパッケージ）に属する。
 
@@ -91,13 +93,13 @@ dependencies:
 |---|---|---|
 | `enforce_dependencies` | このパッケージから外への参照を、`dependencies` に宣言した先に限る | 全パッケージで `strict` |
 | `dependencies` | 参照してよいパッケージの一覧。循環すると `bin/packwerk validate` が落ちる | context-map.md の表のとおり |
-| `enforce_privacy` | 他のパッケージからこのパッケージへの参照を、`app/public/` の下の定数に限る。packwerk-extensions の機能で、`packwerk.yml` の `require: packwerk/privacy/checker` で有効にしている | `platform` 以外の 7 つで `strict` |
+| `enforce_privacy` | 他のパッケージからこのパッケージへの参照を、`app/public/` の下の定数に限る。packwerk-extensions の機能で、`packwerk.yml` の `require: packwerk/privacy/checker` で有効にしている | `platform` 以外の 9 つで `strict` |
 
 `strict` は、`true` より強い。`true` なら、既存の違反を `package_todo.yml`（違反の一時的な許容リスト）に記録して見逃せる。`strict` では記録できず、違反はその場で直すしかない（ADR 002 決定 5）。本リポジトリに `package_todo.yml` は無い。
 
 `platform` は `enforce_privacy` を持たない。どのパッケージのモデルも `ApplicationRecord` などを継承するので、`platform` の中身はすべて公開と同じに扱う。一方で `dependencies` を持たないので、`platform` からは他のパッケージを参照できない。
 
-ルートパッケージの `package.yml` は `enforce_dependencies: strict` で、8 つのパッケージすべてを `dependencies` に並べる。ルートからは全パッケージに依存してよいが、プライバシーの検査はルートからの参照にも掛かる。
+ルートパッケージの `package.yml` は `enforce_dependencies: strict` で、10 のパッケージすべてを `dependencies` に並べる。ルートからは全パッケージに依存してよいが、プライバシーの検査はルートからの参照にも掛かる。
 
 ## 2 つの検査
 

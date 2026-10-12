@@ -32,7 +32,7 @@
 
 ### bin/dev がジョブを処理しないこと
 
-`bin/dev` はサーバーだけを起動し、Solid Queue のワーカーは起動しない。開発環境でイベントを受け手まで流したいときは、開発者が別の端末で `bin/jobs` を起動する。テストはワーカーを使わず、`spec/support/events.rb` の `deliver_enqueued_events` でイベントを届ける（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。
+`bin/dev` はサーバーだけを起動し、Solid Queue のワーカーは起動しない。開発環境で、イベントを受け手まで流す・通知のメールを `tmp/mails/` に書く・取り込みを進める・定期のジョブ（`config/recurring.yml`）を流すときは、開発者が別の端末で `bin/jobs` を起動する。ワーカーはキューごとに 4 つ起きる（[config.md「ジョブ」](config.md#ジョブ)）。テストはワーカーを使わず、`spec/support/events.rb` の `deliver_enqueued_events` でイベントを届ける（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。
 
 ## コミットの前に流す検査
 
@@ -40,7 +40,7 @@
 
 | ファイル | すること | 出自 | 動機 |
 |---|---|---|---|
-| `bin/rubocop` | `.rubocop.yml` を明示して RuboCop を動かす。`.rubocop.yml` は rubocop-rails-omakase を継承し、カスタム Cop `FactoryOps/EventJobEnqueue`・`FactoryOps/NoHistoryComment`（`lib/rubocop/cop/`）を足している | Rails 生成 | `EventJobEnqueue` は [ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3、`NoHistoryComment` は [comments.md「機械で止めるもの」](comments.md#機械で止めるもの) |
+| `bin/rubocop` | `.rubocop.yml` を明示して RuboCop を動かす。`.rubocop.yml` は rubocop-rails-omakase を継承し、カスタム Cop `FactoryOps/EventJobEnqueue`・`FactoryOps/ExternalEffectEnqueue`・`FactoryOps/NoHistoryComment`（`lib/rubocop/cop/`）を足している | Rails 生成 | `EventJobEnqueue` は [ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 3、`ExternalEffectEnqueue` は [ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4、`NoHistoryComment` は [comments.md「機械で止めるもの」](comments.md#機械で止めるもの) |
 | `bin/packwerk` | packwerk の入口。`validate` で設定の整合を、`check` で依存とプライバシーの違反を調べる | Bundler 生成 | [ADR 002](../adr/002-packwerkを初日からCIで強制する.md)、[packs-and-packwerk.md](packs-and-packwerk.md) |
 | `bin/check-structure` | `db/structure.sql` が、マイグレーションを流した結果とも、読み込み直して書き出した結果とも一致することを確かめる | 本デモで書いたもの | [ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) |
 | `bin/check-open-items` | 残件と改善の候補の 2 つの台帳の形と、追跡しているファイルに書いた `OI-NN`・`IB-NN` が台帳にあることを確かめる。`--due M<番号>` を付けると、引当先がそのマイルストーンの `open` と `blocked-user` が残っていれば失敗する。`--text` で PR の本文も確かめる | 本デモで書いたもの | [dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること) |
@@ -93,4 +93,16 @@ DB のタスクには所有ロールの資格情報が要り、デプロイの�
 
 ### bin/jobs が接続するロール
 
-`bin/jobs` は `config/environment` を読み込むので、Web と同じくアプリのロールで接続する。ワーカーはテナントを設定せずにキューを読むので、Solid Queue の表には RLS を付けていない（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 5）。ジョブを実行するときは、`ApplicationJob` が投入した時のテナントを、イベントのジョブは宛先テナントを `Tenancy.with_tenant` で設定する。
+`bin/jobs` は `config/environment` を読み込むので、Web と同じくアプリのロールで接続する。ワーカーはテナントを設定せずにキューを読むので、Solid Queue の表には RLS を付けていない（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 5）。ジョブを実行するときは、`ApplicationJob` が投入した時のテナントを、イベントのジョブは宛先テナントを `Tenancy.with_tenant` で設定する。取り込みのジョブはチャンクごとに、Webhook の受信の処理は行ごとにテナントを開いて閉じる（[config.md「ジョブ」](config.md#ジョブ)）。
+
+### bin/rails で流す運用のタスク
+
+運用者は、次の rake タスクを `bin/rails <タスク>` で流す。どれもテナントを 1 つずつ明示して回るか、引数でテナントを受け取る。テナントの表は RLS の下にあり、テナントを開かずには読めないからである。
+
+| タスク | すること | 流す時機 | 引数と接続 |
+|---|---|---|---|
+| `sales:backfill_item_prices` | `items.unit_price` を販売単価の行に写し、照合済みの受注明細の有効日を受注日で埋める。もう一度流しても行は増えない | 単価の履歴を持つ前の DB で、`items.unit_price` を消すマイグレーションの前に 1 回（[ADR 006](../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md)） | アプリのロール |
+| `notifications:redeliver` | 再試行を使い切ったか、再試行しない応答で失敗した確実な送信を、同じ送信記録のまま登録し直す | API キー・宛先の設定・提供元の障害が解消した後（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-2） | `SINCE`（ISO 8601 の時刻）。アプリのロール |
+| `imports:reenqueue` | 終わっていない取り込みに、新しいジョブを登録する | プロセスの強制終了で取り込みのジョブが失敗したとき（同 A-4） | `IMPORT_ID`・`TENANT_ID`（失敗したジョブの引数の値）。アプリのロール |
+| `audit:purge` | 保存期間を過ぎた監査ログを消す | 月に 1 回（[data-model.md「監査ログ（`platform`）」](../architecture/data-model.md#監査ログplatform)） | 所有ロール。Web とワーカーの資格情報では流せない |
+| `imports:sample[行数]` | 試験用の品目の CSV（既定 50,000 行）を `tmp/imports/` に書く | 開発で、大きな取り込みを手で確かめるとき | 実行ごとに違う品目コードになる |
