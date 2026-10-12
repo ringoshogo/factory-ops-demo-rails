@@ -66,9 +66,9 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 骨組み（M1〜M7）を先に作り、業務機能（M8〜M14）を業務の流れの順に、薄い縦切りで足した。業務機能の各マイルストーンは、テーブル・公開 API・policy・イベント・GraphQL のフィールド・行列テストの行を 1 つの単位で作る。
 
-残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
+残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作り、公開の配置（M41）で終える。フロントエンドの前に、画面が一覧を 1 ページずつ読むための API（M39・M40）を足す。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -109,7 +109,10 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M31 | SLO と障害対応の手順書 | どの警報も手順書を持ち、警報の規則が CI で検査される |
 | M32 | シードデータ | シードと E2E の世界が 1 つの作り方から、公開 API とイベントだけで作られ、`admin` に限る段は mutation と同じ規則を通る。業務の日付が日本時間の今日で決まり、システムの時刻帯で決まる呼び出しを Cop が落とす。操作者のいない入口の公開 API が所有の条件を明示し、RLS を開いても他社の行を数えない |
 | M38 | RLS の UPDATE のポリシーが隠す所有の条件を、単体で捕まえる | 操作者のいない入口の公開 API とイベントの受け手から所有の条件を外すと、RLS の UPDATE のポリシーが同じ行を隠していても単体が落ちる |
-| M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる（計画済み。実装は M32 の後） |
+| M39 | 一覧の件数と並べ替え、列での絞り込み | 一覧の件数と並びが、ページと同じ scope と絞り込みで決まり、RLS を開いた比較で件数と並びの scope の抜けが落ちる |
+| M40 | 状況での絞り込み | 状況を 1 つの SQL の式で導出し、一覧の表示・絞り込み・件数とダッシュボードの件数が同じ式を読む |
+| M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる |
+| M41 | Raspberry Pi の k3s への配置 | マニフェストが Secret を持たず、所有ロールの資格情報とデモの世界の許可が、作り直しとマイグレーションの工程にだけ渡る |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -135,7 +138,10 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M31 | M30 | SLO と警報を M30 のメトリクスで書く |
 | M32 | M31 まで | シードが単価の履歴と取り込みも含む |
 | M38 | M32 | 操作者のいない入口の規則と、共有の文脈「RLS の SELECT を開く」が M32 にある |
-| M33 | M32 | 画面が呼ぶ入口が M29 までにそろい、E2E の世界を M32 の `DemoWorld` で作る |
+| M39 | M37・M38 | 一覧の件数と絞り込みの scope の抜けを、M37 の RLS を開いた 2 回目の比較で捕まえる。行列の補助と共有の文脈を M38 が変えた後に、行列の行を足す |
+| M40 | M39 | 状況の絞り込みを、M39 の入力型・件数・ページの土台に足す |
+| M33 | M32・M40 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る |
+| M41 | M33 | 画面のイメージを `frontend/` から作り、作り直しで M32 の `DemoWorld` を流す |
 
 ---
 
@@ -1546,18 +1552,126 @@ bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3
 
 **文書に残すこと**：`guides/testing.md`「行列テストとの分担」の最後の段落（SELECT を開いても見えない所有の条件）を、UPDATE も開くことと届かない形に書き直す。共有の文脈の名前とコメント（`spec/support/cross_read.rb`）を、UPDATE も開くことに合わせる。
 
+## M39 一覧の件数と並べ替え、列での絞り込み
+
+**目的**：画面（M33）は一覧を 1 ページずつ読む（OI-07）。1 ページだけを画面で並べ替えると並びが嘘になり、読んだ行だけを数えると件数が嘘になるので、並べ替え・絞り込み・件数をサーバーで行う。この節は、すべての一覧に件数（`totalCount`）を、画面の一覧に並べ替え（`orderBy`）と、一覧の表の列で決まる絞り込み（`filter`）を足す。導出した状況での絞り込みは M40 で足す。あわせて、画面に要る入口を 2 つ足す（OI-12）。書き込みの振る舞いは変えない。
+
+**作るもの**
+
+1. 並べ替えの列と `id` の組でたどるページ：`Page.of`（`packs/platform`）に、並べ替えの列と向きを受け取る形を足す。並びは「列の値、`id`」の組にし、`id` を列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行が抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、向きによらず最後に置く。カーソルは、並べ替えの列の名前・列の値・`id` を持つ不透明な文字列にする。形の誤ったカーソルと、別の並べ替えで作ったカーソルは、いまの形の誤ったカーソルと同じトップレベルのエラーにする。`orderBy` を省いた一覧は、いまの並びとカーソルを変えない（`id` の降順。カタログは品目コードの昇順、取り込みの失敗行は行番号の昇順）。
+2. 件数：コネクションの基底（`Types::BaseConnection`）に `totalCount: Int!` を足し、すべての一覧に持たせる。件数は、ページと同じ scope と絞り込みを掛けた relation の行の数で、`first`・`after` に左右されない。`Page` に件数を数えるブロックを持たせ、問い合わせが `totalCount` を選んだときだけ数える。公開 API は、件数のために scope と絞り込みを書き直さず、ページと同じ relation から数える。ページと件数を別々に絞ると、片方だけ scope が抜けても単体の spec では気づきにくい。
+3. 並べ替えと絞り込みの引数：次の表の一覧に、`orderBy`（入力型 `<型>Order`）と `filter`（入力型 `<型>Filter`）を足す。`orderBy` は、一覧ごとの enum `<型>OrderField` の `field` と、`OrderDirection`（`ASC`・`DESC`）の `direction` を持ち、並べ替えの列は 1 つである。どちらの引数も省いてよく、省けば、いまの並びで、絞らずに返す。並べ替えの列は、一覧の表（同じパッケージの表）の列か、その列から計算する値に限る（判断）。
+
+   | 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） | 画面（M33） |
+   |---|---|---|---|
+   | `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE` | `customerTenantId: ID`、`orderDateFrom`・`orderDateTo: ISO8601Date` | 4・5 |
+   | `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON` | `supplierTenantId: ID`、`orderDateFrom`・`orderDateTo: ISO8601Date` | 19 |
+   | `supplier.shipmentRequests` | `DUE_DATE` | （状況は M40） | 9 |
+   | `supplier.stocks` | `ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock: Boolean` | 8 |
+   | `supplier.stockMovements` | —（いまの `id` の降順） | `types: [StockMovementType!]`（`itemId` の引数はいまのまま） | 8 |
+   | `supplier.items` | `CODE`・`NAME` | `keyword: String` | 10・7・20 |
+
+   - 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。
+   - 受注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す（監査ログの `AuditLogFilter` と同じ）。
+   - `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ条件（有効在庫が安全在庫を下回る）で絞る。条件を在庫のパッケージの 1 つの scope に置き、`Inventory::Stocks.below_safety_stock` と一覧の両方がそれを使う。集計と、そこから飛ぶ一覧が別の条件で絞ると、数が合わなくなる（M33 の流用元の規則「集計の数字と、そこから飛ぶ一覧は、同じ条件で絞る」）。偽か省いたときは絞らない。
+   - `keyword` は、前後の空白を除いた文字列を、品目コードか品目名に含む品目に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。
+   - `types` の空の配列は 0 件を返し、省くか null なら絞らない。
+   - 表に無い一覧（請求書・受領請求書・取り込み・取り込みの失敗行・品番の対応表・請求対象明細・請求書の明細・カタログ・監査ログ）は、件数だけを足す。画面で並べ替えと絞り込みの項目が決まっていないからである。
+4. 入口を 2 つ足す（OI-12）：`supplier.item(id:)` は自社の品目を 1 件返し、見えない ID には `null` を返す（`architecture/graphql-schema.md`「ID と `node`」の 1 件を引くフィールド）。`viewer.tenant` は自社のテナントの `id` と `name` を返し、取引用コードを含めない（取引用コードは `viewer.partnerCode` が `admin` にだけ返す）。どちらも役割を問わない。
+5. 行列テスト：コネクションを返すフィールドの行は、すべて問い合わせで `totalCount` を読む。`graphql_matrix_spec.rb` が、スキーマからコネクションを返すフィールドを集め、その行の問い合わせが `totalCount` を選ぶことを確かめる（規則の正本はスキーマ。`guides/dev-cycle.md`「テストから書く」）。表の 6 つの一覧には、並べ替えと絞り込みを両方渡す変種の行（`"SupplierView.salesOrders#filter"` の形）を足し、`MatrixWorld` の各ペルソナに、絞り込みに当たる行と当たらない行を持たせる。RLS を開いた 2 回目の比較（M37）が、件数・絞り込み・並びの scope の抜けを捕まえる。2 回目の比較は並びまで同じことを求めるので、`id` で決着しない並びは落ちる。`supplier.item`・`viewer.tenant` の行を、許す役割と期待値とともに足す。
+6. S1 の入口の列挙：`SalesOrderFilter.customerTenantId`・`PurchaseOrderFilter.supplierTenantId` と `supplier.item(id:)` は、`spec/scenarios/tenant_boundary_spec.rb` の列挙に現れる。相手のテナントの ID と品目の ID を渡して、一覧は空、1 件は `null` になる行を足す。同じ example で、自社の ID を渡せば自社の行が返ることを先に確かめる（`guides/testing.md`「S1 の入口の列挙」）。
+7. クエリ数の予算と複雑度：表の一覧を読む画面の問い合わせ（`spec/fixtures/graphql/screens/` の `SupplierSalesOrders`・`BuyerPurchaseOrders`・`SupplierShipmentRequests`・`SupplierStocks`・`SupplierStockMovements`・`SupplierItems`）に、`totalCount` と、変数の `$orderBy`・`$filter` を足す。予算の表（`SCREENS`）には、並べ替えと絞り込みを渡す変数のメソッドを書く。絞り込みの値は、予算の spec が作る親がすべて当たるものにする。当たらないと 0 件どうしを比べ、N+1 を件数に出せない。件数は親の数によらず 1 つの問い合わせなので、親が 1 件と 20 件の SQL の件数は同じになる。`totalCount` はコネクションの要素の外にあるので、複雑度では `first` の倍にならない（`architecture/graphql-schema.md`「ページングと N+1」）。
+8. 互換：足すのは、省いてよい引数・フィールド・新しい型だけなので、`bin/check-schema-compat` は非破壊の変更として通す。
+
+テナントの境界：書き込みは足さない。足す読み取りは、どれもいまの公開 API の scope を掛けた relation に条件と並びを足すだけで、RLS と policy は変えない。絞り込みの ID（取引先のテナント ID）は自社の行の列と比べるだけで、相手の行を引かない。コンテキストの境界：在庫の安全在庫の条件は在庫のパッケージに、品目の `keyword` は受注のパッケージに置き、パッケージの依存の向きは変えない。
+
+**判断**：並べ替えの列を、一覧の表の列に限るか
+
+- **既定の推奨**：限る。流用元の画面は、取引先の名前、在庫の画面の品目のコードと名前、受注の金額の合計、状況でも並べる。取引先の名前と品目は別のコンテキストの表にあり、サーバーで並べるには、相手の表を結合するか、相手の公開 API から並びを受け取ることになり、公開 API が値を返す境界（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」3）を越える。金額は明細の集計で、状況は M40 の式で並べられるが、どちらも画面のタブと絞り込みで足りる。画面は、並べられない列の見出しを並べ替えの対象にしない（M33）。
+- **比べた案**：(a) 並べたい値を一覧の表に写す（受注に取引先の名前を持つ）。相手の変更を写しに追わせる受け手が要る。(b) ルートのリゾルバで全件を読んでから並べる。件数が増えても並びが正しいことを求めた作者の判断（OI-07）と、1 ページずつ読む形に反する。
+- **裏返る条件**：作者が、表に無い値（取引先の名前、在庫の品目コード）での並べ替えか、在庫の画面での品目の検索を求める → (a) の写しの列を足す。
+- **撤退コスト**：小。足すだけの変更で、並べ替えの enum に値を足しても互換の検査は通る。
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/platform/spec/models/page_spec.rb packs/sales/spec/public/sales/sales_orders_spec.rb packs/sales/spec/public/sales/catalog_spec.rb packs/purchasing/spec/public/purchasing/purchase_orders_spec.rb packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb   # 0 failures
+bundle exec rspec spec/matrix spec/scenarios/tenant_boundary_spec.rb spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb spec/platform/metrics_subscriber_spec.rb   # 0 failures
+bin/check-schema-compat   # 破壊的な変更 0 件
+```
+
+期待の不一致で最初に落とすのは、`page_spec.rb` の、並べ替えの列の値が同じ 3 行をページの境目にまたがせて読み、行が抜けも重なりもしないことを確かめる example と、行列の「コネクションを返すフィールドの行が `totalCount` を読む」の確かめである。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+
+- 件数を数える relation から scope を外すと、行列の 2 回目の比較が落ちる。並べ替えから `id` を外すと、`page_spec.rb` と行列の 2 回目の比較が落ちる
+- `belowSafetyStock` の一覧と `below_safety_stock` の条件を別々に書き、片方の不等号を変えると、在庫の公開 API の spec の、同じ世界で両方の件数を比べる example が落ちる
+- `keyword` の `%` を文字として扱わないと、`catalog_spec.rb` の `%` を含む `keyword` の example が落ちる
+
+**範囲外**：状況での絞り込み（M40）、一覧の表に無い値での並べ替え（判断）、前のページへ辿る引数（`last`・`before`）。
+
+**実装する文書の節**：`architecture/graphql-schema.md`「ページングと N+1」・「読み取りの一覧」・「ID と `node`」、`guides/testing.md`「S1 の入口の列挙」・「行列テストとの分担」
+
+**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に、一覧が持つ引数（並べ替え・絞り込み・件数）と、カーソルの中身と、値の無い行の置き場所を書く。同じ節の「件数の総数（`totalCount`）は返さない」と、画面の検索の引数を後で足すという文を消す。SDL の受注側と発注側の視点に、足した引数・入力型・enum・`totalCount`・`supplier.item(id:)`・`viewer.tenant` を書く。
+
+## M40 状況での絞り込み
+
+**目的**：受注・発注・出荷依頼の画面は、状況のタブで一覧を分け、タブごとの件数を出す（M33 の画面 4・5・9・19）。状況は保存せず、公開 API が時刻列と子の行から導出する（`architecture/data-model.md`「状態は保存せず、時刻列から導出する」）ので、いまは行を読んだ後でしか分からない。この節は、状況での絞り込みと件数を、一覧を読む SQL の中で行えるようにする（OI-07）。ダッシュボードの状況ごとの件数も同じ導出で数え、ダッシュボードの数と、そこから飛ぶ一覧の件数を一致させる。書き込みの振る舞いは変えない。
+
+**作るもの**
+
+1. 状況の導出を SQL の式にする：`Sales::SalesOrderStatus`・`Purchasing::PurchaseOrderStatus`・`Fulfillment::ShipmentRequestStatus` が、導出表と同じ優先順の `CASE` 式を返す。公開 API の一覧・1 件・件数は、行と一緒にこの式の値を読み、Ruby の `derive` を消す。受注の取消の可否（`Sales::OrderCancelling`）も、ロックした受注の状況をこの式で読む。導出を 1 か所にし、表示・絞り込み・件数が別々に導出しないためである（判断）。各パッケージの式が読む表は次のとおりである。
+
+   | 状況 | 式が読むもの | 別のコンテキストの値 |
+   |---|---|---|
+   | 受注 | 受注の時刻列、受注明細の照合の状態、受注明細ごとの有効な引当数量 | 引当数量は在庫の表にある。在庫の公開 API が、操作者の scope を掛けた「受注明細 ID と有効な引当数量」の副問い合わせ（relation）を返し、受注の式がそれを結ぶ。いまの `Inventory::Allocation.quantities_for` と同じ条件（解放済みを除く）にする |
+   | 発注 | 発注の時刻列、入荷と検収の有無 | 無い（購買の表だけ） |
+   | 出荷依頼 | 出荷依頼の時刻列、有効な出荷指示・出荷実績・解除されていない出荷停止の有無 | 無い（出荷の表だけ） |
+
+2. 絞り込み：`SalesOrderFilter`・`PurchaseOrderFilter` に `statuses: [<状況の enum>!]` を足し、出荷依頼に `ShipmentRequestFilter`（`statuses: [ShipmentRequestStatus!]`）を足す。省くか null なら絞らず、空の配列なら 0 件を返す。M39 の列の絞り込みと同時に渡せば、両方に当たる行に絞る。件数（`totalCount`）は同じ条件で数える。取消の依頼中・審査中（`cancellationPending`・`cancellationReviewPending`）は状況ではないので、絞り込みに入れない（`architecture/graphql-schema.md`「状況の enum」）。
+3. ダッシュボードの件数：`Sales::SalesOrders.count_by_status` を、同じ式で `GROUP BY` して数える形にする。いまは全件を読んで Ruby で数えている。0 件の状況も返す形は変えない。
+4. 行列テスト：M39 で足した 3 つの一覧の変種の行（`#filter`）に、`statuses` を足す。世界には、絞る状況に当たる行と当たらない行を持たせる。RLS を開いた 2 回目の比較で、受注の式が結ぶ引当数量の副問い合わせから scope を外したことを捕まえられるかを確かめ、捕まえられなければ、捕まえる行を世界に足す（`guides/testing.md`「行列テストとの分担」）。
+5. クエリ数の予算：受注・発注・出荷依頼の画面の問い合わせに渡す `$filter` に、予算の spec が作る親がすべて当たる状況の集まりを足す。
+
+テナントの境界：書き込みは足さない。式は、公開 API の scope を掛けた relation に列を足すだけで、RLS と policy は変えない。在庫の副問い合わせは在庫の policy の scope を掛けてから返し、所有の条件を RLS に任せない（`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。コンテキストの境界：受注はすでに在庫の公開 API（`Inventory::Allocation`）に依存しているので、依存の向きは変わらない。在庫の表の名前と列を受注のパッケージに書かない。
+
+**判断**：状況の導出を SQL の式 1 つにするか、Ruby の導出を残して SQL の条件を足すか
+
+- **既定の推奨**：SQL の式 1 つにし、Ruby の `derive` を消す。表示・絞り込み・件数・取消の可否が同じ式を読むので、導出表を変えたときに直す箇所が 1 つで、ダッシュボードの数と一覧の件数が食い違わない。
+- **比べた案**：Ruby の `derive` を残し、状況ごとの SQL の条件を足して、両者の一致を spec で確かめる。いまの導出のコードを変えずに済むが、同じ意味を 2 か所に持ち、一致の spec は世界にある状況の組み合わせしか確かめない。
+- **裏返る条件**：導出表のどれかの行を、1 つの SQL の式で書けないか、式を足した一覧がクエリ数の予算を超える → 比べた案に移る。
+- **撤退コスト**：中。3 つの状況のモジュールに `derive` を戻し、件数と取消の可否を元の読み方に戻す。絞り込みの引数は、比べた案の SQL の条件で残せる。
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/sales/spec/models/sales/sales_order_status_spec.rb packs/purchasing/spec/models/purchasing/purchase_order_status_spec.rb packs/fulfillment/spec/models/fulfillment/shipment_request_status_spec.rb   # 0 failures
+bundle exec rspec packs/sales/spec/public/sales/sales_orders_spec.rb packs/sales/spec/public/sales/order_cancellation_spec.rb packs/purchasing/spec/public/purchasing/purchase_orders_spec.rb packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb packs/inventory/spec/public/inventory/allocation_spec.rb   # 0 failures
+bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/dashboard_spec.rb   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、3 つの状況の spec を、導出表の行ごとに 1 件ずつ作って `statuses` で絞り、その 1 件だけが返ることを確かめる形に書き直した example である（いまは `derive` に値を渡して確かめている）。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+
+- 式の優先順を 2 つ入れ替えると、両方に当たる行（取消済みで出荷済みの受注など）の example が落ちる
+- 引当数量の副問い合わせから解放済みを除く条件を外すと、受注の状況の spec の、引当を解放した受注の example が落ちる
+- `count_by_status` を別の条件で数えると、`sales_orders_spec.rb` の、状況ごとの件数と `statuses` で絞った一覧の件数を比べる example が落ちる
+
+**範囲外**：状況での並べ替え（M39 の判断）、取消の依頼中・審査中での絞り込み。
+
+**実装する文書の節**：`architecture/data-model.md`「状態は保存せず、時刻列から導出する」、`architecture/graphql-schema.md`「状況の enum」・「ページングと N+1」
+
+**文書に残すこと**：`architecture/data-model.md`「状態は保存せず、時刻列から導出する」に、導出を公開 API の SQL の式で行い、表示・絞り込み・件数が同じ式を読むことを書く。`architecture/graphql-schema.md`「状況の enum」に、状況の絞り込みの引数と、重ねて示すフィールドを絞り込みに入れないことを書く。判断の比べた案と裏返る条件は ADR（`adr/010`）に書く。複数のコンテキストにまたがり、案を比べたからである（`guides/dev-cycle.md`「書く前の振り分け」）。
+
 ## M33 フロントエンド
 
-**目的**：姉妹プロジェクト factory-ops-demo の `frontend/`（以下、流用元）の Next.js を写し、画面部品をそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を足す。読み手が、受注側と発注側の両方の画面で、取引関係・失効・取消・検収・請求が動くのを見られるようにする。計画は済んでおり、実装は M32 の後に行う。
+**目的**：姉妹プロジェクト factory-ops-demo の `frontend/`（以下、流用元）の Next.js を写し、画面部品をそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を足す。読み手が、受注側と発注側の両方の画面で、取引関係・失効・取消・検収・請求が動くのを見られるようにする。画面が一覧を 1 ページずつ読むための並べ替え・絞り込み・件数は M39・M40 で API に足してあり、公開の配置は M41 で作る。
 
 本節の用語は次のとおりである。**受注側**は GraphQL の `supplier` の視点（自社が受けた受注・在庫・出荷・請求を扱う）、**発注側**は `buyer` の視点（自社の発注と、相手を読む 3 経路を扱う）を指す。**画面**は Next のルート 1 つを指す。**入口**は GraphQL のルートのフィールド `viewer`・`buyer`・`supplier` を指す（`graphql-schema.md`「視点ごとに型を分ける」）。**画面の問い合わせ**は、画面が送る query と mutation の文書を指す（M17 の同名の一覧と同じもの）。
 
-担当者は、次の順に決めて作る。まず、流用元を本リポジトリのどこへ写すかを決める（置き場所）。次に、写した画面と足す画面が、どの入口を呼び、それがどのマイルストーンでそろうかを確かめる（画面の一覧）。そのうえで、画面の部品はそのままに、REST の呼び出しを GraphQL の呼び出しに替える（データ取得層）。最後に、それを流用元の E2E の規則と本リポジトリの CI で守る（テストとゲート）。各段の「判断」は担当者が既定のとおりに進めてよいもので、作者に確かめるものは末尾の「著者判断」にまとめた。
+担当者は、次の順に決めて作る。まず、流用元を本リポジトリのどこへ写すかを決める（置き場所）。次に、写した画面と足す画面が、どの入口を呼び、それがどのマイルストーンでそろうかを確かめる（画面の一覧）。そのうえで、画面の部品はそのままに、REST の呼び出しを GraphQL の呼び出しに替える（データ取得層）。最後に、それを流用元の E2E の規則と本リポジトリの CI で守る（テストとゲート）。各段の「判断」は担当者が既定のとおりに進めてよいもので、作者が決めたことは末尾の「著者判断」にある（OI-06〜OI-14）。
 
 **作るもの 1：置き場所**
 
 - 流用元の main（`958de71`）の `frontend/` を、本リポジトリの `frontend/` に写す。git の履歴は持ち込まず、写した commit を commit メッセージに書く。
-- 写さないもの：Cloudflare への配置（`wrangler.jsonc`・`open-next.config.ts`・`@opennextjs/cloudflare`・`wrangler`）、訪問者ごとのデモの開始・サンプル表示・混雑の通知（`lib/start-demo.ts`・`demo-session.ts`・`demo-state.ts`・`sample.ts`・`sample-data.json`・`components/demo-notice.tsx` と、それを分岐に使う箇所）、REST のスタブ（`e2e/stub-api.mjs`）と Go の API を起こす `e2e/start-api.sh`。
+- 写さないもの：Cloudflare への配置（配置は M41 の k3s で行う。`wrangler.jsonc`・`open-next.config.ts`・`@opennextjs/cloudflare`・`wrangler`）、訪問者ごとのデモの開始・サンプル表示・混雑の通知（`lib/start-demo.ts`・`demo-session.ts`・`demo-state.ts`・`sample.ts`・`sample-data.json`・`components/demo-notice.tsx` と、それを分岐に使う箇所）、REST のスタブ（`e2e/stub-api.mjs`）と Go の API を起こす `e2e/start-api.sh`。
 - Ruby の検査から外す：`.rubocop.yml` の `AllCops.Exclude`、`packwerk.yml` の `exclude`、`.dockerignore` に `frontend/` を足す。`.github/dependabot.yml` に `frontend/` の npm を足す。
 - コードのコメント：写す担当者は、流用元の仕様・タスク・台帳の番号を指すコメント（`T-34`・`仕様 §7`・`正本 N-5`・流用元の台帳の `OI-NN` の類）を、いまの振る舞いと理由に書き直すか消す。`guides/comments.md` の対象に `frontend/` を足し、`frontend/scripts/check-comments.mjs` が、これらの番号とマイルストーンの番号を含むコメントを落とす。`npm run lint` から呼ぶ。
 
@@ -1569,21 +1683,21 @@ bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3
 
 **作るもの 2：画面の一覧**
 
-画面の URL は視点で分け、受注側を `/supplier/...`、発注側を `/buyer/...` に置く。サイドバーは「受注側」「発注側」の 2 つのグループを持つ（著者判断 4）。表の「作るマイルストーン」は、画面が呼ぶ入口のフィールドと mutation を作るマイルストーンである。M15 以降のマイルストーンに依存する画面には ※ を付けた。
+画面の URL は視点で分け、受注側を `/supplier/...`、発注側を `/buyer/...` に置く。サイドバーは「受注側」「発注側」の 2 つのグループを持つ（著者判断 4）。表の「作るマイルストーン」は、画面が呼ぶ入口のフィールドと mutation を作るマイルストーンである。一覧の並べ替え・絞り込み・件数の引数は、M39（列）と M40（状況）で足す。M15 以降のマイルストーンに依存する画面には ※ を付けた。
 
 | | 画面 | 視点 | 流用元の画面 | 呼ぶ入口のフィールドと mutation | 作るマイルストーン |
 |---|---|---|---|---|---|
 | 1 | `/` ログイン | 共通 | `/`（デモを開始） | `POST /session`・`DELETE /session`（`SessionsController`）、`viewer`（著者判断 3） | M4・M8 |
 | 2 | `/settings` 自社の情報 | 共通 | —（新規） | `viewer`（取引用コード `partnerCode` は `admin` だけ） | M8 |
 | 3 ※ | `/audit-logs` 監査ログ | 共通 | —（新規） | `viewer.auditLogs`（`admin` だけ）。シードと E2E の世界は監査の行を書かないので、作った直後はイベントの受信の行だけが並ぶ（OI-141） | M19 |
-| 4 ※ | `/supplier/dashboard` ダッシュボード | 受注側 | `/dashboard` | `supplier.dashboard`、かんばんは `supplier.salesOrders`、カードの操作は `allocateSalesOrder`・`createShippingInstruction`・`postShipment` | M26・M10・M12・M13 |
-| 5 | `/supplier/sales-orders` 受注一覧 | 受注側 | `/orders` | `supplier.salesOrders` | M10（状況の「検収済」は M23、取消審査中の印は M21） |
+| 4 ※ | `/supplier/dashboard` ダッシュボード | 受注側 | `/dashboard` | `supplier.dashboard`、かんばんは状況ごとに `supplier.salesOrders(filter: { statuses: [<状況>] })` を別名で並べる（列ごとに `first: 10` と `totalCount`）、カードの操作は `allocateSalesOrder`・`createShippingInstruction`・`postShipment` | M26・M10・M12・M13・M40 |
+| 5 | `/supplier/sales-orders` 受注一覧 | 受注側 | `/orders` | `supplier.salesOrders`（`orderBy`、取引先と受注日の範囲の `filter`、タブの状況の `filter.statuses`、タブごとの `totalCount`） | M10・M39・M40（状況の「検収済」は M23、取消審査中の印は M21） |
 | 6 ※ | `/supplier/sales-orders/[id]` 受注詳細 | 受注側 | `/orders/[id]` | `supplier.salesOrder`、`allocateSalesOrder`・`createShippingInstruction`・`cancelSalesOrder`・`approveCancellationReview`・`rejectCancellationReview` | M10・M12・M13・M21・M22 |
 | 7 | `/supplier/part-mappings` 品番の対応表 | 受注側 | —（新規） | `supplier.partMappings`・`registerPartMapping`、照合待ちの受注は `supplier.salesOrders`、品目の候補は `supplier.items` | M11 |
-| 8 | `/supplier/stocks` 在庫と移動履歴 | 受注側 | `/stocks` | `supplier.stocks`・`supplier.stockMovements`・`adjustStock` | M12 |
-| 9 | `/supplier/shipment-requests` 出荷依頼 | 受注側 | `/shipping-instructions` | `supplier.shipmentRequests`・`createShippingInstruction`・`cancelShippingInstruction`・`postShipment` | M13（状況の「出荷停止中」は M21） |
-| 10 | `/supplier/items` 品目 | 受注側 | `/items` | `supplier.items`・`saveItem`・`setItemPublished` | M9 |
-| 11 ※ | `/supplier/items/[id]` 品目の単価の履歴と改定 | 受注側 | —（新規） | `Item.prices(asOf:)`・`scheduleItemPrice`・`correctItemPrice`。品目を ID で引く入口は無い（著者判断 6） | M27 |
+| 8 | `/supplier/stocks` 在庫と移動履歴 | 受注側 | `/stocks` | `supplier.stocks`（`orderBy`、`filter.belowSafetyStock`）・`supplier.stockMovements`（`filter.types`）・`adjustStock` | M12・M39 |
+| 9 | `/supplier/shipment-requests` 出荷依頼 | 受注側 | `/shipping-instructions` | `supplier.shipmentRequests`（`orderBy`、`filter.statuses`）・`createShippingInstruction`・`cancelShippingInstruction`・`postShipment` | M13・M39・M40（状況の「出荷停止中」は M21） |
+| 10 | `/supplier/items` 品目 | 受注側 | `/items` | `supplier.items`（`orderBy`、`filter.keyword`）・`saveItem`・`setItemPublished` | M9・M39 |
+| 11 ※ | `/supplier/items/[id]` 品目の単価の履歴と改定 | 受注側 | —（新規） | `supplier.item(id:)`（著者判断 6）・`Item.prices(asOf:)`・`scheduleItemPrice`・`correctItemPrice` | M27・M39 |
 | 12 | `/supplier/partnerships` 取引関係 | 受注側 | `/customers` | `supplier.partnerships`・`establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission`（変更は `admin` だけ） | M8 |
 | 13 ※ | `/supplier/billing` 請求の締め | 受注側 | —（新規） | `supplier.billingTerms`・`setBillingTerm`・`supplier.billableItems`・`closeBillingPeriod` | M24 |
 | 14 ※ | `/supplier/invoices` 請求書一覧 | 受注側 | —（新規） | `supplier.invoices` | M24 |
@@ -1591,7 +1705,7 @@ bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3
 | 16 ※ | `/supplier/imports` 取り込みの一覧と開始 | 受注側 | —（新規） | `POST /imports/files`・`startImport`・`supplier.imports` | M29 |
 | 17 ※ | `/supplier/imports/[id]` 取り込みの進み具合 | 受注側 | —（新規） | `supplier.import`・`Import.rowErrors`。進行中は数秒ごとに `router.refresh()` で読み直す | M29 |
 | 18 | `/buyer/suppliers` 取引先とカタログ | 発注側 | —（新規） | `buyer.suppliers`（取引先の一覧。カタログを入れ子にしない）、選んだ 1 社のカタログは `buyer.supplier(supplierTenantId:)` の `SupplierPartnership.catalog`（画面の問い合わせ `BuyerSupplierCatalog`、OI-17） | M8・M9 |
-| 19 | `/buyer/purchase-orders` 発注一覧 | 発注側 | `/orders` | `buyer.purchaseOrders`。入荷を待つ発注は「入荷予定」のタブで見る（著者判断 7） | M10（状況の「入荷予定」は M14、「検収済」は M23、取消は M21・M22） |
+| 19 | `/buyer/purchase-orders` 発注一覧 | 発注側 | `/orders` | `buyer.purchaseOrders`（`orderBy`、取引先と発注日の範囲の `filter`、タブの状況の `filter.statuses`、タブごとの `totalCount`）。入荷を待つ発注は「入荷予定」のタブ（`statuses: [INBOUND]`）で見る（著者判断 7） | M10・M39・M40（状況の「入荷予定」は M14、「検収済」は M23、取消は M21・M22） |
 | 20 | `/buyer/purchase-orders/new` 発注登録 | 発注側 | `/orders/new` | `buyer.suppliers`（`place_orders` の付与のある相手）、選んだ相手のカタログは `buyer.supplier(supplierTenantId:)` の `SupplierPartnership.catalog`（参照に並べる。画面 18 と同じ問い合わせ）・`placePurchaseOrder`（操作名 `PlacePurchaseOrder`、M30 の登録の表）。品番は自社品番を入力する | M8・M9・M10 |
 | 21 ※ | `/buyer/purchase-orders/[id]` 発注詳細（入荷・検収・取消依頼） | 発注側 | `/orders/[id]` | `buyer.purchaseOrder`（`inboundShipments`・`supplierShipments`・`cancellationRequests`）・`inspectInboundShipment`・`requestPurchaseOrderCancellation` | M10・M14・M21・M23 |
 | 22 ※ | `/buyer/received-invoices` 受領請求書一覧 | 発注側 | —（新規） | `buyer.receivedInvoices` | M25 |
@@ -1608,9 +1722,10 @@ bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3
 流用元は、サーバーコンポーネントで読み、server action で書き、どちらも Next のサーバーから API を呼ぶ。この形を保ち、呼び先だけを Rails の GraphQL に替える。
 
 - **呼び出し口**：`lib/graphql/request.ts` の 1 か所だけが Rails を呼ぶ。流用元の `lib/api-client.ts`・`api.ts`・`api-types.ts` と、`lib/*-actions.ts` の REST の呼び出しを、これに置き換える。`fetch` は `cache: "no-store"` で呼び、Next のデータのキャッシュ（`"use cache"`・`unstable_cache`・`fetch` の `next.revalidate`）は使わない。キャッシュの鍵にセッションが入らないので、あるテナントへの応答を別のテナントに返すからである。ESLint の `no-restricted-syntax` と `no-restricted-imports` で、これらを書くと落ちるようにする。
-- **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next では決めず、API が返す業務の今日（`supplier.dashboard.businessDate`）を使う。業務の今日を決める場所が Rails と Next の 2 か所になると、OI-117 で決めた形と画面の今日がずれるからである。API に無い画面で要るときは、著者判断 6 と同じく足すだけの変更として入口に足す。
-- **画面の問い合わせ**：`frontend/graphql/<視点>/<操作名>.graphql` に 1 ファイル 1 つで置き、断片（fragment）はそのファイルの中でだけ使う。一覧は絞り込みの引数を使わず、`first: 100` で `pageInfo.hasNextPage` が偽になるまで読み、流用元の並べ替え・絞り込み・タブの純関数にそのまま渡す（著者判断 1）。
-- **一覧の絞り込みの引数**：画面の検索の項目が決まったら、その一覧に `filter` の入力型を定義して足し、`graphql-schema.md` の SDL と「ページングと N+1」、行列テストの期待値、`schema.graphql` を同じ変更で直す。いまの一覧は、親を ID で選ぶ引数と監査ログの絞り込みのほかに引数を持たない。項目が決まらない一覧には足さない
+- **型の生成**：`@graphql-codegen/cli` が、根の `schema.graphql` と `frontend/graphql/**/*.graphql` から、操作ごとの `TypedDocumentNode` を `lib/graphql/generated.ts` に書き出す。生成物は commit し、CI で生成し直して差分が無いことを確かめる（`npm run codegen:check`）。カスタムのスカラー `BigInt`・`ISO8601Date`・`ISO8601DateTime` は `string` に写す。金額は `BigInt` で足し引きし、`Number` に直さない（`lib/format.ts`）。流用元が API の応答から読んでいた業務日付は、Next では決めず、API が返す業務の今日（`supplier.dashboard.businessDate`）を使う。業務の今日を決める場所が Rails と Next の 2 か所になると、OI-117 で決めた形と画面の今日がずれるからである。API に無い画面で要るときは、著者判断 6 と同じく足すだけの変更として入口に足す。サイドバーの自社の名前は `viewer.tenant`（M39）から出す。
+- **画面の問い合わせ**：`frontend/graphql/<視点>/<操作名>.graphql` に 1 ファイル 1 つで置き、断片（fragment）はそのファイルの中でだけ使う。
+- **一覧の読み方**（著者判断 1）：一覧の画面は 1 ページ（`first: 20`）ずつ読む。流用元が URL に持つ並べ替え（`sort`・`dir`）・タブ・絞り込みの値を、`orderBy` と `filter`（M39・M40）に写し、次のページは `pageInfo.endCursor` を `after` に入れた URL で開く。API は前のページへ辿らないので（`graphql-schema.md`「ページングと N+1」）、前へはブラウザの戻る操作と「最初のページ」へのリンクで戻る。一覧の件数とタブごとの件数は、同じ問い合わせの中で、タブの `filter` を渡した一覧を別名で並べ、`totalCount` だけを読む。流用元の並べ替え・絞り込み・タブの件数の純関数（`lib/sort.ts` の `sortRows`、`lib/order-list.ts` の `buildOrderList`、`lib/sample.ts` の `filterByQuery` など）は写さず、URL の値を変数に写す関数に置き換える。同じ意味を画面とサーバーの 2 か所に持たないためである。API で並べられない列（取引先の名前・金額の合計・状況・在庫の品目のコードと名前。M39 の判断）の見出しは、並べ替えの対象にしない。在庫の画面には品目の検索の欄を置かず、安全在庫を下回るものだけを出す切り替え（`filter.belowSafetyStock`）を置く
+- **かんばんの列**：ダッシュボードのかんばんは、状況ごとに `supplier.salesOrders(filter: { statuses: [<状況>] }, first: 10)` を別名で 7 つ並べ、列の見出しに `totalCount` を出し、列の下に、その状況で絞った受注一覧へのリンクを置く。列の件数は変数にせず `first: 10` と書く。複雑度の spec は変数の `first` を上限の 100 にして計るので、7 つの列を変数で読むと上限を超える。クエリ数の予算の表には、2 つ目からの列を `more_lists` に書く
 - **認証**：ログインの server action が、Rails の `POST /session` に JSON で資格情報を送り、応答の `Set-Cookie` にあるセッションの Cookie（`_factory_ops_session`）を、同じ属性（`HttpOnly`・`SameSite=Lax`・本番は `Secure`・期限）で `cookies().set` に写す。`request.ts` は、ブラウザから届いた Cookie のうちセッションの Cookie だけを Rails へ送る。ログアウトの server action は `DELETE /session` を呼び、Cookie を消す。Rails が応答のたびに延ばす期限の扱いは、著者判断 5 による。
 - **`Origin` と CSRF**：ブラウザが見るオリジンはフロントエンドの 1 つだけにし、Rails の CORS は開けない（`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」）。ブラウザからの書き込みは server action を通り、Next が `Origin` と `Host` の一致を確かめる。Next のサーバーは Rails へ `Content-Type: application/json` で送るので、`ApplicationController` の制限をそのまま通る。例外は取り込みのファイル（M29 の `POST /imports/files`）で、`next.config.mjs` の `rewrites` で同じオリジンの下に出し、ブラウザから `multipart/form-data` で送る。Rails は、ブラウザの `Origin` を、許可したオリジン（フロントエンドのオリジン）と比べる。
 - **エラー**：`request.ts` が応答を次の表のとおりに分け、画面は分けた結果だけを見る。流用元の `ApiResult` の `code` の一覧は、この分け方に置き換える。ユーザーエラーの `message` は API の文言をそのまま出し、言い換えるのは次にすることを書き足すときだけにする（流用元の `handbook/README.md`「同じ意味を2箇所に実装しない」）。
@@ -1650,6 +1765,7 @@ bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3
 流用元の E2E は、Go の API に当てる live と、REST のスタブに当てる stub の 2 系統である。本デモは、Rails に当てる 1 系統にする。stub が作っていた「API に届かない」状態は、届かない URL を向いた Next のサーバーをもう 1 つ立てて作る。
 
 - **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 の `DemoWorld.build(namespace: "w<ワーカー番号>", variant: :e2e)` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作り、返ったアカウントを JSON に書き出す。`DemoWorld` はジョブを claim せずにその場で流すので、`e2e:prepare` が `bin/jobs` の起動より先に終わることを、何が保証するか（Playwright の `webServer` と `globalSetup` の起こす順）を版の文書で確かめて決め、完了条件で確かめる（OI-143）。テストは、自分のワーカー番号の世界のアカウントでログインし、他の世界に書かない。
+- **一覧のページ**：E2E で、品目の一覧（`variant: :e2e` は 21 件で、1 ページの 20 件を超える）を、名前の昇順で 2 ページ目まで読み、1 ページ目と 2 ページ目の行が重ならず、合わせて `totalCount` の件数になることを確かめる。並べ替えの見出しを押すと、URL の `sort`・`dir` と `orderBy` が変わり、1 ページ目に戻ることも確かめる。
 - **画面の通し試験**：E2E に次の 2 本を置く。1 本目は、重要シナリオ S2（M26）を画面で通す。失効の後、発注側の取引先とカタログと出荷が空になり、発注登録が `NOT_PERMITTED` の文言になる。2 本目は、発注側の 2 社のユーザーで続けてログインし、前のテナントの伝票番号が画面に出ないことを確かめる。
 - **流用元の規則**：流用元の `handbook/README.md` の E2E と見た目の規則を、次のとおり持ち込む。
 
@@ -1660,7 +1776,7 @@ bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3
   | 寸法・色・フォーカスは、アニメーションと色の遷移が終わってから測る。キーは 1 つ押すごとにフォーカスの移りを待つ | 流用元の `e2e/support/style.ts`・`router.ts` の待ち方をそのまま使う |
   | 数える前に画面の変化を待ち、遷移の後は着いたことを先に確かめる | 同上。イベントで進む表示（発注 → 受注確定）はワーカーの処理を待つので、`expect.poll` と再読み込みで待ち、固定の時間は待たない |
   | 1 回だけ落ちたテストを、再実行で緑にして流さない | CPU の遅延（CDP の `Emulation.setCPUThrottlingRate`）で再現率を測り、待ち方の誤りか製品の競合かを分ける。Playwright の `retries` は 0 にする |
-  | 集計の数字と、そこから飛ぶ一覧は、同じ条件で絞る | ダッシュボードの状況ごとの件数と、受注一覧のタブの件数が一致することを E2E で確かめる |
+  | 集計の数字と、そこから飛ぶ一覧は、同じ条件で絞る | ダッシュボードの状況ごとの件数と、受注一覧のタブの件数と、かんばんの列の件数が一致することを E2E で確かめる。どれも M40 の同じ式で数える。安全在庫を下回る在庫の件数と、在庫の画面の切り替えの件数も同じく確かめる |
   | テストは、壊したときに落ちて初めて意味を持つ | 本リポジトリの壊して落ちる記録（`guides/dev-cycle.md`「テストから書く」）と同じに扱う |
   | 見せる前に、同じ種類の要素どうしをスクリーンショットで見比べる | 検収表（画面 × ライト・ダーク × 1280・1024・390px）のスクリーンショットを撮り、担当者が見比べてから作者に見せる。作者が受け入れるまで M33 を終えない |
 
@@ -1676,21 +1792,98 @@ cd frontend && npm run test:e2e
 bundle exec rspec spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb spec/platform/metrics_subscriber_spec.rb   # 画面の問い合わせを frontend/graphql から読む
 ```
 
-次を、手で確かめる。`schema.graphql` から画面が使うフィールドを 1 つ消すと、`npm run codegen:check` か `npm run typecheck` が落ちる。`request.ts` に `"use cache"` を足すと、`npm run lint` が落ちる。作者が検収表のスクリーンショットを見て受け入れる。
+次を、手で確かめる。`schema.graphql` から画面が使うフィールドを 1 つ消すと、`npm run codegen:check` か `npm run typecheck` が落ちる。`request.ts` に `"use cache"` を足すと、`npm run lint` が落ちる。一覧の画面の URL の値を `orderBy`・`filter` に写す関数で、並べ替えの向きを取り違えると、E2E の一覧のページの確かめが落ちる。作者が検収表のスクリーンショットを見て受け入れる。
 
-**著者判断（着手の時に作者に確かめる）**：次の点は既定を置いて計画した。担当者は、着手の前に作者に確かめ、答えが既定と違えば、本節を先に直してから作る。
+**著者判断（決まったこと）**：計画は、次の 8 点と公開の時期に既定を置いて書き、作者が決めた（2026-10-12、OI-06〜OI-14）。担当者は、着手の前に台帳の結果の欄を読み直す。
 
-1. **一覧の読み方**：一覧は全ページを読み切ってから、流用元の純関数で並べ替え・絞り込み・タブの件数を出す。500 件で読むのをやめ、やめたことを画面に出す。GraphQL の一覧は `totalCount` も並べ替えの引数も持たない（`graphql-schema.md`「ページングと N+1」）ので、1 ページだけを並べ替えると、並べ替えが嘘になるからである。上限を超える一覧が日常になるなら、コネクションに並べ替えの引数を足し、サーバーで並べる。
-2. **状況のバッジの色**：流用元に無い状況（品番照合待ち・検収済・発注の各状況・出荷依頼・取り込み・請求書）は、意味の近い流用元の状況の色を使い回し、色のトークンを足さない。作者が色での区別を求めるなら、トークンを足し、流用元の図形のコントラストの検査に載せる。
-3. **ログインの画面**：メールアドレスとパスワードの入力欄に、M32 のシードのアカウント（メールアドレスと、共通のパスワード）の一覧を並べ、押すと入力欄に入る。一覧は `db/seeds/demo_accounts.json` の 1 か所に置き、シードとフロントエンドの両方が読む。
-4. **サイドバーと最初の画面**：テナントは発注側と受注側のどちらにもなりうるので、サイドバーには両方のグループを常に出す。ログインの直後は、`supplier.partnerships` が空でなければ受注側のダッシュボードへ、空なら発注側の発注一覧へ移す。
-5. **セッションの期限**：Rails は、応答のたびにセッションの Cookie を書き直して期限を延ばす。サーバーコンポーネントは Cookie を書けないので、延びた Cookie は server action の応答でだけブラウザに写す。読むだけの利用では、期限はログインか最後の書き込みから 12 時間になる。
-6. **入口に足すフィールド**：品目を ID で引く `supplier.item(id:)` と、サイドバーに自社の名前を出す `viewer.tenant` が無い。どちらも足すだけの変更なので、M33 で足し、`graphql-schema.md` と行列テストの期待値（許す役割と、RLS を開いた 2 回目の比較を含む。M37）に行を足す。
-7. **入荷の一覧**：発注をまたいだ入荷の一覧の入口（`buyer.inboundShipments`）は足さず、発注一覧の「入荷予定」のタブで代える。検収は発注詳細で行う。
-8. **公開の配置**：手元（`bin/rails server` と `next start`）で見せるところまでにする。公開する配置と、訪問者ごとのデータの分離（流用元のデモの開始に当たるもの）は作らない。GitHub のリポジトリを public にする時期（OI-06）も、このときに確かめる。
+1. **一覧の読み方**（OI-07。既定を変えた）：一覧は 1 ページずつ読み、並べ替え・絞り込み・件数はサーバーで行う（M39・M40、「作るもの 3」の一覧の読み方）。全件を読み切って画面で並べる形と、500 件での打ち切りはやめた。件数が増えても並びと件数が正しいことを優先したからである。
+2. **状況のバッジの色**（OI-08。既定のまま）：流用元に無い状況（品番照合待ち・検収済・発注の各状況・出荷依頼・取り込み・請求書）は、意味の近い流用元の状況の色を使い回し、色のトークンを足さない。
+3. **ログインの画面**（OI-09。既定のまま）：メールアドレスとパスワードの入力欄に、M32 のシードのアカウント（メールアドレスと、共通のパスワード）の一覧を並べ、押すと入力欄に入る。一覧は `db/seeds/demo_accounts.json` の 1 か所に置き、シードとフロントエンドの両方が読む。
+4. **サイドバーと最初の画面**（OI-10。既定のまま）：テナントは発注側と受注側のどちらにもなりうるので、サイドバーには両方のグループを常に出す。ログインの直後は、`supplier.partnerships` が空でなければ受注側のダッシュボードへ、空なら発注側の発注一覧へ移す。
+5. **セッションの期限**（OI-11。既定のまま）：Rails は、応答のたびにセッションの Cookie を書き直して期限を延ばす。サーバーコンポーネントは Cookie を書けないので、延びた Cookie は server action の応答でだけブラウザに写す。読むだけの利用では、期限はログインか最後の書き込みから 12 時間になる。
+6. **入口に足すフィールド**（OI-12。既定のまま）：品目を ID で引く `supplier.item(id:)` と、サイドバーに自社の名前を出す `viewer.tenant` を足す。API の変更をまとめるため、足すのは M39 である。
+7. **入荷の一覧**（OI-13。既定のまま）：発注をまたいだ入荷の一覧の入口（`buyer.inboundShipments`）は足さず、発注一覧の「入荷予定」のタブで代える。検収は発注詳細で行う。
+8. **公開の配置**（OI-14。既定を変えた）：流用元と同じ Raspberry Pi の k3s に、Rails・Next・PostgreSQL・ジョブのワーカーを置き、Cloudflare Tunnel で公開する（M41）。訪問者ごとのデータの分離は作らず、全員が同じデモのデータを使い、毎日決まった時刻にシードから作り直す。
 
-**範囲外**：公開の配置と訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
+GitHub のリポジトリを public にする時期（OI-06）は、まだ決めない。M33 の完了条件に public にすることを入れず、決まるまで private のまま進める。
+
+**範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、API で並べられない列での並べ替え（M39 の判断）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
 **実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
 
-**文書に残すこと**：画面の問い合わせの置き場を、本書の M17 と `graphql-schema.md`「ページングと N+1」で `frontend/graphql/` に書き直す。`guides/comments.md` の対象に `frontend/` を足す。著者判断 6 で足したフィールドを `graphql-schema.md`「視点ごとに型を分ける」に書く。`README.md` の「構成」に、フロントエンドの起動の手順を書く。
+**文書に残すこと**：画面の問い合わせの置き場を、本書の M17 と `graphql-schema.md`「ページングと N+1」で `frontend/graphql/` に書き直す。`guides/comments.md` の対象に `frontend/` を足す。`README.md` の「構成」に、フロントエンドの起動の手順を書く。
+
+## M41 Raspberry Pi の k3s への配置
+
+**目的**：作者の判断（OI-14）に従い、流用元のデモと同じ Raspberry Pi の k3s に、Rails（Web）・ジョブのワーカー・Next（画面）・PostgreSQL を置き、画面を Cloudflare Tunnel で公開する。全員が同じデモのデータを使い、毎日決まった時刻にシードから作り直す。判断の比べた案と裏返る条件は `adr/009` にある。リポジトリが作るのは、イメージ・マニフェスト・作り直しの仕組みと、それを確かめる spec までである。Raspberry Pi と Cloudflare のアカウントには触れず、実機での確かめは作者が行う手順として `deploy/README.md` に書く。
+
+**作るもの**
+
+1. イメージ（`adr/009` 決定 6）：Rails の `Dockerfile`（いまのもの）と、画面の `frontend/Dockerfile`（新しく作る。Next の `output: "standalone"` で、Node は M33 の CI と同じ版）を、`linux/arm64` で作る。CI に `images` のジョブを足し、ubuntu の GitHub ホストのランナーで QEMU と buildx を使って作る。PR では作るだけにし、main への push のときだけ `ghcr.io/ringoshogo/factory-ops-demo-rails/api:<git の SHA>` と `.../frontend:<git の SHA>` を GHCR へ push する。タグは git の SHA に固定し、`latest` を使わない（流用元と同じ）。作った Rails のイメージを QEMU の上で起こし、`bin/rails runner` で本番の環境（`eager_load`）が読み込めることを確かめる。キャッシュは GitHub Actions のキャッシュに置く。
+2. マニフェスト（`deploy/`）：流用元と同じく、Kustomize の 1 つの `kustomization.yaml` に並べる（環境が 1 つなので、base と overlays に分けない）。名前空間は `factory-ops-rails` にし、流用元の `factory-ops` と分ける。
+
+   | 種類 | 名前 | 中身 |
+   |---|---|---|
+   | Deployment | `web` | Rails の `bin/rails server`（Thruster を通さない。ブラウザから届かないので、圧縮と静的なファイルの配信が要らない）。Puma は単一のモード（`WEB_CONCURRENCY` を設定しない。OI-142）で 3 スレッド。`/up` を readiness と liveness に使う。アプリのロールの資格情報だけを渡す |
+   | Deployment | `jobs` | `bin/jobs`。`SOLID_QUEUE_SUPERVISOR_MODE=async` で、ワーカー・ディスパッチャ・スケジューラを 1 つのプロセスのスレッドで動かす（`adr/009` 決定 5）。アプリのロールの資格情報だけを渡す |
+   | Deployment | `frontend` | Next の standalone のサーバー。Rails は Service の `web` を名前で呼ぶ |
+   | Deployment | `postgres` | 公式の `postgres:18`（arm64 を含む）。PVC `postgres-data`（`local-path`・`ReadWriteOnce`・5Gi）を、`Recreate` で掴む。初回の起動で、所有ロールとアプリのロールを Secret のパスワードで作るスクリプト（`docker/initdb/01_roles.sql` と同じロールと属性）を流す。業務の DB は初期化で作らず、所有ロールが `db:prepare` で作る。DB の持ち主を所有ロールにし、作り直しで所有ロールが消せるようにするためである |
+   | Service | `web`・`frontend`・`postgres` | どれも `ClusterIP` |
+   | Ingress | `frontend` | k3s の Traefik。ホスト名は OI-145。Rails には Ingress を置かない（`adr/009` 決定 2） |
+   | Job | `migrate` | 所有ロールで `bin/rails db:prepare db:grant_app_role` を流す |
+   | CronJob | `daily-reset` | 作るもの 3 の作り直し |
+   | ServiceAccount・Role・RoleBinding | `daily-reset` | 名前空間の中の `web` と `jobs` の Deployment の `scale` を読み書きし、Deployment を読むことだけを許す |
+
+   Secret はリポジトリに置かず、作者が `kubectl create secret` で入れる（流用元と同じ）。マニフェストが参照する Secret の名前とキーは `deploy/README.md` の表に書き、`deploy/preflight.sh` が、マニフェストの `secretKeyRef` と `imagePullSecrets` から集めた名前と鍵が名前空間にあることを確かめる（流用元の `deploy/preflight.sh` の形。集める正本はマニフェスト）。所有ロールの資格情報は `migrate` と `daily-reset` にだけ渡し、`web` と `jobs` には渡さない（`config/database.yml` の `production`）。
+3. 毎日の作り直し（`adr/009` 決定 3）：CronJob `daily-reset` が、毎日 OI-146 の時刻（`timeZone: Asia/Tokyo`）に、Rails のイメージで `bin/rails demo:reset` を流す。`concurrencyPolicy: Forbid` にし、`startingDeadlineSeconds` を置いて、Raspberry Pi が止まっていて時刻を過ぎても、起動の後に決めた時間の内なら流す。`demo:reset`（`lib/tasks/demo.rake`）は次の順に進む。
+   1. 本番の環境では、作るもの 4 の条件を満たさなければ何もせずに例外で止まる
+   2. Kubernetes の API で `web` と `jobs` の Deployment を 0 にし、Pod が無くなるまで待つ。DB を消す間に接続が残らないようにし、シードがその場で流すジョブを `bin/jobs` が同時に流さないようにする（OI-143 と同じ理由）
+   3. 所有ロールで DB を消して作り直し（`db:drop`・`db:prepare`）、アプリのロールに権限を付ける（`db:grant_app_role`）。Rails は本番の環境の DB を消すタスクを `ActiveRecord::ProtectedEnvironmentError` で止めるので、`demo:reset` は手順 1 の条件を満たしたときにだけ、その確かめを外して `db:drop` を呼ぶ
+   4. `DemoWorld.build(namespace: "", variant: :seed)` でデモの世界を作る
+   5. 成功しても失敗しても、`web` と `jobs` の Deployment を 1 に戻す（`ensure`）。作り直しに失敗した日も画面を止めないためである
+
+   監査ログは追記だけの表で、所有ロールでも行を消せず `TRUNCATE` もトリガーが止める（`architecture/data-model.md`「監査ログ（`platform`）」）。作り直しは行を消さず、DB ごと作り直すので、この保証は変えない。Kubernetes の API は、Pod の ServiceAccount のトークンで Net::HTTP から呼び、`kubectl` のイメージを足さない。
+4. 本番の環境でデモの世界を許す条件（`adr/009` 決定 4）：`DemoWorld` と `Partnerships::Onboarding` は、いまは本番の環境で例外にする。環境変数 `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ、本番の環境でも動くようにする。条件は `packs/platform` の 1 か所に置き、両方がそれを読む。この変数は `daily-reset` にだけ渡し、`web`・`jobs`・`migrate` には渡さない。
+5. メールを送らない：公開の配置のアカウントのメールアドレスは実在しないので、メールを外へ送らない。本番の環境の通知の送り先（`config.x.notifications.provider`）を環境変数 `NOTIFICATIONS_PROVIDER` で `file_system` に替えられるようにし、`sendgrid`（省いたとき）と `file_system` のほかの値は起動で落とす。配置では `file_system` を渡し、書き出す先（`tmp/mails`）を大きさの上限を付けた `emptyDir` にする。
+6. 資源の見積もり：各コンテナに、次の requests と limits を書く。値は arm64 の実機で測っていない見積もりで、作者が実機で測って直す（作者の手順 4）。
+
+   | コンテナ | requests（CPU・メモリ） | limits（CPU・メモリ） | なぜこの値か |
+   |---|---|---|---|
+   | `web` | 100m・256Mi | 1000m・512Mi | 全コードを読み込んだ Rails の 1 プロセスは、jemalloc で 200〜300MiB を見込む。単一のモードなので、プロセスは 1 つである |
+   | `jobs` | 100m・256Mi | 1000m・512Mi | async のモードで 1 プロセスにする。fork のモードでは、スーパーバイザ・ワーカー 4 つ・ディスパッチャ・スケジューラの 7 プロセスがそれぞれ Rails を抱え、1GiB を超えうる |
+   | `frontend` | 50m・128Mi | 500m・384Mi | Node の 1 プロセス。サーバーコンポーネントの描画の間だけ増える |
+   | `postgres` | 100m・256Mi | 1000m・512Mi | 流用元の PostgreSQL と同じ上限。`max_connections` は、Web と `jobs` の接続プールの和に、作り直しとマイグレーションの分を足した値にする |
+   | `migrate`・`daily-reset` | 100m・256Mi | 1000m・768Mi | Rails を読み込み、作り直しはシードの間にイベントのジョブをその場で流す。毎日の数分だけ動く |
+
+   常に動く 4 つのコンテナの limits の和は約 1.9GiB になる。流用元の limits の和（約 0.9GiB、Job を含む）と k3s 自身を足すと、3GiB 前後になる。Raspberry Pi のメモリが 4GB なら余裕が小さいので、作者に機種とメモリを確かめる（OI-147）。CPU の limits は、1 つのコンテナが流用元のデモの分まで使い切らないための上限で、コア数を超えない。
+7. 作者の手順（`deploy/README.md`）：作者が実機で行うことを、この順に書く。コマンドは、その実行にだけ効く形（`ssh` の先のコマンド、引数）で書き、ホストの全体の設定を変えるコマンドを書かない（`guides/dev-cycle.md`「文書の置き場と、書く前の振り分け」）。
+   1. 名前空間と Secret を作る（値はその場で生成し、どこにも書き残さない）。GHCR の読み取りの Secret は、流用元の `ghcr-pull-secret` と同じ作り方で、この名前空間に作る
+   2. `deploy/preflight.sh` で Secret がそろったことを確かめ、イメージのタグを main の SHA にして適用し、`migrate` の完了を見てから `web` が ready になるのを待つ
+   3. 手で 1 回 `daily-reset` を流し（`kubectl create job --from=cronjob/daily-reset`）、ログにシードのアカウントが出ることを確かめる
+   4. `kubectl top pods`（k3s に同梱の metrics-server）で、両方の名前空間の Pod のメモリを測り、作り直しの間の最大も見て、作るもの 6 の値を直す PR の材料にする
+   5. Cloudflare Tunnel に、OI-145 のホスト名を Traefik へ送る公開のホスト名を足す。流用元の tunnel の設定はリポジトリの外にあるので、その置き場で足す。流用元のホストに掛けたレート制限と Bot Fight Mode を、このホスト名にも掛ける
+   6. 公開の URL でシードのアカウントでログインし、受注一覧と発注一覧が出ること、Rails の Service が外から届かないこと、流用元のデモがこれまでどおり動くことを確かめる
+
+テナントの境界：業務の表・RLS・policy は変えない。作り直しは DB ごと作り直し、行を書き換えない。所有ロールの資格情報を Web とワーカーに渡さない形は、いまの `config/database.yml` の規則のままである。コンテキストの境界：作り直しは `lib/` のタスクで、パッケージの公開 API は `DemoWorld` がいまの形で呼ぶ。本番の環境でデモの世界を許す条件だけを `packs/platform` に足す。
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_reset_spec.rb spec/scenarios/demo_world_spec.rb spec/notifications/provider_config_spec.rb   # 0 failures
+```
+
+ほかに、M41 の PR で CI の `images` のジョブが通ること（arm64 の 2 つのイメージを作り、Rails のイメージで本番の環境を読み込める）を確かめる。
+
+期待の不一致で最初に落とすのは、`deploy_manifests_spec.rb` の、マニフェストの規則の example である。spec は `deploy/*.yaml` を読み、次を確かめる。`Secret` の種類が無い。すべてのコンテナが CPU とメモリの requests と limits を持つ。イメージがタグ付きで `latest` を使わない。`DB_OWNER_*` を参照するのは `migrate` と `daily-reset` だけで、`DEMO_WORLD_ENABLED` は `daily-reset` だけである。Ingress は `frontend` の 1 つだけで、Service はどれも `ClusterIP` である。CronJob は `timeZone: Asia/Tokyo` と `concurrencyPolicy: Forbid` を持つ。`deploy/README.md` の Secret の表が、マニフェストから集めた名前とキーと一致する。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+
+- `demo_reset_spec.rb`：Kubernetes の API を WebMock で受け、DB の作り直しとシードを差し替えて、0 にしてから作り直し、作り直しが例外で終わっても 1 に戻すことを確かめる。`ensure` を外すと、失敗の example が落ちる。0 にした後の待ちを外すと、Pod が残っている間に作り直しを始めないことの example が落ちる
+- `demo_world_spec.rb`：本番の環境で `DEMO_WORLD_ENABLED` が無ければ例外、あれば動く。条件を外すと、無いときの example が落ちる
+- `provider_config_spec.rb`：子のプロセスで本番の環境を起こし、`NOTIFICATIONS_PROVIDER` の未設定・`file_system`・ほかの値を確かめる（`spec/platform/logging_spec.rb` の子のプロセスと同じ形）
+
+**作者が実機で確かめること**：作るもの 7 の手順 1〜6。結果（測ったメモリ、公開の URL で確かめたこと、流用元のデモが動くこと）を、作者が PR か台帳に書く。実機の確かめは M41 の完了条件に入れず、作者が結果を書くまで公開しない。
+
+**範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
+
+**実装する文書の節**：`adr/009`、`config/database.yml` の `production`、`architecture/data-model.md`「監査ログ（`platform`）」、`guides/config.md`「ジョブ」・「環境ごとの設定」、流用元の `deploy/README.md`・`deploy/preflight.sh`・`deploy/daily-reset-cronjob.yaml`・`docs/plans/cycle-01-t34-release-runbook.md`
+
+**文書に残すこと**：`guides/config.md`「環境ごとの設定」に `DEMO_WORLD_ENABLED` と `NOTIFICATIONS_PROVIDER` を、「ジョブ」に配置では async のモードで動かすことを書く。`README.md` の「構成」に `deploy/` を足し、`deploy/README.md` を指す。実機で測った値で作るもの 6 を直したら、`adr/009` の「確認した事項」に書く。
