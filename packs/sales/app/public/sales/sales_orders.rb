@@ -49,6 +49,7 @@ module Sales
 
     def self.with_status(actor, relation) = relation.select(SalesOrder.arel_table[Arel.star], SalesOrderStatus.expression(actor).as("status"))
 
+    # statuses の空の配列は、Arel の In が 1=0 にするので 0 件になる（activerecord 8.1 の Arel::Visitors::ToSql#visit_Arel_Nodes_In）
     def self.filtered(relation, status, customer_tenant_id: nil, order_date_from: nil, order_date_to: nil, statuses: nil)
       relation = relation.where(customer_tenant_id:) if customer_tenant_id
       relation = relation.where(order_date: order_date_from..) if order_date_from

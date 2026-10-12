@@ -92,7 +92,7 @@ RSpec.describe Inventory::Allocation, ".active_quantities_sql" do
   let(:line_ids) { Array.new(3) { SecureRandom.uuid } }
 
   def quantities(subquery)
-    columns = subquery.columns.values_at(:sales_order_line_id, :quantity)
+    columns = subquery.columns.values_at(:line_id, :allocated_quantity)
     ActiveRecord::Base.lease_connection.select_rows("SELECT #{columns.join(', ')} FROM (#{subquery.sql}) q").to_h
   end
 
@@ -105,7 +105,7 @@ RSpec.describe Inventory::Allocation, ".active_quantities_sql" do
       # 対照：開いた後は、scope を掛けない同じ条件の副問い合わせに、他社の名義で自社の受注明細を指す引当が入る
       unscoped = Inventory::StockAllocation.where.not(status: "released").group(:sales_order_line_id)
         .select(:sales_order_line_id, Inventory::StockAllocation.arel_table[:quantity].sum.as("quantity"))
-      expect(quantities(SqlSubquery.of(unscoped, sales_order_line_id: "sales_order_line_id", quantity: "quantity")))
+      expect(quantities(SqlSubquery.of(unscoped, line_id: "sales_order_line_id", allocated_quantity: "quantity")))
         .to eq(line_ids[0] => 5, line_ids[2] => 1)
 
       expect(quantities(described_class.active_quantities_sql(actor))).to eq(line_ids[2] => 1)

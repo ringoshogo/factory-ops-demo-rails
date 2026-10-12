@@ -3,7 +3,7 @@
 # unscope・rewhere・update_all を呼べ、scope と書き込みの入口がコンテキストの境界を越えるからである。
 # 受け取る側は、条件を足さずに副問い合わせとして結ぶだけにする
 SqlSubquery = Data.define(:sql, :columns) do
-  # columns は役割ごとの列の名前（{ sales_order_line_id: "sales_order_line_id" } の形）で、relation が select した列の別名を書く
+  # columns は役割ごとの列の名前（{ line_id: "sales_order_line_id" } の形）で、relation が select した列の別名を書く
   def self.of(relation, **columns)
     new(sql: relation.to_sql.freeze, columns: columns.transform_values { _1.to_s.freeze }.freeze)
   end

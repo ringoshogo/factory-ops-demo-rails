@@ -43,10 +43,10 @@ module Inventory
 
     # 受注明細 ID ごとの引当数量を返す副問い合わせ。受注の状況の SQL の式が結ぶ（docs/adr/010-状況の導出をSQLの式1つにする.md）。
     # 条件は quantities_for と同じで、操作者の scope を掛けた後に SQL の文字列にするので、受け取る側は条件を外せない。
-    # 引当の無い明細は行を持たない
+    # 引当の無い明細は行を持たない。役割の名前（line_id・allocated_quantity）を在庫の列の名前と別にし、受け取る側が在庫の列を書かない
     def self.active_quantities_sql(actor)
       SqlSubquery.of(active(actor).group(:sales_order_line_id).select(:sales_order_line_id, StockAllocation.arel_table[:quantity].sum.as("quantity")),
-        sales_order_line_id: "sales_order_line_id", quantity: "quantity")
+        line_id: "sales_order_line_id", allocated_quantity: "quantity")
     end
 
     # 解除していない引当

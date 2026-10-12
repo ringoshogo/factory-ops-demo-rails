@@ -57,6 +57,7 @@ module Fulfillment
       shipment_ids.index_with { [] }.merge(lines.group_by(&:shipment_id))
     end
 
+    # statuses の空の配列は、Arel の In が 1=0 にするので 0 件になる（activerecord 8.1 の Arel::Visitors::ToSql#visit_Arel_Nodes_In）
     def self.filtered(relation, statuses: nil)
       statuses.nil? ? relation : relation.where(ShipmentRequestStatus.expression.in(statuses.map(&:to_s)))
     end

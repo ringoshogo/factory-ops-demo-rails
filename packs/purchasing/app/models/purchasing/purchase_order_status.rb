@@ -6,6 +6,7 @@ module Purchasing
     # 導出の優先順に並べた 7 つの状況
     ALL = %i[supplier_cancelled cancelled inspected inbound accepted awaiting_supplier_confirmation sent].freeze
 
+    # 入荷と検収は、所有テナントと親の組の外部キーで発注と同じテナントに限られる
     def self.expression
       orders = PurchaseOrder.arel_table
       inbound = InboundShipment.where(InboundShipment.arel_table[:purchase_order_id].eq(orders[:id]))

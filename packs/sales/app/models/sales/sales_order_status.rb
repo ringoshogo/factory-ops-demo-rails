@@ -7,15 +7,15 @@ module Sales
     ALL = %i[cancelled inspected shipped awaiting_part_match allocated partially_allocated received].freeze
 
     # 引当数量は、在庫の公開 API が操作者の scope を掛けて返す、受注明細 ID ごとの有効な引当数量の副問い合わせを結ぶ。
-    # 引当の無い明細は副問い合わせに行が無いので、外部結合して 0 と読む
+    # 引当の無い明細は副問い合わせに行が無いので、外部結合して 0 と読む。受注明細は、所有テナントと受注の組の外部キーで受注と同じテナントに限られる
     def self.expression(actor)
       allocations = Inventory::Allocation.active_quantities_sql(actor)
       orders = SalesOrder.arel_table
       allocated = allocations.as("allocated")
-      quantity = Arel::Nodes::NamedFunction.new("COALESCE", [ allocations.column(allocated, :quantity), Arel::Nodes.build_quoted(0) ])
+      quantity = Arel::Nodes::NamedFunction.new("COALESCE", [ allocations.column(allocated, :allocated_quantity), Arel::Nodes.build_quoted(0) ])
       lines = SalesOrderLine.where(SalesOrderLine.arel_table[:sales_order_id].eq(orders[:id]))
-        .joins(SalesOrderLine.arel_table.join(allocated, Arel::Nodes::OuterJoin)
-          .on(allocations.column(allocated, :sales_order_line_id).eq(SalesOrderLine.arel_table[:id])).join_sources)
+      allocated_lines = lines.joins(SalesOrderLine.arel_table.join(allocated, Arel::Nodes::OuterJoin)
+        .on(allocations.column(allocated, :line_id).eq(SalesOrderLine.arel_table[:id])).join_sources)
       line_quantity = SalesOrderLine.arel_table[:quantity]
 
       Arel::Nodes::Case.new
@@ -23,8 +23,8 @@ module Sales
         .when(orders[:inspected_at].not_eq(nil)).then("inspected")
         .when(orders[:shipped_at].not_eq(nil)).then("shipped")
         .when(lines.where(item_id: nil).arel.exists).then("awaiting_part_match")
-        .when(lines.where(quantity.lt(line_quantity)).arel.exists.not).then("allocated")
-        .when(lines.where(quantity.gt(0)).arel.exists).then("partially_allocated")
+        .when(allocated_lines.where(quantity.lt(line_quantity)).arel.exists.not).then("allocated")
+        .when(allocated_lines.where(quantity.gt(0)).arel.exists).then("partially_allocated")
         .else("received")
     end
   end

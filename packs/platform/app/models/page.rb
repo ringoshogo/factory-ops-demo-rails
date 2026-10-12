@@ -32,7 +32,8 @@ class Page
   # sort を省くと、一意な列 key の順に並べ、key の値をカーソルにする。:id（UUIDv7）なら作成順の新しいものから並べる。
   # sort を渡すと「列の値、id」の組で並べ、id を列と同じ向きに並べる。値の無い行は向きによらず最後に置く。
   # 件数は first と after によらず、relation の行を数える。
-  # columns は行と一緒に読む式（Arel の As のノード）で、件数の SQL には入れない。行には、その別名の属性で載る
+  # columns は行と一緒に読む式（Arel の As のノード）で、行には、その別名の属性で載る。relation に select を掛けて渡すと、
+  # 件数の count が select の複数の列を COUNT に渡して SQL のエラーになるので、行の列は relation と別に受け取り、件数の SQL に入れない
   def self.of(relation, first:, after:, key: :id, direction: :desc, sort: nil, columns: [], &to_values)
     rows = sort ? sorted(relation, sort, after) : keyed(relation, key, direction, after)
     columns += [ sort.expression.as("page_sort_value") ] if sort
