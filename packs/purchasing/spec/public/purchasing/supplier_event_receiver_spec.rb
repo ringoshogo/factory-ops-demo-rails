@@ -1,6 +1,7 @@
 require "rails_helper"
 require_relative "../../../../../spec/support/events"
 require_relative "../../../../../spec/support/shared_examples/idempotent_receiver"
+require_relative "../../../../../spec/support/cross_read"
 
 # 「出荷計上」の購買の受け手（docs/architecture/data-model.md「購買（`purchasing`）」「イベントの受け口と冪等キー」）。
 # 配送表を通した重複配送は spec/contracts/shipment_posted_delivery_spec.rb が確かめる
@@ -46,6 +47,29 @@ RSpec.describe Purchasing::SupplierEventReceiver do
 
   it "受注側テナントが一致しない発注は書かない" do
     expect { handle(event.with(supplier_tenant_id: FactoryBot.create(:tenant).id)) }.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
+  # イベントの受け手は操作者のいない入口なので、所有の条件を RLS に任せない。発注を FOR UPDATE で引くので、SELECT だけを開いても
+  # RLS の UPDATE のポリシーが他社の発注を除き、条件の抜けが見えない（docs/guides/testing.md「行列テストとの分担」）。
+  # どの種類のイベントも同じ 1 か所で発注を引くので、時刻を書く「品番照合待ち」で確かめる
+  describe "RLS の SELECT と UPDATE を開いたとき" do
+    include_context "RLS の SELECT と UPDATE を開く"
+
+    it "他社の発注は見つからず、書かない" do
+      theirs = Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:purchase_order, supplier_tenant_id: supplier.id) }
+      pending_event = Contracts::PartMatchPending.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
+
+      Tenancy.with_tenant(buyer.id) do
+        cross_read!
+        # 対照：開いた後は、他社の発注が見え、自社の発注には品番照合待ちの時刻を書く
+        before = reread(theirs)
+        described_class.handle(pending_event)
+        expect(order.reload.awaiting_match_at).to be_present
+
+        expect { described_class.handle(pending_event.with(purchase_order_id: theirs.id)) }.to raise_error(ActiveRecord::RecordNotFound)
+        expect(reread(theirs)).to eq(before)
+      end
+    end
   end
 
   describe "取消の回答" do

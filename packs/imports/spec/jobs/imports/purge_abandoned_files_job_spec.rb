@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 置いたまま取り込まれないファイルの中身を、置いてから 24 時間を過ぎたら消す。定期のジョブがテナントを 1 つずつ開いて
 # 公開 API を呼び、公開 API は所有の条件を明示して、取り込みを始めたファイルには触れない
@@ -63,6 +64,28 @@ RSpec.describe Imports::PurgeAbandonedFilesJob do
 
       expect(count).to eq(1)
       expect([ content(tenant, mine), content(other, theirs) ]).to eq([ nil, "item_code,quantity\n" ])
+    end
+
+    # 候補を FOR UPDATE で引いて UPDATE で消すので、SELECT だけを開いても RLS の UPDATE のポリシーが他社の行を除き、
+    # 所有の条件の抜けが見えない（docs/guides/testing.md「行列テストとの分担」）
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社の置いたままのファイルを数えず、変えない" do
+        mine = place(tenant, placed_at: now - 25.hours)
+        theirs = Tenancy.with_tenant(other) { Imports::ImportFile.find(place(other, placed_at: now - 25.hours).id) }
+
+        travel_to(now) do
+          Tenancy.with_tenant(tenant) do
+            cross_read!
+            # 対照：開いた後は、他社のファイルが見え、自社のファイルの中身は消す
+            before = reread(theirs)
+            expect(Imports::Files.purge_abandoned).to eq(1)
+            expect(Imports::ImportFile.find(mine.id).content).to be_nil
+            expect(reread(theirs)).to eq(before)
+          end
+        end
+      end
     end
 
     it "テナントを開かずに呼ぶと例外になる" do

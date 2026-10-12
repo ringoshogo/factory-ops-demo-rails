@@ -1538,10 +1538,10 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 
 ```sh
 bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb   # 0 failures
-bundle exec rspec packs/notifications/spec/public/notifications/email_spec.rb packs/partnerships/spec/public/partnerships/authentication_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb packs/sales/spec/public/sales/item_prices_backfill_spec.rb packs/*/spec/public/*/*_event_receiver_spec.rb   # 0 failures。作るもの 3 で集めた箇所の spec
+bundle exec rspec packs/notifications/spec/public/notifications/email_spec.rb packs/partnerships/spec/public/partnerships/authentication_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb packs/sales/spec/public/sales/item_prices_backfill_spec.rb packs/imports/spec/jobs/imports/purge_abandoned_files_job_spec.rb packs/*/spec/public/*/*_event_receiver_spec.rb   # 0 failures。作るもの 3 で集めた箇所の spec
 ```
 
-2 つ目のコマンドは、操作者のいない入口の公開 API（`Notifications::Email.redeliver_failed`・`Partnerships::Authentication.revoke_sessions`・`Inventory::Stocks.set_safety_stock`・`Sales::ItemPrices.backfill`）と、イベントの受け手の spec である。作るもの 3 で集めた箇所がほかの spec にあれば、そのパスをこのコマンドに足し、集めた一覧を証跡の「実装の記録」に書く。
+2 つ目のコマンドは、操作者のいない入口の公開 API（`Notifications::Email.redeliver_failed`・`Partnerships::Authentication.revoke_sessions`・`Inventory::Stocks.set_safety_stock`・`Sales::ItemPrices.backfill`・`Imports::Files.purge_abandoned`）と、イベントの受け手の spec である。作るもの 3 で集めた箇所がほかの spec にあれば、そのパスをこのコマンドに足し、集めた一覧を証跡の「実装の記録」に書く。
 
 期待の不一致で最初に落とすのは、`spec/matrix/cross_read_spec.rb` の、足している間の `pg_policies` の確かめ（UPDATE のポリシーが無い）である。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す（`guides/dev-cycle.md`「テストから書く」）。
 
