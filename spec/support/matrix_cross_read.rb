@@ -32,7 +32,31 @@ module MatrixCrossRead
       "途中で止めた実行が残したものなので、MatrixCrossRead.remove! で外す（docs/guides/testing.md「行列テストとの分担」）"
   end
 
-  # 足していない表があっても失敗しない
+  # グループの前にポリシーを足し、後に外す。外すのは、このグループが足し終えたときだけにする。
+  # rspec は before(:context) が失敗しても after(:context) を走らせ（rspec-core 3.13 の lib/rspec/core/example_group.rb の
+  # ExampleGroup.run が ensure で run_after_context_hooks を呼ぶ）、足すのに失敗したときに外すと、同じ DB に先に足した
+  # 別の実行のポリシーを消すからである。after(:context) は登録の逆の順に走るので、ほかのフックより先に呼べば、
+  # ほかのフックが開いた世界を閉じた後に外れる
+  def self.share(group)
+    group.before(:context) do
+      MatrixCrossRead.add!
+      @matrix_cross_read_added = true
+    end
+    group.after(:context) { MatrixCrossRead.remove! if @matrix_cross_read_added }
+  end
+
+  # ブロックの間だけポリシーを足す。足すのに失敗したときは外さない（share と同じ理由）
+  def self.with_policies
+    add!
+    begin
+      yield
+    ensure
+      remove!
+    end
+  end
+
+  # 足していない表があっても失敗しない。spec と補助は直に呼ばず、share か with_policies を通す。
+  # 途中で止めた実行が残したポリシーを手で外すときにだけ、直に呼ぶ
   def self.remove!
     with_owner_connection do |connection|
       connection.transaction do

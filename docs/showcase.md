@@ -29,7 +29,7 @@
 
 ### その先
 
-4 つの点のほかに、責務と関心の分離（テーマ 3）・非同期処理の型の使い分け（テーマ 5）・販売単価の履歴（テーマ 7）・機械で守る規約（テーマ 8）・テスト戦略（テーマ 9）・運用性（テーマ 10）・チーム開発（テーマ 11）を扱う。こちらには計画段階のものを含む。業務の全体像は [`architecture/context-map.md`](architecture/context-map.md) の図に、判断の理由は [`adr/`](adr/) にある。
+4 つの点のほかに、責務と関心の分離（テーマ 3）・非同期処理の型の使い分け（テーマ 5）・販売単価の履歴（テーマ 7）・機械で守る規約（テーマ 8）・テスト戦略（テーマ 9）・運用性（テーマ 10）・チーム開発（テーマ 11）を扱う。業務の全体像は [`architecture/context-map.md`](architecture/context-map.md) の図に、判断の理由は [`adr/`](adr/) にある。
 
 各テーマの節は「何を示すか → 設計判断 → どこで守っているか → どう確かめられるか → 状態」の順に並ぶ。「状態」は、実装済みか、[`implementation-plan.md`](implementation-plan.md) のどのマイルストーンで作る計画かを示す。計画のものは、置き場のパスに「（計画：Mxx）」を付ける。どこまで実装したかは [`handoff.md`](handoff.md)「リポジトリの状態」にある。
 
@@ -127,7 +127,7 @@ bundle exec rspec packs/sales/spec/models packs/purchasing/spec/models packs/ful
 bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappings_spec.rb          # 腐敗防止層と照合のやり直し
 ```
 
-**状態**：実装済み（M4・M5・M10・M11・M14）。請求書の写し（受領請求書）は計画（M25）。
+**状態**：実装済み（M4・M5・M10・M11・M14、請求書の写し（受領請求書）は M25）。
 
 ### 4. 整合性の設計
 
@@ -159,7 +159,7 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 - `spec/support/shared_examples/idempotent_receiver.rb`：同じイベントを 2 回発行し、同じジョブを 2 回実行しても、書いた行が増えない。受け手ごとに適用する
 - `order_allocation_spec.rb`・`shipping_spec.rb`：発行された `FOR UPDATE` を記録し、ロックの順を確かめる
 
-**状態**：実装済み（M7・M10〜M14）。引当の行で取消と出荷の同時実行を止めることのテストは計画（M22、`spec/concurrency/`）。
+**状態**：実装済み（M7・M10〜M14、引当の行で取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22）。
 
 ### 5. 非同期処理の型の使い分け
 
@@ -212,14 +212,14 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 
 **設計判断**：[`adr/006-販売単価を有効期間と記録期間の2軸で持つ.md`](adr/006-販売単価を有効期間と記録期間の2軸で持つ.md)
 
-**どこで守っているか**（すべて計画：M27）
+**どこで守っているか**
 - `item_prices` の排他制約：記録期間が終わっていない行同士で、有効期間が重ならない
 - トリガー：記録期間を閉じる以外の UPDATE と、すべての DELETE を拒む
 - 単価の問い合わせを 1 つの公開 API `Sales::ItemPrices.price_at`（有効日と記録時点の 2 引数）に集める
 
-**どう確かめられるか**：`packs/sales/spec/db/item_prices_constraints_spec.rb`、`packs/sales/spec/public/sales/item_prices_spec.rb`（どちらも計画：M27）
+**どう確かめられるか**：`packs/sales/spec/db/item_prices_constraints_spec.rb`、`packs/sales/spec/public/sales/item_prices_spec.rb`
 
-**状態**：計画（M27）。
+**状態**：実装済み（M27）。
 
 ### 8. 機械で守る規約
 
@@ -289,15 +289,15 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/te
 - [`implementation-plan.md`](implementation-plan.md)「M18 構造化ログと相関 ID」「M19 監査ログ」「M30 メトリクス」「M31 SLO と障害対応の手順書」
 - [`architecture/data-model.md`](architecture/data-model.md)「監査ログ（`platform`）」、[`architecture/graphql-schema.md`](architecture/graphql-schema.md)「監査ログ」
 
-**どこで守っているか**（メトリクスと SLO は計画）
+**どこで守っているか**
 - 構造化ログ：`Rails.event` を出口にした 1 行 1 件の JSON。`Contracts.publish` がイベントの付帯情報で相関 ID と因果 ID を運ぶ。個人情報と自由記述を書かない（M18）
 - 監査ログ：mutation とイベントのジョブの基底クラスが記録し、表は追記だけ（M19）
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
 
-**どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`（M31）。M30・M31 の spec は計画である。
+**どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）。
 
-**状態**：構造化ログ（M18）と監査ログ（M19）は実装済み。メトリクス（M30）と SLO（M31）は計画。
+**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31）。
 
 ### 11. チーム開発
 

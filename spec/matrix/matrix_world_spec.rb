@@ -239,14 +239,12 @@ RSpec.describe MatrixWorld do
 
     # 同じテストの DB で行列を流すほかの実行のポリシーを、足すのに失敗した側が消すと、ほかの実行の 2 回目が空振りする
     it "同じ名前のポリシーがすでにあれば、足さずに失敗し、あったポリシーを外さない" do
-      MatrixCrossRead.add!
+      MatrixCrossRead.with_policies do
+        results = run_inner_group(cross_read: true) { it("走らない") { nil } }
 
-      results = run_inner_group(cross_read: true) { it("走らない") { nil } }
-
-      expect(results.first.last).to include("matrix_cross_read のポリシーがすでにある")
-      expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
-    ensure
-      MatrixCrossRead.remove!
+        expect(results.first.last).to include("matrix_cross_read のポリシーがすでにある")
+        expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
+      end
     end
 
     it "接続先の名前がテストの DB でなければ、ポリシーを足さずに失敗する" do

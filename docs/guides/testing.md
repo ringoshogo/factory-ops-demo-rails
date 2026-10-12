@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | — |
 | 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | — |
-| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト | 50% を超えたら |
+| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト、シードと E2E の世界（`DemoWorld`）を公開 API とイベントで作り切れること | 50% を超えたら |
 | ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/notifications`・`spec/platform`・`spec/rubocop`・`spec/bin` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制・外部への作用の呼び出し元）と、`bin/` の検査のスクリプト | 数えない |
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
@@ -27,6 +27,8 @@ bin/test-layers tmp/rspec.json
 ## 層への配分
 
 テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。上限（件数・文字列の長さ・ファイルの大きさ・値の型の上限）は、上限ちょうどで受け付ける example と、上限 + 1 で拒む example の両方を、定数から作らず仕様の値で書く。上限 + 1 だけでは上限を誤って 1 つ下げても落ちず、定数から入力を作ると定数を誤って変えても通るからである。計画が名指ししていない、実装の中で増えた上限にも当てる。一覧を返す公開 API の単体のテストでは、親を 2 件以上作る。1 件だと N+1 の検出が働かない（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。request spec の補助（ログインする `login_as`、応答の本文をそのまま返す `graphql_body`、トップレベルのエラーが無いことを確かめて `data` を返す `query`）は `spec/support/request_helpers.rb` にあり、`type: :request` の spec と重要シナリオに取り込まれる。テストを書く人は、補助を spec のファイルに複製しない。
+
+業務の日付を今日で決める公開 API（発注日・検収日のように、入力で受けずに `Date.current` で決めるもの）を足す人は、日本時間の 0〜9 時に `travel_to` して、日付が日本時間の日付になる example を単体に置く。この時間帯だけ UTC の日付と食い違うので、ほかの時刻では時刻帯の誤りが落ちない（時刻帯の決め方は `guides/config.md`「application.rb で変えたこと」）。
 
 `audit` を宣言した mutation を足す人は、結合の spec で、成功の後にできた監査の行の対象（`target_type`・`target_id`）と相手（`counterparty_tenant_id`）を、期待する値と比べる。行の件数だけを見る example は、宣言のラムダが対象か相手を取り違えても落ちない。`spec/graphql/audit_examples_spec.rb` が、スキーマの `audit` の action ごとに、action の文字列と 2 つの列の名前が同じ spec のファイル（`spec/requests`・`spec/scenarios`・`spec/concurrency`）に現れることを確かめる。名前が現れることしか見ないので、比べ方が正しいかは実装レビューの観点 4 で見る。
 
@@ -93,15 +95,17 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 シナリオは、2 社のユーザーとしてログインし、GraphQL の入口を通して操作する。イベントは、Active Job のアダプタを `:solid_queue` のまま、`deliver_enqueued_events` で受け手まで流す（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。補助は `spec/support/scenarios.rb` にある。`deliver_enqueued_events` は、シードと同じ `DemoWorld::Jobs`（`lib/demo_world/jobs.rb`）で流すので、テストとシードでジョブの流し方と後始末が食い違わない。
 
-`spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、置き場から付ける。テストを書く人が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
+イベントの受け手を足す人と、受注・発注・出荷依頼・取り込みの状況の値を足す人は、`DemoWorld` の世界も合わせる。`spec/contracts/receivers_spec.rb` は、シードの世界を作る間にすべての受け手へイベントが届くことを対照にして、受け手の戻り値を確かめる。`spec/scenarios/demo_world_spec.rb` は、E2E の世界が状況の止まっていられる全値の行を持つことを確かめる。世界を合わせないと、受け手や状況を足した変更でこの 2 つが落ちる。
 
-| | シナリオ | 確かめること | 置き場 | 作るマイルストーン |
-|---|---|---|---|---|
-| S1 | テナントの境界 | 発注側が、イベントで受け取った相手の ID（出荷実績 ID）と、受注側の伝票の ID を、ID を取るすべての入口（下の列挙）に持ち込んでも、相手のデータに届かない | `spec/scenarios/tenant_boundary_spec.rb` | M16 |
-| S2 | 取引関係の失効 | 失効で 3 経路と新しい発注が閉じ、連結済みの取引は請求まで進む | `spec/scenarios/revocation_spec.rb` | M26 |
-| S3 | 発注と受注の連結 | 照合待ち → 対応表の登録 → 受注確定。同じイベントを 2 回流しても、イベントの届く順を入れ替えても、受注は 1 件で、発注の状況は同じになる | `spec/scenarios/order_linking_spec.rb` | M16 |
-| S4 | 引当・出荷・取消の競合 | 同じ出荷依頼の同時の計上は 1 件だけ成立する。同時の引当と出庫で有効在庫が負にならない。同時の取消と計上はどちらか一方だけが成立する | `spec/concurrency/`・`packs/*/spec/concurrency/` | M16（計上・引当・出荷指示の取消）、M22（受注の取消） |
-| S5 | 請求の金額と税の丸め | 発注 → 受注 → 出荷 → 検収 → 締め → 発行 → 受領請求書で、単価・数量・税額・合計が 2 社で一致し、税が請求書・税率ごとに 1 回だけ切り捨てられる | `spec/scenarios/billing_amounts_spec.rb` | M25 |
+`spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、置き場から付ける。テストを書く人が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。同じ置き場の `demo_world_spec.rb`・`seeds_spec.rb`（シードと E2E の世界）も `--tag scenario` で流れる。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
+
+| | シナリオ | 確かめること | 置き場 |
+|---|---|---|---|
+| S1 | テナントの境界 | 発注側が、イベントで受け取った相手の ID（出荷実績 ID）と、受注側の伝票の ID を、ID を取るすべての入口（下の列挙）に持ち込んでも、相手のデータに届かない | `spec/scenarios/tenant_boundary_spec.rb` |
+| S2 | 取引関係の失効 | 失効で 3 経路と新しい発注が閉じ、連結済みの取引は請求まで進む | `spec/scenarios/revocation_spec.rb` |
+| S3 | 発注と受注の連結 | 照合待ち → 対応表の登録 → 受注確定。同じイベントを 2 回流しても、イベントの届く順を入れ替えても、受注は 1 件で、発注の状況は同じになる | `spec/scenarios/order_linking_spec.rb` |
+| S4 | 引当・出荷・取消の競合 | 同じ出荷依頼の同時の計上は 1 件だけ成立する。同時の引当と出庫で有効在庫が負にならない。同時の取消と計上はどちらか一方だけが成立する | `spec/concurrency/`・`packs/*/spec/concurrency/` |
+| S5 | 請求の金額と税の丸め | 発注 → 受注 → 出荷 → 検収 → 締め → 発行 → 受領請求書で、単価・数量・税額・合計が 2 社で一致し、税が請求書・税率ごとに 1 回だけ切り捨てられる | `spec/scenarios/billing_amounts_spec.rb` |
 
 ### S1 の入口の列挙
 
@@ -129,7 +133,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 入口の行列は、読み取りの行ごとに、同じ要求を RLS の SELECT を開いて送り直し、本文が変わらないことも確かめる。認可の scope は RLS に任せない（`../architecture/graphql-schema.md`「認可」）が、相手から読む経路の無い表では、公開 API が scope を外しても RLS が他社の行を隠すので、1 回目の応答は変わらないからである。結果の種類だけを比べると、集計を返す入口（`supplier.dashboard`）は scope を外しても種類が変わらないので、本文を比べる。並びだけが変わったときは、scope の抜けと区別して「並びの決まらない一覧」として落とす。仕組みは次のとおりである。
 
-- `MatrixWorld.share_per_file(self, cross_read: true)` は、世界を開く前に、テナントの表ごとに、設定 `app.matrix_cross_read` が `on` のときだけ全行を読ませる SELECT のポリシーを所有ロールの接続で足し、世界を閉じた後に外す（`spec/support/matrix_cross_read.rb`）。ポリシーの足し外しは表のロックを取るので、世界のトランザクションが開いている間に行うと待ち合う。足すのは 1 つのトランザクションなので、途中で失敗しても残らない。外すのは足し終えたときだけである。接続先の名前がテストの DB でなければ足さずに失敗する
+- `MatrixWorld.share_per_file(self, cross_read: true)` は、世界を開く前に、テナントの表ごとに、設定 `app.matrix_cross_read` が `on` のときだけ全行を読ませる SELECT のポリシーを所有ロールの接続で足し、世界を閉じた後に外す（`spec/support/matrix_cross_read.rb`）。ポリシーの足し外しは表のロックを取るので、世界のトランザクションが開いている間に行うと待ち合う。足すのは 1 つのトランザクションなので、途中で失敗しても残らない。外すのは足し終えたときだけで、この判定は `MatrixCrossRead.share`（グループの前後）と `with_policies`（ブロックの間）だけが持つ。ポリシーを使う補助と spec はこの 2 つを通し、`remove!` を直に呼ばない。呼ぶ側が足し外しを対にして書くと、足すのに失敗しても外す形を補助ごとに書き直すことになるので、`spec/matrix/cross_read_spec.rb` が直の呼び出しを落とす。接続先の名前がテストの DB でなければ足さずに失敗する
 - 設定は example の中で `MatrixCrossRead.on!` が `SET LOCAL` と同じ形で入れ、example のセーブポイントと一緒に戻る。ロールや DB の既定には書かない
 - ポリシーの SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。`structure.sql` に混ざれば `bin/check-structure` が、消し忘れれば `spec/db/tenant_enforcement_spec.rb`（テナントの表のポリシーは `owner_write` と 6 つの表の `partner_read` だけ）が落とす
 - `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと、公開 API の値も入口の要求の応答も他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行を持つ
