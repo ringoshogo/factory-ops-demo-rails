@@ -187,6 +187,16 @@ RSpec.describe Sales::ItemPrices do
       expect(correct(row, unit_price: 9_223_372_036_854_775_807)).to be_success
     end
 
+    # 理由の上限は 200 文字（docs/architecture/graphql-schema.md「mutation の一覧」）
+    it "理由は 200 文字ちょうどを受け付け、201 文字は理由を指す INVALID_INPUT で何も書かない" do
+      row = prices.sole
+
+      expect(failures(correct(row, reason: "あ" * 201))).to eq([ [ :invalid_input, [ :reason ] ] ])
+      expect(prices.map(&:unit_price)).to eq([ 100 ])
+      expect(correct(row, reason: "あ" * 200)).to be_success
+      expect(prices.map { [ _1.unit_price, _1.reason ] }).to eq([ [ 90, "あ" * 200 ] ])
+    end
+
     it "見えない行は NOT_FOUND" do
       other = foreign[:price]
 

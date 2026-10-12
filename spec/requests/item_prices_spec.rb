@@ -138,6 +138,19 @@ RSpec.describe "販売単価の履歴", type: :request do
       expect(audit_rows("item_price.correct").size).to eq(1)
     end
 
+    # 理由の上限は 200 文字（docs/architecture/graphql-schema.md「mutation の一覧」）
+    it "訂正の理由は 200 文字ちょうどを受け付け、201 文字は理由を指す INVALID_INPUT で何も書かない" do
+      login_as(supplier_admin)
+      row_id = query("{ supplier { items { nodes { prices { id } } } } }").dig("supplier", "items", "nodes").sole.dig("prices", 0, "id")
+
+      expect(mutate("correctItemPrice", "item { id }", itemPriceId: row_id, unitPrice: "95", reason: "あ" * 201))
+        .to eq("item" => nil, "errors" => [ { "code" => "INVALID_INPUT", "path" => [ "reason" ] } ])
+      expect(audit_rows("item_price.correct")).to be_empty
+      expect(mutate("correctItemPrice", "item { unitPrice }", itemPriceId: row_id, unitPrice: "95", reason: "あ" * 200))
+        .to eq("errors" => [], "item" => { "unitPrice" => "95" })
+      expect(prices.map { _1.values_at("unitPrice", "reason") }).to eq([ [ "95", "あ" * 200 ] ])
+    end
+
     it "member には FORBIDDEN で、単価の行も監査の行も書かない" do
       login_as(supplier_member)
       row_id = query("{ supplier { items { nodes { prices { id } } } } }").dig("supplier", "items", "nodes").sole.dig("prices", 0, "id")
