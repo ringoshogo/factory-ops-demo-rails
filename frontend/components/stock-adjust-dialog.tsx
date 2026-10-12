@@ -17,7 +17,8 @@ export type AdjustTarget = { itemId: string; code: string; name: string; onHand:
 export function StockAdjustDialog({ target }: { target: AdjustTarget }) {
   return (
     <FormDialog
-      label="入出庫調整"
+      // 在庫の表の操作の列を狭め、1024px で表をパネルに収める。何の調整かはダイアログの見出しで示す
+      label="調整"
       variant="outline"
       size="sm"
       title={`入出庫調整（${target.code} ${target.name}）`}

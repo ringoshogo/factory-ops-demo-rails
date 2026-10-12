@@ -37,7 +37,7 @@ export default async function ImportsPage({ searchParams }: { searchParams: Prom
           {kinds.map((kind) => (
             <div key={kind}>
               <p className="text-foreground-2 font-medium">{IMPORT_KIND[kind]}</p>
-              <code className="text-foreground">{CSV_COLUMNS[kind].map((c) => c.name).join(",")}</code>
+              <code className="text-foreground break-all">{CSV_COLUMNS[kind].map((c) => c.name).join(",")}</code>
               <ul className="mt-1 list-disc pl-5">
                 {CSV_COLUMNS[kind].map((c) => (
                   <li key={c.name}>

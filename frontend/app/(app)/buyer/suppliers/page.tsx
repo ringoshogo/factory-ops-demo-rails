@@ -59,12 +59,12 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
                     </TextLink>
                   </TableCell>
                   <TableCell>
-                    <span className="flex flex-wrap gap-1.5">
+                    <span className="inline-flex flex-wrap gap-1.5">
                       {PERMISSION_ORDER.filter((p) => permissions.includes(p)).map((p) => (
                         <span
                           key={p}
                           data-testid="permission"
-                          className="bg-neutral-chip text-foreground-2 rounded-badge px-1.5 py-px text-xs font-medium"
+                          className="bg-neutral-chip text-foreground-2 rounded-badge inline-flex px-1.5 py-px text-xs font-medium"
                         >
                           {PERMISSION_LABEL[p]}
                         </span>

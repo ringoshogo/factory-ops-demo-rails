@@ -99,7 +99,8 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                         </TableCell>
                       ))}
                       <TableCell>
-                        <TableActions>
+                        {/* 1280px 未満は 2 つのボタンを縦に積み、操作の列を狭めて 1024px で表をパネルに収める */}
+                        <TableActions className="flex-col items-start xl:flex-row xl:items-center">
                           <ItemDialog
                             item={{
                               code: item.code,

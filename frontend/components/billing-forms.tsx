@@ -54,9 +54,10 @@ export function ClosePeriodForm({ customers, defaultDate }: { customers: readonl
     <form action={action} className="space-y-3" data-testid="close-period-form">
       <FormError state={state} />
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
+        {/* select は最も長い選択肢の幅に広がるので、狭い画面では幅をフォームに合わせ、長い取引先の名前で横にはみ出さない */}
+        <div className="w-full max-w-md min-w-0 space-y-1.5">
           <Label htmlFor={`${id}-customer`}>取引先</Label>
-          <NativeSelect id={`${id}-customer`} name="customerTenantId" required defaultValue="">
+          <NativeSelect fullWidth className="w-full min-w-0" id={`${id}-customer`} name="customerTenantId" required defaultValue="">
             <option value="" disabled>
               選ぶ
             </option>
