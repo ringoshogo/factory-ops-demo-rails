@@ -68,7 +68,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -108,6 +108,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M30 | メトリクス | メトリクスのラベルにテナントとユーザーが入らない |
 | M31 | SLO と障害対応の手順書 | どの警報も手順書を持ち、警報の規則が CI で検査される |
 | M32 | シードデータ | シードと E2E の世界が 1 つの作り方から、公開 API とイベントだけで作られ、`admin` に限る段は mutation と同じ規則を通る。業務の日付が日本時間の今日で決まり、システムの時刻帯で決まる呼び出しを Cop が落とす。操作者のいない入口の公開 API が所有の条件を明示し、RLS を開いても他社の行を数えない |
+| M38 | RLS の UPDATE のポリシーが隠す所有の条件を、単体で捕まえる | 操作者のいない入口の公開 API とイベントの受け手から所有の条件を外すと、RLS の UPDATE のポリシーが同じ行を隠していても単体が落ちる |
 | M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる（計画済み。実装は M32 の後） |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
@@ -133,6 +134,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M30 | M18・M28・M29 | 値の出どころが M18 の構造化イベントで、外部の呼び出しと取り込みの値も測る |
 | M31 | M30 | SLO と警報を M30 のメトリクスで書く |
 | M32 | M31 まで | シードが単価の履歴と取り込みも含む |
+| M38 | M32 | 操作者のいない入口の規則と、共有の文脈「RLS の SELECT を開く」が M32 にある |
 | M33 | M32 | 画面が呼ぶ入口が M29 までにそろい、E2E の世界を M32 の `DemoWorld` で作る |
 
 ---
@@ -1508,6 +1510,42 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 
 **文書に残すこと**：シードの流し方と `DemoWorld` を `README.md`「開発環境」に書く。`DemoWorld` が GraphQL を通らない入口として規則を評価することを、`graphql-schema.md`「役割による制限」の GraphQL を通らない入口の例に足す。作るもの 5 の `Partnerships::Onboarding.register` を、`tenants` へ追加する入口として `data-model.md`「RLS」に書く。
 
+## M38 RLS の UPDATE のポリシーが隠す所有の条件を、単体で捕まえる
+
+**目的**：操作者のいない入口の公開 API とイベントの受け手は、所有の条件を `Current.tenant_id` で明示する（`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。単体は、共有の文脈「RLS の SELECT を開く」で他社の行を SELECT で見えるようにして、条件の抜けを確かめる。しかし、UPDATE と `SELECT ... FOR UPDATE` で行を引く箇所は、SELECT のポリシーに加えて UPDATE のポリシー（`owner_write`）の `USING` を満たす行しか対象にしないので、所有の条件を外しても他社の行が隠れ、単体が落ちない（IB-60）。共有の文脈を UPDATE にも広げ、この抜けを単体で捕まえる。業務の振る舞いは変えない。
+
+**作るもの**
+
+1. 試作と分かれ目：別名のテスト DB で、下の 2 が成り立つかを先に確かめる。サイクル 04 の改善の探索で、安全在庫の 1 か所は試作した（`plans/cycle-04/improvement.md`）。加えて、設定が `on` の間は、他社の行を自社の名義に書き換える UPDATE と `INSERT ... ON CONFLICT DO UPDATE` が通ること（改善の探索の Codex の指摘）を一時の表で確かめ、作るもの 3 の対照で捕まえられるかを証跡に書く。捕まえられなければ、判断の裏返る条件に従って止め、取りまとめ役に返す
+2. `MatrixCrossRead` が、SELECT のポリシーに加えて、設定 `app.matrix_cross_read` が `on` のときだけ他社の行を UPDATE の対象に入れる UPDATE のポリシーを足す。名前は SELECT のポリシーと別にし、`FOR UPDATE` に限り、`WITH CHECK (false)` を明示する。`WITH CHECK` を書き落とすと PostgreSQL は `USING` を `WITH CHECK` に使うので、設定が `on` の間は他社の名義で書けてしまう。許可のポリシーの `WITH CHECK` は OR でつながるので、書いた後の行はいまの `owner_write` の `WITH CHECK`（自社の行）だけで判定される。`add!` は 2 つを同じトランザクションで足し、`remove!` と同名が残っていたときの失敗は 2 つに掛ける。足している間の `pg_policies` で、そのポリシーが `UPDATE` に限り、`with_check` が `false` であることを spec で確かめる。ポリシーの SQL は `spec/support` にだけ置く（M37 と同じ理由）
+3. 確かめる箇所を、正本とコードから集める：操作者のいない入口の公開 API（`graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の列挙）とイベントの受け手（配送表）のうち、UPDATE・`update_all`・`lock` で行を引く箇所を集める。箇所ごとに、共有の文脈で `cross_read!` を呼んでから他社の対象を渡す example を足す。example は、所有ロールの接続で、他社の行が変わらないこと（所有の列を含む）を対照として確かめる。設定が `on` の間は所有の移し替えが RLS を通るので、この対照が捕まえる。条件の付いた書き込み（`unless order.shipped_at` など）は、書く側の分岐を通る入力を選ぶ
+4. 届かない形を `guides/testing.md` に書く：冪等キーにグローバルな一意索引がある受け手（他社に同じキーの行を作れない）、行ロックだけを取って書かない箇所（他社の行のロックが黙って通る）、DELETE（DELETE のポリシーは変えない）。どれも、箇所と、条件が二重の守りであることを書く
+
+**判断**：UPDATE のポリシーを開くか、流した SQL を所有ロールの接続で流し直すか
+
+- **既定の推奨**：UPDATE のポリシーを開く。M37・M32 で作った補助と共有の文脈をそのまま使い、箇所ごとの example は「`cross_read!` を呼んでから他社の対象を渡し、他社の行が変わらないことを確かめる」の 1 つで済む。テストの DB にだけ足すので、本番の規則は変わらない。設定が `on` の間に通る所有の移し替えは、example の対照で捕まえる
+- **比べた案**：公開 API が流した SQL を `sql.active_record` で拾い、所有ロールの接続で SELECT に読み替えて流し直す案（M31 の `files_purge_owner_spec.rb` の形）は、書き込みのポリシーを変えないが、公開 API ごとに拾う文と読み替え方を書き、SQL の形が変わると検査が外れる。構文木で `Current.tenant_id` の条件を照らす案は、条件の書き方（補助のメソッド、関連をたどる絞り込み）が多く、外れが多い
+- **裏返る条件**：作るもの 1 の試作で、所有の移し替えを対照で捕まえられない形が見つかる → SQL を流し直す案に移る
+- **撤退コスト**：小さい。UPDATE のポリシーと足した example を外せば元に戻る。`structure.sql` は変えない。example が見つけた所有の条件の抜けの直しは、撤退しても残す
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb <作るもの 3 で集めた箇所の単体の spec>   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、足している間の `pg_policies` の確かめ（UPDATE のポリシーが無い）である。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す（`guides/dev-cycle.md`「テストから書く」）。
+
+- 作るもの 3 で example を足した箇所から 1 つずつ所有の条件を外すと、その example が落ちる。外さなければ 0 failures
+- UPDATE のポリシーから `WITH CHECK (false)` を外すと、`pg_policies` の確かめが落ちる。`remove!` が UPDATE のポリシーを外さないと、`tenant_enforcement_spec.rb` のポリシーの集合の確かめが落ちる
+- 行列の 2 ファイルの時間を、変える前と後で証跡に書く（手元。流したコマンドと commit を添える。IB-50 の調べ直す条件を見る）
+
+**範囲外**：操作者のいない入口の `Tenancy.require_tenant!` が `TenantRecord` の `default_scope` に隠れること（IB-59）、作るもの 4 の届かない形
+
+**実装する文書の節**：`guides/testing.md`「行列テストとの分担」、`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」
+
+**文書に残すこと**：`guides/testing.md`「行列テストとの分担」の最後の段落（SELECT を開いても見えない所有の条件）を、UPDATE も開くことと届かない形に書き直す。共有の文脈の名前とコメント（`spec/support/cross_read.rb`）を、UPDATE も開くことに合わせる。
+
 ## M33 フロントエンド
 
 **目的**：姉妹プロジェクト factory-ops-demo の `frontend/`（以下、流用元）の Next.js を写し、画面部品をそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を足す。読み手が、受注側と発注側の両方の画面で、取引関係・失効・取消・検収・請求が動くのを見られるようにする。計画は済んでおり、実装は M32 の後に行う。
@@ -1611,7 +1649,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 
 流用元の E2E は、Go の API に当てる live と、REST のスタブに当てる stub の 2 系統である。本デモは、Rails に当てる 1 系統にする。stub が作っていた「API に届かない」状態は、届かない URL を向いた Next のサーバーをもう 1 つ立てて作る。
 
-- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 の `DemoWorld.build(namespace: "w<ワーカー番号>", variant: :e2e)` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作り、返ったアカウントを JSON に書き出す。テストは、自分のワーカー番号の世界のアカウントでログインし、他の世界に書かない。
+- **E2E の世界**：Playwright の `webServer` が、`bin/rails server`（`RAILS_ENV=test`、DB は `factory_ops_e2e`）・`bin/jobs`（イベントを流す）・`next start` を起こす。起こす前に、`bin/rails e2e:prepare[ワーカー数]`（`lib/tasks/e2e.rake`、test の環境でだけ動く）が DB を作り直し、Playwright のワーカーごとに、M32 の `DemoWorld.build(namespace: "w<ワーカー番号>", variant: :e2e)` で世界（受注側 1 社・発注側 2 社・各社のユーザー）を 1 組ずつ作り、返ったアカウントを JSON に書き出す。`DemoWorld` はジョブを claim せずにその場で流すので、`e2e:prepare` が `bin/jobs` の起動より先に終わることを、何が保証するか（Playwright の `webServer` と `globalSetup` の起こす順）を版の文書で確かめて決め、完了条件で確かめる（OI-143）。テストは、自分のワーカー番号の世界のアカウントでログインし、他の世界に書かない。
 - **画面の通し試験**：E2E に次の 2 本を置く。1 本目は、重要シナリオ S2（M26）を画面で通す。失効の後、発注側の取引先とカタログと出荷が空になり、発注登録が `NOT_PERMITTED` の文言になる。2 本目は、発注側の 2 社のユーザーで続けてログインし、前のテナントの伝票番号が画面に出ないことを確かめる。
 - **流用元の規則**：流用元の `handbook/README.md` の E2E と見た目の規則を、次のとおり持ち込む。
 
