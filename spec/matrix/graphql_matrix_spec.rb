@@ -183,4 +183,56 @@ RSpec.describe "入口の行列", type: :request do
       end
     end
   end
+
+  # 入れ子のフィールドが親の値から取った ID で呼ぶ公開 API を、app/graphql の書き方から集める。
+  # dataloader の一括取得（Sources::PublicApiSource に渡すモジュールとメソッド。メソッドを変数で渡す型は、
+  # 同じファイルの load_from(:メソッド) で補う）と、親の ID をそのまま渡す resolver の呼び出しである
+  def nested_apis_in_graphql
+    Rails.root.glob("app/graphql/**/*.rb").flat_map do |path|
+      source = path.read
+      found = source.scan(/PublicApiSource, ([A-Z]\w*(?:::[A-Z]\w*)+), :(\w+)/) +
+        source.scan(/load_from\(([A-Z]\w*(?:::[A-Z]\w*)+), :(\w+)/) +
+        source.scan(/([A-Z]\w*(?:::[A-Z]\w*)+)\.(\w+)\(current_user, object\.id/)
+      variable = source[/PublicApiSource, ([A-Z]\w*(?:::[A-Z]\w*)+), method\b/, 1]
+      found += source.scan(/load_from\(:(\w+)\)/).map { [ variable, _1.first ] } if variable
+      found.map { _1.join(".") }
+    end.uniq
+  end
+
+  def actor_for(persona)
+    user = world.users.fetch(persona)
+    Partnerships::Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role,
+      partner_code: "")
+  end
+
+  describe "入れ子のフィールドが親の ID で呼ぶ公開 API" do
+    it "app/graphql が親の ID で呼ぶ公開 API すべてに行があり、無い公開 API の行は無い" do
+      keys = MatrixExpectations::NESTED_APIS.keys + MatrixExpectations::NESTED_APIS_CROSS_TENANT.keys
+
+      expect(keys).to match_array(nested_apis_in_graphql)
+    end
+
+    # 入口の行列は親の ID でしか子を引かないので、子の公開 API が scope を外しても 2 回目の応答は変わらない。
+    # 全ペルソナの ID を直に渡し、RLS の SELECT を開いても、呼んだペルソナの ID にだけ値を返すことを確かめる。
+    # 呼んだペルソナの ID に値が返ることが対照になる
+    MatrixExpectations::NESTED_APIS.each do |key, entry|
+      it "#{key} は、RLS の SELECT を開いても、他社の ID には値を返さない" do
+        persona = entry.fetch(:persona, :supplier)
+        ids = MatrixWorld::PERSONAS.index_with do |owner|
+          world.as(owner) do
+            entry[:setup]&.call(world, owner)
+            entry[:ids] ? entry[:ids].call(world, owner) : world.row(entry[:table], owner).public_send(entry.fetch(:column, "id"))
+          end
+        end.compact
+        api_name, method = key.split(".")
+        api = api_name.constantize
+        call = entry[:call] || ->(actor, values) { api.public_send(method, actor, values) }
+
+        MatrixCrossRead.on!
+        values = world.as(persona) { call.call(actor_for(persona), ids.values) }
+
+        expect(ids.select { |_owner, id| values[id].present? }.keys).to eq([ persona ])
+      end
+    end
+  end
 end

@@ -33,12 +33,12 @@ module Partnerships
       Tenant.where(id: ids).to_h { [ _1.id, TenantSummary.new(id: _1.id, name: _1.name) ] }
     end
 
-    # 自社のユーザーの ID ごとの名前。監査ログの操作者を示すのに使う。
-    # Tenancy.with_tenant の中で呼ぶ。RLS の下で引くので、別テナントのユーザーは含まない
+    # 自社のユーザーの ID ごとの名前。監査ログの操作者を示すのに使う。別テナントのユーザーの ID は含まない。
+    # 所有の条件は RLS に任せず、操作者のテナントで明示する（docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
     def self.user_names(actor, ids)
       raise ArgumentError, "actor is required" unless actor.is_a?(Actor)
 
-      User.where(id: ids).pluck(:id, :name).to_h
+      User.where(id: ids, owner_tenant_id: actor.tenant_id).pluck(:id, :name).to_h
     end
 
     def self.to_values(relation)

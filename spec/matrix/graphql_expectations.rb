@@ -384,4 +384,62 @@ module MatrixExpectations
       expect: MatrixWorld::PERSONAS.index_with(:not_permitted).merge(granted_buyer: :value)
     }
   }.freeze
+
+  # 入れ子のフィールドが、親の値から取った ID で呼ぶ公開 API（dataloader の一括取得と、親の ID を渡す resolver）。
+  # 入口の行列の応答は親の ID でしか引かないので、子の公開 API が scope を外しても、親と同じテナントの行しか返らず、
+  # RLS の SELECT を開いた 2 回目でも応答が変わらない。そこで、全ペルソナの ID を直に渡して、RLS の SELECT を開いても
+  # 自社の ID にだけ値を返すことを確かめる（spec/matrix/graphql_matrix_spec.rb）。
+  # "モジュール.メソッド" => { table:, column:（省略時は id）, persona:（省略時は :supplier）, ids:, call:, setup: }。
+  # ID はペルソナごとに、その表の世界の行の column の値を渡す。ids は ID の取り方が表の列で書けないときに書く。
+  # call は、ID の配列ではなく 1 つの ID とページを取る公開 API の呼び方を書く。setup は、世界に子の行が無い親に子を足す
+  NESTED_APIS = {
+    "Billing::BillableItems.for_invoice" => {
+      table: "invoices",
+      setup: ->(world, persona) { FactoryBot.create(:billable_item, invoice_id: world.row("invoices", persona).id) },
+      call: ->(actor, ids) { ids.index_with { Billing::BillableItems.for_invoice(actor, _1, first: 10, after: nil).values } }
+    },
+    "Billing::Invoices.by_ids" => { table: "invoices" },
+    "Billing::Invoices.tax_summaries_for" => { table: "invoice_tax_summaries", column: "invoice_id" },
+    # 経路 3。発注側の granted_buyer が、自社の発注に連結した出荷を読む。ほかの発注側の発注の ID には値を返さない
+    "Fulfillment::PartnerShipments.for_purchase_orders" => {
+      persona: :granted_buyer,
+      ids: ->(world, persona) { world.linked_order(:purchase_order, persona).id if MatrixWorld::PARTNERSHIPS.key?(persona) }
+    },
+    "Fulfillment::ShipmentRequests.for_sales_orders" => { table: "shipment_requests", column: "sales_order_id" },
+    "Fulfillment::ShipmentRequests.instructions_for" => { table: "shipping_instructions", column: "shipment_request_id" },
+    "Fulfillment::ShipmentRequests.lines_for" => { table: "shipment_request_lines", column: "shipment_request_id" },
+    "Fulfillment::ShipmentRequests.request_lines" => { table: "shipment_request_lines" },
+    "Fulfillment::ShipmentRequests.shipment_lines_for" => { table: "shipment_lines", column: "shipment_id" },
+    "Fulfillment::ShipmentRequests.shipments_for" => { table: "shipments", column: "shipment_request_id" },
+    "Imports::Runs.row_errors" => {
+      table: "import_rows", column: "import_id",
+      setup: ->(world, persona) { FactoryBot.create(:import_row, import_id: world.row("import_rows", persona).import_id, error: "失敗") },
+      call: ->(actor, ids) { ids.index_with { Imports::Runs.row_errors(actor, _1, first: 10, after: nil).values } }
+    },
+    "Inventory::Stocks.for_items" => { table: "stocks", column: "item_id" },
+    "Partnerships::Directory.user_names" => { table: "users" },
+    "Purchasing::PurchaseOrders.cancellation_requests_for" => { table: "cancellation_requests", column: "purchase_order_id" },
+    "Purchasing::PurchaseOrders.inbound_shipment_lines_for" => { table: "inbound_shipment_lines", column: "inbound_shipment_id" },
+    "Purchasing::PurchaseOrders.inbound_shipments_for" => { table: "inbound_shipments", column: "purchase_order_id" },
+    "Purchasing::PurchaseOrders.inspections_for" => { table: "receipt_inspections", column: "inbound_shipment_id" },
+    "Purchasing::PurchaseOrders.lines_by_id" => { table: "purchase_order_lines" },
+    "Purchasing::PurchaseOrders.lines_for" => { table: "purchase_order_lines", column: "purchase_order_id" },
+    "Purchasing::ReceivedInvoices.lines_for" => { table: "received_invoice_lines", column: "received_invoice_id" },
+    "Sales::CancellationReviews.for_sales_orders" => { table: "cancellation_reviews", column: "sales_order_id" },
+    "Sales::Catalog.items_for" => { table: "items" },
+    # 照合前の明細には説明が無いので、照合した明細を足して渡す
+    "Sales::ItemPrices.explain" => {
+      ids: ->(world, persona) { FactoryBot.create(:sales_order_line, :matched, sales_order_id: world.row("sales_orders", persona).id).id },
+      call: ->(actor, ids) { Sales::ItemPrices.explain(actor, ids, as_of: Time.current) }
+    },
+    "Sales::ItemPrices.history" => { table: "item_prices", column: "item_id" },
+    "Sales::SalesOrders.by_ids" => { table: "sales_orders" },
+    "Sales::SalesOrders.lines_by_ids" => { table: "sales_order_lines" },
+    "Sales::SalesOrders.lines_for" => { table: "sales_order_lines", column: "sales_order_id" }
+  }.freeze
+
+  # 他社の ID にも値を返すことが仕様の公開 API と、その理由
+  NESTED_APIS_CROSS_TENANT = {
+    "Partnerships::Directory.tenants" => "取引先の名前を返す。tenants は RLS を付けない表で、名前は相手にも見せる"
+  }.freeze
 end
