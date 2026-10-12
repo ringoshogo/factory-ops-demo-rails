@@ -41,13 +41,14 @@ Rails は、`bin/rails server` などで起動するとき、`boot.rb` → `appl
 
 ### application.rb で変えたこと
 
-`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 6 つを足した。DB・ジョブ・ログに関わる 4 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
+`application.rb` は `config.api_only = true` の API モードで、生成のままの部分から使わない部品の読み込みを外し、次の 7 つを足した。DB・ジョブ・ログに関わる 4 つは、それぞれの節で説明する。外した部品は [使っていない機能の設定](#使っていない機能の設定) で説明する。
 
 - **`autoload_lib` の除外に `rubocop` と `schema_compat.rb` を足す。** `lib/rubocop/` はカスタム Cop で、`lib/schema_compat.rb` はスキーマの互換の判定である。どちらも開発とテストのグループにしかない gem（rubocop・graphql-schema_comparator）を読むので、本番の起動では読めない。自動読み込みの対象から外す。
 - **Cookie とセッションのミドルウェアを足す。** API モードの Rails は、Cookie とセッションのミドルウェアを持たない。本デモはログインを Cookie のセッションで保つので、`ActionDispatch::Cookies` とセッションのストアを明示的に足す。セッションの Cookie は `SameSite=Lax` にし、本番では `secure` を付け、最後のリクエストから 12 時間で切れるようにする（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 1）。
 - **`schema_format = :sql`**（[DB の接続](#db-の接続)）
 - **`queue_adapter = :solid_queue`**（[ジョブ](#ジョブ)）
 - **`config.x.notifications.from`**：通知のメールの差出人（[ジョブ](#ジョブ)）
+- **`config.x.frontend_origin`**：フロントエンドのオリジン。環境変数 `FRONTEND_ORIGIN` で渡し、無ければ開発の `http://localhost:3001` にする（[CSRF を防ぐ前提：CORS を開けない](#csrf-を防ぐ前提cors-を開けない)）
 - **`Platform::RequestContext` のミドルウェア**（[ログ](#ログ)）
 
 ### CSRF を防ぐ前提：CORS を開けない
@@ -58,14 +59,17 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 2. `ApplicationController` が、本文が `application/json` でないリクエストを 415 で拒む。他サイトのフォームは `application/json` を送れない。
 3. CORS を開けない。`initializers/cors.rb` は生成のまま全行がコメントで、`rack-cors` も Gemfile でコメントのままである。他サイトの JavaScript が `fetch` で `application/json` を送るには CORS のプリフライトが要り、それが通らない。
 
+例外は、取り込むファイルの受け口（`POST /imports/files`、`ImportFilesController`）である。ブラウザが `multipart/form-data` で CSV を直接送るので、2 の `application/json` の制限を外す。代わりに、`Origin` ヘッダが `config.x.frontend_origin` と一致しない要求と、`Origin` の無い要求を 403 で拒む。ブラウザは別のオリジンからの POST に必ず `Origin` を付けるので、他サイトのフォームからの送信はここで止まる。本番では `FRONTEND_ORIGIN` にフロントエンドのオリジンを渡す。渡さなければ開発の値のままになり、本番のブラウザからの送信はすべて拒まれる。
+
 フロントエンドを別のオリジンから呼ぶことになったら、`cors.rb` を有効にする前に、この前提を見直す。
 
 ### routes.rb で足したもの
 
-生成のままの `GET /up`（死活監視）に、次の 3 つを足した。
+生成のままの `GET /up`（死活監視）に、次の 4 つを足した。
 
 - `resource :session, only: %i[create destroy]`：ログインとログアウト（`SessionsController`）。GraphQL に認証の mutation は置かない
 - `post "graphql"`：GraphQL の入口（`GraphqlController`）。POST だけを受け付ける
+- `post "imports/files"`：取り込むファイルの受け口（`ImportFilesController`）。セッションで認証し、`Origin` で CSRF を防ぐ。10 MB を超えるファイルは読む前に 413 で拒む。ファイルを置くだけで、取り込みは `startImport` で始める
 - `post "webhooks/sendgrid/events"`：SendGrid のイベント Webhook の受け口（`Webhooks::SendgridEventsController`）。セッションを読まず、署名で認証する（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-3）
 
 ## DB の接続
@@ -113,6 +117,8 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 
 通知のメールの送信先は、環境ごとに `config.x.notifications.provider` で選ぶ。本番は SendGrid（API キーと Webhook の署名の公開鍵は credentials）、開発は `tmp/mails/` に 1 通 1 ファイルで書くもの、テストはメモリに積むもので、テストと開発は外部へ送らない。`initializers/notifications.rb` が起動時に送信先を作り、本番以外で SendGrid を選んで sandbox mode を外した設定を例外にする。テストは、これとは別に WebMock で外部への HTTP を止める（`spec/spec_helper.rb`）。
 
+取り込みのジョブ（`Imports::RunJob`）は、`ApplicationJob` の `tenant_transaction :per_chunk` を宣言し、実行全体を 1 つの `Tenancy.with_tenant` で包まずに、チャンクごとにテナントのトランザクションを開いて閉じる。同時実行の上限（テナントごとに 1 つ、`duration` は 1 時間）は、ジョブのクラスの `limits_concurrency` に書く。プロセスが強制終了して失敗になった取り込みのジョブは、運用者が rake タスク `imports:reenqueue`（`IMPORT_ID` と `TENANT_ID` に失敗したジョブの引数の値を渡す）で登録し直す（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-4）。
+
 ジョブを登録する時機（コミットの後か、トランザクションの中か）は設定ではなく、`ApplicationJob`（`packs/platform`）・`Contracts::EventJob`（`packs/contracts`）と、`ExternalEffectJob` のサブクラス（`packs/notifications` の送信のジョブ。書かなければ読み込みで例外になる）の `enqueue_after_transaction_commit` で決める（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4）。
 
 ## ログ
@@ -140,6 +146,8 @@ Rails の構造化イベントは、要求の引数・ジョブの引数・例�
 | `contracts.event_handled`（アプリが出す） | `event_name`・`receiver`・`delivery_lag_ms`（受け手の始まりの時刻 − 発行時刻） | — |
 | `notification.delivery_failed`（アプリが出す） | `kind`・`delivery_id`（送信記録の ID）・`reason`・`attempts` | 宛先。送信記録の ID を `email_delivery_id` と書くと、`filter_parameters` の `email` が名前の一部に当たって値が隠れる |
 | `notification.best_effort_dropped`（アプリが出す） | `kind`・`reason`・`attempts` | 宛先 |
+| `imports.chunk_applied`（アプリが出す） | `kind`・`import_id`・`applied_rows`・`failed_rows`（そのチャンクで新しく結果を書いた行の数） | ファイル名と行の値 |
+| `imports.finished`（アプリが出す） | `kind`・`import_id`・`result`（`succeeded`・`partially_failed`・`failed`）・`total_rows`・`applied_rows`・`failed_rows`・`duration_ms`（取り込みを作ってから終えるまで） | ファイル名と行の値 |
 | 上の表に無いイベント | 無し（`name`・`context`・`timestamp` だけを書く） | `payload` と `tags` |
 | ヘルスチェック（`Rails::HealthController`）の要求の開始と終わり | 行を書かない | 全体。`silence_healthcheck_path` は `Rails.logger` を黙らせるだけで、`Rails.event` を止めない |
 

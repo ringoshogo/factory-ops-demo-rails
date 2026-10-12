@@ -171,13 +171,13 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 
 **どこで守っているか**
 - A-1 トランザクション内のイベント：テーマ 4 のとおり実装済み
-- 外部への作用の登録口を 1 つにする基底クラス `ExternalEffectJob` と、カスタム Cop `FactoryOps/ExternalEffectEnqueue`（計画：M28）
-- SendGrid のメール：A-2 確実な外部送信（送信記録 `email_deliveries` で重複を避け、C-2 で SendGrid の重複の隙間を受け入れる）と B-1 撃ちっぱなし、配信結果の Webhook を受ける A-3 inbox（`webhook_inbox_events`）を `packs/notifications` に置く（計画：M28）
-- CSV の取り込み（A-4）：Active Job Continuations で中断から再開し、専用のキューで他の処理を待たせない（計画：M29、`packs/imports`）
+- 外部への作用の登録口を 1 つにする基底クラス `ExternalEffectJob` と、カスタム Cop `FactoryOps/ExternalEffectEnqueue`
+- SendGrid のメール：A-2 確実な外部送信（送信記録 `email_deliveries` で重複を避け、C-2 で SendGrid の重複の隙間を受け入れる）と B-1 撃ちっぱなし、配信結果の Webhook を受ける A-3 inbox（`webhook_inbox_events`）を `packs/notifications` に置く
+- CSV の取り込み（A-4）：`Imports::RunJob` が Active Job Continuations で置き場へ写す・反映する・締めるの 3 段階に分け、チャンクごとにトランザクションを閉じる。続きの位置を置き場から作り直すので、中断しても、継続の情報を失っても続きから再開する。専用の `imports` のキューで、イベントの配送とメールを待たせない（`packs/imports`）
 
-**どう確かめられるか**：`spec/notifications/call_sites_spec.rb`（通知の種類ごとに呼び出し元が 1 か所）と、`event_job_atomicity_spec.rb` を広げた登録の時機の検査（どちらも計画：M28）。テストと開発では WebMock で本物の SendGrid を呼べなくする。
+**どう確かめられるか**：`spec/notifications/call_sites_spec.rb`（通知の種類ごとに呼び出し元が 1 か所）と、`event_job_atomicity_spec.rb` を広げた登録の時機の検査。テストと開発では WebMock で本物の SendGrid を呼べなくする。取り込みは `packs/imports/spec/jobs/imports/run_job_spec.rb`（中断・継続を失った再開・件数の冪等）と `packs/imports/spec/concurrency/imports/parallel_imports_spec.rb`（同じ取り込みの 2 つのジョブと、並んだ 2 つの取り込みの結果が 1 つ）。
 
-**状態**：イベントの型だけ実装済み（M7）。残りの 4 つの型は計画（M28・M29）。
+**状態**：実装済み（A-1 は M7、A-2・A-3・B-1 は M28、A-4 は M29）。C-3 は規則だけで、実装しない。
 
 ### 6. GraphQL の安全な形
 

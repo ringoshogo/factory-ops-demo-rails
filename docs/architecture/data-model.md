@@ -13,7 +13,7 @@
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
 - **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`・`invoice_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
 - **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。追記だけの `audit_logs` は、どちらも持たず、DB の `now()` で埋める `occurred_at` が作成の時刻を兼ねる（「監査ログ（`platform`）」）。行を書き換えない `item_prices` も、どちらも持たず、記録期間（`recorded_period`）の始まりが作成の時刻を兼ねる（「受注（`sales`）」）。以下の表では省略する。
-- **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[通知]`（`packs/notifications` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 10 個である。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
+- **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[通知]`（`packs/notifications` の表）・`[取り込み]`（`packs/imports` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 11 個である。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
 ## 状態は保存せず、時刻列から導出する
 
@@ -226,13 +226,13 @@
 
 ### 取り込み（`imports`）
 
-受注側の担当者が送った CSV を、置き場を経て業務の表へ反映する。
+受注側の担当者が送った CSV を、置き場を経て業務の表へ反映する。非同期処理の型は `../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md` の A-4 に従う。
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `import_files` | `filename`・`byte_size`・`content`（`bytea`） | 10 MB まで（CHECK 制約）。取り込みを終えたら `content` を消す |
-| `imports` | `import_file_id`・`kind`（`items` / `stocks`）・`total_rows`・`applied_rows`・`failed_rows`・`started_at`・`staged_at`・`finished_at`・`failed_at`・`failure_reason`・`requested_by_user_id` | `import_file_id` 一意（1 つのファイルの取り込みは 1 回） |
-| `import_rows` | `import_id`・`row_number`・`data`（`jsonb`）・`applied_at`・`error` | `(import_id, row_number)` 一意。`applied_at` と `error` は両立しない |
+| `import_files` | `filename`・`byte_size`・`content`（`bytea`）・`uploaded_by_user_id` | 10 MB まで（CHECK 制約。`content` の大きさは `byte_size` と同じ）。取り込みを終えるか失敗したら `content` を消す |
+| `imports` | `import_file_id`・`kind`（`items` / `stocks`）・`total_rows`・`applied_rows`・`failed_rows`・`started_at`・`staged_at`・`finished_at`・`failed_at`・`failure_reason`・`requested_by_user_id` | `import_file_id` 一意（1 つのファイルの取り込みは 1 回）。`failed_at` と `failure_reason` は揃って空か揃って埋まる |
+| `import_rows` | `import_id`・`row_number`・`data`（`jsonb`、見出しの順の値の配列）・`applied_at`・`error` | `(import_id, row_number)` 一意。`applied_at` と `error` は両立しない |
 
 取り込みの状況は、時刻列と件数から優先順で導出する。
 
@@ -245,16 +245,24 @@
 | 5 | 置き場へ写し中 | `started_at` がある |
 | 6 | 待機中 | それ以外 |
 
-CSV は UTF-8 で、1 行目の見出しが次の列名と順に一致しなければ、取り込み全体を失敗にする。2 行目以降は、行ごとに検証し、外れた行だけを失敗にして `error` に列名と理由を書く。
+取り込み全体の失敗の理由（`failure_reason`）は、`header_mismatch`（見出しの誤り）・`too_many_rows`（見出しを除いて 50,000 行を超える）・`invalid_encoding`（UTF-8 でない）・`malformed_csv`（CSV として読めない）・`not_permitted`（取り込みを始めたユーザーが、反映の時点で開始の規則を満たさない）の 5 つである。
+
+CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが次の列名と順に一致しなければ、取り込み全体を失敗にする。行番号は、見出しを 1 行目とした CSV の記録の番号で、利用者が表計算のソフトで開いたときの行と合う。置き場には、各値の前後の空白を除いて写す。2 行目以降は、行ごとに検証し、外れた行だけを失敗にして `error` に「列名: 理由」を書く。理由の文は、GraphQL のユーザーエラーと同じく英語にする。
 
 | 種類 | 列（見出しの順） | 行ごとの検証 |
 |---|---|---|
-| 品目（`items`） | `code`・`name`・`unit`・`tax_rate_percent`・`published`・`unit_price`・`price_effective_on` | 品目の列は `saveItem` の入力と同じ規則。`tax_rate_percent` は 8 か 10、`published` は `true` か `false`。`unit_price` は 0 以上の整数で、新しい品目では必須、既存の品目では空なら単価を変えない。`price_effective_on` は既存の品目の改定日で、空なら今日、今日より前なら失敗。新しい品目では使わない。同じファイルで同じ `code` の 2 行目以降は失敗 |
+| 品目（`items`） | `code`・`name`・`unit`・`tax_rate_percent`・`published`・`unit_price`・`price_effective_on` | 品目の列は `saveItem` の入力と同じ規則（`code`・`name`・`unit` は空にできない）。`tax_rate_percent` は 8 か 10、`published` は `true` か `false`。`unit_price` は 0 以上の整数で、新しい品目では必須、既存の品目では空なら単価を変えない。`price_effective_on` は `YYYY-MM-DD` の日付で、既存の品目の改定日に使い、空なら今日にする。今日より前なら失敗にする。新しい品目では値を使わないが、形と日付は同じく検証する。同じファイルで同じ `code` の 2 行目以降は失敗 |
 | 在庫（`stocks`） | `item_code`・`quantity` | `item_code` は自社の品目のコード。`quantity` は 0 以上の整数で、目標の在庫数を表す。引当済みの数量より少なくする行は失敗。同じファイルで同じ `item_code` の 2 行目以降は失敗 |
 
-同じ取り込みのジョブが 2 つ動いても、結果は 1 つになる。どの段階も、チャンクのトランザクションの初めに `imports` の行をロックし、ロックの後に置き場の状態を読み直してから書く。`stage` はロックの後に書き終えた最大の行番号を読み、`import_rows` を `(import_id, row_number)` の一意で書く。`apply` はロックの後に結果の無い行だけを選ぶ。`finalize` はロックの後に `finished_at` が空のときだけ書く。
+列の数が見出しと違う行も失敗にする。同じコードの 2 行目は、前のチャンクの行も含めて、置き場の 1 列目の値で探す。最初に現れた行が失敗した行でも、2 行目以降は失敗にする。
 
-反映は、品目の列を `upsert_all` で、単価の列を `Sales::ItemPrices.schedule` で、在庫を `Inventory::Adjustment` で書く。新しく作った品目には、有効期間 `(,)` の単価の行を作る。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。
+同じ取り込みのジョブが 2 つ動いても、結果は 1 つになる。どの段階も、チャンクのトランザクションの初めに `imports` の行をロックし、ロックの後に置き場の状態を読み直してから書く。`stage` はロックの後に書き終えた最大の行番号を読み、`import_rows` を `(import_id, row_number)` の一意で書く。`apply` はロックの後に結果の無い行だけを選ぶ。`finalize` はロックの後に、終えていない取り込みにだけ書く。終えた取り込み（`finished_at` か `failed_at` がある）には、どの段階も何も書かない。
+
+反映は、チャンクごとに次の順で行う。業務の書き込み・行ごとの結果・`imports` の件数の加算（そのチャンクで新しく結果を書いた行の数だけ）は、チャンクの 1 つのトランザクションで書く。
+
+1. 取り込みを始めたユーザーを、いまの役割で操作者にし、取り込みの開始の規則（`Imports::ImportPolicy#start?`）を評価し直す。満たさなければ、そのチャンクに何も書かずに取り込み全体を `not_permitted` で失敗にする。品目の取り込みは単価を変えるので、`admin` でなくなったユーザーの名義で単価を変え続けない。
+2. 品目は、検証を通った行の品目の列（コード・名前・単位・税率・公開）を `Sales::Catalog.bulk_upsert` が 1 つの `upsert_all` で書き、新しい品目には有効期間 `(,)` の単価の行を作る。単価の空の新しい品目の行は書かずに失敗にする。既存の品目の単価には `bulk_upsert` は触れない。単価の列は、改定日の単価をチャンクごとにまとめて引き、違う行だけを `Sales::ItemPrices.schedule`（改定の予約）で反映する。既存の品目の単価を変える入口を改定の予約と訂正にまとめるためである（`context-map.md`「自社の中の役割」）。失敗する行は書き込みに含めないので、戻す書き込みが無い。
+3. 在庫は、品目コードを `Sales::Catalog.ids_by_codes` で品目 ID にし、品目 ID の昇順に、行ごとのセーブポイントで `Inventory::Adjustment.set_quantity` を呼ぶ。失敗した行の書き込みだけを戻す。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。並んだ取り込みと引当は、在庫の行を品目 ID の昇順でロックする。
 
 ## 取消と出荷の競合を止める場所
 
