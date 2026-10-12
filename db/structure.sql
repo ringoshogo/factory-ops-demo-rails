@@ -511,7 +511,7 @@ CREATE TABLE public.imports (
     import_file_id uuid NOT NULL,
     CONSTRAINT imports_counts_not_negative CHECK (((applied_rows >= 0) AND (failed_rows >= 0))),
     CONSTRAINT imports_failure_reason CHECK (((failed_at IS NULL) = (failure_reason IS NULL))),
-    CONSTRAINT imports_kind CHECK (((kind)::text = ANY ((ARRAY['items'::character varying, 'stocks'::character varying])::text[])))
+    CONSTRAINT imports_kind CHECK (((kind)::text = ANY (ARRAY['items'::text, 'stocks'::text])))
 );
 
 ALTER TABLE ONLY public.imports FORCE ROW LEVEL SECURITY;

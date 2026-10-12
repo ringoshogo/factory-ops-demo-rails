@@ -28,7 +28,7 @@ class CreateImports < ActiveRecord::Migration[8.1]
       t.uuid :requested_by_user_id, null: false
       t.timestamps
 
-      t.check_constraint "kind IN ('items', 'stocks')", name: "imports_kind"
+      t.check_constraint "kind::text IN ('items', 'stocks')", name: "imports_kind"
       t.check_constraint "(failed_at IS NULL) = (failure_reason IS NULL)", name: "imports_failure_reason"
       t.check_constraint "applied_rows >= 0 AND failed_rows >= 0", name: "imports_counts_not_negative"
     end
