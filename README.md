@@ -62,7 +62,7 @@ npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 手元の Chrome で流す。CI は Playwright の chromium を入れて流す
 ```
 
-E2E は、Playwright が E2E の DB（`factory_ops_e2e`）を作り直してワーカーごとに世界を作り、Rails（3200）・`bin/jobs`・Next（3201）と、Rails に届かない Next（3202）を起こす（`frontend/e2e/start-rails.sh`）。手元の開発のサーバーとはポートと DB が別なので、動かしたまま流せる。検収表のスクリーンショットは `E2E_SCREENSHOTS=1` を付けて流すと `frontend/test-results/acceptance/` に撮る。
+E2E は、Playwright が E2E の DB（`factory_ops_e2e`）を作り直してワーカーごとに世界を作り、Rails（3200）・`bin/jobs`・Next（3201）と、Rails に届かない Next（3202）を起こす（`frontend/e2e/start-rails.sh`）。手元の開発のサーバーとはポートと DB が別なので、動かしたまま流せる。rspec とは同時に流さない。E2E の Rails も test の環境で `log/` のファイルに書き、ログの spec（`spec/platform/logging_spec.rb`）がそのファイルの末尾を読むからである。検収表のスクリーンショットは `E2E_SCREENSHOTS=1` を付けて流すと `frontend/test-results/acceptance/` に撮る。
 
 ## ドキュメント
 
