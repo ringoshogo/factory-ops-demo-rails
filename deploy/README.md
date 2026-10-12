@@ -48,7 +48,7 @@ Secret はリポジトリに置かない。作者が名前空間に `kubectl cre
 | `db-credentials` | `app-password` | postgres・web・jobs・migrate・daily-reset | アプリのロール `factory_app` のパスワード |
 | `db-credentials` | `owner-password` | postgres・migrate・daily-reset | 所有ロール `factory_owner` のパスワード。RLS を素通りするので、DB を作る工程にだけ渡す |
 | `db-credentials` | `superuser-password` | postgres | PostgreSQL の `postgres` のパスワード。Rails は使わない |
-| `ghcr-pull-secret` | `.dockerconfigjson` | postgres のほかのすべて | GHCR の private のイメージを取る読み取りの資格情報 |
+| `ghcr-pull-secret` | `.dockerconfigjson` | web・jobs・frontend・migrate・daily-reset | GHCR の private のイメージを取る読み取りの資格情報 |
 | `rails-credentials` | `secret-key-base` | web・jobs・migrate・daily-reset | セッションの Cookie の暗号化の鍵。`config/credentials.yml.enc` は使わない |
 
 `owner-password` と `app-password` は、postgres の PVC が空の初回の起動でだけロールに入る。初回の後に Secret を変えても、ロールのパスワードは変わらない。
@@ -59,23 +59,45 @@ Secret はリポジトリに置かない。作者が名前空間に `kubectl cre
 
 ### 1. 名前空間と Secret を作る
 
-作者は、Raspberry Pi の上でパスワードと鍵を生成し、そのまま Secret にする。値を手元に持ち帰らない。
+作者は、Raspberry Pi の上でパスワードと鍵を生成し、そのまま Secret にする。値はどのコマンドの引数にも入れない。引数はプロセスの一覧から読めるからである。値はシェルの組み込みのヒアドキュメントと標準入力で `kubectl create -f -` に渡し、手元に持ち帰らない。
 
 ```sh
 ssh raspi kubectl create namespace factory-ops-rails
-ssh raspi 'kubectl create secret generic db-credentials -n factory-ops-rails \
-  --from-literal=superuser-password="$(openssl rand -hex 24)" \
-  --from-literal=owner-password="$(openssl rand -hex 24)" \
-  --from-literal=app-password="$(openssl rand -hex 24)"'
-ssh raspi 'kubectl create secret generic rails-credentials -n factory-ops-rails \
-  --from-literal=secret-key-base="$(openssl rand -hex 64)"'
+ssh raspi bash -s <<'EOF'
+set -eu
+kubectl create -f - <<YAML
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: factory-ops-rails
+type: Opaque
+stringData:
+  superuser-password: $(openssl rand -hex 24)
+  owner-password: $(openssl rand -hex 24)
+  app-password: $(openssl rand -hex 24)
+YAML
+kubectl create -f - <<YAML
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rails-credentials
+  namespace: factory-ops-rails
+type: Opaque
+stringData:
+  secret-key-base: $(openssl rand -hex 64)
+YAML
+EOF
 ```
 
-GHCR の読み取りの Secret は、流用元の `ghcr-pull-secret` と同じく、`read:packages` だけを持つ期限付きの classic PAT で作る。PAT はコマンドの引数に書かず、Raspberry Pi の上で標準入力から読む。
+GHCR の読み取りの Secret は、流用元の `ghcr-pull-secret` と同じく、`read:packages` だけを持つ期限付きの classic PAT で作る。作者は手元の端末で PAT を画面に出さずに読み、組み込みの `printf` で Secret の JSON を組み立てて、ssh の標準入力で Raspberry Pi の `kubectl` に渡す。
 
 ```sh
-ssh -t raspi 'read -rs PAT && kubectl create secret docker-registry ghcr-pull-secret -n factory-ops-rails \
-  --docker-server=ghcr.io --docker-username=ringoshogo --docker-password="$PAT"'
+printf 'GHCR の PAT: '; read -rs PAT; echo
+auth=$(printf '%s' "ringoshogo:$PAT" | base64 | tr -d '\n')
+printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"ghcr-pull-secret","namespace":"factory-ops-rails"},"type":"kubernetes.io/dockerconfigjson","stringData":{".dockerconfigjson":"{\\"auths\\":{\\"ghcr.io\\":{\\"auth\\":\\"%s\\"}}}"}}\n' "$auth" \
+  | ssh raspi kubectl create -f -
+unset PAT auth
 ```
 
 ### 2. 適用
@@ -91,17 +113,22 @@ ssh raspi kubectl rollout status -n factory-ops-rails deployment/web --timeout=1
 
 `migrate` の Job は spec を変えられないので、2 回目からの適用では、適用の前に `ssh raspi kubectl delete job migrate -n factory-ops-rails --ignore-not-found` で消す。消さずに適用すると `field is immutable` で失敗する。`jobs` は、初回の適用で `migrate` が表を作り終えるまで、起動に失敗して再起動を繰り返す。
 
+`kubectl wait` が時間切れになったら、`migrate` は再試行（`backoffLimit: 3`）を使い切って `Failed` で止まっている。初回の適用で postgres の起動が遅れたときに起きる。作者は `ssh raspi kubectl logs -n factory-ops-rails job/migrate` で原因を見てから、Job を消して同じ適用を流し直す。
+
+適用は、毎日の作り直しの時刻（日本時間の 4:30 から数分）を避ける。適用はマニフェストの `replicas: 1` で、作り直しが 0 にした `web` と `jobs` を途中で起こすからである。
+
 ### 3. 作り直しを手で 1 回流す
 
 初回の適用の後の DB は空なので、作者は作り直しを手で 1 回流し、シードの世界を作る。
 
 ```sh
 ssh raspi kubectl create job -n factory-ops-rails --from=cronjob/daily-reset manual-reset-1
+ssh raspi kubectl wait -n factory-ops-rails --for=condition=ready pod -l job-name=manual-reset-1 --timeout=10m
 ssh raspi kubectl logs -n factory-ops-rails -f job/manual-reset-1
 ssh raspi kubectl get deployment -n factory-ops-rails web jobs
 ```
 
-ログの末尾にシードのアカウントの一覧が出て、`web` と `jobs` の `READY` が `1/1` に戻れば終わりである。CronJob の `timeZone` と `startingDeadlineSeconds` が効くかは、Raspberry Pi を作り直しの時刻をまたいで止めた日に、起動の後に `ssh raspi kubectl get jobs -n factory-ops-rails -l app=daily-reset` で 1 回見る。
+`logs -f` の前の `wait` は、イメージを取り終えて Pod が動き出すのを待つ。動き出す前の `logs` は失敗する。ログの末尾にシードのアカウントの一覧が出て、`web` と `jobs` の `READY` が `1/1` に戻れば終わりである。CronJob の `timeZone` と `startingDeadlineSeconds` が効くかは、Raspberry Pi を作り直しの時刻をまたいで止めた日に、起動の後に `ssh raspi kubectl get jobs -n factory-ops-rails -l app=daily-reset` で 1 回見る。
 
 ### 4. メモリを測る
 
@@ -137,7 +164,9 @@ ssh raspi free -h
 ssh raspi kubectl scale deployment -n factory-ops-rails web jobs --replicas=1
 ```
 
-作り直しは再試行しない（`backoffLimit: 0`）。途中で失敗した作り直しを繰り返して、DB を何度も消さないためである。失敗した日は、手順 3 と同じく手で流し直すか、次の日の作り直しを待つ。
+作り直しは、止められたとき（`activeDeadlineSeconds` を過ぎたときと、Job を消したとき）も、SIGTERM の後の猶予（`terminationGracePeriodSeconds`）の間に 1 に戻す。DB のタスクの途中で止められたときは、作りかけの DB に向けて `web` と `jobs` が起きるので、作者は手順 3 と同じく手で流し直す。
+
+作り直しは再試行しない（`backoffLimit: 0`）。途中で失敗した作り直しを繰り返して、DB を何度も消さないためである。失敗した日は、手順 3 と同じく手で流し直すか、次の日の作り直しを待つ。手で流した作り直しが定時の作り直しと重なっても、後から始めた方は、DB のアドバイザリロックを取れずに何もせずに止まる。CronJob の `concurrencyPolicy: Forbid` は、手で作った Job を止めないからである。
 
 ### 送らないメール
 

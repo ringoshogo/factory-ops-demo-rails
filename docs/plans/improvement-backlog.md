@@ -105,3 +105,6 @@
 | IB-87 | 未着手 | `/session/expired` を GET で Cookie を消す形のままでよいか | 他サイトのリンクから、このブラウザの画面の Cookie を消せる（Rails のセッションの世代は進まない）。デモでは害が小さいが、M41 で公開するときに一度決める（M33 の実装レビュー、Claude の違和感） | 2026-10-13 |  |
 | IB-88 | 未着手 | 状況のコントラストの測りを、メニュー・ダイアログ・フォーカスの状態に広げるか | `frontend/e2e/contrast.spec.ts` は各画面の最初の状態だけを axe で測る。流用元はメニューとフォーカスの状態も測っていた（M33 の実装レビューの直し） | 2026-10-13 |  |
 | IB-89 | 未着手 | 取り込みのファイルを、route handler で全量読まずに流して送るか | `frontend/lib/graphql/request.ts` の `forwardImportFile` は本文を `arrayBuffer()` で全量読んでから Rails へ送る。Rails の大きさの検査（10 MB）より先に、Next が本文を受け取る（M33 の実装レビューの読み直し、Codex の違和感） | 2026-10-13 |  |
+| IB-90 | 未着手 | 作り直し（`demo:reset`）を、本番の環境の外では入口で止めるか | `Platform::DemoWorldGate.open?` は開発とテストで真なので、手元で `bin/rails demo:reset` を流すと入口を通る。実際に止めているのは、ServiceAccount の場所（`KUBERNETES_SERVICE_HOST`）が無いことによる例外で、開発の DB を消す前に止まるのは順に頼っている（M41 の実装レビュー、Claude の違和感） | 2026-10-13 |  |
+| IB-91 | 未着手 | CI の `images` のジョブの push を、テストのジョブの成功に結ぶか | main への push で、`images` のジョブはほかのジョブの成否を待たずに GHCR へ push する。テストが落ちた commit のイメージも SHA のタグで置かれる。作者が SHA を選んで適用するので実害は小さいが、`needs:` で結ぶと CI の時間が延びる（M41 の実装レビュー、Claude の違和感） | 2026-10-13 |  |
+| IB-92 | 未着手 | 公開の配置に NetworkPolicy を置くか | `postgres` と `web` の Service には、同じ k3s のほかの名前空間（流用元の `factory-ops`）の Pod から届く。クラスタの外からは届かず、DB はパスワードで守られている（M41 の実装レビュー、Claude の違和感） | 2026-10-13 |  |

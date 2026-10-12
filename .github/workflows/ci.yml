@@ -270,11 +270,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      # Kustomize の置き換えを描き、Kubernetes の型と照らす。ubuntu のランナーには kubectl が入っている
+      # Kustomize の置き換えを描き、Kubernetes の型と照らす。ubuntu のランナーには kubectl が入っている。
+      # kubeconform は取ったファイルを、リリースの sha256 と比べてから展開する
       - name: Validate manifests
         run: |
           kubectl kustomize deploy > "$RUNNER_TEMP/rendered.yaml"
-          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C "$RUNNER_TEMP" kubeconform
+          curl -fsSL -o "$RUNNER_TEMP/kubeconform.tar.gz" https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  $RUNNER_TEMP/kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" -C "$RUNNER_TEMP" kubeconform
           "$RUNNER_TEMP/kubeconform" -strict -summary "$RUNNER_TEMP/rendered.yaml"
 
       # GitHub ホストのランナーは amd64 なので、arm64 のイメージを QEMU の上で組み立てる

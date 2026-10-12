@@ -16,23 +16,36 @@ RSpec.describe DemoReset do
   let(:account) { DemoWorld::Account.new(persona: "supplier_admin", tenant: "supplier", role: "admin", name: "", email: "a@example.com", password: "pw") }
   let(:commands) { [] }
 
-  # Pod の一覧を、渡した名前の配列の順に返す。最後の配列は何度でも返す
+  # Pod の一覧を、渡した配列の順に返す。最後の配列は何度でも返す。要素は名前か、[名前, phase] で、名前だけなら Running
   def stub_pods(*lists)
     remaining = lists.dup
     stub_request(:get, "#{api}/api/v1/namespaces/factory-ops-rails/pods")
       .with(query: { labelSelector: "app in (web,jobs)" }, headers: { "Authorization" => "Bearer spec-token" })
       .to_return do
         events << :pods
-        names = remaining.size > 1 ? remaining.shift : remaining.first
-        { status: 200, body: JSON.generate(items: names.map { { metadata: { name: _1 } } }) }
+        pods = (remaining.size > 1 ? remaining.shift : remaining.first).map { Array(_1) }
+        { status: 200, body: JSON.generate(items: pods.map { |name, phase| { metadata: { name: }, status: { phase: phase || "Running" } } }) }
       end
   end
 
   def stub_scale(name, replicas, status: 200)
-    stub_request(:patch, "#{api}/apis/apps/v1/namespaces/factory-ops-rails/deployments/#{name}/scale")
+    stub = stub_request(:patch, "#{api}/apis/apps/v1/namespaces/factory-ops-rails/deployments/#{name}/scale")
       .with(body: { spec: { replicas: } }.to_json, headers: { "Content-Type" => "application/merge-patch+json", "Authorization" => "Bearer spec-token" })
-      .to_return { events << [ :scale, name, replicas ]; { status:, body: "{}" } }
+    return stub.to_timeout if status == :timeout
+
+    stub.to_return { events << [ :scale, name, replicas ]; { status:, body: "{}" } }
   end
+
+  # 別の作り直しが持っているのと同じロックを、別の接続で持つ
+  def hold_reset_lock
+    config = ActiveRecord::Base.configurations.configs_for(env_name: "test", name: "owner").configuration_hash
+    connection = PG.connect(host: config[:host], port: config[:port], user: config[:username], password: config[:password], dbname: "postgres")
+    yield connection
+  ensure
+    connection&.close
+  end
+
+  def try_lock(connection) = connection.exec_params("SELECT pg_try_advisory_lock($1)", [ DemoReset::LOCK_KEY ]).getvalue(0, 0) == "t"
 
   def stub_all_scales
     %w[web jobs].product([ 0, 1 ]).each { stub_scale(*_1) }
@@ -84,10 +97,6 @@ RSpec.describe DemoReset do
   end
 
   describe "作り直し" do
-    before { production! }
-
-    around { |example| with_env("DEMO_WORLD_ENABLED" => "1") { example.run } }
-
     it "Web とワーカーを 0 にし、Pod の一覧が空になってから DB を作り直して世界を作り、1 に戻す" do
       stub_all_scales
       stub_pods(%w[web-1 jobs-1], %w[jobs-1], [])
@@ -155,10 +164,11 @@ RSpec.describe DemoReset do
 
       expect(events).to include([ :scale, "jobs", 1 ])
     end
-    it "作り直しが例外で終わり、1 に戻すのにも失敗したら、作り直しの例外を上げ、戻し方をログに書く" do
+
+    it "作り直しが例外で終わり、1 に戻す要求も時間切れになったら、作り直しの例外を上げ、戻し方をログに書く" do
       stub_scale("web", 0)
       stub_scale("jobs", 0)
-      stub_scale("web", 1, status: 500)
+      stub_scale("web", 1, status: :timeout)
       stub_scale("jobs", 1)
       stub_pods([])
 
@@ -166,6 +176,58 @@ RSpec.describe DemoReset do
 
       expect(events).to include([ :scale, "jobs", 1 ])
       expect(out.string).to match(/web を 1 に戻せなかった.*kubectl scale/m)
+    end
+
+    # CronJob の activeDeadlineSeconds を過ぎたときと Job を消したとき、kubelet は SIGTERM を送り、Ruby は SignalException を上げる
+    it "作り直しの途中で SIGTERM を受けても、1 に戻してから終わる" do
+      stub_all_scales
+      stub_pods([])
+      allow(DemoWorld).to receive(:build).and_raise(SignalException, "TERM")
+
+      expect { reset }.to raise_error(SignalException)
+
+      expect(events.last(2)).to eq([ [ :scale, "web", 1 ], [ :scale, "jobs", 1 ] ])
+    end
+
+    it "追い出された Pod と終わった Pod は、一覧に残っていても待たない" do
+      stub_all_scales
+      stub_pods([ %w[web-old Failed], %w[jobs-old Succeeded] ])
+
+      reset(pod_wait: 0)
+
+      expect(events).to include(:database)
+    end
+
+    it "所有ロールの DB 設定が無ければ、ロックも Kubernetes の API も DB のタスクも触らずに止まる" do
+      stub_all_scales
+      stub_pods([])
+      allow(ActiveRecord::Base.configurations).to receive(:configs_for).and_wrap_original do |original, **options|
+        options[:name] == "owner" ? nil : original.call(**options)
+      end
+      expect(PG).not_to receive(:connect)
+
+      expect { reset }.to raise_error(DemoReset::Refused, /DB_OWNER_USER/)
+
+      expect(a_request(:any, /kubernetes\.test/)).not_to have_been_made
+      expect(events).to eq([])
+    end
+
+    it "ほかの作り直しがロックを持っていれば、Kubernetes の API も DB のタスクも呼ばずに止まる。終わればロックを外す" do
+      stub_all_scales
+      stub_pods([])
+
+      hold_reset_lock do |other|
+        expect(try_lock(other)).to be(true)
+        expect { reset }.to raise_error(DemoReset::Refused, /ほかの作り直し/)
+        expect(a_request(:any, /kubernetes\.test/)).not_to have_been_made
+        expect(events).to eq([])
+        other.exec_params("SELECT pg_advisory_unlock($1)", [ DemoReset::LOCK_KEY ])
+      end
+
+      # 対照：ロックが空いていれば作り直し、終わった後はほかの接続がロックを取れる
+      reset
+      expect(events).to include(:database)
+      hold_reset_lock { |other| expect(try_lock(other)).to be(true) }
     end
   end
 
@@ -179,9 +241,17 @@ RSpec.describe DemoReset do
 
         client = DemoReset::Kubernetes.from_service_account(env, dir)
 
-        expect(client.pod_names("app in (web,jobs)")).to eq(%w[web-1])
+        expect(client.live_pod_names("app in (web,jobs)")).to eq(%w[web-1])
         expect(client.ca_file).to eq(File.join(dir, "ca.crt"))
       end
+    end
+
+    # 終了の猶予の間に、web と jobs を戻す 2 つの要求が終わる長さにする（deploy/daily-reset.yaml の terminationGracePeriodSeconds）
+    it "要求の時間切れを、Net::HTTP の既定の 60 秒より短くする" do
+      stub_pods([])
+      expect(Net::HTTP).to receive(:start).with("kubernetes.test", 6443, hash_including(open_timeout: 5, read_timeout: 10)).and_call_original
+
+      kubernetes.live_pod_names("app in (web,jobs)")
     end
   end
 

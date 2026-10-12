@@ -55,13 +55,16 @@ spec:
     spec:
       # 途中で失敗した作り直しを繰り返して、DB を何度も消さない。失敗した日は次の日の作り直しに任せる
       backoffLimit: 0
-      # Pod の待ち（上限 5 分）とシードを足しても余る長さ。超えたら止め、web と jobs を 1 に戻させる
+      # Pod の待ち（上限 5 分）とシードを足しても余る長さ。超えたら SIGTERM で止め、web と jobs を 1 に戻させる
       activeDeadlineSeconds: 1800
       template:
         metadata:
           labels:
             app: daily-reset
         spec:
+          # 止められたとき（activeDeadlineSeconds を過ぎたときと、Job を消したとき）、SIGTERM の後に web と jobs を 1 に戻す 2 つの要求が
+          # 終わるだけの猶予を置く。要求の時間切れは lib/demo_reset/kubernetes.rb にある
+          terminationGracePeriodSeconds: 90
           serviceAccountName: daily-reset
           automountServiceAccountToken: true
           restartPolicy: Never

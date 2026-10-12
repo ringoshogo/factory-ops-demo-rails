@@ -5,6 +5,10 @@ class DemoReset
   # ServiceAccount の Role は、web と jobs の Deployment の scale と Pod の一覧だけを許す（deploy/daily-reset.yaml）
   class Kubernetes
     SERVICE_ACCOUNT = "/var/run/secrets/kubernetes.io/serviceaccount".freeze
+    # Net::HTTP の既定の時間切れは 60 秒である。作り直しの Pod が止められたとき、終了の猶予（deploy/daily-reset.yaml の
+    # terminationGracePeriodSeconds）の間に、web と jobs を 1 に戻す 2 つの要求が終わるように短くする
+    OPEN_TIMEOUT = 5
+    READ_TIMEOUT = 10
 
     attr_reader :ca_file
 
@@ -26,9 +30,11 @@ class DemoReset
         body: { spec: { replicas: } }, content_type: "application/merge-patch+json")
     end
 
-    def pod_names(selector)
+    # 終わった Pod（phase が Succeeded・Failed）は数えない。追い出された Pod は Failed のまま一覧に残るが、コンテナは動いておらず、
+    # DB の接続を持たない
+    def live_pod_names(selector)
       request(Net::HTTP::Get, "/api/v1/namespaces/#{@namespace}/pods?#{URI.encode_www_form(labelSelector: selector)}")
-        .fetch("items").map { _1.dig("metadata", "name") }
+        .fetch("items").reject { %w[Succeeded Failed].include?(_1.dig("status", "phase")) }.map { _1.dig("metadata", "name") }
     end
 
     private
@@ -42,8 +48,8 @@ class DemoReset
         request["Content-Type"] = content_type
         request.body = JSON.generate(body)
       end
-      # Net::HTTP の既定の時間切れは 60 秒で、API が答えないときに作り直しの時間の上限まで止まる
-      response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", ca_file: @ca_file, open_timeout: 5, read_timeout: 30) do
+      response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", ca_file: @ca_file, open_timeout: OPEN_TIMEOUT,
+        read_timeout: READ_TIMEOUT) do
         _1.request(request)
       end
       raise Failed, "Kubernetes の API が #{response.code} を返した: #{method::METHOD} #{uri.path}" unless response.is_a?(Net::HTTPSuccess)

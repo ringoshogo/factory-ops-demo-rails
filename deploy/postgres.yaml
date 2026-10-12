@@ -20,9 +20,12 @@ data:
   01_roles.sh: |
     #!/bin/sh
     set -eu
-    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
-      -v owner="$OWNER_ROLE" -v owner_password="$OWNER_PASSWORD" \
-      -v app="$APP_ROLE" -v app_password="$APP_PASSWORD" <<'SQL'
+    # パスワードを psql の引数に書くと、プロセスの一覧から読める。\getenv で環境変数から psql の変数に読み、:'…' で引用させる
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<'SQL'
+    \getenv owner OWNER_ROLE
+    \getenv owner_password OWNER_PASSWORD
+    \getenv app APP_ROLE
+    \getenv app_password APP_PASSWORD
     CREATE ROLE :"owner" LOGIN CREATEDB BYPASSRLS PASSWORD :'owner_password';
     CREATE ROLE :"app" LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'app_password';
     SQL

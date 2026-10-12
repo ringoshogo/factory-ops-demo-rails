@@ -7,6 +7,8 @@ require "open3"
 RSpec.describe "公開の配置のマニフェスト" do
   DEPLOY = Rails.root.join("deploy")
   WORKLOADS = %w[web jobs frontend migrate daily-reset].freeze
+  # 作り直しが止めて戻す Deployment。Role・Pod のラベル・作り直しの定数を、それぞれこの値と比べる（docs/adr/009 決定 3）
+  RESET_TARGETS = %w[web jobs].freeze
 
   # コンテナごとに渡す環境変数。値が文字列ならその値、:secret なら Secret から、:present なら値を問わず持つ、nil なら持たない
   # （docs/adr/009 決定 2〜5）
@@ -53,14 +55,16 @@ RSpec.describe "公開の配置のマニフェスト" do
 
   def env_of(name) = main_container(name).fetch("env", []).to_h { [ _1["name"], _1 ] }
 
-  # secretKeyRef と imagePullSecrets から、参照する Secret の名前とキーを集める。imagePullSecrets のキーは種類で決まる
-  def secret_refs
+  # secretKeyRef と imagePullSecrets から、参照する Secret の名前とキーを、使うワークロードごとに集める。imagePullSecrets のキーは種類で決まる
+  def secret_uses
     workloads.flat_map do |document|
       env_refs = containers(document).flat_map { _1.fetch("env", []) }.filter_map { _1.dig("valueFrom", "secretKeyRef") }
       pull = pod_spec(document).fetch("imagePullSecrets", []).map { { "name" => _1["name"], "key" => ".dockerconfigjson" } }
-      (env_refs + pull).map { [ _1["name"], _1["key"] ] }
-    end.uniq.sort
+      (env_refs + pull).map { [ _1["name"], _1["key"], document.dig("metadata", "name") ] }
+    end.uniq
   end
+
+  def secret_refs = secret_uses.map { _1.first(2) }.uniq.sort
 
   it "kustomization.yaml が deploy/ のマニフェストをすべて並べ、名前空間を流用元と分ける" do
     expect(kustomization.fetch("resources").sort).to eq(documents.map { _1["_file"] }.uniq.sort)
@@ -80,7 +84,9 @@ RSpec.describe "公開の配置のマニフェスト" do
 
   it "Secret をリポジトリに置かない" do
     expect(documents.map { _1["kind"] }).not_to include("Secret")
-    expect(DEPLOY.glob("**/*").select(&:file?).map { _1.read.scan(/^kind:\s*Secret\b/) }.flatten).to eq([])
+    # 手順書（README.md）は、作者が名前空間に Secret を入れるコマンドを書くので見ない
+    manifests = DEPLOY.glob("**/*").select(&:file?).reject { _1.extname == ".md" }
+    expect(manifests.map { _1.read.scan(/^\s*kind:\s*Secret\b/) }.flatten).to eq([])
   end
 
   it "すべてのコンテナが、CPU とメモリの requests と limits を持ち、limits は requests 以上である" do
@@ -151,6 +157,14 @@ RSpec.describe "公開の配置のマニフェスト" do
       expect(max_connections).to be > pools
     end
 
+    # 守るのは変数の名前ではなく、所有ロールのパスワードの Secret のキーを誰が読むかである。envFrom は Secret の全キーを渡すので使わない
+    it "所有ロールのパスワードを読むのは、postgres（ロールを作る）と migrate と daily-reset だけで、envFrom を使うコンテナは無い" do
+      readers = secret_uses.select { |name, key, _| name == "db-credentials" && key == "owner-password" }.map(&:last)
+
+      expect(readers).to contain_exactly("postgres", "migrate", "daily-reset")
+      expect(workloads.flat_map { containers(_1) }.select { _1.key?("envFrom") }).to eq([])
+    end
+
     it "作り直しのほかのコンテナは、ServiceAccount のトークンを持たない" do
       workloads.each do |document|
         name = document.dig("metadata", "name")
@@ -213,12 +227,19 @@ RSpec.describe "公開の配置のマニフェスト" do
     expect(main_container("migrate").fetch("args")).to eq(%w[bin/rails db:prepare db:grant_app_role])
   end
 
+  # 止められたときの猶予の間に、web と jobs を 1 に戻す 2 つの要求が時間切れまで掛かっても終わる
+  it "daily-reset の終了の猶予は、Kubernetes の API の 2 つの要求の時間切れの和より長い" do
+    grace = pod_spec(find("CronJob", "daily-reset")).fetch("terminationGracePeriodSeconds")
+
+    expect(grace).to be > RESET_TARGETS.size * (DemoReset::Kubernetes::OPEN_TIMEOUT + DemoReset::Kubernetes::READ_TIMEOUT)
+  end
+
   it "daily-reset の Role は、web と jobs の Deployment の get と scale の get・patch、Pod の list だけを許す" do
     rules = find("Role", "daily-reset").fetch("rules").map { _1.transform_values { |value| value.is_a?(Array) ? value.sort : value } }
 
     expect(rules).to contain_exactly(
-      { "apiGroups" => [ "apps" ], "resources" => [ "deployments" ], "resourceNames" => DemoReset::DEPLOYMENTS.sort, "verbs" => [ "get" ] },
-      { "apiGroups" => [ "apps" ], "resources" => [ "deployments/scale" ], "resourceNames" => DemoReset::DEPLOYMENTS.sort, "verbs" => %w[get patch] },
+      { "apiGroups" => [ "apps" ], "resources" => [ "deployments" ], "resourceNames" => RESET_TARGETS.sort, "verbs" => [ "get" ] },
+      { "apiGroups" => [ "apps" ], "resources" => [ "deployments/scale" ], "resourceNames" => RESET_TARGETS.sort, "verbs" => %w[get patch] },
       { "apiGroups" => [ "" ], "resources" => [ "pods" ], "verbs" => [ "list" ] }
     )
     binding = find("RoleBinding", "daily-reset")
@@ -226,20 +247,22 @@ RSpec.describe "公開の配置のマニフェスト" do
     expect(binding.fetch("subjects")).to eq([ { "kind" => "ServiceAccount", "name" => "daily-reset" } ])
   end
 
-  # 作り直しが Pod の一覧を引くラベルで、web と jobs の Pod が両方そろって引ける
-  it "web と jobs の Pod は、作り直しが待つラベル（DemoReset::POD_SELECTOR）を持つ" do
-    values = DemoReset::POD_SELECTOR[/\Aapp in \((.+)\)\z/, 1].split(",")
-
-    expect(values).to eq(DemoReset::DEPLOYMENTS)
-    DemoReset::DEPLOYMENTS.each { expect(workload(_1).dig("spec", "template", "metadata", "labels", "app")).to eq(_1) }
+  # 作り直しが止める Deployment と、Pod の一覧を引くラベルで、web と jobs の Pod が両方そろって引ける
+  it "作り直しは web と jobs を止め、その 2 つの Pod は作り直しが待つラベル（DemoReset::POD_SELECTOR）を持つ" do
+    expect(DemoReset::DEPLOYMENTS).to eq(RESET_TARGETS)
+    expect(DemoReset::POD_SELECTOR[/\Aapp in \((.+)\)\z/, 1].split(",")).to eq(RESET_TARGETS)
+    RESET_TARGETS.each { expect(workload(_1).dig("spec", "template", "metadata", "labels", "app")).to eq(_1) }
   end
 
-  it "deploy/README.md の Secret の表と deploy/preflight.sh が集めるものが、マニフェストの参照する Secret の名前とキーと一致する" do
+  it "deploy/README.md の Secret の表と deploy/preflight.sh が集めるものが、マニフェストの参照する Secret の名前とキーと、使うワークロードと一致する" do
     section = DEPLOY.join("README.md").read[/^## Secret\n(.*?)(?=^## )/m, 1].to_s
-    table = section.lines.grep(/\A\| `/).map { _1.split("|")[1, 2].map { |cell| cell.strip.delete("`") } }.sort
+    rows = section.lines.grep(/\A\| `/).map { _1.split("|")[1, 3].map(&:strip) }
+    table = rows.to_h { |name, key, users| [ [ name.delete("`"), key.delete("`") ], users.split("・").sort ] }
+    uses = secret_uses.group_by { _1.first(2) }.transform_values { |list| list.map(&:last).sort }
 
     expect(secret_refs).not_to be_empty
-    expect(table).to eq(secret_refs)
+    expect(table.keys.sort).to eq(secret_refs)
+    expect(table).to eq(uses)
     output, status = Open3.capture2e(DEPLOY.join("preflight.sh").to_s, "--list")
     expect(status).to be_success, output
     expect(output.lines.grep(/\A  - /).map { _1.strip.delete_prefix("- ").split(" ", 2) }.sort).to eq(secret_refs)

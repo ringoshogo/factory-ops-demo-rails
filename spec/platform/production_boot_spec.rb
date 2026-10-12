@@ -13,7 +13,7 @@ RSpec.describe "本番の環境の起動" do
       #{script}
     RUBY
     base = { "RAILS_ENV" => "production", "SECRET_KEY_BASE" => "x", "RAILS_LOG_LEVEL" => nil, "NOTIFICATIONS_PROVIDER" => nil,
-      "DB_HOST" => nil, "DB_PORT" => nil, "DB_OWNER_USER" => nil }
+      "DB_HOST" => nil, "DB_PORT" => nil, "DB_OWNER_USER" => nil, "SHARED_DEMO_ACCOUNTS" => nil }
     Open3.capture2e(base.merge(env), RbConfig.ruby, "-e", source, chdir: Rails.root.to_s)
   end
 
@@ -38,6 +38,13 @@ RSpec.describe "本番の環境の起動" do
         expect(output).to include("NOTIFICATIONS_PROVIDER")
       end
     end
+  end
+
+  # ログアウトでセッションの世代を進めないのは、1 を渡したときだけである（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）
+  it "SHARED_DEMO_ACCOUNTS が 1 のときだけ、共有のデモのアカウントの設定を真にする" do
+    script = 'puts "SPEC_RESULT " + JSON.generate(shared: Rails.configuration.x.shared_demo_accounts)'
+
+    expect([ nil, "1", "true" ].map { result_of(*boot_production({ "SHARED_DEMO_ACCOUNTS" => _1 }, script)).fetch("shared") }).to eq([ false, true, false ])
   end
 
   # TLS は Cloudflare で終わり、Rails には Next のサーバーから http で届く。Secure の Cookie を http の応答にも書く
