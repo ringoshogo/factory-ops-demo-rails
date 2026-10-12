@@ -48,6 +48,29 @@ RSpec.describe DemoWorld do
       expect(row_counts).to eq(counts)
     end
 
+    it "namespace が英小文字・数字・ハイフンでないか、variant が seed・e2e でなければ、何も作らずに例外にする" do
+      counts = row_counts
+
+      expect { described_class.build(namespace: "W 1", variant: :seed) }.to raise_error(ArgumentError, /namespace/)
+      expect { described_class.build(namespace: nil, variant: :seed) }.to raise_error(ArgumentError, /namespace/)
+      expect { described_class.build(namespace:, variant: :demo) }.to raise_error(ArgumentError, /variant/)
+      expect(row_counts).to eq(counts)
+    end
+
+    it "公開 API が失敗を返したら、失敗のコードと項目と文を持つ例外で止まる" do
+      allow(Purchasing::Ordering).to receive(:place).and_return(OperationResult.failure(:not_permitted, path: [ :supplier_tenant_id ]))
+      expect { described_class.build(namespace:, variant: :seed) }.to raise_error(DemoWorld::Failed, "not_permitted supplier_tenant_id")
+
+      allow(Purchasing::Ordering).to receive(:place).and_return(OperationResult.failure(:conflict, message: "closed"))
+      expect { described_class.build(namespace:, variant: :seed) }.to raise_error(DemoWorld::Failed, "conflict closed")
+    end
+
+    it "取り込みがジョブを流し終えても終わっていなければ、例外で止まる" do
+      allow(Imports::Runs).to receive(:find).and_wrap_original { |original, *args| original.call(*args).with(status: :queued) }
+
+      expect { described_class.build(namespace:, variant: :seed) }.to raise_error(DemoWorld::Failed, /items.csv が終わらない（queued）/)
+    end
+
     it "本番の環境では、何も作らずに例外にする" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
       counts = row_counts
@@ -93,6 +116,12 @@ RSpec.describe DemoWorld do
       expect(line_items).to include(longest.name)
       expect(as(supplier) { Partnerships::Directory.for_supplier(_1).map { |partnership| partnership.buyer.name } })
         .to include(start_with(DemoWorld::LONG_BUYER_NAME))
+    end
+  end
+
+  describe DemoWorld::Jobs do
+    it "テナントの設定の中では流さない。ジョブは宛先テナントの設定を開くので、入れ子になる" do
+      expect { Tenancy.with_tenant(FactoryBot.create(:tenant).id) { DemoWorld::Jobs.drain } }.to raise_error(ArgumentError, /外で呼ぶ/)
     end
   end
 
