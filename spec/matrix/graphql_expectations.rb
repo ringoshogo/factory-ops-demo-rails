@@ -1,9 +1,9 @@
 # 入口の行列の期待値。視点の入口と Mutation のフィールドはすべてここに行を持つ。
 # 行の無いフィールドがあれば spec/matrix/graphql_matrix_spec.rb が落ちる
 module MatrixExpectations
-  # 値が返る・空の一覧・null・ユーザーエラーの NOT_FOUND と NOT_PERMITTED・トップレベルのエラーの FORBIDDEN
+  # 値が返る・空の一覧・null・ユーザーエラーの NOT_FOUND と NOT_PERMITTED と INVALID_INPUT・トップレベルのエラーの FORBIDDEN
   # （docs/architecture/graphql-schema.md「エラー」）
-  OUTCOMES = %i[value empty null not_found not_permitted forbidden].freeze
+  OUTCOMES = %i[value empty null not_found not_permitted invalid_input forbidden].freeze
 
   # "型.フィールド" => { query:, variables: ->(world) { ... }（省略可）, role:（mutation だけ）, expect: { ペルソナ => 結果 } }。
   # query は対象のフィールドを 1 つだけ選ぶ。variables は世界の行の ID を引数に渡すときに書く。
@@ -80,16 +80,33 @@ module MatrixExpectations
       variables: ->(world) { { input: { partnershipId: world.partnership(:granted_buyer).id, permission: "VIEW_CATALOG" } } },
       expect: ONLY_SUPPLIER
     },
+    # supplier の品目のコードで、今日の単価と違う単価を送る。supplier には既存の品目なので、admin でも member でも
+    # 単価を変えられず INVALID_INPUT になる。ほかのペルソナには無いコードなので、その単価を最初の単価にして品目を作る
     "Mutation.saveItem" => {
       role: :member,
       query: "mutation($input: SaveItemInput!) { saveItem(input: $input) #{ITEM_MUTATION} }",
-      variables: ->(_world) { { input: { code: "NEW-1", name: "新しい品目", unit: "個", unitPrice: 100 } } },
-      expect: EVERYONE
+      variables: ->(world) { { input: { code: world.row("items", :supplier).code, name: "新しい品目", unit: "個", unitPrice: 999 } } },
+      expect: EVERYONE.merge(supplier: :invalid_input)
     },
     "Mutation.setItemPublished" => {
       role: :member,
       query: "mutation($input: SetItemPublishedInput!) { setItemPublished(input: $input) #{ITEM_MUTATION} }",
       variables: ->(world) { { input: { itemId: world.row("items", :supplier).id, published: true } } },
+      expect: ONLY_SUPPLIER
+    },
+    # supplier の品目への改定の予約と、supplier の単価の行の訂正。金額に関わるので admin に限る
+    "Mutation.scheduleItemPrice" => {
+      role: :admin,
+      query: "mutation($input: ScheduleItemPriceInput!) { scheduleItemPrice(input: $input) #{ITEM_MUTATION} }",
+      variables: lambda { |world|
+        { input: { itemId: world.row("items", :supplier).id, unitPrice: 150, effectiveOn: (Date.current + 1).iso8601 } }
+      },
+      expect: ONLY_SUPPLIER
+    },
+    "Mutation.correctItemPrice" => {
+      role: :admin,
+      query: "mutation($input: CorrectItemPriceInput!) { correctItemPrice(input: $input) #{ITEM_MUTATION} }",
+      variables: ->(world) { { input: { itemPriceId: world.row("item_prices", :supplier).id, unitPrice: 110, reason: "入力の誤り" } } },
       expect: ONLY_SUPPLIER
     },
     # 対応表は受注側だけが所有する。どのペルソナにも自社の行だけが返る

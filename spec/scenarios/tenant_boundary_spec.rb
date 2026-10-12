@@ -6,7 +6,7 @@ require_relative "../support/scenarios"
 # 下の表に無い入口があれば落ちる（docs/architecture/graphql-schema.md「ID と `node`」）
 RSpec.describe "テナントの境界", type: :request do
   # 受注側の伝票の ID と、イベントで受け取った出荷実績・受注・受注明細の ID
-  documents = %i[shipment sales_order sales_order_line shipment_request item partnership cancellation_review invoice]
+  documents = %i[shipment sales_order sales_order_line shipment_request item item_price partnership cancellation_review invoice]
   not_found = { "errors" => [ { "code" => "NOT_FOUND" } ] }
 
   # 入口（型.フィールド(引数の道)）ごとに、相手の ID を入れる引数と、入れる ID の種類と、届かないときの結果。
@@ -103,6 +103,13 @@ RSpec.describe "テナントの境界", type: :request do
     "Mutation.setItemPublished(input.itemId)" => {
       ids: documents, reach: not_found, run: ->(id) { mutate("setItemPublished", itemId: id, published: true) }
     },
+    "Mutation.scheduleItemPrice(input.itemId)" => {
+      ids: documents, reach: not_found,
+      run: ->(id) { mutate("scheduleItemPrice", itemId: id, unitPrice: "1", effectiveOn: Date.current.iso8601) }
+    },
+    "Mutation.correctItemPrice(input.itemPriceId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("correctItemPrice", itemPriceId: id, unitPrice: "1", reason: "誤り") }
+    },
     "Mutation.registerPartMapping(input.itemId)" => {
       ids: documents, reach: not_found,
       run: ->(id) { mutate("registerPartMapping", customerTenantId: own_customer.id, customerPartNumber: "MY-BOLT", itemId: id) }
@@ -178,7 +185,10 @@ RSpec.describe "テナントの境界", type: :request do
       login_as(supplier_admin)
       partnership_id = mutate!("establishPartnership", "partnership { id }", partnerCode: buyer.partner_code).dig("partnership", "id")
       mutate!("grantPermission", "partnership { id }", partnershipId: partnership_id, permission: "PLACE_ORDERS")
-      item_id = mutate!("saveItem", "item { id }", code: "BOLT-8", name: "六角ボルト M8", unit: "本", unitPrice: "120").dig("item", "id")
+      item = mutate!("saveItem", "item { id prices { id } }", code: "BOLT-8", name: "六角ボルト M8", unit: "本", unitPrice: "120")
+        .fetch("item")
+      item_id = item.fetch("id")
+      item_price_id = item.fetch("prices").sole.fetch("id")
       mutate!("registerPartMapping", "partMapping { id }", customerTenantId: buyer.id, customerPartNumber: "MY-BOLT", itemId: item_id)
       mutate!("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
 
@@ -243,7 +253,7 @@ RSpec.describe "テナントの境界", type: :request do
       @partner_ids = {
         shipment: posted.fetch("shipment_id"), sales_order: posted.fetch("sales_order_id"),
         sales_order_line: posted.fetch("lines").sole.fetch("sales_order_line_id"), shipment_request: request_id, item: item_id,
-        partnership: partnership_id, cancellation_review: review_id, invoice: invoice_id, supplier_tenant: supplier.id,
+        item_price: item_price_id, partnership: partnership_id, cancellation_review: review_id, invoice: invoice_id, supplier_tenant: supplier.id,
         buyer_tenant: buyer.id, outsider_tenant: outsider.id
       }
       expect(partner_ids.values).to all(be_present)

@@ -4,8 +4,9 @@ require_relative "graphql_expectations"
 
 # 入口のフィールドと mutation ごとに、ペルソナとしてログインして実行し、結果の種類を確かめる
 # （docs/architecture/context-map.md「テナントと所有」、docs/architecture/graphql-schema.md「エラー」）。
-# mutation は、値を返すペルソナの member でも呼び、admin に限る mutation が FORBIDDEN になって何も書かないことと、
-# member に許す mutation が同じ値を返すことを確かめる（docs/architecture/graphql-schema.md「役割による制限」）
+# mutation は member でも呼ぶ。admin に限る mutation は、値を返すペルソナの member に FORBIDDEN になって何も書かないことを、
+# member に許す mutation は、どのペルソナの member にも admin と同じ結果になり、値を返さないときは何も書かないことを確かめる
+# （docs/architecture/graphql-schema.md「役割による制限」）
 RSpec.describe "入口の行列", type: :request do
   MatrixWorld.share_per_file(self)
 
@@ -81,13 +82,6 @@ RSpec.describe "入口の行列", type: :request do
     end
   end
 
-  def call(entry, user)
-    variables = entry[:variables]&.call(world) || {}
-    login_as(user)
-    post "/graphql", params: { query: entry[:query], variables: }, as: :json
-    response.parsed_body
-  end
-
   it "mutation の行はすべて、許す役割を持つ。ほかの行は役割を持たない" do
     MatrixExpectations::GRAPHQL.each do |key, entry|
       if key.start_with?("Mutation.")
@@ -118,9 +112,11 @@ RSpec.describe "入口の行列", type: :request do
         end
       end
 
-      entry[:expect].select { |_, result| result == :value }.each_key do |persona|
+      entry[:expect].each do |persona, result|
         case entry[:role]
         when :admin
+          next unless result == :value
+
           it "#{persona} の member には forbidden で、そのテナントの表に何も書かない" do
             variables = entry[:variables]&.call(world) || {}
             before = owned_rows(persona)
@@ -131,8 +127,15 @@ RSpec.describe "入口の行列", type: :request do
             expect(owned_rows(persona)).to eq(before)
           end
         when :member
-          it "#{persona} の member にも value" do
-            expect(outcome(call(entry, world.members[persona]), [ *parent_paths.fetch(type_name), field_name ])).to eq(:value)
+          # 値を返さない結果では、member の要求も何も書かない。saveItem で既存の品目の単価を変えられないことは、ここで確かめる
+          it "#{persona} の member にも #{result}#{'で、そのテナントの表に何も書かない' unless result == :value}" do
+            variables = entry[:variables]&.call(world) || {}
+            before = owned_rows(persona)
+            login_as(world.members[persona])
+            post "/graphql", params: { query: entry[:query], variables: }, as: :json
+
+            expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(result)
+            expect(owned_rows(persona)).to eq(before) unless result == :value
           end
         end
       end

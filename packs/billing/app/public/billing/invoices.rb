@@ -10,6 +10,11 @@ module Billing
       Scope.call(actor, Invoice.where(id:)).first&.then { to_value(_1) }
     end
 
+    # 請求書 ID ごとの請求書。見えない ID は含まない
+    def self.by_ids(actor, ids)
+      Scope.call(actor, Invoice.where(id: ids)).to_h { [ _1.id, to_value(_1) ] }
+    end
+
     # 請求書 ID ごとの税率ごとの集計。税率の昇順に並べ、見えない請求書の ID は空の配列になる
     def self.tax_summaries_for(actor, invoice_ids)
       summaries = Scope.call(actor, InvoiceTaxSummary.where(invoice_id: invoice_ids)).order(:invoice_id, :tax_rate_percent).map do |summary|
