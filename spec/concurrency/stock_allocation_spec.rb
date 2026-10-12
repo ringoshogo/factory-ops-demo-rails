@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../support/concurrency"
 
 # 同じ品目の引当と出庫が 2 つの接続で同時に進んでも、有効在庫が負にならない。在庫の行ロックが 2 つを直列にし、
 # 後の操作は先の操作がコミットした後の有効在庫で判断する（docs/architecture/data-model.md「在庫（`inventory`）」）

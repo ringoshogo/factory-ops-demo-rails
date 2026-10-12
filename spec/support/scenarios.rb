@@ -1,19 +1,10 @@
 require_relative "events"
+require_relative "request_helpers"
 
-# 重要シナリオの補助（docs/guides/testing.md「重要シナリオ」）。シナリオは 2 社のユーザーとしてログインし、
-# GraphQL の入口を通して操作する。イベントは deliver_enqueued_events で受け手まで流す
+# 重要シナリオの補助（docs/guides/testing.md「重要シナリオ」）。シナリオは 2 社のユーザーとしてログインし（login_as）、
+# GraphQL の入口を通して操作する（query）。イベントは deliver_enqueued_events で受け手まで流す
 module ScenarioHelpers
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  # トップレベルのエラーがあれば落とし、data を返す
-  def query(text, **variables)
-    post "/graphql", params: { query: text, variables: }, as: :json
-    expect(response.parsed_body["errors"]).to be_nil
-    response.parsed_body.fetch("data")
-  end
+  include RequestHelpers
 
   # mutation を呼び、payload を返す。selection は payload の中で選ぶ項目
   def mutate(name, selection = "errors { code }", **input)

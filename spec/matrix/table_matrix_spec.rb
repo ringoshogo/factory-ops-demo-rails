@@ -6,7 +6,7 @@ require_relative "table_expectations"
 # アプリのロールで動くので、RLS のポリシーそのものを確かめる（docs/architecture/context-map.md「テナントと所有」）
 RSpec.describe "表の行列" do
   let(:connection) { ActiveRecord::Base.lease_connection }
-  let(:world) { MatrixWorld.new }
+  MatrixWorld.share_per_file(self)
 
   it "テナントの表すべてに期待値がある" do
     expect(MatrixExpectations::TABLES.keys).to match_array(MatrixWorld.tenant_tables)

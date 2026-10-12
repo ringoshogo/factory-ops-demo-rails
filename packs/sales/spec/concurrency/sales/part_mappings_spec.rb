@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 受注を作る照合と対応表の登録が同時に進んでも、照合待ちの受注を見落とさない（Sales::PartMatching.lock）
 RSpec.describe Sales::PartMappings do

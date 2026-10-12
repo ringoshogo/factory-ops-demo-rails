@@ -5,7 +5,7 @@ require_relative "graphql_expectations"
 # 入口のフィールドと mutation ごとに、ペルソナとしてログインして実行し、結果の種類を確かめる
 # （docs/architecture/context-map.md「テナントと所有」、docs/architecture/graphql-schema.md「エラー」）
 RSpec.describe "入口の行列", type: :request do
-  let(:world) { MatrixWorld.new }
+  MatrixWorld.share_per_file(self)
 
   ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
 
@@ -76,9 +76,7 @@ RSpec.describe "入口の行列", type: :request do
     describe key do
       MatrixWorld::PERSONAS.each do |persona|
         it "#{persona} には #{entry[:expect][persona]}" do
-          post "/session", params: { email: world.users[persona].email, password: "password" }, as: :json
-          expect(response).to have_http_status(:no_content)
-
+          login_as(world.users[persona])
           post "/graphql", params: { query: entry[:query], variables: entry[:variables]&.call(world) || {} }, as: :json
 
           expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(entry[:expect][persona])

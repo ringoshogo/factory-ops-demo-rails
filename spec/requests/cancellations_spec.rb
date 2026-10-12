@@ -9,31 +9,20 @@ RSpec.describe "取消依頼と審査", type: :request do
   let(:supplier_admin) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, :admin) } }
   let(:buyer_member) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user) } }
 
-  def login_as(user)
-    post "/session", params: { email: user.email, password: "password" }, as: :json
-    expect(response).to have_http_status(:no_content)
-  end
-
-  def graphql(query, **variables)
-    post "/graphql", params: { query:, variables: }, as: :json
-    expect(response.parsed_body["errors"]).to be_nil
-    response.parsed_body.fetch("data")
-  end
-
   def mutate(name, selection, **input)
-    graphql(<<~GRAPHQL, input:).fetch(name)
+    query(<<~GRAPHQL, input:).fetch(name)
       mutation($input: #{name[0].upcase}#{name[1..]}Input!) { #{name}(input: $input) { #{selection} errors { code } } }
     GRAPHQL
   end
 
   def purchase_order
-    graphql(<<~GRAPHQL, id: @purchase_order_id).dig("buyer", "purchaseOrder")
+    query(<<~GRAPHQL, id: @purchase_order_id).dig("buyer", "purchaseOrder")
       query($id: ID!) { buyer { purchaseOrder(id: $id) { status cancellationPending cancellationRequests { reason outcome decidedAt } } } }
     GRAPHQL
   end
 
   def sales_order
-    graphql(<<~GRAPHQL, id: @sales_order_id).dig("supplier", "salesOrder")
+    query(<<~GRAPHQL, id: @sales_order_id).dig("supplier", "salesOrder")
       query($id: ID!) {
         supplier { salesOrder(id: $id) {
           status cancellationReviewPending cancellationReviews { id requestedAt decision decidedAt }
@@ -58,10 +47,10 @@ RSpec.describe "取消依頼と審査", type: :request do
     deliver_enqueued_events
 
     login_as(supplier_admin)
-    @sales_order_id = graphql("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
+    @sales_order_id = query("{ supplier { salesOrders { nodes { id } } } }").dig("supplier", "salesOrders", "nodes").sole["id"]
     mutate("allocateSalesOrder", "salesOrder { id }", salesOrderId: @sales_order_id)
     deliver_enqueued_events
-    @request_id = graphql("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
+    @request_id = query("{ supplier { shipmentRequests { nodes { id } } } }").dig("supplier", "shipmentRequests", "nodes").sole["id"]
     mutate("createShippingInstruction", "shipmentRequest { id }", shipmentRequestId: @request_id, plannedDate: "2026-10-20")
   end
 
@@ -103,7 +92,7 @@ RSpec.describe "取消依頼と審査", type: :request do
 
     expect(sales_order).to include("cancellationReviews" => [ include("decision" => "APPROVED", "decidedAt" => be_present) ],
       "shipmentRequest" => { "status" => "CANCELLED", "instruction" => nil })
-    expect(graphql("{ supplier { stocks { nodes { onHand allocated } } } }").dig("supplier", "stocks", "nodes"))
+    expect(query("{ supplier { stocks { nodes { onHand allocated } } } }").dig("supplier", "stocks", "nodes"))
       .to eq([ { "onHand" => 10, "allocated" => 0 } ])
 
     login_as(buyer_member)
@@ -156,7 +145,7 @@ RSpec.describe "取消依頼と審査", type: :request do
 
     expect(sales_order).to include("status" => "CANCELLED", "cancellationReviews" => [],
       "shipmentRequest" => { "status" => "CANCELLED", "instruction" => nil })
-    expect(graphql("{ supplier { stocks { nodes { onHand allocated } } } }").dig("supplier", "stocks", "nodes"))
+    expect(query("{ supplier { stocks { nodes { onHand allocated } } } }").dig("supplier", "stocks", "nodes"))
       .to eq([ { "onHand" => 10, "allocated" => 0 } ])
     expect(mutate("postShipment", "shipmentRequest { status }", shipmentRequestId: @request_id, shippedOn: "2026-10-20"))
       .to eq("shipmentRequest" => nil, "errors" => [ { "code" => "CONFLICT" } ])

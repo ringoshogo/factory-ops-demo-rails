@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../support/concurrency"
 
 # 同じ出荷依頼の postShipment を、2 つの接続から GraphQL の入口を通して同時に送ると、成立した 1 件だけが監査の行を持つ。
 # 監査の行は mutation の基底クラスが要求のトランザクションの中で書く（docs/architecture/graphql-schema.md「監査ログ」）。

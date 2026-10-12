@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 在庫の行がまだ無い品目を、2 つの取引が逆の並びで同時に lock_for へ渡しても、デッドロックしない
 # （docs/architecture/data-model.md「取消と出荷の競合を止める場所」のロックの順）

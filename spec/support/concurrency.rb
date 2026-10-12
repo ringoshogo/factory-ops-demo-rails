@@ -128,7 +128,12 @@ module ConcurrencyHelpers
       connection.select_value("SELECT EXISTS (SELECT 1 FROM #{table} WHERE owner_tenant_id IN (#{ids}))")
     end
     raise "#{left.join('・')} に行が残った。delete_owned_rows に渡す表を足す" if left.any?
+
+    @owned_rows_deleted = true
   end
+
+  # 下の config.after が、example の後に後始末が終わったかを見る印。後始末が途中で失敗したときは立たない
+  def owned_rows_deleted? = @owned_rows_deleted == true
 
   private
 
@@ -144,6 +149,18 @@ module ConcurrencyHelpers
   def concurrency_releases = (@concurrency_releases ||= [])
 end
 
+# 競合テストが後始末（delete_owned_rows）を呼び忘れたら、その example を落とす（docs/guides/testing.md「競合テスト」）。
+# 呼び忘れた example がコミットしたイベントのジョブは、テナントで絞らない deliver_enqueued_events に後の example で
+# 拾われるので、放っておくと離れた example の失敗になる。設定の after は example group の after より後に走るので、
+# group の after で後始末を終えた example は通る。印は example のインスタンスの変数で、rspec は example ごとに
+# インスタンスを作り直すので、前の example の印は渡らない。
+# 渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。
+# :concurrency の外でトランザクションを使わない spec は、このガードの外にある。次の 3 本はコミットした行を自前で消す：
+# packs/sales/spec/public/sales/sales_order_policy_spec.rb・spec/db/tenant_table_spec.rb・spec/platform/tenancy_session_spec.rb。
+# spec/matrix/matrix_world_spec.rb は接続を固定して巻き戻すだけで、何もコミットしない
 RSpec.configure do |config|
   config.include ConcurrencyHelpers, :concurrency
+  config.after(:example, :concurrency) do
+    raise "競合テストが後始末（delete_owned_rows）を終えていない。example group の after で呼ぶ" unless owned_rows_deleted?
+  end
 end

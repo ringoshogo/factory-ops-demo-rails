@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../../../../../spec/support/concurrency"
 
 # 発注の登録と、取引関係の失効・権限の撤回が並んだときの順序（docs/architecture/context-map.md「取引関係の失効」）。
 # 2 つの接続を別のスレッドで動かし、一方のトランザクションを開いたまま他方を走らせる

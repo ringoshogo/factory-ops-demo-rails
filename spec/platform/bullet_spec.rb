@@ -86,8 +86,15 @@ RSpec.describe "N+1 の検出", type: :request, bullet: false do
       expect(run_inner_example(bullet: false, &n_plus_one).status).to eq(:passed)
     end
 
+    # 競合テストの後始末のガード（spec/support/concurrency.rb）も受けるので、内側の example は後始末を終える
     it ":concurrency の example は包まない" do
-      expect(run_inner_example(concurrency: true, &n_plus_one).status).to eq(:passed)
+      read_lines = n_plus_one
+      result = run_inner_example(concurrency: true) do
+        read_lines.call
+        delete_owned_rows([ SecureRandom.uuid ], [])
+      end
+
+      expect(result.status).to eq(:passed)
     end
 
     it "HTTP の要求を流す example（type: :request）は bullet: false を持ち、包まない" do

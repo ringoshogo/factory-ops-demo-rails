@@ -1,5 +1,4 @@
 require "rails_helper"
-require_relative "../support/concurrency"
 
 # 競合テストの補助が、ロックの待ちを取り違えず、先行のトランザクションの失敗を隠さず、開いたままのトランザクションを
 # 後始末で閉じる（docs/guides/testing.md「競合テスト」）。補助が誤ると、競合テストは何も確かめずに通る

@@ -26,7 +26,7 @@ bin/test-layers tmp/rspec.json
 
 ## 層への配分
 
-テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。一覧を返す公開 API の単体のテストでは、親を 2 件以上作る。1 件だと N+1 の検出が働かない（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。
+テストを書く人は、業務規則の分岐（数量の上限、状況ごとの拒否、導出表の各行）を単体で網羅する。一覧を返す公開 API の単体のテストでは、親を 2 件以上作る。1 件だと N+1 の検出が働かない（[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）。結合の request spec は、入口ごとに、成功 1 本と、公開 API の失敗が `UserError` に写ること 1 本を基本にする。request spec の補助（ログインする `login_as`、応答の本文をそのまま返す `graphql_body`、トップレベルのエラーが無いことを確かめて `data` を返す `query`）は `spec/support/request_helpers.rb` にあり、`type: :request` の spec と重要シナリオに取り込まれる。テストを書く人は、補助を spec のファイルに複製しない。
 
 `audit` を宣言した mutation を足す人は、結合の spec で、成功の後にできた監査の行の対象（`target_type`・`target_id`）と相手（`counterparty_tenant_id`）を、期待する値と比べる。行の件数だけを見る example は、宣言のラムダが対象か相手を取り違えても落ちない。`spec/graphql/audit_examples_spec.rb` が、スキーマの `audit` の action ごとに、action の文字列と 2 つの列の名前が同じ spec のファイル（`spec/requests`・`spec/scenarios`・`spec/concurrency`）に現れることを確かめる。名前が現れることしか見ないので、比べ方が正しいかは実装レビューの観点 4 で見る。
 
@@ -81,7 +81,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 2. 先の操作を `hold_open` で、コミットせずに開いたままにする。
 3. 後の操作を `in_thread` で別の接続から始め、`blocked_on_lock?(後のスレッド, by: 先のスレッド)` で、後の接続が先の接続のロックを待っていることを確かめる。補助は 2 つの接続の pid を控え、`pg_blocking_pids` で待ちの相手を確かめるので、無関係な接続の待ちを数えない。待たずに終わる操作は、ロックで直列になっていない。
 4. 先の操作を `commit` でコミットさせ、後の操作の結果を `finish` で受け取る。どちらもスレッドの例外を送出し直すので、先の操作のコミットの失敗も隠れない。
-5. 作った業務の行を、example の後で `delete_owned_rows` に消させる。補助は、開いたままのトランザクションをすべて閉じさせ、スレッドが終わったことを確かめてから、所有ロールの接続でそのテナントの業務の行とイベントのジョブを消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。スレッドが終わらなければ、行を消さずに失敗する。消した後に、`owner_tenant_id` を持つ表（残す表を除く）にそのテナントの行が残っていれば、渡す表の書き漏らしとして失敗する。
+5. 作った業務の行を、example の後で `delete_owned_rows` に消させる。補助は、開いたままのトランザクションをすべて閉じさせ、スレッドが終わったことを確かめてから、所有ロールの接続でそのテナントの業務の行とイベントのジョブを消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。スレッドが終わらなければ、行を消さずに失敗する。消した後に、`owner_tenant_id` を持つ表（残す表を除く）にそのテナントの行が残っていれば、渡す表の書き漏らしとして失敗する。`delete_owned_rows` を最後まで終えずに終わった `:concurrency` の example は、`spec/support/concurrency.rb` の設定の `after` が落とす。この補助は、`:concurrency` のメタデータと同じく `spec/rails_helper.rb` が読み込むので、spec のファイルで読み込まなくても効く。呼び忘れた example がコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われ、離れた example の失敗になるからである。このガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/cleanup_guard_spec.rb` が、後始末を呼ばない example と、`after` があっても後始末を終えない example が落ちることを確かめる。
 
 競合テストは、GraphQL の入口を通すと監査の行を作る（[graphql-schema.md「監査ログ」](../architecture/graphql-schema.md#監査ログ)）。監査の行は所有ロールでも消せず（[data-model.md「監査ログ（`platform`）」](../architecture/data-model.md#監査ログplatform)）、所有テナントは外部キーで消せない。そのため、後始末はテナント・ユーザー・監査の行を消さずに残す。相手テナントとユーザーは外部キーの無い参照なので消せるが、監査の行が消えた行を指さないように、これも残す。`delete_owned_rows` は、`tenants`・`users`・`audit_logs` を渡されると失敗する。
 
@@ -117,3 +117,14 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 ### 行列テストとの分担
 
 行列テストは、全表・全入口を 5 つのペルソナで 1 段ずつ確かめる。シナリオは、段をつないだ道（イベントで知った ID を別の入口に持ち込む、など）を確かめる。テストを書く人は、行列テストに行を足して済むものをシナリオにしない。
+
+行列テストの 2 ファイル（`spec/matrix/table_matrix_spec.rb`・`spec/matrix/graphql_matrix_spec.rb`）は、世界（`spec/support/matrix_world.rb`）をファイルごとに 1 回だけ作り、全 example で使い回す（`MatrixWorld.share_per_file`）。example ごとに作ると、表の数に比例する大きさの世界を、表の数に比例する件数だけ作るので、時間が表の数の 2 乗で伸びる。世界は `before(:context)` で接続を固定した外側のトランザクションの中に作り、`after(:context)` で巻き戻す。各 example は、rspec-rails が同じ接続に開くセーブポイントの中で動き、終わりに巻き戻る。
+
+行列の spec を書く人は、次の 2 つを守る。
+
+- 別の接続を使わない（`OwnerConnection`・スレッド・`use_transactional_tests = false`）。別の接続からは、コミットしていない世界の行が見えない。別の接続でコミットした行は、example の終わりに巻き戻らない。
+- 世界のオブジェクトを書き換えない。オブジェクトは example の間で使い回し、DB の巻き戻しでは戻らない。`MatrixWorld` は世界が持つインスタンスの属性を凍らせ、属性の代入を `FrozenError` にする。`reload`・`destroy` と、関連先のインスタンスの書き換えは捕まえないので、呼ばない。
+
+補助は、世界のトランザクションがファイルの終わりより前にコミットされたか巻き戻ったら、`after(:context)` で失敗させる（`unpin_connection!` が偽を返す）。世界を作った後にテナントの設定が残っていても失敗させる。残った設定は外側のトランザクションの終わりまで全 example に渡り、生 SQL の RLS の結果を変えるからである。`spec/matrix/matrix_world_spec.rb` が、example で足した行とテナントの設定が次の example に残らないことと、ファイルの終わりに世界が残らないことを確かめる。
+
+接続の固定には `ActiveRecord::ConnectionPool#pin_connection!` を使う。Rails の公開の文書に無いメソッドで、rspec-rails の transactional fixtures が使うものと同じである。`lock_thread` は transactional fixtures の既定と同じ真にし、example の固定と形をそろえる（activerecord 8.1 の `active_record/test_fixtures.rb` の `class_attribute :lock_threads, default: true`。固定と入れ子の数え方は `active_record/connection_adapters/abstract/connection_pool.rb` の `pin_connection!`・`unpin_connection!`）。Rails の更新でこのメソッドの名前か入れ子の数え方が変わると、行列の spec は `before(:context)` か `after(:context)` で落ちる。そのときは、test-prof の `before_all` がその版で何を使っているかを確かめて移るか、`let(:world) { MatrixWorld.new }` で example ごとに作る形に戻す。test-prof の `before_all` も同じメソッドを包んでいるので、移るだけでは退路にならない。
