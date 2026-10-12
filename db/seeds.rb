@@ -1,9 +1,6 @@
-# This file should ensure the existence of records required to run the application in every environment (production,
-# development, test). The code here should be idempotent so that it can be executed at any point in every environment.
-# The data can then be loaded with the bin/rails db:seed command (or created alongside the database with db:setup).
-#
-# Example:
-#
-#   ["Action", "Comedy", "Drama", "Horror"].each do |genre_name|
-#     MovieGenre.find_or_create_by!(name: genre_name)
-#   end
+# デモの世界を作る（README.md「開発環境」）。同じ DB で 2 回目を流しても何も作らず、同じアカウントを表示する。
+# 本番の環境では DemoWorld が例外で止まる
+result = DemoWorld.build(namespace: "", variant: :seed)
+
+puts "デモのアカウント（パスワードはどれも #{result.accounts.first.password}）"
+result.accounts.each { |account| puts "  #{account.persona.ljust(22)} #{account.email}" }
