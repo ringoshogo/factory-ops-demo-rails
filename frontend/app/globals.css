@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 
 /*
- * ダークの条件は2つ (仕様 cycle-02 §5):
+ * ダークの条件は2つ:
  * - Cookie で明示した `.dark`
  * - Cookie が無く (`.light` でもなく) OS がダーク
  * インラインスクリプトでクラスを付けずに OS 設定へ追従するため、
@@ -24,7 +24,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* 英数字は IBM Plex Sans、和文は OS 標準 (macOS/iOS: ヒラギノ、Windows: 游ゴシック UI、
-     Android/Linux: Noto Sans JP)。和文の Web フォントは配信しない (正本 N-15) */
+     Android/Linux: Noto Sans JP)。和文の Web フォントは配信しない。
+     unicode-range ごとに数十のファイルに分かれ、最初の表示の要求が増える */
   --font-sans:
     var(--font-plex-sans), "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Noto Sans JP",
     Meiryo, system-ui, sans-serif;
@@ -70,11 +71,8 @@
   --color-info: var(--tone-info-bg);
   --color-info-foreground: var(--tone-info-fg);
   --color-info-border: var(--tone-info-border);
-  --color-notice: var(--tone-neutral-bg);
-  --color-notice-foreground: var(--tone-neutral-fg);
-  --color-notice-border: var(--tone-neutral-border);
 
-  /* 受注ステータスのバッジ (正本 §3-1 の6状態) */
+  /* 状況のバッジの 6 つの色 (lib/statuses.ts の Tone) */
   --color-status-received: var(--status-received-bg);
   --color-status-received-foreground: var(--status-received-fg);
   --color-status-partial: var(--status-partial-bg);
@@ -94,7 +92,7 @@
   --color-status-shipped-line: var(--status-shipped-line);
   --color-status-cancelled-line: var(--status-cancelled-line);
 
-  /* cycle-03 §2 のトークン */
+  /* 面・文字・線・アクセントのトークン */
   --color-surface-raised: var(--surface-raised);
   --color-sidebar-selected: var(--sidebar-selected);
   --color-row-hover: var(--row-hover);
@@ -111,9 +109,6 @@
   --color-filter-active-foreground: var(--filter-active-foreground);
   /* 注意色の文字。状態バナーの調子 (warning) とは別 */
   --color-caution: var(--warning-foreground);
-  --color-demo-notice: var(--notice-bg);
-  --color-demo-notice-foreground: var(--notice-foreground);
-  --color-demo-notice-border: var(--notice-border);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -125,7 +120,7 @@
 }
 
 /*
- * 影と角丸の段階 (仕様 cycle-03 §2)。`shadow-panel`・`rounded-panel` などで使う。
+ * 影と角丸の段階。`shadow-panel`・`rounded-panel` などで使う。
  * 影は色の部分だけを light-dark() で書き、影のトークンをテーマごとに持たない。
  * ダークは影が見えないので、縁の 1px のリング (0 0 0 1px) で面を分ける。
  */
@@ -151,11 +146,10 @@
 
 /*
  * どちらの値が効くかは color-scheme が決める。値は light-dark(ライト, ダーク) で
- * 1回だけ書き、ダーク用のブロックを別に持たない (handbook「同じ意味を2箇所に実装しない」)。
- * 対応ブラウザは Chrome・Edge 123 / Safari 17.5 / Firefox 120 以降 (仕様 cycle-02 §5)。
+ * 1回だけ書き、ダーク用のブロックを別に持たない (2 か所に書くと片方だけが変わる)。
+ * light-dark() を使えるのは Chrome・Edge 123 / Safari 17.5 / Firefox 120 以降。
  *
- * 値は見本 (docs/design/cycle-03) の 16 進値。見本から変えた値とその理由は
- * 仕様 cycle-03 §2 の表にある (AA に届かない・アクセントの用途を限る)。
+ * 文字の色は、面に対して WCAG の AA (4.5:1) に届く値にする。
  * ダークは台 < パネル < 浮いた面の順に明るくし、純黒を使わない。
  */
 :root {
@@ -194,11 +188,8 @@
   --filter-active-border: light-dark(#6366f1, #818cf8);
   --filter-active-foreground: light-dark(#3730a3, #c7d2fe);
 
-  /* 注意色 (納期の文言・在庫アラートの不足数) と注意書き (正本 N-4) */
+  /* 注意色 (期限の文言・在庫の不足数) */
   --warning-foreground: light-dark(#c2410c, #fb923c);
-  --notice-bg: light-dark(#fefce8, rgb(234 179 8 / 0.1));
-  --notice-foreground: light-dark(#854d0e, #fde68a);
-  --notice-border: light-dark(#fde68a, rgb(234 179 8 / 0.3));
 
   /* shadcn の部品が参照する名前。上のトークンへ寄せ、別の色を持たせない */
   --card-foreground: var(--foreground);
@@ -228,7 +219,7 @@
   --sidebar-border: var(--divider);
   --sidebar-ring: var(--ring);
 
-  /* 状態バナー・エラー表示の4つの調子 (サイクル02 の値のまま。見本に対応する表現が無い) */
+  /* エラー・注意・お知らせの表示の 3 つの調子 */
   --tone-danger-bg: light-dark(oklch(0.969 0.015 12.422), oklch(0.271 0.105 12.094));
   --tone-danger-fg: light-dark(oklch(0.41 0.159 10.272), oklch(0.892 0.058 10.001));
   --tone-danger-border: light-dark(oklch(0.81 0.117 11.638), oklch(0.455 0.188 13.697));
@@ -238,11 +229,8 @@
   --tone-info-bg: light-dark(oklch(0.977 0.013 236.62), oklch(0.293 0.066 243.157));
   --tone-info-fg: light-dark(oklch(0.391 0.09 240.876), oklch(0.901 0.058 230.902));
   --tone-info-border: light-dark(oklch(0.828 0.111 230.318), oklch(0.443 0.11 240.79));
-  --tone-neutral-bg: light-dark(oklch(0.968 0.007 247.896), oklch(0.279 0.041 260.031));
-  --tone-neutral-fg: light-dark(oklch(0.279 0.041 260.031), oklch(0.929 0.013 255.508));
-  --tone-neutral-border: light-dark(oklch(0.869 0.022 252.894), oklch(0.446 0.043 257.281));
 
-  /* 受注ステータスのバッジ: 淡い面 + 同系の濃い文字 (点も文字と同じ色)。仕様 cycle-03 §2 */
+  /* 状況のバッジ: 淡い面 + 同系の濃い文字 (点も文字と同じ色) */
   --status-received-bg: light-dark(rgb(113 113 122 / 0.1), rgb(161 161 170 / 0.15));
   --status-received-fg: light-dark(#3f3f46, #e4e4e7);
   --status-partial-bg: light-dark(rgb(234 179 8 / 0.15), rgb(234 179 8 / 0.15));
@@ -283,15 +271,15 @@
   html {
     @apply font-sans;
   }
-  /* 見出し 1 は全画面で同じ (仕様 cycle-03 §2 文字) */
+  /* 見出し 1 は全画面で同じ */
   h1 {
     font-size: 22px;
     font-weight: 600;
     line-height: 1.3;
   }
   /*
-   * フォーカスの輪郭は全部品で同じ: 2px の実線を外側 2px に (仕様 cycle-03 §3)。
-   * 透過させない (文字以外のコントラスト 3:1。正本 US-10)
+   * フォーカスの輪郭は全部品で同じ: 2px の実線を外側 2px に。
+   * 透過させない (文字以外のコントラスト 3:1 を保つ)
    */
   :focus-visible {
     outline: 2px solid var(--ring);

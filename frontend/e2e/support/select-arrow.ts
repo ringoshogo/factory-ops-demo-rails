@@ -1,7 +1,7 @@
 import { expect, type Locator } from "@playwright/test";
 
 /**
- * select の矢印が右端から離れていること (T-52)。ブラウザ標準の矢印は位置を
+ * select の矢印が右端から離れていること。ブラウザ標準の矢印は位置を
  * 調整できないので、標準の矢印を消し (appearance: none)、自前のアイコンを
  * 右端から内側に置く。文字が矢印に重ならない余白も確かめる。
  */

@@ -1,0 +1,6 @@
+mutation WithdrawPermission($input: WithdrawPermissionInput!) {
+  withdrawPermission(input: $input) {
+    partnership { id permissions }
+    errors { code message path }
+  }
+}

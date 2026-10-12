@@ -25,7 +25,7 @@ function subscribe(onChange: () => void) {
 const readChoice = () => themeFromClassList(document.documentElement.classList);
 
 // Cookie はクライアントで書く。サーバーアクションで書くと現在のルートが
-// 描き直され、ダッシュボードでは取得が全部やり直しになる (仕様 §5)
+// 描き直され、ダッシュボードでは Rails への問い合わせが全部やり直しになる
 export function ThemeToggle({ initial }: { initial: ThemeChoice }) {
   const choice = useSyncExternalStore(subscribe, readChoice, () => initial);
   const Icon = ICONS[choice];

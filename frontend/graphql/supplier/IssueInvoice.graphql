@@ -1,0 +1,6 @@
+mutation IssueInvoice($input: IssueInvoiceInput!) {
+  issueInvoice(input: $input) {
+    invoice { id state invoiceNumber }
+    errors { code message path }
+  }
+}

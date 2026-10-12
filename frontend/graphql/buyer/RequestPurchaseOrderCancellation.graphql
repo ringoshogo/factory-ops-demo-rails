@@ -1,0 +1,6 @@
+mutation RequestPurchaseOrderCancellation($input: RequestPurchaseOrderCancellationInput!) {
+  requestPurchaseOrderCancellation(input: $input) {
+    purchaseOrder { id cancellationPending }
+    errors { code message path }
+  }
+}

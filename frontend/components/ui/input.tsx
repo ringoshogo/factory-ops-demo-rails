@@ -3,9 +3,8 @@ import { Input as InputPrimitive } from "@base-ui/react/input"
 import { cn } from "cn"
 
 /**
- * 入力欄・select・日付ボタンの面と縁取り (仕様 cycle-03 §3 共通部品)。
- * ライトは透明 (パネルの白が見える)。ダークの面を `dark:` 変種で書くのは、
- * 既存 E2E「部品の `dark:` 指定も効く」が測る対象を残すため。
+ * 入力欄・select・日付ボタンの面と縁取り。
+ * ライトは透明 (パネルの白が見える)。ダークの面は `dark:` 変種で書き、OS のダークと Cookie のダークの両方で効かせる。
  * 縁取りは内側の影で描き (高さを変えない)、パネル・台の上で 3:1 以上になる。
  */
 export const CONTROL_SURFACE = "rounded-control bg-transparent shadow-control dark:bg-white/4"

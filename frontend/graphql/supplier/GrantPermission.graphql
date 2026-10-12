@@ -1,0 +1,6 @@
+mutation GrantPermission($input: GrantPermissionInput!) {
+  grantPermission(input: $input) {
+    partnership { id permissions }
+    errors { code message path }
+  }
+}

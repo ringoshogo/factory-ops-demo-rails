@@ -1,0 +1,6 @@
+mutation StartImport($input: StartImportInput!) {
+  startImport(input: $input) {
+    import { id status }
+    errors { code message path }
+  }
+}

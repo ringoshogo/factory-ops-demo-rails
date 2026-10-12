@@ -1,0 +1,21 @@
+query SupplierBilling($first: Int, $after: String, $customerTenantId: ID) {
+  supplier {
+    dashboard { businessDate unbilledTotal }
+    partnerships { id status buyer { id name } }
+    billingTerms { id closingDay customer { id name } }
+    billableItems(first: $first, after: $after, customerTenantId: $customerTenantId) {
+      totalCount
+      nodes {
+        id
+        inspectedOn
+        itemName
+        quantity
+        unitPrice
+        amount
+        taxRatePercent
+        customer { id name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

@@ -1,0 +1,31 @@
+query SupplierSalesOrder($id: ID!) {
+  supplier {
+    dashboard { businessDate }
+    salesOrder(id: $id) {
+      id
+      orderNo
+      orderDate
+      dueDate
+      status
+      cancellationReviewPending
+      cancellationReviews { id requestedAt decision decidedAt }
+      customer { id name }
+      lines {
+        id
+        customerPartNumber
+        itemName
+        quantity
+        allocatedQuantity
+        unitPrice
+        taxRatePercent
+        item { id code name }
+      }
+      shipmentRequest {
+        id
+        status
+        dueDate
+        instruction { id plannedDate }
+      }
+    }
+  }
+}

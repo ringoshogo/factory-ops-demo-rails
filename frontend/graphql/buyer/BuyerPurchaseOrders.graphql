@@ -1,5 +1,17 @@
-query BuyerPurchaseOrders($first: Int, $after: String, $orderBy: PurchaseOrderOrder, $filter: PurchaseOrderFilter) {
+query BuyerPurchaseOrders(
+  $first: Int
+  $after: String
+  $orderBy: PurchaseOrderOrder
+  $filter: PurchaseOrderFilter
+  $allFilter: PurchaseOrderFilter
+  $openFilter: PurchaseOrderFilter
+  $inboundFilter: PurchaseOrderFilter
+  $inspectedFilter: PurchaseOrderFilter
+  $cancelledFilter: PurchaseOrderFilter
+) {
+  supplier { dashboard { businessDate } }
   buyer {
+    suppliers { supplier { id name } }
     purchaseOrders(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
       totalCount
       nodes {
@@ -8,6 +20,7 @@ query BuyerPurchaseOrders($first: Int, $after: String, $orderBy: PurchaseOrderOr
         orderDate
         desiredDeliveryOn
         status
+        cancellationPending
         supplier { id name }
         lines { id partNumber quantity confirmedItemName confirmedUnitPrice }
         inboundShipments { id shippedOn }
@@ -15,5 +28,10 @@ query BuyerPurchaseOrders($first: Int, $after: String, $orderBy: PurchaseOrderOr
       }
       pageInfo { hasNextPage endCursor }
     }
+    all: purchaseOrders(filter: $allFilter) { totalCount }
+    open: purchaseOrders(filter: $openFilter) { totalCount }
+    inbound: purchaseOrders(filter: $inboundFilter) { totalCount }
+    inspected: purchaseOrders(filter: $inspectedFilter) { totalCount }
+    cancelled: purchaseOrders(filter: $cancelledFilter) { totalCount }
   }
 }

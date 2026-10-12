@@ -1,6 +1,8 @@
 query SupplierPartMappings($first: Int, $after: String, $customerTenantId: ID) {
   supplier {
+    partnerships { id status buyer { id name } }
     partMappings(first: $first, after: $after, customerTenantId: $customerTenantId) {
+      totalCount
       nodes {
         id
         customerPartNumber
@@ -8,6 +10,19 @@ query SupplierPartMappings($first: Int, $after: String, $customerTenantId: ID) {
         item { id code name }
       }
       pageInfo { hasNextPage endCursor }
+    }
+    # 登録の品目の候補。1 ページの上限の 100 件までを品目コードの順に読む
+    candidates: items(first: 100, orderBy: { field: CODE, direction: ASC }) {
+      nodes { id code name }
+    }
+    awaiting: salesOrders(first: 10, filter: { statuses: [AWAITING_PART_MATCH] }, orderBy: { field: ORDER_NO, direction: ASC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        customer { id name }
+        lines { id customerPartNumber quantity item { id } }
+      }
     }
   }
 }

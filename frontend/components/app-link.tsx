@@ -3,11 +3,10 @@ import NextLink from "next/link";
 import type { ComponentProps } from "react";
 
 /**
- * アプリ内のリンク。**移動先を先読みしない** (正本 N-15)。
+ * アプリ内のリンク。**移動先を先読みしない**。
  *
- * どの画面も表示のたびに API を呼ぶ動的ページで、先読みは1リンクにつき2件の
- * 要求を出し、サーバーでは API も呼ぶ。エッジのレート制限 (1クライアント 50req/10s) は
- * demo.hayatec.dev にもかかり、受注一覧の行リンクを先読みすると初回表示だけで上限に近づいた。
+ * どの画面も表示のたびに Rails を呼ぶので、先読みは表示しない画面の分まで Rails を呼ぶ。
+ * 一覧の行のリンクを先読みすると、1 つの一覧を開くだけで行の数だけ詳細の問い合わせが出る。
  * `next/link` の直接の import は ESLint で禁じ、ここだけを通す。
  */
 export function Link(props: ComponentProps<typeof NextLink>) {
@@ -15,7 +14,7 @@ export function Link(props: ComponentProps<typeof NextLink>) {
 }
 
 /**
- * 文中・見出し脇の文字のリンクの見た目 (仕様 cycle-03 §3 共通部品「リンク」)。
+ * 文中・見出し脇の文字のリンクの見た目。
  * アクセントの文字色 --link・下線なし・ホバーで --link-hover。
  * ボタンやタブの形をしたリンクは自分の見た目を持つので、これを通さない。
  */

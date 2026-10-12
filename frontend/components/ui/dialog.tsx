@@ -55,7 +55,7 @@ function DialogContent({
         className={cn(
           // 高さは 100dvh − 32px が上限。見出し (DialogHeader)・本文 (DialogBody)・
           // ボタン (DialogFooter) を縦に並べ、はみ出す分は本文だけがスクロールする。
-          // 閉じる・確定のボタンと見出しは常に見える (仕様 cycle-03 §3)。
+          // 閉じる・確定のボタンと見出しは常に見える。
           // 開くときは透明度だけを変え、拡大縮小しない (開いている途中に測った寸法が最終の形とずれる)
           "fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-panel bg-popover px-6 text-sm text-popover-foreground shadow-popup duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
           className

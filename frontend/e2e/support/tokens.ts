@@ -1,7 +1,7 @@
 /**
- * デザイントークンの期待値 (仕様 cycle-03 §2)。**ここにだけ**置く。
+ * デザイントークンの期待値。**ここにだけ**置く。
  *
- * 値は仕様の表をそのまま写す。`globals.css` から読み直さない — 読み直すと、
+ * 値は決めた値をそのまま書く。`globals.css` から読み直さない — 読み直すと、
  * トークンの値を間違えても期待値が一緒に動き、テストが落ちない。
  */
 
@@ -23,7 +23,7 @@ const pair = (light: Rgba, dark: Rgba): ThemeColor => ({ light, dark });
 export const TRANSPARENT: Rgba = [0, 0, 0, 0];
 export const WHITE: Rgba = [255, 255, 255, 1];
 
-/** §2 色 */
+/** 色 */
 export const COLOR = {
   background: pair(hex("#f4f4f5"), hex("#111113")),
   card: pair(hex("#ffffff"), hex("#18181b")),
@@ -45,13 +45,11 @@ export const COLOR = {
   filterActiveBg: pair(rgba(79, 70, 229, 0.06), rgba(99, 102, 241, 0.15)),
   filterActiveBorder: pair(hex("#6366f1"), hex("#818cf8")),
   filterActiveForeground: pair(hex("#3730a3"), hex("#c7d2fe")),
-  noticeBg: pair(hex("#fefce8"), rgba(234, 179, 8, 0.1)),
-  noticeForeground: pair(hex("#854d0e"), hex("#fde68a")),
   neutralChipBg: pair(rgba(113, 113, 122, 0.1), rgba(161, 161, 170, 0.15)),
   warningForeground: pair(hex("#c2410c"), hex("#fb923c")),
 } as const;
 
-/** §2 受注ステータスのバッジ (面・文字と点) */
+/** 状況のバッジ (面・文字と点) */
 export const BADGE: Record<string, { bg: ThemeColor; fg: ThemeColor }> = {
   受注済: { bg: pair(rgba(113, 113, 122, 0.1), rgba(161, 161, 170, 0.15)), fg: pair(hex("#3f3f46"), hex("#e4e4e7")) },
   一部引当: { bg: pair(rgba(234, 179, 8, 0.15), rgba(234, 179, 8, 0.15)), fg: pair(hex("#854d0e"), hex("#fde047")) },
@@ -61,7 +59,7 @@ export const BADGE: Record<string, { bg: ThemeColor; fg: ThemeColor }> = {
   キャンセル: { bg: pair(rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.15)), fg: pair(hex("#b91c1c"), hex("#fca5a5")) },
 };
 
-/** §2 かんばんの列見出しの下線 (ステータスの色相の 500 番。テーマで変わらない) */
+/** かんばんの列見出しの下線 (状況の色相の 500 番。テーマで変わらない) */
 export const STATUS_LINE: Record<string, Rgba> = {
   受注済: hex("#a1a1aa"),
   一部引当: hex("#eab308"),
@@ -90,7 +88,7 @@ const layer = (inset: boolean, x: number, y: number, blur: number, spread: numbe
   color,
 });
 
-/** §2 影。色の部分だけがテーマで変わる */
+/** 影。色の部分だけがテーマで変わる */
 export const SHADOW: Record<
   "panel" | "card" | "cardHover" | "control" | "primary" | "popup" | "filterActive",
   Record<Theme, ShadowLayer[]>
@@ -136,7 +134,7 @@ export const SHADOW: Record<
   },
 };
 
-/** §2 角丸・文字・余白 (px) */
+/** 角丸・文字・余白 (px) */
 export const SIZE = {
   radiusBadge: 6,
   radiusControl: 8,
@@ -167,14 +165,14 @@ export const SIZE = {
   cardButtonHeight: 30,
   cardButtonPaddingX: 12,
   cardButtonFontSize: 13,
-  /** 絞り込みボタン (§2 角丸・文字・余白) */
+  /** 絞り込みボタン (角丸・文字・余白) */
   filterHeight: 32,
   filterFontSize: 13,
   /** メニューの高さの上限 (1280×720 では利用できる高さより小さい) */
   menuMaxHeight: 320,
 } as const;
 
-/** 色の比べ方: r・g・b は一致、不透明度は ±0.01 (仕様 §2) */
+/** 色の比べ方: r・g・b は一致、不透明度は ±0.01 */
 export const ALPHA_TOLERANCE = 0.01;
 /** 寸法の比べ方: ±0.5px */
 export const PX_TOLERANCE = 0.5;

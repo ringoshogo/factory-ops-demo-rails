@@ -35,9 +35,14 @@ export function readSessionCookie(res: Response): SessionCookie | null {
   return null;
 }
 
-/** セッションの Cookie を、フロントエンドのオリジンの Cookie としてブラウザへ書く。server action と route handler だけが呼べる。 */
+/**
+ * セッションの Cookie を、フロントエンドのオリジンの Cookie としてブラウザへ書く。server action と route handler だけが呼べる。
+ * Rails の値は URL の形 (`%2B`・`%3D`) で、Next は書くときに値を URL の形に直すので、復号してから渡し、ブラウザの値を
+ * Rails が書いた値と同じにする。同じにしないと、取り込みのファイルの送信 (/imports/files を Rails へ書き換えて送る) が
+ * ブラウザの Cookie をそのまま Rails へ届け、Rails がセッションを解けずに 401 を返す。
+ */
 export function writeSessionCookie(jar: CookieJar, cookie: SessionCookie): void {
-  jar.set(SESSION_COOKIE, cookie.value, {
+  jar.set(SESSION_COOKIE, decodeURIComponent(cookie.value), {
     httpOnly: true,
     sameSite: "lax",
     secure: cookie.secure,

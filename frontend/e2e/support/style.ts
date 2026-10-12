@@ -2,7 +2,7 @@ import { expect, type Locator } from "@playwright/test";
 import { parseColor, parseShadow } from "./contrast";
 import { ALPHA_TOLERANCE, PX_TOLERANCE, type Rgba, type ShadowLayer } from "./tokens";
 
-/** 計算済みスタイルとトークンの比べ方 (仕様 cycle-03 §2: 色は rgb 一致・不透明度 ±0.01、寸法 ±0.5px)。 */
+/** 計算済みスタイルとトークンの比べ方 (色は rgb 一致・不透明度 ±0.01、寸法 ±0.5px)。 */
 
 export const css = (target: Locator, prop: string) =>
   target.evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);

@@ -1,0 +1,6 @@
+mutation AdjustStock($input: AdjustStockInput!) {
+  adjustStock(input: $input) {
+    stock { onHand allocated available }
+    errors { code message path }
+  }
+}

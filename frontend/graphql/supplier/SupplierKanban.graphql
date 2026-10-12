@@ -1,0 +1,95 @@
+query SupplierKanban {
+  supplier {
+    awaitingPartMatch: salesOrders(first: 10, filter: { statuses: [AWAITING_PART_MATCH] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+    received: salesOrders(first: 10, filter: { statuses: [RECEIVED] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+    partiallyAllocated: salesOrders(first: 10, filter: { statuses: [PARTIALLY_ALLOCATED] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+    allocated: salesOrders(first: 10, filter: { statuses: [ALLOCATED] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+    shipped: salesOrders(first: 10, filter: { statuses: [SHIPPED] }, orderBy: { field: ORDER_NO, direction: DESC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+    inspected: salesOrders(first: 10, filter: { statuses: [INSPECTED] }, orderBy: { field: ORDER_NO, direction: DESC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+    cancelled: salesOrders(first: 10, filter: { statuses: [CANCELLED] }, orderBy: { field: ORDER_NO, direction: DESC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        dueDate
+        status
+        cancellationReviewPending
+        customer { id name }
+        lines { id quantity unitPrice }
+        shipmentRequest { id status }
+      }
+    }
+  }
+}

@@ -86,7 +86,7 @@ export async function destroySession(): Promise<void> {
   try {
     await fetch(`${RAILS_URL}/session`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json", Cookie: `${SESSION_COOKIE}=${session}` },
+      headers: { "Content-Type": "application/json", Cookie: sessionHeader(session) },
       cache: "no-store",
       signal: AbortSignal.timeout(RAILS_TIMEOUT_MS),
     });
@@ -112,7 +112,7 @@ async function execute<TData, TVariables extends Variables>(
     res = await fetch(`${RAILS_URL}/graphql`, {
       method: "POST",
       // ApplicationController は application/json の本文だけを受け付ける (他サイトのフォームからの CSRF を防ぐ)
-      headers: { "Content-Type": "application/json", Cookie: `${SESSION_COOKIE}=${session}` },
+      headers: { "Content-Type": "application/json", Cookie: sessionHeader(session) },
       body: JSON.stringify({ query: print(document), variables, operationName: operationName(document) }),
       // セッションごとに応答が違うので、Next のデータのキャッシュに載せない。キャッシュの鍵にセッションが入らず、
       // あるテナントへの応答を別のテナントに返すことになる
@@ -144,4 +144,19 @@ async function execute<TData, TVariables extends Variables>(
 function operationName(document: TypedDocumentNode<unknown, never>): string | undefined {
   const definition = document.definitions.find((d) => d.kind === "OperationDefinition");
   return definition && "name" in definition ? definition.name?.value : undefined;
+}
+
+/**
+ * Rails へ送るセッションの Cookie のヘッダ。Rails は Cookie の値を URL の形で書く (`+` を `%2B`、`=` を `%3D`)。
+ * ブラウザから届いた値はその形のまま読めるが、server action が同じ要求の中で書いた値を読み直すと、Next は復号した
+ * 値を返す。復号した値の `+` を Rails は空白と読み、セッションを解けずに 401 を返すので、復号してから書き直してそろえる。
+ */
+function sessionHeader(value: string): string {
+  let decoded = value;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    // 復号できない値は、そのまま書き直す
+  }
+  return `${SESSION_COOKIE}=${encodeURIComponent(decoded)}`;
 }

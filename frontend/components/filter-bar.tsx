@@ -4,7 +4,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * 一覧の絞り込みの並び (正本 US-10「絞り込み欄」・仕様 cycle-03 §4)。
+ * 一覧の絞り込みの並び。
  *
  * 絞り込みボタン・検索欄を左から並べ、一覧の件数を同じ行の右端に「N 件」で出す
  * (`data-testid="list-count"`)。`count` が null (API の失敗で一覧を出さない) なら件数を出さない。
@@ -52,9 +52,9 @@ export function FilterButtonLabel({
 }
 
 /**
- * 検索欄 + 「検索」ボタン (在庫一覧・品目・得意先)。文字を入れて送る形なので `<form method="get">` のまま。
+ * 検索欄 + 「検索」ボタン (品目)。文字を入れて送る形なので `<form method="get">` のまま。
  * 項目名を上に置かず、名前は `aria-label="検索"`、用途は placeholder で示す。高さは入力欄・二次ボタンの 36px。
- * 送るとクエリ全体が置き換わるので、保ちたいパラメータ (ソート・在庫の絞り込み) は `children` の
+ * 送るとクエリ全体が置き換わるので、保ちたいパラメータ (並べ替え) は `children` の
  * hidden input で持たせる。
  */
 export function SearchForm({

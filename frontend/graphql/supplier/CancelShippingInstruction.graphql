@@ -1,0 +1,6 @@
+mutation CancelShippingInstruction($input: CancelShippingInstructionInput!) {
+  cancelShippingInstruction(input: $input) {
+    errors { code message path }
+    shipmentRequest { id }
+  }
+}

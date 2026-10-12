@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { patchHref } from "./query";
 
-describe("patchHref: 今の URL の他のキーを保ち、変える項目だけを差し替える (仕様 cycle-03 §4)", () => {
+describe("patchHref: 今の URL の他のキーを保ち、変える項目だけを差し替える", () => {
   it("値は既存のキーを置き換え、無いキーは足し、他のキーは順を含めて保つ", () => {
     const params = new URLSearchParams("sort=order_no&dir=desc&status=受注済&customer_id=c1");
     const href = patchHref("/orders", params, { status: "出荷済", from: "2026-10-01" });

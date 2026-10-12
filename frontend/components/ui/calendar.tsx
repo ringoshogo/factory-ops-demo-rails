@@ -34,7 +34,7 @@ function calendarKey(e: KeyboardEvent): CalendarKey | null {
 }
 
 /**
- * 日付の格子 (仕様 cycle-03 §5。WAI-ARIA APG の Date Picker Dialog)。DateField のポップオーバーの中身。
+ * 日付の格子 (WAI-ARIA APG の Date Picker Dialog)。DateField のポップオーバーの中身。
  *
  * - 上から「前の月」・年と月の選択欄・「次の月」、日付の格子、下に「日付を消す」(onClear があるとき) と「閉じる」
  * - 格子は `role="grid"` で、名前は年月の見出し (`aria-live="polite"`: 月が変わると読み上げる)

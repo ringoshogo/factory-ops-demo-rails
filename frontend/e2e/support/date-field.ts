@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 /**
- * 日付の入力 (仕様 cycle-03 §5・§10)。日付はボタンで開くカレンダーで選び、
+ * 日付の入力。日付はボタンで開くカレンダーで選び、
  * 送る値は隠し入力の YYYY-MM-DD に入る。E2E の日付の入力はこの 2 つの関数だけを通す。
  */
 

@@ -38,16 +38,25 @@ export function commentsOf(path, text) {
   return [];
 }
 
+// 構文木の字句をすべてたどり、字句の前後の空白に付いたコメントを集める。スキャナを先頭から回すだけだと、
+// テンプレートリテラルの `${...}` の後を読み違え、その先のコメントを取りこぼす
 function scriptComments(path, text) {
-  const kind = path.endsWith(".tsx") || path.endsWith(".jsx") ? ts.LanguageVariant.JSX : ts.LanguageVariant.Standard;
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, kind, text);
-  const found = [];
-  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
-    if (token === ts.SyntaxKind.SingleLineCommentTrivia || token === ts.SyntaxKind.MultiLineCommentTrivia) {
-      found.push([lineOf(text, scanner.getTokenStart()), scanner.getTokenText()]);
+  const kind = path.endsWith(".tsx") || path.endsWith(".jsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
+  const found = new Map();
+  const collect = (ranges) => {
+    for (const range of ranges ?? []) found.set(range.pos, [lineOf(text, range.pos), text.slice(range.pos, range.end)]);
+  };
+  const visit = (node) => {
+    // JSX の文字は字句の前の空白ではないので、`//` で始まっていてもコメントとして読まない
+    if (node.kind !== ts.SyntaxKind.JsxText) {
+      collect(ts.getLeadingCommentRanges(text, node.getFullStart()));
+      collect(ts.getTrailingCommentRanges(text, node.getEnd()));
     }
-  }
-  return found;
+    for (const child of node.getChildren(source)) visit(child);
+  };
+  visit(source);
+  return [...found.entries()].sort(([a], [b]) => a - b).map(([, comment]) => comment);
 }
 
 function blockComments(text) {

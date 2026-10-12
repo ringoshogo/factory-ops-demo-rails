@@ -5,7 +5,7 @@ import { CheckIcon } from "lucide-react"
 import { cn } from "cn"
 import { FLOATING_POSITION, FLOATING_SURFACE } from "@/components/ui/popover"
 
-/** 1 つ選ぶメニュー (仕様 cycle-03 §4)。フォーカスを閉じ込めない (`modal={false}`)。 */
+/** 1 つ選ぶメニュー。フォーカスを閉じ込めない (`modal={false}`)。 */
 function Menu(props: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root modal={false} {...props} />
 }

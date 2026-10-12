@@ -10,10 +10,10 @@ import { isIsoDate } from "@/lib/calendar";
 import { formatFullDate } from "@/lib/dates";
 
 /**
- * 日付の入力 (仕様 cycle-03 §5)。「2026年10月8日」と書かれたボタンでカレンダーを開いて選ぶ。
+ * 日付の入力。「2026年10月8日」と書かれたボタンでカレンダーを開いて選ぶ。
  * ブラウザ既定の日付の入力 (mm/dd/yyyy) は使わない。
  *
- * - 送る値は `name` の隠し入力の YYYY-MM-DD。既定値 (受注登録 = 今日・出荷予定日 = 希望納期) は
+ * - 送る値は `name` の隠し入力の YYYY-MM-DD。既定値 (出荷指示の予定日など) は
  *   `defaultValue` でそのまま渡す。期間の絞り込みでは親が `value`・`onChange` で値を持つ
  * - 項目名は外の `<label htmlFor={id}>` で付ける (ボタンが label の名前を持つ)。label の名前は中身の文字を
  *   含まないので、表示中の値 (未入力なら「日付を選ぶ」) は `aria-describedby` で説明として読ませる

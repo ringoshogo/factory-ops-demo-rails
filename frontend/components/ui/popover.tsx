@@ -4,7 +4,7 @@ import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "cn"
 
 /**
- * 浮く部品 (メニュー・ポップオーバー) の置き方と面 (仕様 cycle-03 §4「浮く部品の構成」)。
+ * 浮く部品 (メニュー・ポップオーバー) の置き方と面。
  * メニュー (ui/menu) もここから取り、配置・幅・面を 2 か所に書かない。
  *
  * - 配置: ボタンの下・左端そろえ・6px 離す。画面端での反転・ずらしは Positioner の既定に任せ、端から 8px 空ける

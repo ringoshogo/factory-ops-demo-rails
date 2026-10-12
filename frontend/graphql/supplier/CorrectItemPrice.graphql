@@ -1,0 +1,6 @@
+mutation CorrectItemPrice($input: CorrectItemPriceInput!) {
+  correctItemPrice(input: $input) {
+    item { id }
+    errors { code message path }
+  }
+}

@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { CONTROL_SURFACE } from "@/components/ui/input";
 
 /**
- * ブラウザ標準の select。矢印だけを自前のアイコンに替える (正本 US-10)。
+ * ブラウザ標準の select。矢印だけを自前のアイコンに替える。
  *
  * 標準の矢印は位置を調整できず、右端に触れそうなほど近い。`appearance-none` で消し、
  * 右端から 12px 内側にアイコンを置く。`pr-9` で選んだ文字が矢印に重ならない。

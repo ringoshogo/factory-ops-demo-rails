@@ -1,5 +1,6 @@
 query SupplierPartnerships {
   supplier {
+    dashboard { businessDate }
     partnerships {
       id
       status

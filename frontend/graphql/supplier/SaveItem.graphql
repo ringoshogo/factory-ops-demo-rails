@@ -1,0 +1,6 @@
+mutation SaveItem($input: SaveItemInput!) {
+  saveItem(input: $input) {
+    item { id code }
+    errors { code message path }
+  }
+}

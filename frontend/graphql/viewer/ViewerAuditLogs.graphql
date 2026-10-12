@@ -1,0 +1,18 @@
+query ViewerAuditLogs($first: Int, $after: String, $filter: AuditLogFilter) {
+  supplier { dashboard { businessDate } }
+  viewer {
+    auditLogs(first: $first, after: $after, filter: $filter) {
+      totalCount
+      nodes {
+        action
+        actorName
+        correlationId
+        occurredAt
+        targetType
+        targetId
+        counterparty { id name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

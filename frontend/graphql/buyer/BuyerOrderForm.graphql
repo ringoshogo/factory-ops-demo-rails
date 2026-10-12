@@ -1,0 +1,9 @@
+query BuyerOrderForm {
+  supplier { dashboard { businessDate } }
+  buyer {
+    suppliers {
+      supplier { id name }
+      permissions
+    }
+  }
+}

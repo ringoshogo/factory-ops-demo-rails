@@ -1,0 +1,6 @@
+mutation CloseBillingPeriod($input: CloseBillingPeriodInput!) {
+  closeBillingPeriod(input: $input) {
+    invoice { id }
+    errors { code message path }
+  }
+}
