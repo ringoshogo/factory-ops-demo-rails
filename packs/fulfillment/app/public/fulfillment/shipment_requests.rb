@@ -16,6 +16,16 @@ module Fulfillment
       to_values(actor, Scope.call(actor, ShipmentRequest.where(sales_order_id: sales_order_ids))).index_by(&:sales_order_id)
     end
 
+    DUE_WITHIN_LIMIT = 100
+
+    # 出荷も取消もしていない出荷依頼（出荷待ち・出荷指示済・出荷停止中）のうち、期限が today から days 日後以下のもの。
+    # 期限を過ぎたものも含め、期限の昇順で上限の件数まで返す。期限の無い出荷依頼は返さない
+    def self.due_within(actor, today:, days:)
+      requests = Scope.call(actor, ShipmentRequest.where(cancelled_at: nil, due_date: ..today + days))
+        .where.not(id: Shipment.select(:shipment_request_id)).order(:due_date, :id).limit(DUE_WITHIN_LIMIT)
+      to_values(actor, requests)
+    end
+
     def self.lines_for(actor, request_ids)
       lines = Scope.call(actor, ShipmentRequestLine.where(shipment_request_id: request_ids)).order(:id).map { to_value(ShipmentRequestLineValue, _1) }
       request_ids.index_with { [] }.merge(lines.group_by(&:shipment_request_id))

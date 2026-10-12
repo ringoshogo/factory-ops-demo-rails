@@ -246,6 +246,11 @@ module MatrixExpectations
       variables: ->(world) { { id: world.row("invoices", :supplier).id } },
       expect: only(:supplier)
     },
+    # 自社の集計を返す。他社の行を数えないことは、4 つの公開 API の spec が確かめる
+    "SupplierView.dashboard" => {
+      query: "{ supplier { dashboard { businessDate salesOrderCounts { status count } unbilledTotal } } }",
+      expect: EVERYONE
+    },
     # supplier の取引先（granted_buyer）の請求条件。ほかのペルソナには取引先でないので NOT_FOUND になる
     "Mutation.setBillingTerm" => {
       role: :admin,

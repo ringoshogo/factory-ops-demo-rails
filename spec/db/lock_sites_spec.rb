@@ -18,6 +18,10 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     "Fulfillment::SalesEventReceiver.hold" => {
       spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb", mentions: %w[SalesEventReceiver ShippingHeld]
     },
+    "Fulfillment::SalesEventReceiver.lock_sales_order" => {
+      spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb",
+      mentions: %w[SalesEventReceiver ShippingHeld SalesOrderReadyForShipment]
+    },
     "Fulfillment::SalesEventReceiver.cancel" => {
       reason: "出荷取消の受け手。取消と計上のどちらか一方だけが成立することは、受注側の在庫の行と引当の行のロックが決め、" \
         "spec/concurrency/cancel_vs_ship_spec.rb が確かめる。出荷依頼の行ロックは、その後に届く取消を計上の後に並べるだけである"

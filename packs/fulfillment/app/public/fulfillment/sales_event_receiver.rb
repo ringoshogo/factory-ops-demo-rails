@@ -13,8 +13,10 @@ module Fulfillment
       end
     end
 
-    # 「出荷可能」の写しを作る。冪等キーは sales_order_id で、2 回目の配送では何もしない。同時に届いた配送は一意索引が止める
+    # 「出荷可能」の写しを作る。冪等キーは sales_order_id で、2 回目の配送では何もしない。同時に届いた配送は一意索引が止める。
+    # 出荷依頼の有無を読む前に受注のロックを取り、出荷停止の受け手と直列にする
     def self.create_request(event)
+      lock_sales_order(event.sales_order_id)
       return if ShipmentRequest.exists?(sales_order_id: event.sales_order_id)
 
       ShipmentRequest.transaction(requires_new: true) do
@@ -36,8 +38,10 @@ module Fulfillment
     end
 
     # 解除前の出荷停止を書く。冪等キーは審査 ID で、行があれば（解除が先に届いて解除済みの行があっても）何もしない。
-    # 出荷依頼があれば行をロックしてから書き、同じ出荷依頼の計上と出荷指示の作成と直列にする
+    # 出荷依頼があれば行をロックしてから書き、同じ出荷依頼の計上と出荷指示の作成と直列にする。
+    # 出荷依頼がまだ無いときに備えて、先に受注のロックを取る
     def self.hold(event)
+      lock_sales_order(event.sales_order_id)
       ShipmentRequest.lock.find_by(sales_order_id: event.sales_order_id)
       ShippingHold.insert(hold_row(event.cancellation_review_id, event.sales_order_id, released_at: nil),
         unique_by: :source_cancellation_review_id)
@@ -73,11 +77,22 @@ module Fulfillment
         on_duplicate: Arel.sql("released_at = COALESCE(shipping_holds.released_at, EXCLUDED.released_at), updated_at = EXCLUDED.updated_at"))
     end
 
+    # 受注ごとのアドバイザリロックを、トランザクションの終わりまで取る。出荷依頼がまだ無い受注には行ロックを掛ける行が無いので、
+    # 停止の受け手が出荷依頼の無いことを読んでからコミットするまでの間に、出荷可能の受け手が出荷依頼を作り、出荷指示の作成が
+    # 停止を読まずに通ってしまう。停止の受け手と出荷可能の受け手の両方がこのロックを取り、どちらか一方を先に終わらせる。
+    # テナントの設定は Tenancy.with_tenant のトランザクションの中にだけあるので、ロックはそのトランザクションの終わりまで残る
+    def self.lock_sales_order(sales_order_id)
+      Tenancy.require_tenant!
+      ShipmentRequest.lease_connection.exec_query("SELECT 1 FROM pg_advisory_xact_lock(hashtextextended($1, 0))", "Fulfillment::SalesEventReceiver",
+        [ "shipping:#{Current.tenant_id}:#{sales_order_id}" ])
+      nil
+    end
+
     # insert と upsert は TenantRecord の保存の確認を通らないので、ここでテナントの設定を確かめる
     def self.hold_row(cancellation_review_id, sales_order_id, released_at:)
       Tenancy.require_tenant!
       { owner_tenant_id: Current.tenant_id, source_cancellation_review_id: cancellation_review_id, sales_order_id:, released_at: }
     end
-    private_class_method :create_request, :hold, :release, :cancel, :release_hold, :hold_row
+    private_class_method :create_request, :hold, :release, :cancel, :release_hold, :lock_sales_order, :hold_row
   end
 end

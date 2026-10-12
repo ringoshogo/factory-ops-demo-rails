@@ -211,3 +211,98 @@ CI の test のジョブ（Run tests の時間は括弧の中）：
 ### 残件の処理
 
 引当先が M25 の `open` は無かった。OI-71〜OI-73・OI-77 は作者の判断どおりに実装し、OI-84 は judgment のまま実装した。OI-80 は、`context-map.md`「自社の中の役割」と `graphql-schema.md`「役割による制限」の表を案 B に合わせ、結果の欄の反映先を直した。
+
+## M26 ダッシュボードと失効の通し試験
+
+PR #44（`m26-dashboard`、base は `main`）。PR #42（M36）と #43（M25）が未マージなので、その commit も差分に見える。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの commit で直し、違和感は改善の候補に移した。High 以上が無いので、読み直しには出していない。どちらの系統も、`047c3f5..9188951` の diff を `9188951` の版で読んだ。Codex はテストを流さず、依頼に書いた実行結果を前提にした。Claude は `9188951` の worktree を別名のテスト DB で流し、どちらの受け手からアドバイザリロックを外しても競合テストが落ちることと、画面の問い合わせの複雑度と graphql 2.6.11 の原文を確かめた（worktree と DB は消した）。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘（L2） |
+| テストの検出力 | 指摘（X1） | 指摘（L1・L3） |
+| 参照の維持 | 指摘（X2・X3） | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | X1：クエリ数の予算の spec の `more_lists` の確かめを外しても、落ちる example が無い | 一覧の確かめを `expect_lists` に切り出し、2 つ目の一覧の件数か入れ子が食い違う応答で落ちるガードを足した。`more_lists` を確かめから外すと、このガードが落ちる | `4b19868` |
+| Low | Codex | X2：graphql-schema.md の複雑度の数え方が、版を固定した原文を指していない | graphql 2.6.11 の `field.rb` への版を固定した参照と、`first` の無いときの件数の式を添え、掛け算の対象がコネクションの要素であることを書いた | `4b19868` |
+| Low | Codex・Claude | X3・Claude の違和感 3：showcase.md テーマ 6 が、本物のスキーマで入れ子のコネクションが拒否されると読める | spec の中で作ったスキーマで確かめることと、リストの下のコネクションはクエリ数の予算の spec が外すことを書いた | `4b19868` |
+| Low | Claude | L1：複雑度の spec が、必須の変数を欠いた妥当でない問い合わせ（`BuyerSupplierCatalog`）を計っている | 必須の ID の変数に値を入れ、計る前に `static_errors` が空であることを確かめる形にした。値の決め方の無い必須の変数と、妥当でない問い合わせで落ちる example を足した。`static_errors` の確かめを外すと、この example が落ちる | `4b19868` |
+| Low | Claude | L2：リゾルバが受注の一覧の規則だけを評価し、4 つの一覧の規則が同じ答えを返す前提を確かめるテストが無い | `dashboard_spec.rb` に、4 つの policy の `list?` が `admin`・`member` でどれも真であることと、リゾルバの規則が `Sales::SalesOrderPolicy#list?` であることを確かめる example を足した。`Billing::InvoicePolicy#list?` を `admin` に限ると落ちる | `4b19868` |
+| Low | Claude | L3：`Sales::SalesOrderStatus::ALL` と導出のつながりを確かめるものが無い | `dashboard_spec.rb` に、`count_by_status` の状況が GraphQL の `SalesOrderStatus` の値とそろう example を足した。`ALL` から 1 つ外すと落ちる | `4b19868` |
+
+違和感は次のように扱った。
+
+- Claude 1：ダッシュボードが、受注と在庫の件数に比例して読み込む → IB-34 に積んだ
+- Claude 2：ダッシュボードの今日だけが、リゾルバに `Asia/Tokyo` を直に書いて決まる → IB-32 に書き足した
+- Claude 3：showcase.md テーマ 6 の書き方 → X3 と同じ直しで片付けた
+- Claude 4：`shipping_hold_lock_spec.rb` は、ロックを外すと `blocked_on_lock?` で落ち、停止中の受注に有効な出荷指示が残る害そのものは spec の中で再現しない → 移さない。計画の「直列にしたなら、勧告ロックを外すと落ちる」を満たし、害の再現は下の実装の記録と OI-79 の結果に書いた
+- Codex：自社の行だけを返す公開 API では、scope を外しても RLS が他社の行を隠すので、他社の行を数えない単体の spec が落ちない → IB-35 に積んだ
+
+### 実装の記録
+
+4 つの公開 API の単体の spec を、実装の前に流した。10 examples, 10 failures で、どれもメソッドが無い `NoMethodError` だった。`dashboard_spec.rb` は入口と型を書いた後に書いたので、書いた時点で通った。`supplier.dashboard` を外すと、`dashboard_spec.rb`・行列・クエリ数の予算の 12 件が落ちる。`revocation_spec.rb` は、M8〜M25 で作った振る舞いを通しで確かめるので、書いた時点で通った。`query_complexity_spec.rb` も、画面の問い合わせがどれも上限に収まるので、書いた時点で通った。
+
+OI-79 は、競合テストを先に書いて流し、1 example, 1 failure だった。出荷可能の受け手が停止のコミットを待たずに終わった。同じ順の試しの spec では、停止の受け手を開いたままにしている間に出荷指示の作成が成功し、コミットの後に「解除されていない停止があり、有効な出荷指示が 1 件ある」状態が 3 回とも残った（試しの spec は消した）。停止の受け手と出荷可能の受け手が、出荷依頼を読む前に受注 ID ごとのアドバイザリロックを取る形にして閉じた。
+
+検出力は壊して確かめた。壊したファイルは複製から戻して更新時刻を進めた。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 受注の件数 | 0 件の状況を埋めないと単体が落ちる。`ALL` から状況を外すと `dashboard_spec.rb` が落ちる |
+| 安全在庫 | 有効在庫を `<=` で比べる・現在庫で比べる、のどちらでも単体が落ちる。品目コードで並べない・上限で切らない、のどちらでも `dashboard_spec.rb` が落ちる |
+| 出荷期限 | 出荷済を除かない・取消済を除かない・期限を `<` にする・期限で並べない・上限を外す、のどれでも単体が落ちる |
+| 未請求の合計 | 請求書に結んだ明細を足す・合計を整数に戻さない、のどちらでも単体が落ちる |
+| 今日 | `Date.current` にすると `dashboard_spec.rb` が落ちる（UTC で 10 月 11 日、日本時間で 10 月 12 日の時刻で流す） |
+| 認可 | 請求の一覧の規則を `admin` に限ると `dashboard_spec.rb` が落ちる |
+| 複雑度 | `max_complexity` を 300 にすると 8 件が落ちる。`static_errors` の確かめを外すと、妥当でない問い合わせの example が落ちる |
+| クエリ数の予算 | `more_lists` を確かめから外すと、ガードが落ちる。負例は、ダッシュボードの 3 つの入れ子のソースを、キーごとに公開 API を呼ぶ形に包んで件数が増えることを毎回確かめる |
+| OI-79 | 停止の受け手からも、出荷可能の受け手からも、アドバイザリロックを外すと `shipping_hold_lock_spec.rb` が落ちる |
+| S2 | 失効を何もしない形にする・発注の権限の確かめを素通しにする・受領請求書の受け手が取引関係を見る、のどれでも `revocation_spec.rb` が落ちる。発注側の取引関係の scope から「有効な関係」の条件を外しても、RLS が経路 2 を閉じるので落ちない |
+
+公開 API の scope を外しても、4 つの単体は落ちない。4 つの表には相手から読む経路が無く、RLS が他社の行を隠すからである（IB-35）。
+
+計画からの細部の決定は台帳に積んだ。ダッシュボードを認可の例外にしてリゾルバに受注の一覧の規則を使うことを OI-93、安全在庫の並べ替えと上限をルートパッケージで行うことを OI-94、複雑度を `first` の上限で計り、入れ子のコネクションを作ったスキーマで確かめることを OI-95 に judgment で積んだ。OI-95 に合わせて、計画の複雑度の完了条件と `graphql-schema.md`「ページングと N+1」を直した。
+
+### 確かめたこと
+
+`4b19868` で、Ruby 3.4.11 で共通の完了条件と M26 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/sales/spec/public/sales/sales_orders_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb \
+  packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb packs/billing/spec/public/billing/billable_items_spec.rb \
+  spec/requests/dashboard_spec.rb spec/graphql/query_complexity_spec.rb spec/graphql/query_budget_spec.rb spec/matrix   # 0 failures
+bundle exec rspec spec/scenarios/revocation_spec.rb                                                       # 0 failures
+bundle exec rspec packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb               # 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1904 examples, 0 failures、79.9 秒
+BASE_REF=origin/main bin/check-branch-coverage # 一覧は空
+bundle exec rspec --tag concurrency            # 2 回続けて 49 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk validate && bin/packwerk check    # 違反なし
+bin/check-structure                            # 終了コード 0
+bin/check-schema-compat                        # 終了コード 0
+bin/check-open-items --due M26                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし。単体 313・結合 168・シナリオ 85
+```
+
+分岐の網羅率の警告は、最初の全件（`9188951` の前の作業ツリー）で 2 件出て、example を足した件数は 0 件である。安全在庫の並べ替えで品目が無いときの腕と、受注のロックをトランザクションの外で呼んだときの例外の腕を、どの example も通らなかった。在庫の行は自社の品目にだけでき、品目は消さないので前者に届かない。テナントの設定は `Tenancy.with_tenant` のトランザクションの中にだけあるので、後者は `Tenancy.require_tenant!` に替えた。どちらも分岐ごと消した。
+
+行列の時間（手元）：`bundle exec rspec spec/matrix` は 968 examples、14.0 秒（M25 の後は 963 examples、12.8 秒）。足した 5 examples は、`SupplierView.dashboard` の行である。
+
+CI の test のジョブ（Run tests の時間は括弧の中）：
+
+| | 時間 |
+|---|---|
+| #44 の 1 回目（`9188951`） | 3 分 04 秒（2 分 07 秒） |
+
+### 残件の処理
+
+OI-79 は、起きることを確かめてアドバイザリロックで閉じた（`closed`）。OI-81 は、決めた集計の境界のとおりに実装し、judgment のまま残した。

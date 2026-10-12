@@ -74,8 +74,9 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/supplier_s
 - `spec/db/tenant_enforcement_spec.rb`：テスト DB のカタログを引き、RLS・ポリシー・複合外部キーの欠けた表と、RLS を迂回できる接続ロールを落とす
 - `spec/platform/tenancy_session_spec.rb`：接続に残ったテナントが次の利用者に漏れない
 - `spec/requests/supplier_shipments_spec.rb`：失効すると、権限の付与が残っていても経路 3 が空になり、自社の写しは残る
+- `spec/scenarios/revocation_spec.rb`：失効の前に 3 経路が相手のデータを返し、失効の後は 3 経路が閉じて新しい発注が `NOT_PERMITTED` になり、受注確定まで進んだ取引は請求まで進んで発注側に受領請求書が届く
 
-**状態**：実装済み（3 経路と失効は M8・M9・M14）。失効の後に連結済みの取引が請求まで進むことの通し試験は計画（M26、`spec/scenarios/revocation_spec.rb`）。イベントで知った相手の ID を、ID を取るすべての入口に持ち込むシナリオは実装済み（`spec/scenarios/tenant_boundary_spec.rb`）。
+**状態**：実装済み（3 経路と失効は M8・M9・M14）。失効の後に連結済みの取引が請求まで進むことの通し試験も実装済み（M26、`spec/scenarios/revocation_spec.rb`）。イベントで知った相手の ID を、ID を取るすべての入口に持ち込むシナリオは実装済み（`spec/scenarios/tenant_boundary_spec.rb`）。
 
 ### 2. コンテキストの境界と依存の向き
 
@@ -201,8 +202,9 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 - `perspective_reachability_spec.rb`：発注側から受注側の型へたどれず、相手のデータを返す型が 3 経路の 3 つに限られる
 - `authorization_declarations_spec.rb`：全型・全リゾルバ・全 mutation が宣言を持ち、認可の例外が `graphql-schema.md` の表と一致する
 - `base_classes_spec.rb`：宣言の無いものを拒否し、拒否を `FORBIDDEN` に揃える
+- `query_complexity_spec.rb`：画面の問い合わせのどれもが、1 ページの件数を上限まで求めても複雑度の上限に収まる。いまのスキーマに無い形の、コネクションの要素の下にコネクションを置いて両方に 100 件を求める問い合わせは、同じ上限を持つスキーマを spec の中で作って渡し、上限を超えて拒否されることを確かめる。リストの要素の下のコネクションは掛け算にならないので、画面の問い合わせに置かないことを `query_budget_spec.rb` が確かめる
 
-**状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、互換の判定は CI で流している（M20）。
+**状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。画面の問い合わせの複雑度のテストは実装済み（M26）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、互換の判定は CI で流している（M20）。
 
 ### 7. 時間の扱い：販売単価のバイテンポラル履歴
 
@@ -277,7 +279,7 @@ bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちら�
 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
-**状態**：層の報告と、重要シナリオの S1・S3・S4（計上・引当・出荷指示の取消）は実装済み。S2 は計画（M26）、S4 の受注の取消は計画（M22）、S5 は計画（M25）。
+**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。
 
 ### 10. 運用性
 

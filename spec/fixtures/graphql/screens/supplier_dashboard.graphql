@@ -1,0 +1,23 @@
+query SupplierDashboard {
+  supplier {
+    dashboard {
+      businessDate
+      salesOrderCounts { status count }
+      stocksBelowSafetyStock {
+        onHand
+        allocated
+        available
+        safetyStock
+        item { id code name unit }
+      }
+      shipmentRequestsDueSoon {
+        id
+        dueDate
+        status
+        salesOrder { id orderNo }
+        customer { id name }
+      }
+      unbilledTotal
+    }
+  }
+}

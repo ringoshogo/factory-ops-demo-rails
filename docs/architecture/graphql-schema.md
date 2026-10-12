@@ -473,6 +473,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | `Tenant` | ID と名前だけの葉。認可済みの型のフィールドとしてだけ現れる |
 | `UserError`・`PageInfo` | データを持たない |
 | `PriceExplanation`・`ImportRowError` | 認可済みの型（`BillableItem`・`Import`）のフィールドとしてだけ現れる |
+| `SupplierDashboard`・`SalesOrderStatusCount` | 自社の集計の入れ物と、その中の件数。`supplier.dashboard` のリゾルバが規則を評価し、各フィールドは自社の scope を掛けた公開 API の値を返す。中の在庫と出荷依頼は、`Stock`・`ShipmentRequest` の型が規則を評価する |
 | 各 mutation の戻り値の型 | 中身の型が、それぞれ宣言を持つ |
 | 各コネクションとエッジの型 | 中身の型が、それぞれ宣言を持つ |
 
@@ -641,12 +642,14 @@ type SalesOrderStatusCount {
 }
 ```
 
-集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。
+集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。今日は日本時間（Asia/Tokyo）で決める。アプリの時刻帯は UTC のままなので、`Date.current` では日本時間の 0〜9 時が前日になる。
 
 - **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。
-- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。
+- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。在庫は品目コードを持たないので、品目コードでの並べ替えと 100 件の上限は、ルートパッケージが `Sales::Catalog.items_for` で引いたコードで行う。
 - **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。
 - **未請求の合計**：税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税額を出さず、税抜きの合計だけを返す。
+
+`supplier.dashboard` のリゾルバは、規則に `Sales::SalesOrderPolicy#list?` を使う。ダッシュボードは受注の画面で、4 つの公開 API の一覧の規則はどれも、自社のユーザーなら役割を問わず許す。各フィールドは選ばれたときだけ公開 API を呼ぶ。
 
 ## mutation の一覧
 
@@ -798,7 +801,7 @@ N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 
-クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの中のフィールドの複雑度を、1 ページの最大件数倍で数える。リストで返す明細は掛け算にならない。
+クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの要素（`nodes`・`edges` の下）の複雑度を `first` の値の倍で数え、`first` を省くと 1 ページの件数の既定（20）の倍で数える。`pageInfo` のような要素でない選択は掛け算にしない（graphql 2.6.11 の [`GraphQL::Schema::Field#calculate_complexity`](https://github.com/rmosolgo/graphql-ruby/blob/v2.6.11/lib/graphql/schema/field.rb)。`first` が無いときの件数は `default_page_size || query.schema.default_page_size || max_page_size || query.schema.default_max_page_size`）。リストで返す明細と一覧は掛け算にならない。そのため、リストの要素の下のコネクション（`buyer.suppliers` の下の `catalog`）は複雑度では止まらず、画面の問い合わせの規則（一覧の中にコネクションを入れ子にしない）が止める。
 
 | 上限 | 値 | 決め方 |
 |---|---|---|
@@ -807,7 +810,7 @@ Dataloader のソースは、リクエストのトランザクションと同じ
 | 1 ページの件数の上限（`default_max_page_size`） | 100 | — |
 | 複雑度（`max_complexity`） | 2,500 | 100 件の一覧で各行が 20 前後のフィールドを取ると 2,000 前後になり、通る。100 件の一覧の中に 100 件のコネクションを入れ子にすると 10,000 を超え、通らない |
 
-実装者は、画面の問い合わせを足すたびに、その複雑度を graphql-ruby の複雑度の解析で計るテストを書き、上限に収まることを確かめる。
+画面の問い合わせの複雑度は、`spec/graphql/query_complexity_spec.rb` が、画面の問い合わせの一覧のファイルをすべて読み、`first` に 1 ページの件数の上限を渡して graphql-ruby の複雑度の解析で計り、上限に収まることを確かめる。一覧にファイルを足せば、表を書かなくても計る。
 
 ## スキーマの変更と非推奨
 

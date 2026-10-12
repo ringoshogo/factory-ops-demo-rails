@@ -3,6 +3,9 @@ module Sales
   # （docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）。
   # allocated は受注明細 ID ごとの引当数量で、呼ぶ側が在庫の公開 API から得て渡す
   module SalesOrderStatus
+    # 導出の優先順に並べた 7 つの状況
+    ALL = %i[cancelled inspected shipped awaiting_part_match allocated partially_allocated received].freeze
+
     def self.derive(order, lines, allocated: {})
       if order.cancelled_at then :cancelled
       elsif order.inspected_at then :inspected

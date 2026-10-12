@@ -10,6 +10,12 @@ module Inventory
       Scope.call(actor, Stock.all).where(item_id: item_ids).to_h { [ _1.item_id, to_value(_1) ] }
     end
 
+    # 有効在庫が安全在庫より小さい在庫。等しい在庫は返さない（docs/architecture/data-model.md「在庫（`inventory`）」）。
+    # 在庫は品目コードを持たないので、並べ替えと件数の上限はルートパッケージが品目コードで行う
+    def self.below_safety_stock(actor)
+      Scope.call(actor, Stock.where("on_hand - allocated < safety_stock")).order(:item_id).map { to_value(_1) }
+    end
+
     def self.movements(actor, item_id: nil, first:, after:)
       relation = Scope.call(actor, StockMovement.all)
       relation = relation.where(item_id:) if item_id
