@@ -12,7 +12,8 @@ module MatrixCrossRead
 
   # 所有ロールの接続で、全表のポリシーを 1 つのトランザクションで足す。途中で失敗すると全部が巻き戻り、足した分は残らない。
   # 世界を開く前に呼ぶ。ポリシーの足し外しは表のロックを取るので、全表に書いた世界の外側のトランザクションが開いている間は、
-  # それが閉じるまで待ち、世界と同じスレッドから呼ぶと終わらない
+  # それが閉じるまで待ち、世界と同じスレッドから呼ぶと終わらない。
+  # 同じ名前のポリシーがあれば、別の実行が同じテストの DB で行列を流しているか、途中で止めた実行が残したので、外さずに失敗する
   def self.add!
     with_owner_connection do |connection|
       connection.transaction do
@@ -24,9 +25,14 @@ module MatrixCrossRead
         end
       end
     end
+  rescue ActiveRecord::StatementInvalid => e
+    raise unless e.cause.is_a?(PG::DuplicateObject)
+
+    raise "#{POLICY} のポリシーがすでにある。同じテストの DB で行列を流しているほかの実行が無ければ、" \
+      "途中で止めた実行が残したものなので、MatrixCrossRead.remove! で外す（docs/guides/testing.md「行列テストとの分担」）"
   end
 
-  # 足していない表があっても失敗しない。足す途中の失敗の後と、世界を閉じた後の両方から呼ぶ
+  # 足していない表があっても失敗しない
   def self.remove!
     with_owner_connection do |connection|
       connection.transaction do

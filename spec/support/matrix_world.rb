@@ -31,16 +31,21 @@ class MatrixWorld
   # 各 example は、rspec-rails が世界と同じ接続の上に開くセーブポイントの中で動き、終わりに巻き戻る。
   # cross_read: true は、世界を開く前に RLS の SELECT を開くポリシーを足し、世界を閉じた後に外す（MatrixCrossRead）。
   # 世界のトランザクションが表のロックを持つ間は足し外しが待ち合うので、順を 1 つのフックの中で固定する。
-  # rspec は before(:context) が失敗しても after(:context) を走らせるので、世界を開く途中の失敗でもポリシーは外れる
+  # rspec は before(:context) が失敗しても after(:context) を走らせるので（rspec-core 3.13 の lib/rspec/core/example_group.rb の
+  # ExampleGroup.run が ensure で run_after_context_hooks を呼ぶ）、世界を開く途中の失敗でもポリシーは外れる。
+  # 外すのは足し終えたときだけにする。足すのに失敗したときに外すと、同じ DB に先に足した別の実行のポリシーを消す
   def self.share_per_file(group, cross_read: false)
     group.before(:context) do
-      MatrixCrossRead.add! if cross_read
+      if cross_read
+        MatrixCrossRead.add!
+        @matrix_cross_read = true
+      end
       @matrix_world = MatrixWorld.open
     end
     group.after(:context) do
       MatrixWorld.close if @matrix_world
     ensure
-      MatrixCrossRead.remove! if cross_read
+      MatrixCrossRead.remove! if @matrix_cross_read
     end
     group.let(:world) { @matrix_world }
   end

@@ -28,8 +28,8 @@ RSpec.describe MatrixWorld do
 
   # 行列の spec と同じ形の内側の example group を走らせ、example の結果を返す。
   # 実行の絞り込み（-e など）と --order rand を内側に掛けず、書いた順に走らせる
-  def run_inner_group(cross_read: false, &body)
-    group = RSpec.describe("内側の行列", order: :defined) do
+  def run_inner_group(cross_read: false, **metadata, &body)
+    group = RSpec.describe("内側の行列", order: :defined, **metadata) do
       MatrixWorld.share_per_file(self, cross_read:)
       instance_exec(&body)
     end
@@ -150,10 +150,10 @@ RSpec.describe MatrixWorld do
 
     # 2 回目の入口の行列が空振りしないことのガード。設定を on にした応答が他社の行を含まなければ、
     # scope を外しても 2 回目は 1 回目と同じ応答になり、何も捕まえない
-    it "世界の間だけポリシーがあり、設定を on にした生 SQL は全ペルソナの行を読み、scope を外した集計は他社の行で変わる" do
+    it "世界の間だけポリシーがあり、設定を on にした生 SQL・公開 API・入口の要求は、scope を外すと他社の行を読む" do
       seen = {}
       spec = self
-      results = run_inner_group(cross_read: true) do
+      results = run_inner_group(cross_read: true, type: :request) do
         it "設定を on にした生 SQL は、どの表でも全ペルソナの行を読む" do
           connection = ActiveRecord::Base.lease_connection
           seen[:policies] = connection.select_value("SELECT count(*) FROM pg_policies WHERE policyname = 'matrix_cross_read'")
@@ -185,9 +185,26 @@ RSpec.describe MatrixWorld do
           expect(unscoped[:shipment_requests_due_soon]).to be > scoped[:shipment_requests_due_soon]
           expect(unscoped[:unbilled_total]).to be > scoped[:unbilled_total]
         end
+
+        # 入口の行列の 2 回目と同じ経路（要求が世界の接続で読む）で設定が効くこと
+        it "設定を on にして scope を外すと、入口の行列のダッシュボードの要求の応答が変わる" do
+          dashboard = { query: "{ supplier { dashboard { unbilledTotal } } }" }
+          login_as(world.users[:supplier])
+          post "/graphql", params: dashboard, as: :json
+          scoped = response.parsed_body
+          spec.remove_dashboard_scopes
+          post "/graphql", params: dashboard, as: :json
+          expect(response.parsed_body).to eq(scoped)
+
+          MatrixCrossRead.on!
+          post "/graphql", params: dashboard, as: :json
+          # BigInt は文字列で返るので、数に直して比べる
+          expect(response.parsed_body.dig("data", "supplier", "dashboard", "unbilledTotal").to_i)
+            .to be > scoped.dig("data", "supplier", "dashboard", "unbilledTotal").to_i
+        end
       end
 
-      expect(results).to eq([ [ :passed, nil ], [ :passed, nil ] ])
+      expect(results).to eq([ [ :passed, nil ], [ :passed, nil ], [ :passed, nil ] ])
       expect(seen[:policies]).to eq(MatrixWorld.tenant_tables.size)
       expect(cross_read_policies).to eq(0)
     end
@@ -218,6 +235,18 @@ RSpec.describe MatrixWorld do
 
       expect(results.first.last).to include("世界を開けない")
       expect(cross_read_policies).to eq(0)
+    end
+
+    # 同じテストの DB で行列を流すほかの実行のポリシーを、足すのに失敗した側が消すと、ほかの実行の 2 回目が空振りする
+    it "同じ名前のポリシーがすでにあれば、足さずに失敗し、あったポリシーを外さない" do
+      MatrixCrossRead.add!
+
+      results = run_inner_group(cross_read: true) { it("走らない") { nil } }
+
+      expect(results.first.last).to include("matrix_cross_read のポリシーがすでにある")
+      expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
+    ensure
+      MatrixCrossRead.remove!
     end
 
     it "接続先の名前がテストの DB でなければ、ポリシーを足さずに失敗する" do
