@@ -696,151 +696,151 @@ type Mutation {
     Parameters for AdjustStock
     """
     input: AdjustStockInput!
-  ): AdjustStockPayload
+  ): AdjustStockPayload!
   allocateSalesOrder(
     """
     Parameters for AllocateSalesOrder
     """
     input: AllocateSalesOrderInput!
-  ): AllocateSalesOrderPayload
+  ): AllocateSalesOrderPayload!
   approveCancellationReview(
     """
     Parameters for ApproveCancellationReview
     """
     input: ApproveCancellationReviewInput!
-  ): ApproveCancellationReviewPayload
+  ): ApproveCancellationReviewPayload!
   cancelSalesOrder(
     """
     Parameters for CancelSalesOrder
     """
     input: CancelSalesOrderInput!
-  ): CancelSalesOrderPayload
+  ): CancelSalesOrderPayload!
   cancelShippingInstruction(
     """
     Parameters for CancelShippingInstruction
     """
     input: CancelShippingInstructionInput!
-  ): CancelShippingInstructionPayload
+  ): CancelShippingInstructionPayload!
   closeBillingPeriod(
     """
     Parameters for CloseBillingPeriod
     """
     input: CloseBillingPeriodInput!
-  ): CloseBillingPeriodPayload
+  ): CloseBillingPeriodPayload!
   correctItemPrice(
     """
     Parameters for CorrectItemPrice
     """
     input: CorrectItemPriceInput!
-  ): CorrectItemPricePayload
+  ): CorrectItemPricePayload!
   createShippingInstruction(
     """
     Parameters for CreateShippingInstruction
     """
     input: CreateShippingInstructionInput!
-  ): CreateShippingInstructionPayload
+  ): CreateShippingInstructionPayload!
   discardDraftInvoice(
     """
     Parameters for DiscardDraftInvoice
     """
     input: DiscardDraftInvoiceInput!
-  ): DiscardDraftInvoicePayload
+  ): DiscardDraftInvoicePayload!
   establishPartnership(
     """
     Parameters for EstablishPartnership
     """
     input: EstablishPartnershipInput!
-  ): EstablishPartnershipPayload
+  ): EstablishPartnershipPayload!
   grantPermission(
     """
     Parameters for GrantPermission
     """
     input: GrantPermissionInput!
-  ): GrantPermissionPayload
+  ): GrantPermissionPayload!
   inspectInboundShipment(
     """
     Parameters for InspectInboundShipment
     """
     input: InspectInboundShipmentInput!
-  ): InspectInboundShipmentPayload
+  ): InspectInboundShipmentPayload!
   issueInvoice(
     """
     Parameters for IssueInvoice
     """
     input: IssueInvoiceInput!
-  ): IssueInvoicePayload
+  ): IssueInvoicePayload!
   placePurchaseOrder(
     """
     Parameters for PlacePurchaseOrder
     """
     input: PlacePurchaseOrderInput!
-  ): PlacePurchaseOrderPayload
+  ): PlacePurchaseOrderPayload!
   postShipment(
     """
     Parameters for PostShipment
     """
     input: PostShipmentInput!
-  ): PostShipmentPayload
+  ): PostShipmentPayload!
   registerPartMapping(
     """
     Parameters for RegisterPartMapping
     """
     input: RegisterPartMappingInput!
-  ): RegisterPartMappingPayload
+  ): RegisterPartMappingPayload!
   rejectCancellationReview(
     """
     Parameters for RejectCancellationReview
     """
     input: RejectCancellationReviewInput!
-  ): RejectCancellationReviewPayload
+  ): RejectCancellationReviewPayload!
   requestPurchaseOrderCancellation(
     """
     Parameters for RequestPurchaseOrderCancellation
     """
     input: RequestPurchaseOrderCancellationInput!
-  ): RequestPurchaseOrderCancellationPayload
+  ): RequestPurchaseOrderCancellationPayload!
   revokePartnership(
     """
     Parameters for RevokePartnership
     """
     input: RevokePartnershipInput!
-  ): RevokePartnershipPayload
+  ): RevokePartnershipPayload!
   saveItem(
     """
     Parameters for SaveItem
     """
     input: SaveItemInput!
-  ): SaveItemPayload
+  ): SaveItemPayload!
   scheduleItemPrice(
     """
     Parameters for ScheduleItemPrice
     """
     input: ScheduleItemPriceInput!
-  ): ScheduleItemPricePayload
+  ): ScheduleItemPricePayload!
   setBillingTerm(
     """
     Parameters for SetBillingTerm
     """
     input: SetBillingTermInput!
-  ): SetBillingTermPayload
+  ): SetBillingTermPayload!
   setItemPublished(
     """
     Parameters for SetItemPublished
     """
     input: SetItemPublishedInput!
-  ): SetItemPublishedPayload
+  ): SetItemPublishedPayload!
   startImport(
     """
     Parameters for StartImport
     """
     input: StartImportInput!
-  ): StartImportPayload
+  ): StartImportPayload!
   withdrawPermission(
     """
     Parameters for WithdrawPermission
     """
     input: WithdrawPermissionInput!
-  ): WithdrawPermissionPayload
+  ): WithdrawPermissionPayload!
 }
 
 """

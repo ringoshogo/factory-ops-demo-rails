@@ -59,7 +59,7 @@ RSpec.describe "取引関係の GraphQL", type: :request do
         before = partnerships_of_supplier
         body = graphql_body("mutation($input: #{name.camelize}Input!) { #{name}(input: $input) { errors { code } } }", input: variables)
 
-        expect(body["data"]).to eq(name => nil)
+        expect(body).to include("data" => nil)
         expect(error_codes(body)).to eq([ "FORBIDDEN" ])
         expect(partnerships_of_supplier).to eq(before)
       end

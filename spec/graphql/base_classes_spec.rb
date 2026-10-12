@@ -223,7 +223,7 @@ RSpec.describe "GraphQL の基底クラス" do
       it "操作者に対して規則を評価し、偽なら FORBIDDEN" do
         result = mutate(save, '{ id: "1" }', role: "member")
 
-        expect(result["data"]).to eq("saveItem" => nil)
+        expect(result).to include("data" => nil)
         expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       end
 
@@ -262,7 +262,7 @@ RSpec.describe "GraphQL の基底クラス" do
       it "引いた対象に対して規則を評価し、偽なら FORBIDDEN" do
         result = mutate(save, '{ id: "other" }')
 
-        expect(result["data"]).to eq("saveItem" => nil)
+        expect(result).to include("data" => nil)
         expect(result["errors"].map { |error| error.dig("extensions", "code") }).to eq([ "FORBIDDEN" ])
       end
 
