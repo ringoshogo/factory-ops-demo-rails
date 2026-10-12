@@ -1,16 +1,20 @@
 require "rails_helper"
 require "prism"
 
-# パッケージのコードで行ロックかアドバイザリロックを取るメソッドは、そのロックで直列になることを確かめる競合テストか、
-# 競合テストを持たない理由を、下の表に持つ（docs/guides/testing.md「競合テスト」）。ロックを足しても、
-# 直列になることを確かめなければ、ロックを外しても何も落ちない
+# パッケージのコードで行ロックかアドバイザリロックを取るメソッドと、ロックを取る DB の関数（トリガーなど）は、
+# そのロックで直列になることを確かめる競合テストか、競合テストを持たない理由を、下の表に持つ（docs/guides/testing.md「競合テスト」）。
+# ロックを足しても、直列になることを確かめなければ、ロックを外しても何も落ちない
 RSpec.describe "ロックを取るメソッドと競合テスト" do
-  # ロックを取るメソッド（「定数.メソッド」）ごとに、確かめる競合テスト（spec:）と、その spec に現れるべき文字列（mentions:）を書く。
-  # mentions を省くと、定数の最後の名前と「.メソッド」の 2 つを見る。競合テストを持たないなら、理由（reason:）を書く
+  # ロックを取るメソッド（「定数.メソッド」）と DB の関数（「DB:関数名」）ごとに、確かめる競合テスト（spec:）と、
+  # その spec に現れるべき文字列（mentions:）を書く。mentions を省くと、メソッドは定数の最後の名前と「.メソッド」の 2 つを、
+  # DB の関数は関数名を見る。競合テストを持たないなら、理由（reason:）を書く
   SITES = {
     "Billing::Closing.close" => { spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb" },
     "Billing::Closing.discard" => { spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb" },
     "Billing::Closing.issue" => { spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb" },
+    "DB:invoice_children_issued_immutable" => {
+      spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb", mentions: [ "公開 API を通らない明細の書き換え", "確定した請求書は変えられない" ]
+    },
     "Fulfillment::Instructions.create" => {
       reason: "出荷依頼の行ロックで、出荷停止の受け手・計上と直列になる。同じロックの待ちは、計上と出荷停止の受け手の競合テストが確かめる"
     },
@@ -92,6 +96,9 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
   }.freeze
 
   # ファイルの構文木から、ロックを取る呼び出しを含むメソッドを「定数.メソッド」で集める
+  # SQL の文の中の行ロックとアドバイザリロック。FOR SHARE も、待たせる相手がいるので数える
+  SQL_LOCK = /\bFOR\s+(?:NO\s+KEY\s+UPDATE|UPDATE|KEY\s+SHARE|SHARE)\b|pg_advisory_xact_lock/i
+
   class LockSiteCollector < Prism::Visitor
     LOCK_CALLS = %i[lock lock! lock_for lock_pair! with_lock].freeze
 
@@ -127,7 +134,7 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     end
 
     def visit_string_node(node)
-      record if node.unescaped.match?(/pg_advisory_xact_lock|FOR UPDATE/i)
+      record if node.unescaped.match?(SQL_LOCK)
       super
     end
 
@@ -147,8 +154,23 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     LockSiteCollector.new.tap { Prism.parse(source).value.accept(_1) }.sites.uniq
   end
 
+  # structure.sql の関数のうち、本体でロックを取るものを「DB:関数名」で集める。トリガーは公開 API を通らない書き込みにも効くので、
+  # パッケージのコードの表と同じく、直列になることを確かめる競合テストを求める
+  def self.collect_db(structure_sql)
+    structure_sql.scan(/^CREATE FUNCTION public\.(\w+)\(.*?AS \$\$(.*?)\$\$;/m)
+      .select { |_name, body| body.match?(SQL_LOCK) }.map { |name, _body| "DB:#{name}" }
+  end
+
   def self.lock_sites
-    Dir[Rails.root.join("packs/*/app/**/*.rb")].sort.flat_map { collect(File.read(_1)) }.uniq.sort
+    ruby = Dir[Rails.root.join("packs/*/app/**/*.rb")].sort.flat_map { collect(File.read(_1)) }
+    (ruby + collect_db(Rails.root.join("db/structure.sql").read)).uniq.sort
+  end
+
+  def self.default_mentions(name)
+    return [ name.delete_prefix("DB:") ] if name.start_with?("DB:")
+
+    constant, method = name.split(".", 2)
+    [ constant.split("::").last, ".#{method}" ]
   end
 
   def self.missing_mentions(name, entry)
@@ -156,13 +178,12 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     return [ "#{entry.fetch(:spec)} が無い" ] unless path.exist?
     return [ "#{entry.fetch(:spec)} は concurrency の置き場に無い" ] unless entry.fetch(:spec).include?("/concurrency/")
 
-    constant, method = name.split(".", 2)
-    mentions = entry.fetch(:mentions) { [ constant.split("::").last, ".#{method}" ] }
+    mentions = entry.fetch(:mentions) { default_mentions(name) }
     text = path.read
     mentions.reject { text.include?(_1) }
   end
 
-  it "ロックを取るメソッドは、すべて表にあり、表のメソッドはすべてロックを取る" do
+  it "ロックを取るメソッドと DB の関数は、すべて表にあり、表のものはすべてロックを取る" do
     expect(self.class.lock_sites).to eq(SITES.keys.sort)
   end
 
@@ -193,6 +214,29 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
       RUBY
 
       expect(self.class.collect(source)).to eq(%w[Shop::Orders.take Shop::Orders.place Shop::Orders.serialize])
+    end
+
+    it "本体でロックを取る DB の関数を、関数名で拾う" do
+      sql = <<~SQL
+        CREATE FUNCTION public.guard_child() RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$
+        BEGIN
+          SELECT issued_at INTO issued FROM public.invoices WHERE id = NEW.invoice_id FOR SHARE;
+          RETURN NEW;
+        END
+        $$;
+
+        CREATE FUNCTION public.plain() RETURNS trigger
+            LANGUAGE plpgsql
+            AS $$ BEGIN RETURN NEW; END $$;
+
+        CREATE FUNCTION public.serialize() RETURNS void
+            LANGUAGE sql
+            AS $$ SELECT pg_advisory_xact_lock(1) $$;
+      SQL
+
+      expect(self.class.collect_db(sql)).to eq(%w[DB:guard_child DB:serialize])
     end
 
     it "表に無いメソッドと、spec に現れない呼び出しを落とす" do
