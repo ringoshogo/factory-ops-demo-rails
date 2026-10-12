@@ -478,3 +478,110 @@ CI の test のジョブ（Run tests の時間は括弧の中）：
 ### 残件の処理
 
 OI-89 は作者の判断（案 B）で閉じた（`decided`）。OI-80 は、作者の判断のとおり `scheduleItemPrice`・`correctItemPrice` を `admin` に限って実装した（`Sales::ItemPolicy#change_price?`）。引当先が M27 の `open` と `blocked-user` は残っていない。
+
+## M29 大量データの取り込み
+
+PR #47（`m29-imports`、base は `main`）。M27 の上に積んだので、#42〜#46 の commit も差分に見える。着手の前に、作者が OI-80（単価の列を含む CSV の取り込みは `admin` だけ）と OI-89（既存の品目の単価を変える入口は単価の改定にまとめる）を決めていた。どちらの系統も Go で、Critical と High は無かった。Medium は同じブランチの commit で直し、Low は直すか残件に積み、違和感は改善の候補に移した。High 以上が無いので、読み直しには出していない。どちらの系統も、`835b7ee..7eb1adb` の diff を `7eb1adb` の版で読んだ。Codex は read-only で読み、テストを流さず、依頼に書いた実行結果を前提にした。Claude は `7eb1adb` の worktree を読み、テストを流さず、activejob 8.1.4 の原文で Continuations の挙動を確かめた（worktree は消した）。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘（C-6） |
+| 正しさ | 指摘（F1） | 指摘（C-2・C-5） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（F1・F2・F3） | 指摘（C-1） |
+| 参照の維持 | 指摘（F4） | 指摘（C-2・C-3・C-4） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | F1：置き場へ写す段階は、始めのロックを放してから断片ごとに中身を読む。同じ取り込みの先のジョブが終えて中身を消すと、後のジョブが `file.write(nil)` で例外になる | 例外にはならなかった。`IO#write` は `nil` を空の文字列にして書き、後の書き込みと失敗の記録は `Chunk.locked` が終えた取り込みを飛ばすので、何も書かずに終わる。断片を読むたびに取り込みの行をロックし、終えていたら何も渡さずに戻る形にして、後のジョブが例外にならず何も書かないことを確かめる example を足した。この example は直す前の版でも通る | `bc55a6b` |
+| Medium | Codex・Claude | F2・C-1：数量（integer）と単価（bigint）の上限の比較に、上限ちょうどの example も上限 + 1 の example も無い。比較を外すと、上限を超えた値が行の失敗ではなく例外になる | 数量 2,147,483,647 と単価 9,223,372,036,854,775,807 を反映し、1 大きい値を行の失敗にする example を仕様の値で足した。比較を外すと落ちる | `bc55a6b` |
+| Medium | Codex | F3：チャンクごとに開始の規則を評価し直すことを、最初のチャンクの前に役割を変える example でしか確かめていない | 1 行のチャンクで最初のチャンクを反映して止め、`member` にしてから流すと、次のチャンクで `not_permitted` になり、反映した 1 行は残って 2 行目を書かない example を足した。評価を最初のチャンクだけにすると落ちる | `bc55a6b` |
+| Low | Codex | F4：`adr/007` の確認した事項が、`CheckpointError` を投げると書いたまま | 確認した事項を activejob 8.1.4 の原文に合わせ、中断点をトランザクションの外に置くことはコードの形で守ると書いた | `bc55a6b` |
+| Low | Claude | C-2：段階もカーソルも進めていない実行の例外は、Continuable が登録し直さず失敗したジョブになる。改定の予約の失敗の「ジョブのやり直しでやり直す」というコメントと `adr/007` の知らせ方が、この条件を書いていない | コメントと OI-112 に `resume_errors_after_advancing` の既定と、進めていない実行は失敗したジョブになって `imports:reenqueue` で登録し直すことを書いた。`adr/007` の A-4 の「使い切ったら知らせる」に、その経路を足した | `bc55a6b` |
+| Low | Claude | C-3：上限の理由のコメントが「置き場へ写す段階はファイルを 1 度に読む」のまま（`36aa1f7` で断片ごとに読む形にした） | `files.rb` とマイグレーションのコメントを、業務 DB の bytea に置く大きさを抑えるという理由に直した | `bc55a6b` |
+| Low | Claude | C-4：「公開の状態は `setItemPublished` だけが変える」が古い。品目の CSV の取り込みも `published` を書く | `catalog.rb`・`catalog_spec.rb` の説明と graphql-schema.md「mutation の一覧」を直した | `bc55a6b` |
+| Low | Claude | C-5：置いたまま `startImport` しないファイルの中身を消す経路が無い | OI-116（`open`、引当先は M31）に積み、計画の M31 の作るものに足した | `bc55a6b` |
+| Low | Claude | C-6：完了条件の「`supplier.import` の件数が進む」の記録が無い | 50,000 行の取り込みの途中で `supplier.import` を GraphQL で 3 回読み、進んだことを下の「実装の記録」に書いた | — |
+
+違和感は次のように扱った。
+
+- Claude 1：置き場へ写す段階だけは、`imports` の行ロックを外しても、`started_at` の UPDATE と一意索引で結果が変わらず、行ロックを独立に確かめていない → IB-44
+- Claude 2：同じコードの探し方が、チャンクごとにそこまでの置き場の行を索引なしで走査する → IB-45
+- Claude 3：表計算のソフトで保存すると `TRUE`・`FALSE` と `2026/10/12` になり、ほぼ全行が失敗する → IB-46
+- Claude 4：置き場の行の値を残す期間が文書に無い → IB-47
+- Claude 5：全行が失敗しても状況は一部失敗になる → IB-48
+- Claude 6：ファイルの受け口が、ログとエラー通知の文脈にテナントとユーザーを付けない → IB-49
+- Claude 7：`authentication.rb` のメソッドの間の空行が抜けている → 直した（`bc55a6b`）
+- Codex：なし
+
+### 実装の記録
+
+`Inventory::Adjustment.set_quantity`（4 failures）・`ApplicationJob.tenant_transaction`（2）・`Partnerships::Authentication.acting_user`（3）・`Sales::Catalog.bulk_upsert`（4）の spec は、実装の前に流して落ちることを見た。ジョブ・公開 API・request・競合・タスクの spec は、ジョブを書いた後に書いたので、書いた時点で通った。検出力は壊して確かめた。壊したファイルは複製から戻して更新時刻を進めた。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 反映 | 結果のある行を飛ばさないと、反映の繰り返しが終わらない。件数にチャンクの全行を足すと 3 件、開始の規則を評価し直さないと 1 件、同じコードの 2 行目を失敗にしないと 3 件、規則の評価を最初のチャンクだけにすると 1 件落ちる。新しい品目にも改定の予約を呼ぶ形は落ちない（予約は同じ単価なら何も書かない）ので、条件を消し、改定日の単価をまとめて引いて違う行だけ予約する形にした |
+| ロック | `imports` の行ロックを外すと、同じ取り込みの 2 つのジョブがチャンクのイベントを 2 回出して競合テストが落ちる。在庫の行ロックを外すと、並んだ 2 つの取り込みの移動履歴が食い違って落ちる。最初に書いた競合テストは、どちらを外しても落ちなかった。在庫の行が無いと後の接続は行の作成の一意索引で待ち、目標の数量への調整と件数の上書きが 2 回目の反映を隠したからである。在庫の行を先に作り、件数のイベントが 1 回ずつであることを確かめる形に書き直した |
+| `bulk_upsert` | 書いた品目すべてを新しい品目として扱うと、単体が 2 件と、同じ新しいコードを並んで書く競合テストが落ちる。単価の空の新しい品目を拒まないと 1 件落ちる |
+| `set_quantity` | 引当済みの数量との比較を 1 ずらすと 1 件落ちる。負の数の検査を外しても落ちない。負の目標は引当済みの数量（0 以上）との比較が同じく拒むからである |
+| CSV の契約 | 数量と単価の上限の比較を外すと 1 件落ちる（レビューで足した example） |
+| 受け口と規則 | `Origin` を確かめないと 1 件、10 MB の比較を `>=` か `MAX + 1` にずらすとそれぞれ 1 件、`ImportPolicy#start?` が種類を見ないと request spec と単体が 1 件ずつ落ちる |
+
+テストの書き方の誤りで 1 回落ちた。`run_job_spec.rb` の在庫数の比べ方が `Inventory::Stocks.for_items` のハッシュの順に頼っていて、5 回に 1 回ほど落ちた。品目コードの順で比べる形に直し、5 回続けて通った。
+
+IB-25 の試行：ファイルの大きさの上限は、単体（`Imports::Files.store`）と request spec に、上限ちょうどと上限 + 1 を仕様の値（10,485,760 と 10,485,761）で書いた。比較を `>=` にずらすと上限ちょうどの example が、`MAX + 1` にずらすと上限 + 1 の example が落ちた。CSV の値の上限（数量・単価）には、最初は書かず、2 系統のレビューがそろって指摘した（F2・C-1）。
+
+計画からの細部の決定は台帳に積んだ。`startImport` の規則の形を OI-109（OI-91 は閉じた）、品目の CSV の単価の列を改定の予約で反映することを OI-110、CSV の契約の細部を OI-111、品目の行を書く前に失敗を決めることを OI-112、ファイルの上限と `Origin` の許可を OI-113、再登録のタスクの引数を OI-114、置き場へ写す読み方と改定の予約の呼び方を OI-115 に、judgment で積んだ。
+
+50,000 行の品目の CSV（`bin/rails "imports:sample[50000]"`、3,138,966 バイト）を開発の DB で取り込んだ。
+
+| 確かめたこと | 結果 |
+|---|---|
+| 常駐メモリ（本番と同じくコードを先に読み込み、SQL のログを出さないワーカー） | 取り込みの前（1,000 行を取り込んだ後）119,376 KB、最大は置き場へ写す段階の 180,304 KB（増分 61 MB）、反映の間は 155 MB 前後 |
+| 途中で止めて起動し直す | 20,500 行でワーカーを止めると次の中断点で止まり（`active_job.interrupt`）、止めた 7 分の間は件数が進まなかった。起動し直すと続きから進み、50,000 行がすべて反映され、品目 50,000・単価の行 50,000 になった |
+| `supplier.import` の件数 | 別の 50,000 行の取り込みで、`supplier.import` を GraphQL で 3 秒ごとに読むと、`QUEUED`（0）→ `APPLYING`（総数 50,000、0）→ `APPLYING`（2,500）と進み、終わりに `SUCCEEDED`（50,000）になった |
+
+> 開発の既定のワーカー（コードを使うときに読み込み、SQL のログを出す）では、取り込みの前の 72,672 KB から最大 174,496 KB（増分 約 102 MB）になった。増分には、取り込みで初めて使うコードの読み込みが含まれる。プロセスの中で段階ごとに測ると、置き場へ写す段階の増分は、CSV の解析だけで約 32 MB、置き場への書き込みを足して約 47 MB で、ファイルの中身を 1 度に読むと 3 MB のファイルで約 24 MB 増えた。中身は 1 MB ずつ一時ファイルへ写す形にした（OI-115）。反映は、最初は単価の行ごとに改定の予約を呼んで 1 チャンクに約 4,000 回 DB を往復していたので、改定日の単価をまとめて引く形にして約 1,000 回にした。
+
+### 確かめたこと
+
+`6704ba9` で、Ruby 3.4.11 で共通の完了条件と M29 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/imports/spec/jobs/imports/run_job_spec.rb packs/imports/spec/public/imports/runs_spec.rb \
+  packs/inventory/spec/public/inventory/adjustment_spec.rb spec/requests/imports_spec.rb spec/jobs spec/scenarios/tenant_boundary_spec.rb  # 125 examples, 0 failures
+bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.rb  # 2 examples, 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 2301 examples, 0 failures
+BASE_REF=origin/main bin/check-branch-coverage # 2 件（下に書く）
+bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk validate && bin/packwerk check    # 違反なし
+bin/brakeman --no-pager                        # 警告なし
+bin/check-structure                            # 終了コード 0
+bin/check-schema-compat                        # 終了コード 0（非破壊の変更だけ）
+bin/check-open-items --due M29                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし。単体 466・結合 191・シナリオ 99
+```
+
+分岐の網羅率の警告は、M29 の差分では最初の全件（`36aa1f7` の前の作業ツリー）で 8 件出て、example を足した件数は 5 件である。単価の空の既存の品目の行、改定の予約が失敗したらチャンクごと戻して登録し直したジョブが反映し直すこと、品目コードの空の在庫の行、見出しだけのファイル、操作者でない値で読むと例外、の example を足した。誤りの文の、項目の無い失敗の腕は、反映で呼ぶ公開 API の失敗がどれも項目を指すので消した（`4fb4f45`）。残る 2 件は `staging.rb` の `write` の `if rows.any?` と `finish` の `unless import.staged_at` の偽の腕で、同じ取り込みの 2 つのジョブが置き場へ写す段階を交互に進めたときだけ通る。競合テストの後の接続は、`imports` の行ロックを待った後に `staged_at` を見て段階を抜けるので、ここまで来ない（IB-44）。
+
+CI は、1 回目に scan_ruby の brakeman が、断片の位置を SQL の文に埋めた `Arel.sql` を SQL Injection の警告にして落ちた。値は整数だが、bind の値で渡す形に直した（`6704ba9`）。手元では brakeman を流していなかった。
+
+行列の時間（手元）：`bundle exec rspec spec/matrix` は 1138 examples、15.7 秒（M27 の後は 1052 examples、13.5 秒）。足した 86 examples は、取り込みの 3 つの表の行と、`supplier.imports`・`supplier.import`・`startImport` の 2 つの変種の行である。
+
+CI の test のジョブ（Run tests の時間は括弧の中）：
+
+| | 時間 |
+|---|---|
+| #47 の 1 回目（`7eb1adb`。scan_ruby が落ちた） | 2 分 36 秒（1 分 37 秒） |
+| #47 の 2 回目（`6704ba9`、レビューの指摘と brakeman の警告を直した後） | 2 分 30 秒（1 分 28 秒） |
+
+### 残件の処理
+
+OI-91 は、`startImport` の規則の形を決めて `graphql-schema.md`「役割による制限」の規則の列を埋めて閉じた（`closed`、`16abc85`）。決めた形は OI-109 に judgment で積んだ。OI-82 は、計画どおりに実装し、作者の確認を待つ `judgment` のまま残る。OI-80 は、作者の判断のとおり、品目の CSV の取り込みを `admin` に限って実装した（`Imports::ImportPolicy#start?`）。OI-89 の趣旨のとおり、取り込みも既存の品目の単価を改定の予約でだけ変える（OI-110）。引当先が M29 の `open` と `blocked-user` は残っていない。
