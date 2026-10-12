@@ -2,6 +2,8 @@ require "rails_helper"
 
 # 取り込みの開始・読み取り・再登録と、状況の導出（docs/architecture/data-model.md「取り込み（`imports`）」）
 RSpec.describe Imports::Runs do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:tenant) { FactoryBot.create(:tenant).id }
   let(:other) { FactoryBot.create(:tenant).id }
   let(:admin) { Tenancy.with_tenant(tenant) { FactoryBot.create(:user, :admin) } }
@@ -31,6 +33,28 @@ RSpec.describe Imports::Runs do
 
       expect(result.failures.map { [ _1.code, _1.path ] }).to eq([ [ :conflict, [ :file_id ] ] ])
       expect([ tenancy { Imports::Import.count }, jobs.count ]).to eq([ 1, 1 ])
+    end
+
+    it "置いたまま中身を消したファイルは、ファイル ID を指して置き直しを促す CONFLICT で、取り込みもジョブも足さない" do
+      abandoned = travel_to(25.hours.ago) { place }
+      expect(tenancy { Imports::Files.purge_abandoned }).to eq(1)
+
+      result = tenancy { described_class.start(actor, described_class.request(actor, file_id: abandoned.id, kind: "stocks")) }
+
+      expect(result.failures.map { [ _1.code, _1.path, _1.message ] })
+        .to eq([ [ :conflict, [ :file_id ], "This file was removed because it was not imported within 24 hours. Upload it again" ] ])
+      expect([ tenancy { Imports::Import.count }, jobs.count ]).to eq([ 0, 0 ])
+    end
+
+    # 取り込みを終えたファイルも中身が空なので、取り込み済みを中身の有無より先に答える
+    it "取り込みを終えて中身を消したファイルの 2 回目は、取り込み済みの CONFLICT になる" do
+      request = tenancy { described_class.request(actor, file_id: place.id, kind: "stocks") }
+      tenancy { described_class.start(actor, request) }
+      tenancy { Imports::ImportFile.where(id: request.file_id).update_all(content: nil) }
+
+      result = tenancy { described_class.start(actor, request) }
+
+      expect(result.failures.map { [ _1.code, _1.message ] }).to eq([ [ :conflict, "This file has already been imported" ] ])
     end
   end
 

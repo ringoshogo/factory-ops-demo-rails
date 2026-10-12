@@ -230,7 +230,7 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `import_files` | `filename`・`byte_size`・`content`（`bytea`）・`uploaded_by_user_id` | 10 MB まで（CHECK 制約。`content` の大きさは `byte_size` と同じ）。取り込みを終えるか失敗したら `content` を消す |
+| `import_files` | `filename`・`byte_size`・`content`（`bytea`）・`uploaded_by_user_id` | 10 MB まで（CHECK 制約。`content` の大きさは `byte_size` と同じ）。取り込みを終えるか失敗したら `content` を消す。置いてから 24 時間を過ぎても取り込みを始めないファイルの `content` も消す（下の「置いたままのファイル」） |
 | `imports` | `import_file_id`・`kind`（`items` / `stocks`）・`total_rows`・`applied_rows`・`failed_rows`・`started_at`・`staged_at`・`finished_at`・`failed_at`・`failure_reason`・`requested_by_user_id` | `import_file_id` 一意（1 つのファイルの取り込みは 1 回）。`failed_at` と `failure_reason` は揃って空か揃って埋まる |
 | `import_rows` | `import_id`・`row_number`・`data`（`jsonb`、見出しの順の値の配列）・`applied_at`・`error` | `(import_id, row_number)` 一意。`applied_at` と `error` は両立しない |
 
@@ -255,6 +255,13 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 | 在庫（`stocks`） | `item_code`・`quantity` | `item_code` は自社の品目のコード。`quantity` は 0 以上の整数で、目標の在庫数を表す。引当済みの数量より少なくする行は失敗。同じファイルで同じ `item_code` の 2 行目以降は失敗 |
 
 列の数が見出しと違う行も失敗にする。同じコードの 2 行目は、前のチャンクの行も含めて、置き場の 1 列目の値で探す。最初に現れた行が失敗した行でも、2 行目以降は失敗にする。
+
+置いたまま取り込みを始めないファイル（`startImport` を呼ばないファイル）は、定期のジョブ `Imports::PurgeAbandonedFilesJob`（`config/recurring.yml`、1 時間ごと）が中身を消す。ファイルの受け口は役割を問わず、件数の上限も無いので、消さないと業務 DB の `bytea` が増え続ける。消すのは、置いてから 24 時間を過ぎた（24 時間ちょうどは残す）、取り込みの行の無いファイルである。24 時間は、置いたその日のうちに取り込む使い方を妨げない長さとして置いた。ジョブは `tenants` の ID の順にテナントを 1 つずつ開き、公開 API `Imports::Files.purge_abandoned` を呼ぶ。公開 API は操作者のいない入口の規則（`graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）に従い、所有の条件を `Current.tenant_id` で書き、消した件数を返す。行は消さず、`content` だけを空にする。
+
+後始末と取り込みの開始（`Imports::Runs.start`）は、ファイルの行ロックで直列にする。取り込みの行の外部キーが取るロック（`FOR KEY SHARE`）は、中身を消す `UPDATE` と待ち合わないので、どちらも明示してロックを取る。
+
+1. 後始末は、候補のファイルの行を ID の順に `FOR UPDATE` でロックしてから、別の文でそのファイルの取り込みの行が無いことを確かめ直して中身を消す。READ COMMITTED は文ごとにスナップショットを取り直すので、ロックを待つ間にコミットした取り込みは 2 つ目の文に見える。ロックの文の条件だけでは、待った後に読み直すのはファイルの行だけで、取り込みの有無は読み直さない。
+2. 開始は、取り込みの行を書く前にファイルの行を `FOR UPDATE` でロックし、中身の有無を読む。取り込みの行を書いてから、中身が消えていれば `CONFLICT`（`path` は `["fileId"]`、ファイルの置き直しを促す文言）を返して書いた行を戻す。取り込みを終えて中身を消したファイルの 2 回目は、一意索引で先に「取り込み済み」の `CONFLICT` になる。
 
 同じ取り込みのジョブが 2 つ動いても、結果は 1 つになる。どの段階も、チャンクのトランザクションの初めに `imports` の行をロックし、ロックの後に置き場の状態を読み直してから書く。`stage` はロックの後に書き終えた最大の行番号を読み、`import_rows` を `(import_id, row_number)` の一意で書く。`apply` はロックの後に結果の無い行だけを選ぶ。`finalize` はロックの後に、終えていない取り込みにだけ書く。終えた取り込み（`finished_at` か `failed_at` がある）には、どの段階も何も書かない。
 
