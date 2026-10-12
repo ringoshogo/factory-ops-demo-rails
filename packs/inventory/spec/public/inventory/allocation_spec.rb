@@ -102,8 +102,11 @@ RSpec.describe Inventory::Allocation, ".active_quantities_sql" do
       FactoryBot.create(:allocation, sales_order_line_id: line_ids[1], quantity: 3, status: "released")
       FactoryBot.create(:allocation, sales_order_line_id: line_ids[2], quantity: 1)
       cross_read!
-      # 対照：開いた後は、他社の名義で自社の受注明細を指す引当が見える
-      expect(Inventory::StockAllocation.where(sales_order_line_id: line_ids[0]).pluck(:quantity)).to eq([ 5 ])
+      # 対照：開いた後は、scope を掛けない同じ条件の副問い合わせに、他社の名義で自社の受注明細を指す引当が入る
+      unscoped = Inventory::StockAllocation.where.not(status: "released").group(:sales_order_line_id)
+        .select(:sales_order_line_id, Inventory::StockAllocation.arel_table[:quantity].sum.as("quantity"))
+      expect(quantities(SqlSubquery.of(unscoped, sales_order_line_id: "sales_order_line_id", quantity: "quantity")))
+        .to eq(line_ids[0] => 5, line_ids[2] => 1)
 
       expect(quantities(described_class.active_quantities_sql(actor))).to eq(line_ids[2] => 1)
     end
