@@ -1886,7 +1886,7 @@ CREATE TABLE public.webhook_inbox_events (
 -- Name: TABLE webhook_inbox_events; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.webhook_inbox_events IS '[通知] 外部の Webhook の受信。提供元のイベント ID ごとに 1 行で、メールアドレスを除いて生のまま残す';
+COMMENT ON TABLE public.webhook_inbox_events IS '[通知] 外部の Webhook の受信。提供元のイベント ID ごとに 1 行で、処理に使う項目だけを残す';
 
 
 --
@@ -4770,6 +4770,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261013000100'),
 ('20261013000000'),
 ('20261012200100'),
 ('20261012200000'),

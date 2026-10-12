@@ -17,17 +17,24 @@
 
 ### 共通の完了条件
 
-M2 以降のすべてのマイルストーンで、次のコマンドが成功する。CI（M1 で作る）も同じものを実行する。検査を足したマイルストーンより後では、その検査も共通の完了条件に加わる。
+M2 以降のすべてのマイルストーンで、実装者は PR を出す前に次のコマンドを流し、成功させる。CI（M1 で作る）も同じ検査を流す。検査を足したマイルストーンより後では、その検査も共通の完了条件に加わる。`bin/ci` は、`--due` のほかのこれらを CI と同じ形で 1 つで流す。
 
 ```sh
 bin/rubocop                                   # M15 からコメントの規約の Cop を含む
 bin/packwerk validate && bin/packwerk check   # M2 から
-bundle exec rspec --format progress --format json --out tmp/rspec.json
+bin/brakeman --no-pager                       # Rails のコードの静的なセキュリティ検査
+bin/bundler-audit                             # gem の既知の脆弱性
+bin/rails db:test:prepare
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json
+BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage   # M35 から。どの example も通らない分岐の一覧（失敗にはしない）
 bin/test-layers tmp/rspec.json                # M16 から。テストの層ごとの件数の報告
 bin/check-structure                           # structure.sql の往復の検査
 bin/check-schema-compat                       # M20 から。GraphQL のスキーマの破壊的変更の検査
 bin/check-open-items --due M<番号>            # 引当先がこのマイルストーンの残件が、open と blocked-user のまま残っていない
+bin/check-commit-refs                         # 台帳・証跡・引き継ぎに書いた SHA が HEAD の祖先である
 ```
+
+この一覧は、CI のワークフローが流す `bin/` の検査をすべて含む。`spec/platform/ci_checks_spec.rb` が、ワークフローの `bin/` のコマンドがこの一覧と `config/ci.rb` の工程にあることを確かめる。一覧に無い検査は、PR を出してから CI で初めて落ちる。
 
 `bin/check-structure` は、開発の DB にマイグレーションを流した結果と、`structure.sql` を読み込み直して書き出した結果が、どちらも `structure.sql` と一致することを確かめる。空の DB への `db:migrate` は `structure.sql` を読み込むだけでマイグレーションを流さないので、`structure.sql` を退避してから流す。文字列の列の CHECK 制約は `status::text IN (...)` と書く。`status IN (...)` と書くと、マイグレーションの結果と読み込み直した結果で式の表記が変わり、この検査が落ちる。
 
@@ -60,7 +67,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作る。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -96,6 +103,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M27 | 販売単価のバイテンポラル履歴 | 現在の単価の有効期間が重ならず、単価の行が書き換わらない |
 | M28 | 外部サービスの呼び出しと非同期の型 | 外部への作用が 1 つの登録口からだけ登録され、テストと開発で本物の SendGrid を呼べない |
 | M29 | 大量データの取り込み | 取り込みが他のキューを待たせず、中断しても続きから再開し、他社の名義で書けない |
+| M37 | RLS が隠す scope の抜けと、読み取りの役割を行列で捕まえる | 入口の scope を外すと、RLS が同じ行を隠していても行列が落ちる。`admin` に限る読み取りを `member` で呼ぶと行列が確かめる |
 | M30 | メトリクス | メトリクスのラベルにテナントとユーザーが入らない |
 | M31 | SLO と障害対応の手順書 | どの警報も手順書を持ち、警報の規則が CI で検査される |
 | M32 | シードデータ | — |
@@ -120,6 +128,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M27 | M19・M20・M25 | 単価の変更を監査する。請求書の説明が発行済みの請求書を使う |
 | M28 | M18・M25 | 送信の失敗をログに出す。確実な通知の呼び出し元が「請求書発行」の受け手である |
 | M29 | M27・M18 | 単価の列を `Sales::ItemPrices` で反映する。進み具合をログに出す |
+| M37 | M29 | 入口の行列に、M29 までの入口と `admin` に限る操作がそろっている |
 | M30 | M18・M28・M29 | 値の出どころが M18 の構造化イベントで、外部の呼び出しと取り込みの値も測る |
 | M31 | M30 | SLO と警報を M30 のメトリクスで書く |
 | M32 | M31 まで | シードが単価の履歴と取り込みも含む |
@@ -1073,7 +1082,7 @@ test "$(grep -rh "def login_as(user)" spec | wc -l)" -eq 1   # spec/support/requ
 1. 確定と写し：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた。入力と結果、ロック、確定した請求書を変えないトリガーは `data-model.md`「請求（`billing`）」。OI-84）、請求書発行のイベントと配送表の行、購買の受け手 `Purchasing::BillingEventReceiver`（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。`issueInvoice` の規則は `Billing::InvoicePolicy#issue?` で、`admin` に限る。`issueInvoice` は `audit` で、監査の行は `graphql-schema.md`「監査ログ」の表にある。`received_invoices`・`received_invoice_lines`・`invoice_sequences` の表の行列の行と、S1 の表に `issueInvoice(input.invoiceId)`・`buyer.receivedInvoice(id)` の行を足す。購買は「請求書発行」をイベントの契約だけで受けるので、パッケージの依存は変わらない
 2. 締め日（OI-77）：締め日が今日より後の締めを許し、確定も締め日を過ぎるのを待たずにできる（`data-model.md`「請求（`billing`）」）。締めの後に届いた、検収日が締め日以前の検収は、次の締めで集まる
 3. 役割による制限（OI-71〜OI-73）：サイクル 02 で作った mutation の規則のうち、`graphql-schema.md`「役割による制限」の表で `admin` に限るものを、`user.admin?` を条件に含める形に直す。対象は `Sales::SalesOrderPolicy#review?`・`#cancel?`、`Purchasing::PurchaseOrderPolicy#request_cancellation?`・`#inspect_receipt?`、`Billing::InvoicePolicy#set_term?`・`#close?`・`#discard?` の 7 つで、いまはどれも役割を問わない。`member` で `admin` に限る操作を呼んでいる既存の request spec（`spec/requests/inspections_spec.rb`・`spec/requests/billing_spec.rb`・`spec/requests/cancellations_spec.rb`）は、`admin` で呼ぶ形に直す
-4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表ごとの行の数と中身が、監査の行を含めて変わらないこと。既存の行を書き換えるだけの mutation は行の数を変えないので、中身も比べる）を確かめる。`member` の行は、値を返すペルソナの `member` でも値を返すことを確かめる（OI-90）。役割を持たない mutation の行があれば落ちる
+4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表ごとの行の数と中身が、監査の行を含めて変わらないこと。既存の行を書き換えるだけの mutation は行の数を変えないので、中身も比べる）を確かめる。`member` の行は、どのペルソナの `member` で呼んでも `admin` と同じ結果になり、値を返さないときは何も書かれないことを確かめる（OI-90・OI-107）。役割を持たない mutation の行があれば落ちる
 
 役割による制限をここに置くのは、確定（`issueInvoice`）で同じ形の規則を初めから作るからである。サイクル 03 は 6 つのマイルストーンで上限に達しているので、新しいマイルストーンは作らない。M36 は業務の振る舞いを変えないマイルストーンなので入れず、行列テストの役割の列は、M36 で作り直した世界に足す。
 
@@ -1276,6 +1285,48 @@ bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.r
 
 **実装する文書の節**：`adr/007` 決定 5 の A-4・決定 7、`adr/006` 決定 3、`data-model.md`「取り込み（`imports`）」「在庫（`inventory`）」
 
+## M37 RLS が隠す scope の抜けと、読み取りの役割を行列で捕まえる
+
+**目的**：認可の 3 段のうち scope（2 段目）は「RLS に任せない」（`architecture/graphql-schema.md`「認可」）が、相手から読む経路の無い表では、公開 API の scope を外しても RLS が他社の行を隠すので、いまのテストは落ちない（IB-35。テナントの表 40 のうち 34 がこの形）。入口の行列がこの抜けを捕まえるようにする。あわせて、行列の役割の検査を `admin` に限る読み取りにも広げる（IB-29）。どちらも業務の振る舞いを変えない。
+
+**作るもの**
+
+1. 試作と分かれ目：別名のテスト DB で、下の 2 の (1)〜(4) が成り立つかを先に確かめる。テストの DB にポリシーを足して外す操作が、世界の固定した接続のロックと待ち合わないこと、2 回目の入口の行列で、scope を外した入口が落ちることを確かめ、結果を証跡に書く。成り立たなければ、判断の裏返る条件に従って止め、取りまとめ役に返す
+2. scope を RLS の外で確かめる（IB-35）：
+   1. テストの環境でだけ、テナントの表ごとに、設定の値（`app.matrix_cross_read`）が `on` のときだけ全行を読ませる SELECT のポリシーを足す。ポリシーを作る SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。補助は、接続先がテストの DB であることを名前で確かめてから、所有ロールの接続で、世界を開く前に足し、世界を閉じた後に外す。足す途中で失敗しても、足した分を外す。`structure.sql` に混ざったときは `bin/check-structure` が落とす
+   2. 設定の値は、example のトランザクションの中で `SET LOCAL` し、ロールや DB の既定には書かない
+   3. 入口の行列の読み取りの行は、同じ example の中で、設定を外した応答と `on` にした応答の本文が一致することで確かめる。結果の種類（値・空・`null`）だけを比べると、集計を返す入口（`supplier.dashboard`）で scope を外しても種類が変わらないからである。順序の決まらない一覧で誤って落ちないよう、比べる応答の並びが決まることも確かめる
+   4. 2 回目が空振りしないことを確かめるガードの example を置く。設定を `on` にした生 SQL が、他社の行を読めることを確かめる
+   5. `spec/db/tenant_enforcement_spec.rb` に、テナントの表のポリシーの集合が `owner_write` と、読む 3 経路の 6 つの表の `partner_read` だけであることの確かめを足す。いまはどちらの spec も、足したポリシーの消し忘れを捕まえない
+   6. 確かめるのは GraphQL の入口から届く読み取りだけである。GraphQL を通らない公開 API（通知の宛先・取り込みの再登録・単価の移行）は外に残る（OI-118）。完了を、公開 API 全体の所有の条件を確かめ終えたと書かない
+3. 行列の役割の検査を読み取りに広げる（IB-29）：読み取りの行にも許す役割（`role:`）を持たせ、全ペルソナの `member` で呼ぶ。`member` の期待は行ごとに書く（`viewer.auditLogs` は `FORBIDDEN`、`viewer.partnerCode` は `null`）。`viewer.partnerCode` は型のメソッドで書いたフィールドで、いまの列挙（`Viewer` の下のリゾルバ付きのフィールド）に入らないので、列挙に足し、入口の列挙の完全性の確かめと食い違わない形にする。「ほかの行は役割を持たない」の確かめは、全行が役割を持つ形に書き直す
+
+**判断**：scope の抜けを、RLS の SELECT を開いた 2 回目の行列で捕まえるか
+
+- **既定の推奨**：テストの DB にだけ設定の値で開く SELECT のポリシーを足し、入口の行列を 2 回目に流す。入口の行列の期待値と応答をそのまま使うので、入口ごとの example を足さずに全入口に効き、返った値そのものを比べる
+- **比べた案**：公開 API の構文木で、テナントの表を引く呼び出しが scope を通るかを照らす案は、サブクエリで絞る形を追えず外れが多い。テストの間だけアプリのロールに `BYPASSRLS` のロールへの切り替えを許す案は、ロールがクラスタ全体のものなので、開発の DB でもアプリのロールが RLS を外せるようになる
+- **裏返る条件**：作るもの 1 の試作で、ポリシーの足し外しが世界のロックと待ち合うか、2 回目の行列で scope を外した入口が落ちない → 構文木の案に移るか、IB-35 を見送りに戻す
+- **撤退コスト**：小さい。補助と行列の 2 回目を外せば元に戻る。業務のコードと `structure.sql` は変えない
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb   # 0 failures
+for seed in 1 2 3; do bundle exec rspec spec/matrix --order rand --seed $seed || exit 1; done
+bin/check-structure
+```
+
+- scope：受注の一覧（`Sales::SalesOrders.list`）、在庫の一覧、ダッシュボードの 4 つの公開 API のどれか 1 つから、それぞれ scope か所有の条件を外すと、2 回目の入口の行列が落ちる。外さなければ 0 failures（落ちたら、いまの scope の抜けとして直す）
+- ガード：空振りを確かめる example から設定を外すと落ちる。ポリシーを外さずに終えると `tenant_enforcement_spec.rb` が落ちる。足す途中で例外を起こしても、ポリシーが残らない
+- 役割：`Platform::AuditLogPolicy#index?` から `admin?` を外す、`Types::ViewerType#partner_code` の `admin?` を外す、役割を問わない読み取りの規則に `admin?` を足す、のそれぞれで入口の行列が落ちる
+- 行列の 2 ファイルの時間を、変える前と後で証跡に書く（手元）
+
+**範囲外**：GraphQL を通らない公開 API の所有の条件（OI-118）、表の行列（生 SQL で RLS を確かめる。変えない）
+
+**実装する文書の節**：`guides/testing.md`「行列テストとの分担」、`architecture/graphql-schema.md`「役割による制限」
+
+**文書に残すこと**：2 回目の入口の行列と、ポリシーの足し外しを、行列の spec の「別の接続を使わない」の例外として `guides/testing.md`「行列テストとの分担」に書く。読み取りの行の役割を `graphql-schema.md`「役割による制限」の行列の段落に書く。
+
 ## M30 メトリクス
 
 **目的**：GraphQL の操作の時間、キューの滞留と待ち時間、イベントの配送の遅れ、外部の呼び出しの失敗と 429、取り込みの速さを、数値で測れる。メトリクスのラベルに、テナントとユーザーを入れない。
@@ -1302,6 +1353,7 @@ bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.r
 - ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録した名前が、M17 の画面の問い合わせの一覧の操作名と一致することを、テストで確かめる。
 - 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーのプロセスでそれぞれ別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。Puma を複数のプロセスで動かすときは、prometheus-client の `DirectFileStore` を使う。
 - `spec/platform/metrics_subscriber_spec.rb`：構造化イベントごとに、対応するメトリクスが増える。登録していない `operationName` は `other` になる。定義したすべてのメトリクスのラベルに、`tenant`・`user`・`_id` で終わる名前が無い。
+- サイクル 03 の逸脱検査から送った確かめ：mutation の戻り値の null の伝わり方（OI-119）と、`unitPrice` に `bigint` の最大値を超える値を送ったときの結果（OI-121）を request spec で確かめ、決めた側に SDL か実装を合わせる。作者の判断を待つ 2 つ（操作者を取らない公開 API の規則は OI-118、`correctItemPrice` の理由の上限は OI-120）は、決まった形で文書とコードを直す。決まるまでこのマイルストーンを終えない。
 
 **判断**：Yabeda と Prometheus にするか、OpenTelemetry にするか
 
@@ -1383,6 +1435,8 @@ CI にも、`promtool` の 2 つの検査を足す。各手順書の「確かめ
 **目的**：デモを開いた人が、両方の視点と 3 つの読む経路をすぐ見られる。
 
 **作るもの**：`db/seeds.rb`。受注側に青嵐精機工業、発注側に架空の組立メーカー 2 社（全権限の付与あり・失効済み）を作る。factory-ops-demo の品目と得意先を写し、受注・出荷・検収・請求書まで進んだ取引と途中の取引を混ぜる。品目には、単価の改定の予約と訂正を 1 件ずつ含める。取り込みも 1 件（一部の行が失敗したもの）含める。シードは公開 API とイベントを通して作り、表へ直接書かない。
+
+業務の日付をどの時刻帯の今日で決めるか（OI-117）は、シードと画面に出る日付を決めるので、作者の判断を受けてからシードを作る。決めた形にアプリの日付の決め方を合わせる作業も、このマイルストーンに入れる。
 
 **完了条件**：`bin/rails db:reset` が通り、両社のユーザーでログインして `buyer`・`supplier` の主な問い合わせが値を返す。
 

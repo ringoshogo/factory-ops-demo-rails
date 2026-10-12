@@ -498,13 +498,13 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 品目の CSV の取り込み | `startImport`（種類が `items` のとき） | `Imports::ImportPolicy#start?`（対象は取り込みの依頼の値で、置いたファイルと種類を持つ。種類が `items` なら `admin` に限り、`stocks` なら役割を問わない。取り込みのジョブも、チャンクごとに同じ規則を、取り込みを始めたユーザーのいまの役割で評価し直す） |
 | 監査ログを読む | `viewer.auditLogs` | `Platform::AuditLogPolicy#index?` |
 
-規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、`member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`member` に許す mutation は、どのペルソナの `member` にも `admin` と同じ結果になり、値を返さないときは何も書かないことを確かめる。入力で許す役割が変わる mutation は、行列に変種ごとの行（`Mutation.startImport` と `Mutation.startImport#stocks`）を持つ。
+規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。公開 API は役割を確かめないので、GraphQL を通らない入口（ジョブ・rake タスク）から `admin` に限る操作の公開 API を呼ぶ人は、呼ぶ前に同じ規則を評価する。取り込みのジョブが、チャンクごとに `Imports::ImportPolicy#start?` を評価し直してから単価の改定の予約を呼ぶのがその形である。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、`member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`member` に許す mutation は、どのペルソナの `member` にも `admin` と同じ結果になり、値を返さないときは何も書かないことを確かめる。入力で許す役割が変わる mutation は、行列に変種ごとの行（`Mutation.startImport` と `Mutation.startImport#stocks`）を持つ。
 
 自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
 
 ### 監査ログ
 
-監査ログには、相手テナントに効果が及ぶ書き込みを記録する。何がそれに当たるかは `decisions.md` 2 章「監査」にある。本デモで書き込みが起きる入口は mutation とイベントのジョブの 2 つだけなので、記録はその 2 つの基底クラスが行い、個々の操作で手書きしない。
+監査ログには、相手テナントに効果が及ぶ書き込みを記録する。何がそれに当たるかは `decisions.md` 2 章「監査」にある。本デモで書き込みが起きる入口は、mutation・イベントのジョブ・取り込みのジョブの 3 つである。記録は mutation とイベントのジョブの基底クラスが行い、個々の操作で手書きしない。取り込みのジョブは、相手に見えるカタログを書くが記録しない。取り込みを始めた `startImport` の監査の行が、誰がいつどのファイルを取り込んだかを残し、反映はその取り込みの結果として `supplier.import` で読めるからである。
 
 mutation の実装者は、認可の宣言と並べて、監査の宣言を必ず書く。宣言は次の 2 つのどちらかで、宣言が無ければ認可の宣言と同じく、開発とテストでは例外、本番では拒否する。
 

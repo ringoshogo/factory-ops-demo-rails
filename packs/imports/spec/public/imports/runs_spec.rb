@@ -132,7 +132,7 @@ RSpec.describe Imports::Runs do
   end
 end
 
-# 取り込むファイルを置く（POST /imports/files の公開 API）。大きさの上限は、上限ちょうどと上限 + 1 を仕様の値で書く（IB-25）
+# 取り込むファイルを置く（POST /imports/files の公開 API）。大きさの上限は、上限ちょうどと上限 + 1 を仕様の値で書く。定数から値を作ると、定数を誤って変えても通るからである
 RSpec.describe Imports::Files, ".store" do
   let(:tenant) { FactoryBot.create(:tenant).id }
   let(:actor) do

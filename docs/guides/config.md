@@ -236,7 +236,7 @@ grep <相関 ID> log/events.log
 
 ## 環境ごとの設定
 
-`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）を消したほかは生成のままである。本デモの読み方で知っておくとよいのは次の 2 つ。
+`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）と、通知のメールの送信先（`config.x.notifications.*`。[ジョブ](#ジョブ)）を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）と、本番の SMTP の生成時のコメントを消したほかは生成のままである。本番のメールは SMTP ではなく SendGrid の API へ送るからである。本デモの読み方で知っておくとよいのは次の 2 つ。
 
 - **`test.rb` の `eager_load = ENV["CI"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。
 - **`production.rb` に Solid Queue の `connects_to` が無い**：[ジョブ](#ジョブ) のとおり、意図して書いていない。
@@ -258,7 +258,7 @@ grep <相関 ID> log/events.log
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 
-ワークフローのステップと契機ごとの `BASE_REF` の式、`config/ci.rb` の工程は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
+ワークフローが流す `bin/` のコマンドの名前は、`config/ci.rb` の工程と `implementation-plan.md`「共通の完了条件」の一覧にもあることを `spec/platform/ci_checks_spec.rb` が確かめる。実装者は完了条件の一覧のとおりに手元で流すので、一覧に無い検査は CI で初めて落ちるからである。ステップの順と契機ごとの `BASE_REF` の式、コマンドの引数は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
 
 ## 使っていない機能の設定
 

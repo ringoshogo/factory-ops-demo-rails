@@ -42,7 +42,7 @@ RSpec.describe "取り込み", type: :request do
       expect(Tenancy.with_tenant(supplier.id) { ApplicationRecord.connection.select_value("SELECT count(*) FROM imports") }).to eq(0)
     end
 
-    # 上限は仕様の値で書く（IB-25）
+    # 上限は仕様の値で書く。定数から値を作ると、定数を誤って変えても通るからである
     it "10 MB ちょうどのファイルを受け付け、10 MB + 1 バイトのファイルを 413 で拒んで置かない" do
       upload("a" * 10_485_760)
       expect(response).to have_http_status(:created)

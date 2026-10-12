@@ -262,7 +262,7 @@ RSpec.describe Imports::RunJob do
       expect(on_hand(%w[A B])).to eq([ 5, 7 ])
     end
 
-    # 上限は列の型（数量は integer、単価は bigint）の最大値。上限ちょうどと上限 + 1 を仕様の値で書く（IB-25）
+    # 上限は列の型（数量は integer、単価は bigint）の最大値。上限ちょうどと上限 + 1 を仕様の値で書く。定数から値を作ると、定数を誤って変えても通るからである
     it "数量は 2147483647 まで、単価は 9223372036854775807 までを反映し、1 大きい値の行を失敗にする" do
       tenancy { %w[A B].each { FactoryBot.create(:item, code: _1) } }
       stocks = start("stocks", stocks_csv("A,2147483647", "B,2147483648"))

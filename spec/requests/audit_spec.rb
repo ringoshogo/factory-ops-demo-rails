@@ -144,7 +144,7 @@ RSpec.describe "監査ログの記録", type: :request do
     expect(event_job_count).to eq(0)
   end
 
-  # 要求の外でスキーマを流すと、相関 ID の文脈が無い（OI-42）
+  # 要求の外でスキーマを流すと、相関 ID の文脈が無い
   it "相関 ID の無い文脈で audit の mutation を流すと、監査の行の INSERT が失敗し、業務の行もイベントのジョブも残らない" do
     actor = Tenancy.with_tenant(buyer.id) { Partnerships::Authentication.actor(buyer_member.id, session_version: buyer_member.session_version) }
     Rails.event.clear_context
