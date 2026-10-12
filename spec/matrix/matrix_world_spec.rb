@@ -22,11 +22,15 @@ RSpec.describe MatrixWorld do
 
   def tenant_setting = connection.select_value("SELECT current_setting('app.tenant_id', true)")
 
+  def cross_read_policies
+    connection.select_value("SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND policyname = 'matrix_cross_read'")
+  end
+
   # 行列の spec と同じ形の内側の example group を走らせ、example の結果を返す。
   # 実行の絞り込み（-e など）と --order rand を内側に掛けず、書いた順に走らせる
-  def run_inner_group(&body)
+  def run_inner_group(cross_read: false, &body)
     group = RSpec.describe("内側の行列", order: :defined) do
-      MatrixWorld.share_per_file(self)
+      MatrixWorld.share_per_file(self, cross_read:)
       instance_exec(&body)
     end
     RSpec.world.example_groups.delete(group)
@@ -119,5 +123,109 @@ RSpec.describe MatrixWorld do
     expect(count_tenants(created)).to eq(0)
     expect(connection.transaction_open?).to be(false)
     expect(tenant_setting).to be_blank
+  end
+
+  describe "RLS の SELECT を開く補助（cross_read: true）" do
+    # ダッシュボードの 4 つの集計。どれも自社の行を数える公開 API で、scope を外すと他社の行も数える
+    def dashboard(world)
+      actor = Partnerships::Actor.new(user_id: nil, tenant_id: world.tenants[:supplier], name: "", email: "", role: "admin",
+        partner_code: "")
+      world.as(:supplier) do
+        { sales_order_counts: Sales::SalesOrders.count_by_status(actor),
+          stocks_below_safety_stock: Inventory::Stocks.below_safety_stock(actor).size,
+          shipment_requests_due_soon: Fulfillment::ShipmentRequests.due_within(actor, today: Date.current, days: 7).size,
+          unbilled_total: Billing::BillableItems.unbilled_total(actor) }
+      end
+    end
+
+    # 4 つの公開 API の scope を、絞らない relation に差し替える
+    def remove_dashboard_scopes
+      allow(Sales::Scope).to receive(:sales_orders) { Sales::SalesOrder.all }
+      allow(Inventory::Scope).to receive(:call) { |_actor, relation| relation }
+      allow(Fulfillment::Scope).to receive(:call) { |_actor, relation| relation }
+      allow(Billing::Scope).to receive(:call) { |_actor, relation| relation }
+    end
+
+    # 2 回目の入口の行列が空振りしないことのガード。設定を on にした応答が他社の行を含まなければ、
+    # scope を外しても 2 回目は 1 回目と同じ応答になり、何も捕まえない
+    it "世界の間だけポリシーがあり、設定を on にした生 SQL は全ペルソナの行を読み、scope を外した集計は他社の行で変わる" do
+      seen = {}
+      spec = self
+      results = run_inner_group(cross_read: true) do
+        it "設定を on にした生 SQL は、どの表でも全ペルソナの行を読む" do
+          connection = ActiveRecord::Base.lease_connection
+          seen[:policies] = connection.select_value("SELECT count(*) FROM pg_policies WHERE policyname = 'matrix_cross_read'")
+          owners = lambda do
+            world.as(:supplier) do
+              MatrixWorld.tenant_tables.index_with do |table|
+                connection.select_values("SELECT DISTINCT owner_tenant_id FROM #{connection.quote_table_name(table)}")
+                  .filter_map { world.persona_of(_1) if world.tenants.value?(_1) }.sort
+              end
+            end
+          end
+          closed = owners.call
+          expect(closed["sales_orders"]).to eq([ :supplier ])
+
+          MatrixCrossRead.on!
+          expect(owners.call).to eq(MatrixWorld.tenant_tables.index_with { MatrixWorld::PERSONAS.sort })
+        end
+
+        it "設定を on にしてダッシュボードの 4 つの公開 API から scope を外すと、各集計が他社の行で変わる" do
+          scoped = spec.dashboard(world)
+          spec.remove_dashboard_scopes
+          expect(spec.dashboard(world)).to eq(scoped)
+
+          MatrixCrossRead.on!
+          unscoped = spec.dashboard(world)
+          expect(unscoped.keys.select { unscoped[_1] == scoped[_1] }).to be_empty
+          expect(unscoped[:sales_order_counts].values.sum).to be > scoped[:sales_order_counts].values.sum
+          expect(unscoped[:stocks_below_safety_stock]).to be > scoped[:stocks_below_safety_stock]
+          expect(unscoped[:shipment_requests_due_soon]).to be > scoped[:shipment_requests_due_soon]
+          expect(unscoped[:unbilled_total]).to be > scoped[:unbilled_total]
+        end
+      end
+
+      expect(results).to eq([ [ :passed, nil ], [ :passed, nil ] ])
+      expect(seen[:policies]).to eq(MatrixWorld.tenant_tables.size)
+      expect(cross_read_policies).to eq(0)
+    end
+
+    it "足す途中で失敗すると、足した分を残さずに送出する" do
+      owner = OwnerConnection.connection_pool.lease_connection
+      created = 0
+      allow(owner).to receive(:execute).and_wrap_original do |original, sql, *rest|
+        if sql.include?("CREATE POLICY")
+          raise ActiveRecord::StatementInvalid, "3 つ目の表で失敗" if created == 2
+
+          created += 1
+        end
+        original.call(sql, *rest)
+      end
+
+      expect { MatrixCrossRead.add! }.to raise_error(ActiveRecord::StatementInvalid, "3 つ目の表で失敗")
+      expect(created).to eq(2)
+      expect(cross_read_policies).to eq(0)
+    ensure
+      OwnerConnection.connection_pool.release_connection
+    end
+
+    it "世界を開く途中で失敗すると、足したポリシーを外して送出する" do
+      allow(MatrixWorld).to receive(:open).and_raise(ActiveRecord::ConnectionTimeoutError, "世界を開けない")
+
+      results = run_inner_group(cross_read: true) { it("走らない") { nil } }
+
+      expect(results.first.last).to include("世界を開けない")
+      expect(cross_read_policies).to eq(0)
+    end
+
+    it "接続先の名前がテストの DB でなければ、ポリシーを足さずに失敗する" do
+      owner = OwnerConnection.connection_pool.lease_connection
+      allow(owner).to receive(:current_database).and_return("factory_ops_demo_rails_development")
+
+      expect { MatrixCrossRead.add! }.to raise_error(/テストの DB ではない factory_ops_demo_rails_development/)
+      expect(cross_read_policies).to eq(0)
+    ensure
+      OwnerConnection.connection_pool.release_connection
+    end
   end
 end

@@ -70,6 +70,19 @@ RSpec.describe "テナントの強制" do
     expect(tenant_tables.index_with { |table| policies[table] }).to eq(tenant_tables.index_with { expected })
   end
 
+  # 行列の spec が足して外すポリシー（spec/support/matrix_cross_read.rb）の消し忘れも、ここで落ちる。
+  # 残ると、設定の値ひとつでアプリのロールが全テナントの行を読める
+  it "テナントの表のポリシーは、owner_write と、相手が読む経路の 6 つの表の partner_read だけである" do
+    policies = connection.select_rows(<<~SQL).group_by(&:first).transform_values { |rows| rows.map(&:last).sort }
+      SELECT tablename::text, policyname::text FROM pg_policies
+      WHERE schemaname = 'public' AND tablename IN (#{tenant_tables.map { |table| connection.quote(table) }.join(", ")})
+    SQL
+    partner_read = %w[item_prices items partnership_grants partnerships shipment_lines shipments]
+    expected = tenant_tables.index_with { |table| partner_read.include?(table) ? %w[owner_write partner_read] : %w[owner_write] }
+
+    expect(policies).to eq(expected)
+  end
+
   it "テナントの表はすべて、子の複合外部キーが参照する UNIQUE (owner_tenant_id, id) を持つ" do
     with_unique = connection.select_values(<<~SQL)
       SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid

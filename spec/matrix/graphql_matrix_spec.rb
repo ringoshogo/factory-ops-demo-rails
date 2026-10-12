@@ -4,11 +4,13 @@ require_relative "graphql_expectations"
 
 # 入口のフィールドと mutation ごとに、ペルソナとしてログインして実行し、結果の種類を確かめる
 # （docs/architecture/context-map.md「テナントと所有」、docs/architecture/graphql-schema.md「エラー」）。
-# mutation は member でも呼ぶ。admin に限る mutation は、値を返すペルソナの member に FORBIDDEN になって何も書かないことを、
-# member に許す mutation は、どのペルソナの member にも admin と同じ結果になり、値を返さないときは何も書かないことを確かめる
+# 読み取りは RLS の SELECT を開いて送り直し、応答が変わらないことで scope を確かめる（docs/guides/testing.md「行列テストとの分担」）。
+# どの行も member でも呼ぶ。admin に限る mutation は、値を返すペルソナの member に FORBIDDEN になって何も書かないことを、
+# admin に限る読み取りは、どのペルソナの member にも行に書いた結果（FORBIDDEN か null）になることを、
+# member に許す行は、どのペルソナの member にも admin と同じ結果になり、mutation が値を返さないときは何も書かないことを確かめる
 # （docs/architecture/graphql-schema.md「役割による制限」）
 RSpec.describe "入口の行列", type: :request do
-  MatrixWorld.share_per_file(self)
+  MatrixWorld.share_per_file(self, cross_read: true)
 
   ROOTS = %w[BuyerView SupplierView Query Mutation].freeze
   ROLES = %i[admin member].freeze
@@ -23,13 +25,15 @@ RSpec.describe "入口の行列", type: :request do
     type.try(:cross_tenant_read).present?
   end
 
-  # 視点の入口と Mutation のフィールド、Viewer の下のリゾルバ、入口の下で相手側の型を返すフィールド（読む経路）。
-  # 視点の入口そのもの（Query.buyer・Query.supplier）は、データを持たないので除く
+  # 視点の入口と Mutation のフィールド、Viewer の下のリゾルバと型のメソッドで書いたフィールド、
+  # 入口の下で相手側の型を返すフィールド（読む経路）。視点の入口そのもの（Query.buyer・Query.supplier）は、データを持たないので除く。
+  # Viewer の型のメソッドは、役割で値を変えるフィールド（partnerCode）を書く場所なので、役割の検査の行に入れる
   def schema_entries
     root_fields = ROOTS.filter_map { |name| FactoryOpsSchema.get_type(name) }.flat_map do |type|
       type.fields.values.reject { |field| field.type.unwrap.graphql_name.in?(%w[BuyerView SupplierView]) }
     end
-    viewer_fields = FactoryOpsSchema.get_type("Viewer").fields.values.select(&:resolver)
+    viewer = FactoryOpsSchema.get_type("Viewer")
+    viewer_fields = viewer.fields.values.select { |field| field.resolver || viewer.method_defined?(field.method_sym, false) }
     nested_fields = FactoryOpsSchema.types.values
       .select { |type| type.kind.object? && type < Types::BaseObject && !type.graphql_name.in?(ROOTS) }
       .reject { |type| type < Types::BaseConnection || type < Types::BaseEdge }
@@ -85,12 +89,15 @@ RSpec.describe "入口の行列", type: :request do
     end
   end
 
-  it "mutation の行はすべて、許す役割を持つ。ほかの行は役割を持たない" do
+  # admin に限る読み取りは、member に返す結果（FORBIDDEN か null）を member: に書く。ほかの行の member の結果は、
+  # admin に限る mutation なら FORBIDDEN、member に許す行なら admin と同じなので書かない
+  it "行はすべて許す役割を持ち、admin に限る読み取りの行だけが member の結果を持つ" do
     MatrixExpectations::GRAPHQL.each do |key, entry|
-      if key.start_with?("Mutation.")
-        expect(ROLES).to include(entry[:role]), "#{key} に role: :admin か role: :member を書く"
+      expect(ROLES).to include(entry[:role]), "#{key} に role: :admin か role: :member を書く"
+      if entry[:role] == :admin && !key.start_with?("Mutation.")
+        expect(MatrixExpectations::OUTCOMES).to include(entry[:member]), "#{key} に member: を書く"
       else
-        expect(entry).not_to have_key(:role), key
+        expect(entry).not_to have_key(:member), key
       end
     end
   end
@@ -102,22 +109,54 @@ RSpec.describe "入口の行列", type: :request do
     end
   end
 
+  # 一覧の並びを無視して比べるための形。並びだけが違うときに、scope の抜けと区別して失敗させる
+  def sorted_deep(value)
+    case value
+    when Array then value.map { sorted_deep(_1) }.sort_by(&:to_json)
+    when Hash then value.transform_values { sorted_deep(_1) }
+    else value
+    end
+  end
+
   MatrixExpectations::GRAPHQL.each do |key, entry|
     type_name, field_name = field_key(key).split(".")
+    read = type_name != "Mutation"
 
     describe key do
       MatrixWorld::PERSONAS.each do |persona|
-        it "#{persona} には #{entry[:expect][persona]}" do
+        # 読み取りは、同じ要求を RLS の SELECT を開いて送り直し、本文が変わらないことも確かめる（docs/guides/testing.md
+        # 「行列テストとの分担」）。RLS が他社の行を隠すので、scope を外した公開 API は 1 回目の応答では見分けられない。
+        # 結果の種類だけを比べると、集計を返す入口は scope を外しても種類が変わらないので、本文を比べる
+        it "#{persona} には #{entry[:expect][persona]}#{'で、RLS の SELECT を開いても同じ応答' if read}" do
+          variables = entry[:variables]&.call(world) || {}
           login_as(world.users[persona])
-          post "/graphql", params: { query: entry[:query], variables: entry[:variables]&.call(world) || {} }, as: :json
+          post "/graphql", params: { query: entry[:query], variables: }, as: :json
 
           expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(entry[:expect][persona])
+          next unless read
+
+          body = response.parsed_body
+          MatrixCrossRead.on!
+          post "/graphql", params: { query: entry[:query], variables: }, as: :json
+          crossed = response.parsed_body
+
+          expect(sorted_deep(crossed)).to eq(sorted_deep(body)), "RLS の SELECT を開くと応答が変わった。scope の抜けを疑う"
+          expect(crossed).to eq(body), "一覧の並びだけが変わった。並びの決まらない一覧とは比べられない"
         end
       end
 
       entry[:expect].each do |persona, result|
         case entry[:role]
         when :admin
+          if read
+            it "#{persona} の member には #{entry[:member]}" do
+              login_as(world.members[persona])
+              post "/graphql", params: { query: entry[:query], variables: entry[:variables]&.call(world) || {} }, as: :json
+
+              expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(entry[:member])
+            end
+            next
+          end
           next unless result == :value
 
           it "#{persona} の member には forbidden で、そのテナントの表に何も書かない" do
@@ -131,14 +170,14 @@ RSpec.describe "入口の行列", type: :request do
           end
         when :member
           # 値を返さない結果では、member の要求も何も書かない。saveItem で既存の品目の単価を変えられないことは、ここで確かめる
-          it "#{persona} の member にも #{result}#{'で、そのテナントの表に何も書かない' unless result == :value}" do
+          it "#{persona} の member にも #{result}#{'で、そのテナントの表に何も書かない' unless result == :value || read}" do
             variables = entry[:variables]&.call(world) || {}
-            before = owned_rows(persona)
+            before = owned_rows(persona) unless read
             login_as(world.members[persona])
             post "/graphql", params: { query: entry[:query], variables: }, as: :json
 
             expect(outcome(response.parsed_body, [ *parent_paths.fetch(type_name), field_name ])).to eq(result)
-            expect(owned_rows(persona)).to eq(before) unless result == :value
+            expect(owned_rows(persona)).to eq(before) unless result == :value || read
           end
         end
       end
