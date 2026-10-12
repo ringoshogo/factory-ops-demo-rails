@@ -2,7 +2,7 @@
 
 サイクル 04（M37・M30・M31・M32）の実装で分かったことのうち、正本に無いものを正本へ書いた記録である。手順は `guides/cycle-end.md`「2. 知見の収穫」にある。逸脱検査（`conformance.md`）は、ここで足した正本を含めて成果物と突き合わせる。再発防止（`recurrence.md`）は、ここにある知見を 2 度書かない。
 
-読んだものは、サイクルの diff（`git diff 4083904..d6adfa0`）、振り返りの想定外（`retrospective.md`）、台帳の `judgment` の行（OI-122〜OI-141）と改善の候補（IB-50〜IB-63）、実装レビューの証跡の「実装の記録」、正本（`architecture/`・`adr/`・`guides/`・`README.md`「開発環境」）と `showcase.md` である。diff の層ごとの読み取りは、取りまとめ役とも実装者とも別の Claude のサブエージェントに `d6adfa0` の版で頼み、結果をファイルと行で確かめてから書いた。`lib/` が packwerk の検査に掛かることは、`lib/` に他のパッケージの非公開の定数を参照するファイルを一時に置き、`bin/packwerk check` が 1 件を出すことで確かめた。マイルストーンの中で正本に書き足した分（`config.md`「メトリクス」「メンテナンスの切り替え」、`graphql-schema.md`「エラー」と操作者のいない入口の規則と「監査ログ」、`data-model.md` の在庫と取り込みの後始末と `tenants` の入口、`testing.md`「行列テストとの分担」、`adr/005` 決定 6、`README.md`「開発環境」、`slo.md`、`runbooks/`）は済んでいるので、ここではその漏れを拾った。
+読んだものは、サイクルの diff（`git diff c06cd1f..d6adfa0`）、振り返りの想定外（`retrospective.md`）、台帳の `judgment` の行（OI-122〜OI-141）と改善の候補（IB-50〜IB-63）、実装レビューの証跡の「実装の記録」、正本（`architecture/`・`adr/`・`guides/`・`README.md`「開発環境」）と `showcase.md` である。diff の層ごとの読み取りは、取りまとめ役とも実装者とも別の Claude のサブエージェントに `d6adfa0` の版で頼み、結果をファイルと行で確かめてから書いた。`lib/` が packwerk の検査に掛かることは、`lib/` に他のパッケージの非公開の定数を参照するファイルを一時に置き、`bin/packwerk check` が 1 件を出すことで確かめた。マイルストーンの中で正本に書き足した分（`config.md`「メトリクス」「メンテナンスの切り替え」、`graphql-schema.md`「エラー」と操作者のいない入口の規則と「監査ログ」、`data-model.md` の在庫と取り込みの後始末と `tenants` の入口、`testing.md`「行列テストとの分担」、`adr/005` 決定 6、`README.md`「開発環境」、`slo.md`、`runbooks/`）は済んでいるので、ここではその漏れを拾った。
 
 ## 正本に書いた項目
 
