@@ -6,6 +6,10 @@ module MatrixExpectations
   # アプリのロールに UPDATE・DELETE の権限が無い表。相手の行にも自社の行にも、書き換えは権限で拒まれる
   APPEND_ONLY = %w[audit_logs].freeze
 
+  # 行の書き換えをトリガーが拒む表 => そのエラーの文。自社の行を相手の名義へ書き換える UPDATE は、RLS の WITH CHECK より先に
+  # BEFORE のトリガーが拒む
+  REWRITE_REJECTED_BY_TRIGGER = { "item_prices" => /単価の行は、現在の行の記録期間を閉じる以外に変えられない/ }.freeze
+
   # 表 => { 読むペルソナ => { 所有者のペルソナ => 見える件数 } }。自社の行は常に読めるので書かない。
   # 所有者以外に見せるのは読む 3 経路の表だけ（docs/architecture/context-map.md「テナントと所有」）
   TABLES = {
@@ -13,6 +17,12 @@ module MatrixExpectations
     # 経路 1。有効な取引関係の発注側に公開品目だけが見え、失効すると閉じる。
     # view_catalog の付与はアプリの policy scope が判定するので、付与の無い発注側にも RLS は見せる
     "items" => {
+      granted_buyer: { supplier: 1 },
+      ungranted_buyer: { supplier: 1 }
+    },
+    # 経路 1。品目が見える発注側に、その品目の現在の行だけが見える。今日の行に絞るのは公開 API が受け持つ。
+    # supplier の公開品目の行は 1 つで、表ごとの行の単価の行は非公開の品目のもの
+    "item_prices" => {
       granted_buyer: { supplier: 1 },
       ungranted_buyer: { supplier: 1 }
     },

@@ -64,6 +64,8 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     "Sales::CancellationReviews.decide" => {
       spec: "packs/sales/spec/concurrency/sales/cancellation_reviews_lock_spec.rb", mentions: %w[.approve .reject]
     },
+    "Sales::ItemPrices.schedule" => { spec: "packs/sales/spec/concurrency/sales/item_prices_lock_spec.rb" },
+    "Sales::ItemPrices.correct" => { spec: "packs/sales/spec/concurrency/sales/item_prices_lock_spec.rb" },
     "Sales::Catalog.save" => { reason: "自社の品目だけを書き、相手のイベントと競わない。同じコードの重複は一意索引が守る" },
     "Sales::Catalog.set_published" => { reason: "自社の品目の公開の状態だけを書き、最後の書き込みが残ってよい" },
     "Sales::FulfillmentEventReceiver.ship" => {

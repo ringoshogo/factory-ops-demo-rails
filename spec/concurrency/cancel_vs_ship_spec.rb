@@ -37,7 +37,7 @@ RSpec.describe "取消と出荷の計上の競合" do
   after do
     delete_owned_rows([ supplier.id, buyer.id ], %w[
       shipment_lines shipments shipping_instructions shipping_holds shipment_request_lines shipment_requests
-      stock_movements allocations stocks cancellation_reviews sales_order_lines sales_orders items
+      stock_movements allocations stocks cancellation_reviews sales_order_lines sales_orders item_prices items
     ])
   end
 

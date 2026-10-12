@@ -395,3 +395,86 @@ CI の test のジョブ（Run tests の時間は括弧の中）：
 ### 残件の処理
 
 OI-15 は、SendGrid の文書と sendgrid-ruby で確かめて `adr/007`「確認した事項」に移し、閉じた（`closed`）。OI-83 は、決めた宛先（自社の `admin`）のとおりに実装し、judgment のまま残した。
+
+## M27 販売単価のバイテンポラル履歴
+
+PR #46（`m27-item-prices`、base は `main`）。M28 の上に積んだので、#42〜#45 の commit も差分に見える。着手の前に、作者が OI-89 を案 B に決めた（2026-10-12）。既存の品目の単価を変える入口を `scheduleItemPrice`・`correctItemPrice` だけにし、`saveItem` からは役割を問わず変えられない。どちらの系統も Go で、Critical と High は無かった。Medium と Low は同じブランチの commit で直し、違和感は改善の候補に移すか文書を直した。High 以上が無いので、読み直しには出していない。どちらの系統も、`ca402a1..cb9aa8a` の diff を `cb9aa8a` の版で読んだ。Codex は read-only で読み、テストを流さず、依頼に書いた実行結果を前提にした。Claude は `cb9aa8a` の worktree を別名のテスト DB で流し、完了条件の spec に `spec/concurrency/concurrency_helpers_spec.rb` を足して 1202 examples, 0 failures を確かめた（worktree と DB は消した）。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘（F1・F2） | 指摘（C-1・C-3） |
+| 境界と規約 | 指摘（F1・F2） | 指摘なし |
+| テストの検出力 | 指摘（F1） | 指摘（C-1・C-4） |
+| 参照の維持 | 指摘（F3） | 指摘（C-2） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | F1：トリガーが記録期間の下限の値だけを比べ、端の含み方を見ないので、`[t0,)` を `(t0,t1)` や `[t0,t1]` に変えて閉じる UPDATE と、始まりを含まない行の INSERT が通る | 記録期間を `lower_inc AND NOT upper_inc` の CHECK 制約で限った。端の含み方を変える UPDATE 3 つと始まりを含まない INSERT を拒む example と、訂正の時刻ちょうどの記録時点で訂正の後の行だけを返す example を足した。制約を外すと前者が落ちる。`adr/006` 決定 2 と data-model.md に書いた | `7477684`・`00f92ec` |
+| Medium | Claude | C-1：`saveItem` が新しい品目の最初の単価の行に操作者を書かない | `recorded_by_user_id` に操作者を渡し、`catalog_spec.rb` で確かめた。渡さないと落ちる | `7477684` |
+| Low | Codex・Claude | F2・C-4：列を消すマイグレーションの down が SQL の `CURRENT_DATE` を使う。止まる条件と down は手で確かめただけで spec が無い | down の今日を `Date.current` にした。移行の spec に、移行の前には止まり、移行の後に通り、巻き戻すと今日の単価を列に戻す example を足した。残りの確かめを外すか、down が単価を戻さないと落ちる | `7477684` |
+| Low | Codex・Claude | F3・C-2：graphql-schema.md の行列の説明が「値を返すペルソナの member」のまま。`Item.unitPrice` の出どころが `price_at` と書かれているが、実装は使っていない。`adr/006` 決定 7 の今日の行に絞る場所が policy scope のまま | 行列の説明を OI-107 の形に直した。カタログの今日の単価を `Sales::ItemPrices.price_at` で引く形にし、読み取りの一覧にそう書いた。決定 7 と data-model.md を `Sales::PublishedCatalog` に揃えた | `7477684`・`00f92ec` |
+| Low | Claude | C-3：アプリの時計が閉じる行の記録の始まりより前に戻ると、範囲の構築かトリガーで内部エラーになることが文書に無い | `adr/006` 決定 3 に、操作が例外で失敗して何も書かないと書いた。`CONFLICT` には変えていない | `00f92ec` |
+
+違和感は次のように扱った。
+
+- Claude 1：`items.unit_price` を消すときのデプロイの順が、計画の節と OI-106 にしか無い → IB-42 に積んだ
+- Claude 2：今日からの改定は、同じ日に受けた受注の `unitPriceNow` を新しい単価にし、説明の上は食い違いに見える → IB-43 に積んだ
+- Claude 3：`Scope.item_prices` は所有の条件だけで絞り、品目の可視性を見ない → 移さない。単価の表に渡せる scope の名前は `:own` だけで、品目の列（`published`）を使う `:published_catalog` を渡すと SQL のエラーになり、黙って広がらない
+- Codex：なし
+
+### 実装の記録
+
+単体（`item_prices_spec.rb`）・移行（`item_prices_backfill_spec.rb`）・DB（`item_prices_constraints_spec.rb`）の 3 つの spec は、マイグレーションと実装の前に流して、`uninitialized constant Sales::ItemPrices` で読み込みに失敗した。request spec（`spec/requests/item_prices_spec.rb`）は、GraphQL の型と mutation とカタログを M28 の版に戻して流すと 9 examples, 9 failures だった。そのほかの spec は書いた時点で通ったので、検出力は壊して確かめた。壊したファイルは複製から戻して更新時刻を進め、DB の制約はテストの DB を所有ロールで変えてから `bin/rails db:test:prepare` で戻した。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 予約と訂正 | 予約が品目をロックしない・訂正がロックの後に行を読み直さない、のどちらでも競合テストが落ちる。同じ単価でも行を分ける・改定日と同じ始まりの行にも前の行を足す・過去の改定日を拒まない・理由の空を拒まない、のどれでも単体が落ちる |
+| 単価を引く | 記録時点を見ない・説明の発行の時点にいまの行を使う、のどちらでも単体と request spec が落ちる。発注側のカタログが今日の行に絞らないと request spec が、照合のやり直しが今日の単価を写すと `part_mappings_spec.rb` が落ちる |
+| saveItem | 既存の品目の単価を確かめない・品目を書いてから単価を確かめる・新しい品目に単価の行を足さない・最初の単価の行に操作者を書かない、のどれでも落ちる。品目を書いてから確かめると、入口の行列の member の example が「何も書かない」で落ちる |
+| 規則 | `change_price?` が `admin` を確かめないと、行列と request spec が落ちる |
+| 移行 | 行のある品目を飛ばさないと移行の spec が落ちる。列を消すマイグレーションが残りを確かめない・down が単価を戻さない、のどちらでも落ちる。品目のテナントで絞らないことは落ちない。テナントの中では RLS が同じ条件を持つからで、所有の条件を明示する規約として残した |
+| DB | テストの DB でトリガーを外すと `item_prices_constraints_spec.rb` が 4 件、排他制約を外すと 1 件、記録期間の端の CHECK 制約を外すと 1 件落ちる。`partner_read` を外すと表の行列が 2 件落ちる。`partner_read` から `upper_inf` を外しても表の行列は落ちない（世界の公開品目は閉じた行を持たない）ので、`item_prices_rls_spec.rb` を足した。外すとこれが落ちる |
+| テストの基盤 | 競合テストの後始末が単価の行のトリガーを止めないと、`concurrency_helpers_spec.rb` の足した example が落ちる。移行の spec が足し直した列を消し忘れると、ファイルの終わりの `after(:context)` が落ちる |
+
+計画からの細部の決定は台帳に積んだ。`saveItem` の同じ単価を無視することを OI-103、記録の時刻をロックの後のアプリの時刻にしたことを OI-104、有効日の今日を受注日と同じ `Date.current` にしたことを OI-105（業務の日付を日本時間に揃えるかは IB-41）、列を消すマイグレーションと移行の spec の形を OI-106、入口の行列の広げ方を OI-107、予約の何も書かない範囲と記録時点の既定を OI-108 に、judgment で積んだ。
+
+計画の「移行のタスク → 列を消すマイグレーション」は、開発の DB で確かめた。移行の前の形の品目と照合済みの明細を作ると、列を消すマイグレーションが「現在の単価の行が無い品目か、priced_on の無い照合済みの明細が 2 件ある。先に bin/rails sales:backfill_item_prices を流す」で止まり、タスクが品目 1 件と明細 1 件を写した後に通った。タスクを 2 回目に流すと 0 件で、巻き戻すと `items.unit_price` に今日の単価（250）が戻った。
+
+### 確かめたこと
+
+`00f92ec` で、Ruby 3.4.11 で共通の完了条件と M27 の完了条件を流した。
+
+```sh
+bundle exec rspec packs/sales/spec spec/matrix spec/requests/item_prices_spec.rb   # 1196 examples, 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 2147 examples, 0 failures
+BASE_REF=origin/main bin/check-branch-coverage # 4 件（下に書く）
+bundle exec rspec --tag concurrency            # 2 回続けて 56 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk validate && bin/packwerk check    # 違反なし
+bin/check-structure                            # 終了コード 0
+bin/check-schema-compat                        # 終了コード 0（非破壊の変更だけ）
+bin/check-open-items --due M27                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし。単体 422・結合 182・シナリオ 94
+```
+
+分岐の網羅率の警告は、M27 の差分では最初の全件（`3f60248` の前の作業ツリー）で 2 件出て、example を足した件数は 1 件である。`ItemPrice#close!` の閉じた行の腕に example を足した。`BillableItemType#price_explanation` の請求書が見えない腕は、請求対象明細が見えれば結んだ請求書も見えるので届かず、`&.` ごと消した。残る 4 件は M28 の `external_effect_job.rb` の TracePoint のコールバックの中の行である（「M28」の節）。
+
+行列の時間（手元）：`bundle exec rspec spec/matrix` は 1052 examples、13.5 秒（M28 の後は 988 examples、12.3 秒）。足した 64 examples は、`item_prices` の表の行と、2 つの mutation の行と、`member` に許す mutation を全ペルソナの `member` で呼ぶ行である。
+
+CI の test のジョブ（Run tests の時間は括弧の中）：
+
+| | 時間 |
+|---|---|
+| #46 の 1 回目（`cb9aa8a`） | 2 分 58 秒（2 分 6 秒） |
+| #46 の 2 回目（`00f92ec`、レビューの指摘を直した後） | 3 分 16 秒（2 分 19 秒） |
+
+### 残件の処理
+
+OI-89 は作者の判断（案 B）で閉じた（`decided`）。OI-80 は、作者の判断のとおり `scheduleItemPrice`・`correctItemPrice` を `admin` に限って実装した（`Sales::ItemPolicy#change_price?`）。引当先が M27 の `open` と `blocked-user` は残っていない。

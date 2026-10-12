@@ -7,12 +7,13 @@ module ConcurrencyHelpers
   # 監査の行と、監査の行が指しうる行の表。監査の行は消せず、指す先も消さない
   KEPT_TABLES = %w[tenants users audit_logs].freeze
 
-  # 確定した請求書と、それに結んだ集計と明細の書き換えを、所有ロールの接続でも拒むトリガー。表 => トリガーの名前
-  # （docs/architecture/data-model.md「請求（`billing`）」）
+  # 所有ロールの接続でも行の削除を拒むトリガー。表 => トリガーの名前。確定した請求書と、それに結んだ集計と明細
+  # （docs/architecture/data-model.md「請求（`billing`）」）と、単価の行（docs/adr/006 決定 3）
   IMMUTABLE_TRIGGERS = {
     "invoices" => "invoices_issued_immutable",
     "invoice_tax_summaries" => "invoice_tax_summaries_issued_immutable",
-    "billable_items" => "billable_items_issued_immutable"
+    "billable_items" => "billable_items_issued_immutable",
+    "item_prices" => "item_prices_immutable"
   }.freeze
 
   # スレッドの終わりと、ロックの待ちを待つ上限の秒数
@@ -124,7 +125,7 @@ module ConcurrencyHelpers
     connection = OwnerConnection.lease_connection
     ids = tenant_ids.map { connection.quote(_1) }.join(", ")
     connection.transaction do
-      # 確定した請求書を消すために、後始末のトランザクションの中だけ、そのトリガーを名前で止める。所有ロールは表の所有者
+      # 確定した請求書と単価の行を消すために、後始末のトランザクションの中だけ、そのトリガーを名前で止める。所有ロールは表の所有者
       # なので止められる。止めることはカタログの変更なのでコミットまでほかの接続に見えず、コミットの前に戻すので、
       # ほかの接続には止まった状態が見えない。止めている間、ほかの接続の表への書き込みはロックで待つ。
       # 表のユーザーのトリガーをすべて止めると、後で足したトリガーまで黙って止まる
@@ -169,8 +170,9 @@ end
 # group の after で後始末を終えた example は通る。印は example のインスタンスの変数で、rspec は example ごとに
 # インスタンスを作り直すので、前の example の印は渡らない。
 # 渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。
-# :concurrency の外でトランザクションを使わない spec は、このガードの外にある。次の 3 本はコミットした行を自前で消す：
-# packs/sales/spec/public/sales/sales_order_policy_spec.rb・spec/db/tenant_table_spec.rb・spec/platform/tenancy_session_spec.rb。
+# :concurrency の外でトランザクションを使わない spec は、このガードの外にある。次の 4 本はコミットした行を自前で消す：
+# packs/sales/spec/public/sales/sales_order_policy_spec.rb・packs/sales/spec/public/sales/item_prices_backfill_spec.rb・
+# spec/db/tenant_table_spec.rb・spec/platform/tenancy_session_spec.rb。
 # spec/matrix/matrix_world_spec.rb は接続を固定して巻き戻すだけで、何もコミットしない
 RSpec.configure do |config|
   config.include ConcurrencyHelpers, :concurrency

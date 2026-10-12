@@ -1148,15 +1148,16 @@ M27〜M31 は、業務の流れを一通り作った後に、設計判断を見�
   - 拡張 `btree_gist`、表 `item_prices`（`create_tenant_table`、品目へ `add_tenant_reference`）、現在の行の排他制約、書き換えを拒むトリガー、経路 1 の `partner_read`（`data-model.md`「受注（`sales`）」「RLS」）
   - `sales_order_lines.priced_on`：照合前は空で、照合で単価と一緒に埋まる
 - データの移行（`adr/001` 決定 4。マイグレーションに入れない）：rake タスク `sales:backfill_item_prices`（`lib/tasks/`）が、テナントを明示して 1 つずつ回り、公開 API `Sales::ItemPrices.backfill` を呼ぶ。`backfill` は、既存の `items.unit_price` を有効期間が `(,)` で記録期間がタスクの時刻から始まる行に写し、照合済みの受注明細の `priced_on` を受注日で埋める。現在の単価の行がある品目と、`priced_on` のある明細は飛ばすので、もう一度流しても行が増えない
-- `items.unit_price` を消す順：表と列を足すマイグレーション → 移行のタスク → `items.unit_price` を `ignored_columns` に入れる → 次のマイグレーションで列を消す（strong_migrations の手順）。列を消すマイグレーションは、現在の単価の行が無い品目か、照合済みで `priced_on` の無い明細が 1 件でも残っていれば、例外で止まる
-- 公開 API `Sales::ItemPrices`：`schedule`・`correct`・`price_at`・`history`（品目ごとの全行）・`explain(actor, sales_order_line_ids, as_of:)`。
-- 単価を使う箇所の切り替え（`adr/006` 決定 5）：`Sales::Catalog`・`Sales::PublishedCatalog` は今日の単価を返す。ACL（`Sales::PurchaseOrderTranslator`）と照合のやり直し（`Sales::PartMappings.register`）は、受注日の単価を写し、`priced_on` を書く。`saveItem` の `unitPrice` は、品目を作るときは有効期間 `(,)` の行を作り、既存の品目で値が変わるときは今日からの改定として予約する。
+- `items.unit_price` を消す順：表と列を足すマイグレーション → 移行のタスク → `items.unit_price` を `ignored_columns` に入れる → 次のマイグレーションで列を消す（strong_migrations の手順）。列を消すマイグレーションは、現在の単価の行が無い品目か、照合済みで `priced_on` の無い明細が 1 件でも残っていれば、例外で止まる。受注明細の「揃って空か揃って埋まる」CHECK 制約に `priced_on` を足すのも、このマイグレーションで行う。移行のタスクが既存の照合済みの明細を埋める前には足せないからである（OI-106）
+- 公開 API `Sales::ItemPrices`：`schedule`・`correct`・`price_at`・`history`（品目ごとの、記録時点で信じていた全期間の行）・`explain(actor, sales_order_line_ids, as_of:)`。
+- 単価を使う箇所の切り替え（`adr/006` 決定 5）：`Sales::Catalog`・`Sales::PublishedCatalog` は今日の単価を返す。ACL（`Sales::PurchaseOrderTranslator`）と照合のやり直し（`Sales::PartMappings.register`）は、受注日の単価を写し、`priced_on` を書く。`saveItem` の `unitPrice` は、品目を作るときは有効期間 `(,)` の行を作る。既存の品目の単価は変えず、今日の単価と違う値は役割を問わず `INVALID_INPUT` にして `scheduleItemPrice` を使うよう伝え（OI-89）、同じ値は無視する（OI-103）。
 - GraphQL：`Item.prices`・`ItemPrice`・`scheduleItemPrice`・`correctItemPrice`・`BillableItem.priceExplanation`（`graphql-schema.md`「受注側の視点」「mutation の一覧」）。`scheduleItemPrice`・`correctItemPrice` は、発注側のカタログに見える単価を変えるので監査する。
-- 行列テスト：`item_prices` の行（`granted_buyer` は公開品目の現在の行を読める）と、新しいフィールドと mutation の行。`scheduleItemPrice`・`correctItemPrice` は金額に関わる操作なので `admin` に限り、行は許す役割に `admin` を持つ（OI-80 で作者が決めた）。規則は `graphql-schema.md`「役割による制限」の表の `Sales::ItemPolicy#change_price?` で、`context-map.md`「自社の中の役割」と同じ表には、この 2 つを `admin` に限る操作として書いてある。`saveItem` で既存の品目の単価を変える経路の役割は OI-89 で決める。
+- 行列テスト：`item_prices` の行（`granted_buyer` は公開品目の現在の行を読める）と、新しいフィールドと mutation の行。`scheduleItemPrice`・`correctItemPrice` は金額に関わる操作なので `admin` に限り、行は許す役割に `admin` を持つ（OI-80 で作者が決めた）。規則は `graphql-schema.md`「役割による制限」の表の `Sales::ItemPolicy#change_price?` で、`context-map.md`「自社の中の役割」と同じ表には、この 2 つを `admin` に限る操作として書いてある。`saveItem` からは、`member` も `admin` も既存の品目の単価を変えられない（OI-89）。request spec と `saveItem` の行列の行で、どちらの役割でも既存の品目の単価が変わらないことと、新しい品目が最初の単価を持つことを確かめる。
 - 品目は、作るときに必ず有効期間 `(,)` の単価の行を持つ（`saveItem` と、M29 の取り込みの `Sales::Catalog.bulk_upsert`）。現在の単価の行が無い品目への `schedule` は `CONFLICT` にする。照合後に埋まる列に `priced_on` が加わるので、受注明細の「揃って空か揃って埋まる」CHECK 制約を直す。
 - テスト：
   - 単体（`packs/sales/spec/public/sales/item_prices_spec.rb`）：予約・訂正・`price_at` を、有効日 × 記録時点の表で確かめる。予約を同じ有効日で 2 回流しても行が増えない。
-  - 移行（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）：`backfill` が品目と照合済みの明細を埋め、2 回流しても行が増えず、他のテナントの行に触れない。
+  - 移行（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）：`backfill` が品目と照合済みの明細を埋め、2 回流しても行が増えず、他のテナントの行に触れない。列を消した後のテストの DB には移行の前の形が無いので、所有ロールで `items.unit_price` を一時的に足し直し、CHECK 制約を外して作る（OI-106）。
+  - 競合（`packs/sales/spec/concurrency/sales/item_prices_lock_spec.rb`）：同じ品目への予約どうしと、予約と訂正が、品目の行ロックで直列になる。
   - DB（`packs/sales/spec/db/item_prices_constraints_spec.rb`）：現在の行同士の有効期間の重なりを排他制約が拒み、記録期間を閉じる以外の UPDATE と DELETE をトリガーが拒む。
   - 結合：改定日の前日と当日の発注で、受注明細の単価が切り替わる。請求書の発行の後に単価を訂正すると、`priceExplanation` が発行時の単価と訂正後の単価を別々に返す。
 

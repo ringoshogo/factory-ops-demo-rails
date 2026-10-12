@@ -19,7 +19,7 @@ RSpec.describe Sales::OrderAllocation do
   # 全量を引き当てた受注の「出荷可能」のジョブも、受注側のテナントの分として消す
   after do
     delete_owned_rows([ supplier.id, *orders.map(&:customer_tenant_id) ],
-      %w[stock_movements allocations stocks sales_order_lines sales_orders items])
+      %w[stock_movements allocations stocks sales_order_lines sales_orders item_prices items])
   end
 
   it "先の引当がコミットするまで後の引当は在庫の行で待ち、後の引当は残りの有効在庫だけを引き当てる" do

@@ -21,6 +21,10 @@ module Sales
 
     def manage? = show?
 
+    # 単価の改定の予約と訂正は、金額を決める操作なので admin に限る。record は品目か単価の行の値
+    # （docs/architecture/context-map.md「自社の中の役割」）
+    def change_price? = user.admin? && show?
+
     def show_to_buyer? = record.is_a?(PublishedCatalog::Item) && view_catalog?(record.supplier_tenant_id)
 
     private

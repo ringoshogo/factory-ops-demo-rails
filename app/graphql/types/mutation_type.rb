@@ -10,6 +10,8 @@ module Types
     field :withdraw_permission, mutation: Mutations::WithdrawPermission
     field :save_item, mutation: Mutations::SaveItem
     field :set_item_published, mutation: Mutations::SetItemPublished
+    field :schedule_item_price, mutation: Mutations::ScheduleItemPrice
+    field :correct_item_price, mutation: Mutations::CorrectItemPrice
     field :register_part_mapping, mutation: Mutations::RegisterPartMapping
     field :allocate_sales_order, mutation: Mutations::AllocateSalesOrder
     field :cancel_sales_order, mutation: Mutations::CancelSalesOrder

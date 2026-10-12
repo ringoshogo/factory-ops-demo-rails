@@ -20,6 +20,7 @@ FactoryBot.define do
       item_id { FactoryBot.create(:item, owner_tenant_id:).id }
       item_name { "六角ボルト M8" }
       unit_price { 120 }
+      priced_on { sales_order.order_date }
       tax_rate_percent { 10 }
     end
   end

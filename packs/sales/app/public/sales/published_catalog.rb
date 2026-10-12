@@ -6,9 +6,12 @@ module Sales
     def self.items(actor, supplier_tenant_id:, first:, after:)
       relation = Scope.call(actor, :published_catalog, supplier_tenant_id:)
       Page.of(relation, first:, after:, key: :code, direction: :asc) do |items|
+        # 相手に見せるのは今日の単価だけで、改定の予定と訂正の履歴は見せない（docs/adr/006 決定 7）。
+        # RLS は相手の現在の行までを開くので、今日の行にはここで絞る
+        prices = ItemPrice.current.valid_on(ItemPrice.today).where(item_id: items.map(&:id)).pluck(:item_id, :unit_price).to_h
         items.map do |item|
           Item.new(supplier_tenant_id: item.owner_tenant_id, code: item.code, name: item.name, unit: item.unit,
-            unit_price: item.unit_price, tax_rate_percent: item.tax_rate_percent)
+            unit_price: prices.fetch(item.id), tax_rate_percent: item.tax_rate_percent)
         end
       end
     end

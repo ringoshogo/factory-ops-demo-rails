@@ -16,7 +16,7 @@ RSpec.describe Sales::CancellationReviews do
   let!(:review) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:cancellation_review, sales_order: order) } }
 
   after do
-    delete_owned_rows([ supplier.id, buyer.id ], %w[cancellation_reviews sales_order_lines sales_orders items])
+    delete_owned_rows([ supplier.id, buyer.id ], %w[cancellation_reviews sales_order_lines sales_orders item_prices items])
   end
 
   def reject = described_class.reject(actor, cancellation_review_id: review.id)

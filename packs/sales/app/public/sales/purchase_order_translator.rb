@@ -18,12 +18,14 @@ module Sales
 
     def self.create_order(event)
       items = PartMatching.items(event.buyer_tenant_id, event.lines.map { _1.fetch("part_number") })
+      prices = PartMatching.prices(items.values.map(&:id))
+      order_date = Date.current
       SalesOrder.create!(
         owner_tenant_id: Current.tenant_id,
         order_no: DocumentNumber.next(SalesOrderSequence, prefix: "SO"),
         customer_tenant_id: event.buyer_tenant_id,
         source_purchase_order_id: event.purchase_order_id,
-        order_date: Date.current,
+        order_date:,
         due_date: event.desired_delivery_on&.then { Date.iso8601(_1) },
         lines: event.lines.map do |line|
           SalesOrderLine.new(
@@ -31,7 +33,7 @@ module Sales
             source_purchase_order_line_id: line.fetch("purchase_order_line_id"),
             customer_part_number: line.fetch("part_number"),
             quantity: line.fetch("quantity"),
-            **PartMatching.copy(items[line.fetch("part_number")])
+            **PartMatching.copy(items[line.fetch("part_number")], order_date, prices)
           )
         end
       )

@@ -12,7 +12,7 @@
 - **コンテキストをまたぐ参照は ID 列だけにする**：外部キー制約を張らず、AR の関連も張らない（`context-map.md`「疎結合を守る規則」1）。相手テナントへの参照（`buyer_tenant_id`・`supplier_tenant_id`・`customer_tenant_id`）と、連結元の伝票への参照（`source_purchase_order_id` など）も同じ扱いにする。
 - **金額と数量**：円の整数（`bigint`）と整数（`integer`）。単価・品目名・税率は、受け取った時点の値を写して持つ。マスタの後からの変更で、確定済みの伝票が変わらないようにするためである。
 - **伝票番号**：所有テナントの中で一意（`UNIQUE (owner_tenant_id, order_no)`）。採番は、テナントごとの採番行を行ロックして行う。採番の表は伝票を持つコンテキストごとに置き（`purchase_order_sequences`・`sales_order_sequences`・`invoice_sequences`）、列は `owner_tenant_id`（一意）と `last_number`（最後に払い出した番号）にする。伝票を作る公開 API は、伝票を書くのと同じセーブポイントの中で `DocumentNumber.next`（`packs/platform`）を呼ぶ。`DocumentNumber.next` は採番行の追加か `last_number` の加算を 1 文の upsert で行い、`PO-000001` の形の番号を返す。伝票を戻せば番号も戻る。
-- **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。追記だけの `audit_logs` は、どちらも持たず、DB の `now()` で埋める `occurred_at` が作成の時刻を兼ねる（「監査ログ（`platform`）」）。以下の表では省略する。
+- **時刻列**：全テーブルに `created_at`・`updated_at` を持たせる。追記だけの `stock_movements` は `updated_at` を持たない。追記だけの `audit_logs` は、どちらも持たず、DB の `now()` で埋める `occurred_at` が作成の時刻を兼ねる（「監査ログ（`platform`）」）。行を書き換えない `item_prices` も、どちらも持たず、記録期間（`recorded_period`）の始まりが作成の時刻を兼ねる（「受注（`sales`）」）。以下の表では省略する。
 - **表の説明**：全テーブルに、何を表す表かを日本語 1 行で書いた説明（`COMMENT ON TABLE`）を付ける。説明はコンテキストの接頭辞で始め（`[受注] 発注から連結した受注の見出し。状況は時刻列から導出する`）、本書と `context-map.md` の語で書く。接頭辞は、6 つのコンテキストの `[取引関係]`・`[購買]`・`[受注]`・`[在庫]`・`[出荷]`・`[請求]` と、`[イベント]`（`packs/contracts` の表）・`[通知]`（`packs/notifications` の表）・`[基盤]`（`packs/platform` の表と、Rails が管理する表）・`[キュー]`（`solid_queue_*`）の 10 個である。Rails が管理する `schema_migrations`・`ar_internal_metadata` も `[基盤]` の説明を持つ。説明の正本は DB の COMMENT で、psql の `\dt+` か `db/structure.sql` で読む。本書の表には説明を写さない。新しい表には、作るときに `comment:` で説明を渡す。テナントの表は `create_tenant_table`（「RLS」）に、それ以外の表は `create_table` に渡す。説明の欠けと、一覧に無い接頭辞は、`spec/db/table_comments_spec.rb` がテスト DB のカタログを引いて落とす。
 
 ## 状態は保存せず、時刻列から導出する
@@ -85,7 +85,7 @@
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
 | `items`（品目カタログ） | `code`・`name`・`unit`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意 |
-| `item_prices`（販売単価の履歴） | `item_id`・`unit_price`・`valid_period`（`daterange`、有効期間）・`recorded_period`（`tstzrange`、記録期間）・`reason`・`recorded_by_user_id` | 単価は 0 以上。記録期間が終わっていない行同士は、同じ品目で有効期間が重ならない（排他制約）。記録期間を閉じる以外の UPDATE と、DELETE はトリガーが拒む |
+| `item_prices`（販売単価の履歴） | `item_id`・`unit_price`・`valid_period`（`daterange`、有効期間）・`recorded_period`（`tstzrange`、記録期間）・`reason`・`recorded_by_user_id` | 単価は 0 以上。記録期間は始まりを含み終わりを含まない。記録期間が終わっていない行同士は、同じ品目で有効期間が重ならない（排他制約）。記録期間を閉じる以外の UPDATE と、DELETE はトリガーが拒む |
 | `customer_part_mappings`（得意先品番の対応表） | `customer_tenant_id`→・`customer_part_number`・`item_id` | `(owner, customer_tenant_id, customer_part_number)` 一意。取引先は自社が受注側の取引関係（失効したものを含む）の相手に限る。受注を作る照合と対応表の登録は、取引先ごとの勧告ロック（`pg_advisory_xact_lock`）で直列にし、ロックを取ってから対応表を読む。直列にしないと、照合待ちの受注がコミットされる前に登録が終わり、照合のやり直しから漏れる |
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
 | `sales_order_sequences`（受注の伝票番号の採番） | `last_number` | `owner_tenant_id` 一意。採番の手順は「全テーブルに共通の規則」の伝票番号 |
@@ -379,7 +379,7 @@ CREATE POLICY partner_read ON shipment_lines FOR SELECT
 ```
 
 - **関数と子テーブルは、RLS を通して読む**：`partnership_active` と子テーブルのポリシーは、呼び出し元の権限で `partnerships`・`shipments` を読む。そのため、親が見えるときだけ子が見え、失効した関係は判定でも見えない。関数を `SECURITY DEFINER` にしない。
-- **RLS は粗い判定にとどめる**：RLS が判定するのは「所有テナントか、有効な関係があるか」までである。単価の履歴（`item_prices`）は、記録期間が終わっていない行だけを相手に開き、そのうち今日の行に絞るのは `Sales::PublishedCatalog` の scope である。どの権限付与（`view_catalog`・`view_shipments`）があるかは、アプリの policy scope が判定する（`decisions.md` 2 章「RLS の役割」）。
+- **RLS は粗い判定にとどめる**：RLS が判定するのは「所有テナントか、有効な関係があるか」までである。単価の履歴（`item_prices`）は、記録期間が終わっていない行だけを相手に開き、そのうち今日の行に絞るのは、発注側のカタログの公開 API `Sales::PublishedCatalog` である。どの権限付与（`view_catalog`・`view_shipments`）があるかは、アプリの policy scope が判定する（`decisions.md` 2 章「RLS の役割」）。
 - **ログインの前のユーザー検索**：ログインの時点ではテナントが決まっていないので、`users` を RLS の下では引けない。メールアドレスからユーザー ID・所有テナント・`password_digest`・`session_version` だけを返す認証専用の関数 `find_login_user(email)` を 1 つ置き、この関数だけを RLS の外で動かす。関数は所有ロールの `SECURITY DEFINER` にし、`search_path` を固定する。固定しないと、呼び出し元が同名の表や関数を先に見つかる場所へ置いて差し替えられる。パスワードの照合はアプリ（`Partnerships::Authentication`）が行う。
 
 > 上の DDL とポリシーは、PostgreSQL 16 で試作して確かめた（UUIDv7 の代わりに `gen_random_uuid()`）。受注側・発注側・無関係の 3 テナントで次を確認した。未設定では 0 行になる。発注側に見えるのは、公開品目 1 件・取引関係・出荷の 3 経路だけである。相手名義の INSERT は RLS が拒否し、相手の行への UPDATE は 0 行になる。他テナントの親を指す子は、複合外部キーが拒否する。失効すると 3 経路がすべて閉じる。

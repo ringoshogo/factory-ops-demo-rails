@@ -35,6 +35,26 @@ RSpec.describe Sales::PartMappings do
     expect(confirmed.map { _1.lines.map { |line| line["item_name"] } }).to all(include("六角ボルト M8"))
   end
 
+  # 単価は登録の日ではなく受注日に有効な単価を写す（docs/adr/006 決定 5）
+  it "照合し直した明細には、受注日ごとに、その日に有効な単価と受注日を写す" do
+    before_revision, after_revision = [ Date.current - 3, Date.current ].map do |order_date|
+      FactoryBot.create(:sales_order, customer_tenant_id: customer.id, order_date:).tap do |order|
+        FactoryBot.create(:sales_order_line, sales_order: order, customer_part_number: "MY-BOLT")
+      end
+    end
+    # 一昨日までは 120 円、昨日からは 150 円の品目にする
+    original = Sales::ItemPrice.find_by!(item_id: item.id)
+    at = Time.current
+    original.close!(at)
+    Sales::ItemPrice.add!(item_id: item.id, unit_price: 120, valid_from: nil, valid_to: Date.current - 1, at:)
+    Sales::ItemPrice.add!(item_id: item.id, unit_price: 150, valid_from: Date.current - 1, valid_to: nil, at:)
+
+    register
+
+    copied = [ before_revision, after_revision ].map { |order| Sales::SalesOrderLine.find_by!(sales_order_id: order.id) }
+    expect(copied.map { [ _1.unit_price, _1.priced_on ] }).to eq([ [ 120, Date.current - 3 ], [ 150, Date.current ] ])
+  end
+
   it "照合し直して確定した受注ごとに、自社の admin への新しい受注の通知を撃ちっぱなしで送る（docs/adr/007 決定 5 の B-1）" do
     orders = pending_orders(2)
     allow(Notifications::Email).to receive(:deliver_best_effort).and_call_original
