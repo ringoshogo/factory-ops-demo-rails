@@ -106,11 +106,19 @@ RSpec.describe Page do
         expect { page(first: 1, after:, sort: request_id_sort(:asc)) }.to raise_error(Page::InvalidCursor), after
       end
       expect { page(first: 1, after: forge("size", "asc", "3", id), sort: integer) }.to raise_error(Page::InvalidCursor)
-      expect { page(first: 1, after: forge("size", "asc", 2**31, id), sort: integer) }.to raise_error(Page::InvalidCursor)
-      expect { page(first: 1, after: forge("day", "asc", "2026-02-30", id), sort: date) }.to raise_error(Page::InvalidCursor)
-      # 対照：型の合う値は受け付ける
-      expect(page(first: 1, after: forge("size", "asc", 2**31 - 1, id), sort: integer)[:values]).to eq([])
-      expect(page(first: 1, after: forge("day", "asc", "2000-01-01", id), sort: date)[:values].size).to eq(1)
+      [ 2_147_483_648, -2_147_483_649 ].each do |value|
+        expect { page(first: 1, after: forge("size", "asc", value, id), sort: integer) }.to raise_error(Page::InvalidCursor), value.to_s
+      end
+      [ "2026-02-30", "5874898-01-01", "0000-12-31" ].each do |value|
+        expect { page(first: 1, after: forge("day", "asc", value, id), sort: date) }.to raise_error(Page::InvalidCursor), value
+      end
+      invalid_utf8 = Base64.urlsafe_encode64("[\"request_id\",\"asc\",\"\xFF\xFE\",\"#{id}\"]".b, padding: false)
+      expect { page(first: 1, after: invalid_utf8, sort: request_id_sort(:asc)) }.to raise_error(Page::InvalidCursor)
+      # 対照：型の合う値は、範囲の両端まで受け付け、SQL で比べられる
+      expect(page(first: 1, after: forge("size", "asc", 2_147_483_647, id), sort: integer)[:values]).to eq([])
+      expect(page(first: 1, after: forge("size", "asc", -2_147_483_648, id), sort: integer)[:values].size).to eq(1)
+      expect(page(first: 1, after: forge("day", "asc", "5874897-12-31", id), sort: date)[:values]).to eq([])
+      expect(page(first: 1, after: forge("day", "asc", "0001-01-01", id), sort: date)[:values].size).to eq(1)
     end
   end
 
@@ -159,6 +167,18 @@ RSpec.describe Page do
       expect { built.values }.to raise_error(Tenancy::MissingTenant)
       expect { built.total_count }.to raise_error(Tenancy::MissingTenant)
       expect(tenancy { built.values.size }).to eq(2)
+    end
+
+    it "一度読んだ後も、テナントの外と別のテナントの中で読むと例外にする" do
+      built = tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1 }.tap { [ _1.values, _1.total_count ] } }
+      other = FactoryBot.create(:tenant)
+
+      %i[values cursors has_next_page total_count].each do |reader|
+        expect { built.public_send(reader) }.to raise_error(Tenancy::MissingTenant), reader.to_s
+        expect { Tenancy.with_tenant(other.id) { built.public_send(reader) } }.to raise_error(Tenancy::MissingTenant), reader.to_s
+      end
+      # 対照：作ったテナントの中なら、読んだ値をそのまま返す
+      expect(tenancy { [ built.values.size, built.total_count ] }).to eq([ 2, 3 ])
     end
   end
 end

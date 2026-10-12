@@ -5,8 +5,11 @@ class Page
   class InvalidCursor < StandardError; end
 
   UUID = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
-  # 整数の式の値の範囲（PostgreSQL の integer）。範囲の外の値をカーソルに書き換えると、比べる SQL がエラーになる
+  # カーソルの値として受け付ける範囲。範囲の外の値をカーソルに書き換えると、比べる SQL がエラーになり、
+  # 形の誤ったカーソルのトップレベルのエラーではなく 500 になる。整数は PostgreSQL の integer の範囲、
+  # 日付は PostgreSQL の date の上限（5874897 年）までで、紀元前の日付は扱わない
   INTEGER = -(2**31)..(2**31 - 1)
+  DATE = Date.new(1, 1, 1)..Date.new(5_874_897, 12, 31)
 
   # 並べ替えの列。name はカーソルに書く名前、expression は一覧の表の列か、その列から計算する式（Arel のノード）、
   # type はカーソルの値の型（:string・:date・:integer）、direction は :asc か :desc
@@ -85,9 +88,9 @@ class Page
   # カーソルの値を列の型に戻す。型の合わない値は NoMatchingPatternError にし、decode が形の誤りにする
   def self.cast(type, value)
     case [ type, value ]
-    in [ :string, String ] unless value.include?("\u0000") then value
+    in [ :string, String ] if value.valid_encoding? && !value.include?("\u0000") then value
     in [ :integer, Integer ] if INTEGER.cover?(value) then value
-    in [ :date, String ] then Date.iso8601(value)
+    in [ :date, String ] if DATE.cover?(date = Date.iso8601(value)) then date
     end
   end
   private_class_method :keyed, :sorted, :encode, :decode, :cast
@@ -108,20 +111,23 @@ class Page
   def has_next_page = loaded.fetch(:has_next_page)
 
   def total_count
-    @total_count ||= within_tenant { @count.call }
+    within_tenant { @total_count ||= @count.call }
   end
 
   private
 
   def loaded
-    @loaded ||= within_tenant do
-      records = @rows.to_a
-      page = records.first(@first)
-      { values: @to_values.call(page), cursors: page.map(&@cursor), has_next_page: records.size > @first }
+    within_tenant do
+      @loaded ||= begin
+        records = @rows.to_a
+        page = records.first(@first)
+        { values: @to_values.call(page), cursors: page.map(&@cursor), has_next_page: records.size > @first }
+      end
     end
   end
 
-  # 行を後で引くので、ページを作ったテナントの外で読むと、RLS が行を隠して空のページを黙って返す。そうせずに例外にする
+  # 行を後で引くので、ページを作ったテナントの外で読むと、RLS が行を隠して空のページを黙って返す。そうせずに例外にする。
+  # 一度読んだ値も、別のテナントの中で読めば別のテナントの値を渡すことになるので、読むたびに確かめる
   def within_tenant
     raise Tenancy::MissingTenant, "Page を、作った Tenancy.with_tenant の外で読んだ" if Current.tenant_id != @tenant_id
 

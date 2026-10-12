@@ -105,8 +105,11 @@ module Sales
       keyword = keyword.to_s.gsub(/\A[[:space:]]+|[[:space:]]+\z/, "")
       return relation if keyword.empty?
 
+      # sanitize_sql_like は % と _ と \ の前に \ を置く。ESCAPE を明示して DB の既定のエスケープ文字に頼らず、
+      # case_sensitive: false で PostgreSQL の ILIKE にする（Arel::Predications#matches、activerecord 8.1）
       pattern = "%#{Item.sanitize_sql_like(keyword)}%"
-      relation.where(Item.arel_table[:code].matches(pattern).or(Item.arel_table[:name].matches(pattern)))
+      code, name = %i[code name].map { Item.arel_table[_1] }
+      relation.where(code.matches(pattern, "\\", false).or(name.matches(pattern, "\\", false)))
     end
 
     # 今日の単価は品目の一覧に対して 1 回で引く
