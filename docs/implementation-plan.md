@@ -1344,7 +1344,7 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
 
    | メトリクス | 種類 | ラベル | バケット（秒） | 出どころ | 足すイベント |
    |---|---|---|---|---|---|
-   | `graphql_operation_duration_seconds` | ヒストグラム | `operation`・`operation_type`（`query`・`mutation`）・`outcome`（`ok`・`user_error`・`error`） | 0.05・0.1・0.25・0.5・1・2.5・5・10 | `graphql.operation_completed` の `result`・`duration_ms` | 操作の種類（`operation_type`）を足す。`FactoryOpsSchema.execute` が例外を上げたときも、`ensure` で `result` を `error` にして 1 回だけ出してから、例外を上げ直す。いまは正常に戻ったときだけ出すので、500 になった操作が成功の割合の分母から抜ける |
+   | `graphql_operation_duration_seconds` | ヒストグラム | `operation`・`operation_type`（`query`・`mutation`。決まらない文書は `none`。OI-129）・`outcome`（`ok`・`user_error`・`error`） | 0.05・0.1・0.25・0.5・1・2.5・5・10 | `graphql.operation_completed` の `result`・`duration_ms` | 操作の種類（`operation_type`）を足す。`FactoryOpsSchema.execute` が例外を上げたときも、`ensure` で `result` を `error` にして 1 回だけ出してから、例外を上げ直す。いまは正常に戻ったときだけ出すので、500 になった操作が成功の割合の分母から抜ける |
    | `graphql_top_level_errors_total` | カウンタ | `operation`・`code`・`reason` | — | 同上 | トップレベルのエラーの `extensions.code` の一覧（`error_codes`）と、`FORBIDDEN` の出どころ（`forbidden_reasons`）を足す。出どころは、操作の規則の拒否（役割を含む。`AuthorizationDeclarations` の `enforce_rule!`）を `rule`、返すオブジェクトとフィールドの規則の拒否（`FactoryOpsSchema.unauthorized_object`・`unauthorized_field`。scope と規則の食い違い）を `object`、宣言の無い型・リゾルバ・mutation の拒否を `undeclared` とし、拒否した箇所が `result.context` に積む。`FORBIDDEN` のほかのコードの `reason` は `none` にする（OI-124） |
    | `job_duration_seconds` | ヒストグラム | `queue`・`job_class` | 0.1・0.5・1・5・30・60・300・900・3600 | `active_job.completed` の `duration` | |
    | `job_queue_latency_seconds` | ヒストグラム | `queue` | 0.5・1・5・15・60・300・900 | `active_job.started`（受け取った時刻 − `enqueued_at`） | |
@@ -1358,14 +1358,14 @@ M37 は業務の振る舞いを変えないので、期待の不一致で最初�
    | `import_duration_seconds` | ヒストグラム | `kind`・`size`（10,000 行以下は `small`、超えれば `large`） | 10・30・60・300・900・3600 | `imports.finished` の `duration_ms`・`total_rows` | |
 
 3. ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録の表は `queries` と `mutations` の 2 つに分ける。`queries` は、M17 の画面の問い合わせの一覧（`spec/fixtures/graphql/screens/`）の操作名と一致させる。`mutations` は、画面が送る mutation の操作名を書き、M31 の SLO が測る発注の登録（`PlacePurchaseOrder`）をこのマイルストーンで足す。mutation の文書は画面の問い合わせの一覧に置かない。一覧は query だけで、クエリ数の予算（`spec/graphql/query_budget_spec.rb`）と複雑度（`spec/graphql/query_complexity_spec.rb`）が query であることを求めるからである。
-4. 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーでそれぞれ 1 つずつ、別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。exporter はポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`exporter.rb`）。`PORT` は Puma も使うので、exporter を立てるプロセスでは `PROMETHEUS_EXPORTER_PORT` を必ず設定し、無ければ起動を止める。
+4. 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーでそれぞれ 1 つずつ、別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。exporter はポートを `PROMETHEUS_EXPORTER_PORT`（無ければ `PORT`）で、アドレスを `PROMETHEUS_EXPORTER_BIND`（無ければ `0.0.0.0`）で決め、引数では渡せない（`exporter.rb`）。`PORT` は Puma も使うので、exporter を立てるプロセス（`METRICS_PROCESS` を示したプロセス。OI-133）では `PROMETHEUS_EXPORTER_PORT` を必ず設定し、無ければ起動を止める。
    - Web：Puma の起動のフック（`config/puma.rb`）で立てる。初期化子に置くと、`config/environment` を読む `bin/jobs`・rake タスク・console でも立つからである
    - ワーカー：`bin/jobs` は、supervisor が worker・dispatcher・scheduler を別のプロセスに fork するので、exporter は supervisor が fork の前に呼ぶ `SolidQueue.on_start` で 1 つだけ立てる（solid_queue 1.7.0 の README「Lifecycle hooks」）
    - 値の置き場：どちらのプロセスも `prometheus-client` の `DirectFileStore` に書く。store はメトリクスを登録する時点で決まる（`adapter.rb` の `store_settings`）ので、ディレクトリは Yabeda の設定より前（初期化子）に、プロセスの種類を表す環境変数（`METRICS_PROCESS`：`web`・`jobs`）で選ぶ。ディレクトリを空にするのは、exporter を持つプロセスが fork の前に 1 回だけ行う（Puma の起動のフックと `SolidQueue.on_start`）。初期化子で空にすると、後から起きた別のプロセスが動いている値を消す
    - キューのゲージ：収集のブロック（`Yabeda.configure` の `collect`）は、`METRICS_PROCESS` が `jobs` のときだけ登録する。どちらの exporter の読み出しでも収集のブロックは動くからである。ゲージは supervisor の 1 つのプロセスだけが書くので、集計は `aggregation: :most_recent` にし、`pid` のラベルを付けない
    - test の環境では exporter を立てない（M33 の E2E は test の環境で `bin/jobs` を起こす）
 5. `spec/platform/metrics_subscriber_spec.rb`：構造化イベントごとに、対応するメトリクスが増える。登録していない `operationName` は `other` になる。登録の表の `queries` と画面の問い合わせの一覧の操作名が一致する。ヒストグラムごとに、M31 の SLO の閾値がバケットの境界にあり、閾値ちょうどの値と閾値を超える値が別の `le` に数えられる。定義したすべてのメトリクスのラベルに、`tenant`・`user`・`_id` で終わる名前が無い。足したイベントは、`spec/requests/graphql_entry_spec.rb`（`error_codes` と `forbidden_reasons`。`member` が `admin` に限る mutation を呼ぶと `rule`、scope と規則が食い違う型を返すと `object`。登録した操作の実行中に例外を起こすと、HTTP は失敗し、`result` が `error` のイベントが 1 回出る）と、`packs/notifications/spec/models/notifications/provider/sendgrid_spec.rb`（`notifications.provider_responded`）・`packs/notifications/spec/jobs/notifications/critical_delivery_job_spec.rb`（`notification.accepted`）で確かめる。
-6. サイクル 03 の逸脱検査から送った確かめ：mutation の戻り値の null の伝わり方（OI-119）を `spec/requests/mutation_payload_spec.rb` で、`unitPrice` に `bigint` の最大値ちょうどと最大値 + 1（`"9223372036854775807"`・`"9223372036854775808"`）を送ったときの結果（OI-121）を `spec/requests/item_prices_spec.rb`（`scheduleItemPrice`・`correctItemPrice`）と `spec/requests/catalog_spec.rb`（`saveItem`）で確かめる。確かめた結果に、`graphql-schema.md` の SDL か実装を合わせる。最大値 + 1 がトップレベルのエラーになるなら、公開 API の検証に上限を足し、取り込みの CSV の同じ値を行の失敗にする（`packs/imports/spec`）。
+6. サイクル 03 の逸脱検査から送った確かめ：mutation の戻り値の null の伝わり方（OI-119）を `spec/requests/mutation_payload_spec.rb` で、`unitPrice` に `bigint` の最大値ちょうどと最大値 + 1（`"9223372036854775807"`・`"9223372036854775808"`）を送ったときの結果（OI-121）を `spec/requests/item_prices_spec.rb`（`scheduleItemPrice`・`correctItemPrice`）と `spec/requests/catalog_spec.rb`（`saveItem`）で確かめる。確かめた結果に、`graphql-schema.md` の SDL か実装を合わせる（実装を SDL に合わせた。OI-130）。最大値 + 1 がトップレベルのエラーになるなら、公開 API の検証に上限を足し、取り込みの CSV の同じ値を行の失敗にする（`packs/imports/spec`）。
 
 **判断**：Yabeda と Prometheus にするか、OpenTelemetry にするか
 
@@ -1391,7 +1391,7 @@ bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/platform/logging
 
 **実装する文書の節**：M18 の構造化イベント、`adr/007` 決定 7（キュー）
 
-**文書に残すこと**：exporter のポートとネットワークの制限と、ワーカーの値の書き方（`DirectFileStore` と `SolidQueue.on_start`）を `guides/config.md`「ジョブ」に、足したイベントと項目を `guides/config.md`「イベントごとに書く項目」に書く。`FORBIDDEN` の出どころの分け方を `graphql-schema.md`「エラー」に書く。
+**文書に残すこと**：exporter のポートとネットワークの制限と、ワーカーの値の書き方（`DirectFileStore` と `SolidQueue.on_start`）を `guides/config.md`「メトリクス」に（OI-133）、足したイベントと項目を `guides/config.md`「イベントごとに書く項目」に書く。`FORBIDDEN` の出どころの分け方を `graphql-schema.md`「エラー」に書く。
 
 ## M31 SLO と障害対応の手順書
 
