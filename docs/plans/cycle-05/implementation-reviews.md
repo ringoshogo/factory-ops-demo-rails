@@ -177,7 +177,7 @@ Codex は Go、Claude は Conditional Go で、Medium の R1（範囲の外の�
 | Medium | Claude・Codex | Claude R1・Codex R2：カーソルの日付は `Date.iso8601` を通るだけで、PostgreSQL の date の範囲の外の年も受け付ける。文字列は正しくない UTF-8 も通る。どちらも行を読むときの SQL のエラーになり、`Invalid cursor` ではなく 500 を返す | 日付を西暦 1 年から PostgreSQL の date の上限（5874897 年）までに、文字列を正しい UTF-8 に限った。`page_spec.rb` に、範囲の両端と外側（整数の下限を含む）と正しくない UTF-8 の example を足した | `870aacb` |
 | Medium | Codex | R1：`Page` のテナントの確かめが `||=` の右辺にあり、一度読んだ値は、テナントの外でも別のテナントの中でも例外にならずに返る | 読むたびにテナントを確かめる形にし、4 つの読み口を外と別のテナントで読む example を足した | `870aacb` |
 | Low | Claude | R2：`testing.md`「行列テストとの分担」に、コネクションの行が `totalCount` を読む規則と、絞り込みの変種の行と世界の行の関係が無い | 同じ節の 2 回目の比較の箇条に溶かし込み、世界の説明を直した | `dc2a367` |
-| Low | Claude・Codex | R3：`graphql-schema.md` の `Viewer` の SDL に `tenant` が無い。計画の作るもの 6 が、OI-154 と食い違って「相手のテナントの ID で一覧は空」のまま | SDL に `tenant: Tenant!` を書き、作るもの 6 を OI-154 の形に直した。`git grep "相手のテナントの ID と品目の ID"` は 0 件である | `dc2a367` |
+| Low | Claude・Codex | R3：`graphql-schema.md` の `Viewer` の SDL に `tenant` が無い。計画の作るもの 6 が、OI-154 と食い違って「相手のテナントの ID で一覧は空」のまま | SDL に `tenant: Tenant!` を書き、作るもの 6 を OI-154 の形に直した。直す前の文言は、`git grep` で計画にも設計文書にも残っていないことを確かめた | `dc2a367` |
 | Low | Claude・Codex | R4：`keyword` の `%`・`_` の扱いと大文字と小文字の区別が、`sanitize_sql_like` と Arel の `matches` と DB の既定のエスケープ文字に依存するのに、根拠を引いていない | `matches` に ESCAPE と `case_sensitive: false` を明示し、依存する Arel のメソッドをコメントに引いた | `870aacb` |
 
 違和感は次のように扱った。
