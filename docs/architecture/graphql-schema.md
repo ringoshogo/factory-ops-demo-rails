@@ -433,6 +433,7 @@ Active Record の関連は、どの段にも当たらない。関連はコンテ
 以下、2 段目と 3 段目を述べる。
 
 - **可視範囲（scope）**：各コンテキストの policy の `relation_scope` に置く。コンテキストの公開 API は、操作者を必須の引数に取り、内部で scope を掛けてから値を返す。操作者を渡さずにレコードを返す公開 API は作らない。scope は所有の条件を明示し、RLS に任せない。自社のデータを返す scope は `owner_tenant_id` が操作者のテナントであることを、経路 3 の scope は `buyer_tenant_id` が操作者のテナントであることと権限付与を条件にする。RLS は経路 1〜3 の相手の行も返すので、RLS に任せると、受注側の一覧や ID 指定の入口に相手の公開品目・取引関係・出荷が自社の物として混ざる。型の `show?` も同じ条件で判定する。
+- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。ログインの `Partnerships::Authentication.authenticate` は RLS の外で動く認証専用の関数でメールアドレスから引き、シードと E2E の準備がテナントを作る `Partnerships::Onboarding.register` は、作ったテナントの中でだけユーザーを書く
 - **型・入口・操作ごとの規則**：GraphQL の基底クラスが、宣言された policy の規則を評価する。
 
 policy は、コンテキストの公開 API として `packs/<パッケージ>/app/public/<名前空間>/` に置く。GraphQL 層は、公開 API が返す値に対して同じ policy の規則を評価する。scope と規則が同じ policy クラスにあるので、可視範囲の定義は 1 か所に保たれる（`decisions.md` 2 章「可視範囲」）。
@@ -628,7 +629,7 @@ type AuditLog {
 
 ```graphql
 type SupplierDashboard {
-  "集計の基準にした今日（Asia/Tokyo）"
+  "集計の基準にした業務の今日（日本時間）"
   businessDate: ISO8601Date!
   "受注の 7 つの状況ごとの件数。0 件の状況も返す"
   salesOrderCounts: [SalesOrderStatusCount!]!
@@ -646,7 +647,7 @@ type SalesOrderStatusCount {
 }
 ```
 
-集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。今日は日本時間（Asia/Tokyo）で決める。アプリの時刻帯は UTC のままなので、`Date.current` では日本時間の 0〜9 時が前日になる。
+集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。今日は、ほかの業務の日付と同じく、アプリの時刻帯（`config.time_zone` の `Asia/Tokyo`）の `Date.current` で決める（`context-map.md`「検収と請求の流れ」）。リゾルバに時刻帯を直に書かない。
 
 - **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。
 - **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。在庫は品目コードを持たないので、品目コードでの並べ替えと 100 件の上限は、ルートパッケージが `Sales::Catalog.items_for` で引いたコードで行う。
@@ -727,6 +728,7 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 | `PurchaseOrderLineInput.partNumber` の長さ | 64 文字 | `["lines", 添字, "partNumber"]` |
 | `adjustStock` の `reason` の長さ | 200 文字 | `["reason"]` |
 | `requestPurchaseOrderCancellation` の `reason` の長さ | 200 文字。空白だけの理由も `INVALID_INPUT` | `["reason"]` |
+| `correctItemPrice` の `reason` の長さ | 200 文字 | `["reason"]` |
 | `inspectInboundShipment` の `lines` の件数 | 100（発注の明細の上限と同じなので、入荷の全明細は必ず収まる） | `["lines"]` |
 
 ## 状況の enum
