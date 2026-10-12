@@ -184,6 +184,15 @@ tests:
       - eval_time: 41m
         alertname: ImportStalled
         exp_alerts: []
+  # 実行中のまま、窓の途中で収集が 12 分途切れ、別のジョブで実行中に戻った
+  - interval: 1m
+    input_series:
+      - series: 'queue_claimed_jobs{queue="imports"}'
+        values: '1 1 _x12 1x10'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ImportStalled
+        exp_alerts: []
   # プロセスの起動の後に、まだ 1 行も反映していない（行のカウンタの系列が無い）
   - interval: 1m
     input_series:

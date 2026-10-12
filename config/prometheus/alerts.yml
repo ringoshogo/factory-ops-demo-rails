@@ -208,15 +208,15 @@ groups:
           runbook: docs/runbooks/rls-misconfiguration.md
       # 実行中のジョブがあるのに、反映した行が増えない。取り込みの行のカウンタだけでは、取り込みの無い時間と止まった取り込みを
       # 分けられないので、imports のキューの実行中のジョブと組み合わせる。どちらも 15 分の窓で見て、実行中が 15 分続き、
-      # その間に行が増えないときに鳴らす。min_over_time は窓の中にあるサンプルだけの最小値なので、15 分前にも実行中だったことを
-      # offset で別に求める。そうしないと、収集が途切れた後やワーカーを起こし直した直後に、実行中が 1 分でも鳴る。
-      # 取り込みが一度も行を反映していないプロセスでは、行のカウンタの系列が無いので 0 と読む
+      # その間に行が増えないときに鳴らす。実行中は、1 分ごとに「実行中なら 1、実行中でないか系列が無ければ 0」にした値の
+      # 15 分の最小値で見る。系列の値に直に min_over_time を掛けると、窓の中にあるサンプルだけの最小値になり、収集が途切れた後や
+      # ワーカーを起こし直した直後に、実行中が 1 分でも鳴る。取り込みが一度も行を反映していないプロセスでは、行のカウンタの系列が
+      # 無いので 0 と読む
       - alert: ImportStalled
         expr: |
-          min_over_time(queue_claimed_jobs{queue="imports"}[15m]) > 0
-          and queue_claimed_jobs{queue="imports"} offset 15m > 0
+          min_over_time((max(queue_claimed_jobs{queue="imports"} > bool 0) or vector(0))[15m:1m]) == 1
           and on () (sum(increase(import_rows_total[15m])) or vector(0)) == 0
-        labels: { severity: ticket }
+        labels: { severity: ticket, queue: imports }
         annotations:
           summary: 取り込みのジョブが 15 分実行中のまま、反映した行が増えない
           runbook: docs/runbooks/import-stuck.md
