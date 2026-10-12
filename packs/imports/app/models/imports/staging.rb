@@ -53,7 +53,7 @@ module Imports
       Tempfile.create([ "import", ".csv" ], binmode: true) do |file|
         (0...byte_size).step(SLICE_BYTES) do |offset|
           slice = Chunk.locked(import_id, tenant_id) do
-            ImportFile.where(id: file_id).pick(Arel.sql("substring(content FROM #{offset + 1} FOR #{SLICE_BYTES})"))
+            ImportFile.where(id: file_id).pick(Arel.sql("substring(content FROM ? FOR ?)", offset + 1, SLICE_BYTES))
           end
           return unless slice
 
