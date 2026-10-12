@@ -33,3 +33,36 @@ RSpec.describe Sales::SalesOrderPolicy do
     expect(ids_without_rls(sql)).to eq([ orders[0].id ])
   end
 end
+
+# 受注の操作の規則。受注側の取消と取消の審査の承認・却下は、取引を取り消す操作なので自社の admin に限り、
+# 引当は役割を問わない（docs/architecture/context-map.md「自社の中の役割」、docs/architecture/graphql-schema.md「役割による制限」）
+RSpec.describe Sales::SalesOrderPolicy, "の規則" do
+  let(:tenant_id) { SecureRandom.uuid }
+  # 受注側の取消と引当は受注に対して、審査の承認・却下は審査に対して評価する
+  let(:targets) do
+    order = Sales::SalesOrderValue.new(id: SecureRandom.uuid, owner_tenant_id: tenant_id, order_no: "SO-000001",
+      customer_tenant_id: SecureRandom.uuid, order_date: Date.current, due_date: nil, status: :confirmed, cancellation_review_pending: false)
+    review = Sales::CancellationReviewValue.new(id: SecureRandom.uuid, owner_tenant_id: tenant_id, sales_order_id: order.id,
+      requested_at: Time.current, decision: nil, decided_at: nil)
+    { cancel?: order, review?: review, allocate?: order }
+  end
+
+  def actor(role) = Partnerships::Actor.new(user_id: SecureRandom.uuid, tenant_id:, name: "", email: "", role:, partner_code: "")
+
+  def allowed?(rule, role, record) = described_class.new(record, user: actor(role)).apply(rule)
+
+  %i[cancel? review?].each do |rule|
+    it "#{rule} は自社の対象について、admin には真、member には偽を返す" do
+      expect(allowed?(rule, "admin", targets.fetch(rule))).to be(true)
+      expect(allowed?(rule, "member", targets.fetch(rule))).to be(false)
+    end
+
+    it "#{rule} は admin でも、他社の対象には偽を返す" do
+      expect(allowed?(rule, "admin", targets.fetch(rule).with(owner_tenant_id: SecureRandom.uuid))).to be(false)
+    end
+  end
+
+  it "引当は、自社の受注なら member にも真を返す" do
+    expect(allowed?(:allocate?, "member", targets.fetch(:allocate?))).to be(true)
+  end
+end

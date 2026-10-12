@@ -49,6 +49,30 @@ RSpec.describe ConcurrencyHelpers do
     expect { commit(release, holder) }.to raise_error("コミットの後の失敗")
   end
 
+  # 確定した請求書は、トリガーが所有ロールの削除も拒む（docs/architecture/data-model.md「請求（`billing`）」）
+  it "後始末は確定した請求書と結んだ行も消し、止めたトリガーを戻す" do
+    Tenancy.with_tenant(tenant.id) do
+      invoice = FactoryBot.create(:invoice)
+      FactoryBot.create(:invoice_tax_summary, invoice:)
+      FactoryBot.create(:billable_item, invoice:)
+      invoice.update!(issued_at: Time.current, invoice_number: "INV-#{SecureRandom.hex(4)}")
+    end
+    owner = OwnerConnection.lease_connection
+    expect { owner.transaction { owner.execute("DELETE FROM billable_items WHERE owner_tenant_id = #{owner.quote(tenant.id)}") } }
+      .to raise_error(ActiveRecord::StatementInvalid, /確定した請求書は変えられない/)
+
+    delete_owned_rows([ tenant.id ], %w[invoice_tax_summaries billable_items invoices])
+
+    left = %w[invoices invoice_tax_summaries billable_items].sum do |table|
+      owner.select_value("SELECT count(*) FROM #{table} WHERE owner_tenant_id = $1", "Spec", [ tenant.id ])
+    end
+    expect(left).to eq(0)
+    expect(owner.select_values(<<~SQL)).to all(eq("O"))
+      SELECT tgenabled FROM pg_trigger
+      WHERE NOT tgisinternal AND tgrelid IN ('invoices'::regclass, 'invoice_tax_summaries'::regclass, 'billable_items'::regclass)
+    SQL
+  end
+
   # 監査の行は所有ロールでも消せないので、それが指すテナントとユーザーも残す（docs/guides/testing.md「競合テスト」）
   it "後始末はテナントを残し、テナント・ユーザー・監査の行の表を渡すと失敗する" do
     delete_owned_rows([ tenant.id ], [])

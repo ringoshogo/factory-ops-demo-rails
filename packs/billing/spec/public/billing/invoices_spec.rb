@@ -16,9 +16,11 @@ RSpec.describe "請求の読み取り" do
   end
   let!(:issued) do
     as_supplier do
-      FactoryBot.create(:invoice, :issued, customer_tenant_id: customers[1].id, subtotal: 200, tax_total: 16).tap do |invoice|
+      # 確定した請求書には集計と明細を結べないので、下書きで結んでから確定する
+      FactoryBot.create(:invoice, customer_tenant_id: customers[1].id, subtotal: 200, tax_total: 16).tap do |invoice|
         FactoryBot.create(:invoice_tax_summary, invoice:, tax_rate_percent: 8, taxable_amount: 200, tax_amount: 16)
         FactoryBot.create(:billable_item, invoice:, customer_tenant_id: customers[1].id, unit_price: 100, quantity: 2, tax_rate_percent: 8)
+        invoice.update!(issued_at: Time.current, invoice_number: "INV-#{SecureRandom.hex(4)}")
       end
     end
   end

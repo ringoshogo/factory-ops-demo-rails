@@ -116,3 +116,98 @@ Run tests の 3 回の中央値は 1 分 31 秒で、完了条件の 4 分以下
 ### 残件の処理
 
 引当先が M36 の `open` は無かった。実装で決めたことは OI-85〜OI-87 に judgment で積んだ。表の行列が `WITH CHECK` だけの緩みを捕まえないことは IB-30 に積んだ。
+
+## M25 請求書の発行と受領請求書
+
+PR #43（`m25-invoice-issue`、base は `main`）。PR #42（M36）が未マージなので、M36 の commit も差分に見える。1 回目は、どちらの系統も Conditional Go で、子の表のトリガーが確定を待たない同じ High を出した。High を直して読み直しに出し、どちらの系統も Go になった。1 回目は `250f934..2fe900c` の diff を `2fe900c` の版で、読み直しは `2fe900c..8d4a333` の diff を `8d4a333` の版で読んだ。Codex はどちらもテストを流さず、依頼に書いた実行結果を前提にした。Claude は 1 回目に `2fe900c` の worktree を読み、High の再現と直し方の案を別名の一時 DB で確かめた（消した）。
+
+| 系統 | 1 回目 | 読み直し |
+|---|---|---|
+| Codex | Conditional Go | Go |
+| Claude | Conditional Go | Go |
+
+1 回目の観点ごとの結果：
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘（X1） | 指摘（H1） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（X2・X3・X4） | 指摘（M1・L1） |
+| 参照の維持 | 指摘（X1 に付随） | 指摘（L2） |
+
+読み直しは、どちらの系統も 5 つの観点がすべて指摘なしで、前の High は解消した。
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex・Claude | X1・H1：子の表のトリガーが `issued_at IS NOT NULL` を条件に入れた `EXISTS (... FOR SHARE)` で請求書を引く。READ COMMITTED では、確定がコミットしていない請求書は下書きに見えてロックの前に条件で外れ、確定を待たずに明細の書き換えを通す。data-model.md・マイグレーションのコメント・OI-88 の「確定のコミットを待つ」が成り立たない | 結んだ請求書の行を、条件を付けずに `FOR SHARE` でロックしてから `issued_at` を確かめる形にした（マイグレーションはまだ main に無いので、同じマイグレーションを直した）。data-model.md と OI-88 の説明を直した形に合わせた | `7dd567c`・`8d4a333` |
+| Medium | Codex | X2：トリガーと確定の競合を確かめるテストが無い | `closing_lock_spec.rb` に、確定を開いたままの結んだ明細の書き換え・未請求の明細を結ぶ書き換えと、書き換えが先の確定の 3 件を足した。直す前の形と、共有ロックを外した形の両方で 3 件とも落ちる | `7dd567c` |
+| Medium | Codex・Claude | X3・L1：失敗の example が、番号を振る前の失敗しか通らない | 「請求書発行」の登録を 1 回だけ失敗させ、番号と確定とイベントが戻り、次の確定が `INV-000001` を振る example を足した | `7dd567c` |
+| Medium | Codex | X4：受け手の同時配送を確かめていない。逐次の共有テストは、事前の存在確認に替えても通る | `packs/purchasing/spec/concurrency/purchasing/billing_event_receiver_lock_spec.rb` を足した。受け手を「存在を確かめてから ON CONFLICT の無い INSERT」に替えると、この spec が落ち、逐次の共有テストは通る | `7dd567c` |
+| Medium | Claude | M1：行列の member の「何も書かない」が行数だけを比べるので、既存の行を書き換えるだけの mutation を捕まえない | 表ごとに行数と行の中身の要約（`md5(string_agg(t::text ...))`）を比べる形にした。計画の作るもの 4 と OI-90 も合わせた | `7dd567c`・`8d4a333` |
+| Low | Claude | L2：`graphql-schema.md` の表が、まだ無い `Sales::ItemPolicy#change_price?` を挙げる | 直さない。計画の M27 の節がその行を指しており、OI-80 の方針（人が読む表を M25 で合わせ、実装は M27）どおりである | — |
+| Low | Claude（読み直し） | 後始末のコメントが、止めた状態がほかの接続に見えない理由をロックで書いている | カタログの変更がコミットまで見えないことで書き直した | `6f76792` |
+| Low | Claude（読み直し） | UPDATE で OLD と NEW の請求書が同じとき、同じ行を 2 回 `FOR SHARE` で引く | 直さない。正しさに影響せず、同じトランザクションの 2 回目のロックは待たない | — |
+
+違和感は次のように扱った。
+
+- Claude 1：発行日を含む業務の日付が UTC で決まり、「自社の日付」と食い違う → IB-32 に積んだ
+- Claude 2：後始末が表のユーザーのトリガーをすべて止める → トリガーを名前で止める形にした（`7dd567c`）
+- Claude 3：同じ受注側の確定は、採番の行ロックで取引先が違っても直列になる → IB-33 に積んだ
+- Claude 4：S1 の `BuyerView.receivedInvoice(id)` の行が、自社の行が返ることを先に確かめていない → 移さない。1 件を引く入口の行は対照を求めない（`guides/testing.md`「S1 の入口の列挙」）。値を返すことは入口の行列の `only(:granted_buyer)` と `spec/requests/billing_spec.rb` が確かめる
+- Codex：なし
+
+### 実装の記録
+
+新しい spec と、`admin` で呼ぶ形に直した request spec を、実装の前に流した。受け手と受領請求書の spec は `Purchasing::BillingEventReceiver`・`Purchasing::ReceivedInvoices` が無い `NameError` で読み込みの時点で落ち、残りは 148 examples, 66 failures だった。失敗は、確定の公開 API・`issueInvoice`・トリガー・新しい表・policy の `admin` が無いことによる。S1 は準備で確定を呼ぶので全行が落ち、確定の競合テストは後始末に渡す表が無くて落ちた。`inspections_spec.rb`・`cancellations_spec.rb` は使うユーザーを `admin` に替えただけなので、書いた時点で通った。行列の役割の列は、policy を直した後に、規則から `user.admin?` を外して落ちることで確かめた。
+
+検出力は壊して確かめた。壊したファイルは複製から戻して更新時刻を進め、テスト DB で壊したものは `db:test:prepare` で戻した。
+
+| 対象 | 壊して落ちること |
+|---|---|
+| 役割 | `issue?` から `user.admin?` を外すと、行列の `issueInvoice` の member の行・policy の spec・request spec の member の確定が落ちる。`review?` では行列の承認・却下の 2 行と policy の spec、`set_term?` では行列の 1 行が落ちる。`allocate?` を `admin` に限ると、行列の「member にも value」と policy の spec が落ちる。行列の行から `role:` を外すと、行の役割の検査が落ちる |
+| 「何も書かない」 | GraphqlController のロールバックを外し、規則の評価を `perform` の後にして監査の行も書かないようにすると、対象を引く `admin` の mutation の member の行が、中身の要約では 10 件、行数だけでは 5 件落ちる。対象を引かない 3 つ（`establishPartnership`・`setBillingTerm`・`closeBillingPeriod`）は規則を `perform` の前に評価するので、この壊し方では落ちない |
+| 確定 | 請求条件の行ロックを外すと確定と締めの競合が、請求書の行ロックも外すと確定の競合 3 件が落ちる。発行済みの `CONFLICT` を外すと単体と結合が、「請求書発行」を出さないと単体・結合・S5 が落ちる |
+| トリガーと制約 | テスト DB で、請求書のトリガーを素通しにする・子の表の OLD か NEW の確かめを外す・`received_invoices` の CHECK 制約を外す、でそれぞれ `spec/db/issued_invoice_spec.rb` が落ちる。子の表のトリガーを直す前の形に戻すか共有ロックを外すと、確定と明細の書き換えの競合 3 件が落ちる |
+| 受け手 | 冪等の見出しの判定を外すと逐次の共有テストが、存在の確かめに替えると同時の配送の競合テストが落ちる |
+| 後始末 | トリガーを止めない・止めたトリガーを戻さない、で `concurrency_helpers_spec.rb` の確定した請求書の後始末が落ちる。止めない形では、確定した請求書を残す競合テストも後始末で落ちる |
+
+計画からの細部の決定は台帳に積んだ。トリガーの細部を OI-88、行列で member の行も member で呼ぶことと中身の要約で比べることを OI-90、確定と受領請求書の細部を OI-92 に judgment で積んだ。OI-80 の案 B を表に反映したときに見つけた、`saveItem` から `member` が単価を改定できる経路は OI-89 に blocked-user（M27）で、`startImport` の役割をどこで確かめるかは OI-91 に open（M29）で積んだ。
+
+### 確かめたこと
+
+`8d4a333` で、Ruby 3.4.11 で共通の完了条件と M25 の完了条件を流した。`6f76792` はコメントだけの変更である。
+
+```sh
+bundle exec rspec packs/billing/spec/public/billing/closing_spec.rb packs/purchasing/spec/public/purchasing/billing_event_receiver_spec.rb \
+  packs/purchasing/spec/public/purchasing/received_invoices_spec.rb packs/sales/spec/public/sales/sales_order_policy_spec.rb \
+  packs/purchasing/spec/public/purchasing/purchase_order_policy_spec.rb packs/billing/spec/public/billing/invoice_policy_spec.rb \
+  spec/requests/billing_spec.rb spec/requests/inspections_spec.rb spec/requests/cancellations_spec.rb \
+  spec/scenarios/billing_amounts_spec.rb spec/scenarios/tenant_boundary_spec.rb   # 0 failures
+bundle exec rspec packs/billing/spec/concurrency/billing/closing_lock_spec.rb packs/purchasing/spec/concurrency/purchasing/billing_event_receiver_lock_spec.rb   # 0 failures
+bundle exec rspec spec/matrix spec/graphql/authorization_declarations_spec.rb spec/db   # 0 failures
+COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json   # 1863 examples, 0 failures、80.0 秒
+BASE_REF=origin/main bin/check-branch-coverage # 一覧は空
+bundle exec rspec --tag concurrency            # 2 回続けて 48 examples, 0 failures
+bin/rubocop                                    # no offenses
+bin/packwerk check                             # 違反なし
+bin/check-structure                            # 終了コード 0
+bin/check-open-items --due M25                 # 終了コード 0
+bin/check-commit-refs                          # 終了コード 0
+bin/test-layers tmp/rspec.json                 # 未分類なし。単体 303・結合 164・シナリオ 83
+```
+
+分岐の網羅率の警告は 1 件で、example を足した件数は 0 件である。受け手の明細が空のときの `return` を、どの example も通らなかった。締めは明細が 0 件なら請求書を作らないので届かず、Rails 8.1 の `insert_all!` は空の配列で何もしない（`active_record/insert_all.rb` の `return ActiveRecord::Result.empty if inserts.empty?`）ので、分岐ごと消した。
+
+行列の時間（M36 の完了条件と同じコマンド、手元）：`bundle exec rspec spec/matrix` は 963 examples、12.8 秒（M36 の後は 857 examples、約 11 秒）。足した 106 examples は、member の行と、新しい表と入口の行である。`--order rand --seed 1/2/3` も 3 回とも 0 failures。
+
+CI の test のジョブ（Run tests の時間は括弧の中）：
+
+| | 時間 |
+|---|---|
+| #43 の 1 回目（`2fe900c`） | 3 分 07 秒（1 分 58 秒） |
+| #43 の 2 回目（`6f76792`） | 2 分 59 秒（2 分 05 秒） |
+
+### 残件の処理
+
+引当先が M25 の `open` は無かった。OI-71〜OI-73・OI-77 は作者の判断どおりに実装し、OI-84 は judgment のまま実装した。OI-80 は、`context-map.md`「自社の中の役割」と `graphql-schema.md`「役割による制限」の表を案 B に合わせ、結果の欄の反映先を直した。

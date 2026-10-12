@@ -6,7 +6,7 @@ RSpec.describe "検収", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }
   let(:supplier_admin) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, :admin) } }
-  let(:buyer_member) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user) } }
+  let(:buyer_admin) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:user, :admin) } }
 
   def mutate(name, selection, **input)
     query(<<~GRAPHQL, input:).fetch(name)
@@ -41,7 +41,7 @@ RSpec.describe "検収", type: :request do
       mutate("adjustStock", "stock { onHand }", itemId: item_id, type: "INBOUND", quantity: 10)
     end
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     @purchase_order_id = mutate("placePurchaseOrder", "purchaseOrder { id }", supplierTenantId: supplier.id,
       lines: [ { partNumber: "MY-BOLT", quantity: 4 }, { partNumber: "MY-NUT", quantity: 2 } ]).dig("purchaseOrder", "id")
     deliver_enqueued_events
@@ -56,7 +56,7 @@ RSpec.describe "検収", type: :request do
     deliver_enqueued_events
     expect(sales_order_status).to eq("SHIPPED")
 
-    login_as(buyer_member)
+    login_as(buyer_admin)
     inbound = purchase_order.fetch("inboundShipments").sole
     @inbound_id = inbound.fetch("id")
     @bolt_line_id, @nut_line_id = inbound.fetch("lines").sort_by { -_1.fetch("shippedQuantity") }.map { _1.fetch("id") }
@@ -82,7 +82,7 @@ RSpec.describe "検収", type: :request do
       ) }
     ] })
     expect(Tenancy.with_tenant(buyer.id) { AuditLog.where(action: "inbound_shipment.inspect").pluck(:actor_user_id, :target_type, :target_id, :counterparty_tenant_id) })
-      .to eq([ [ buyer_member.id, "InboundShipment", @inbound_id, supplier.id ] ])
+      .to eq([ [ buyer_admin.id, "InboundShipment", @inbound_id, supplier.id ] ])
 
     deliver_enqueued_events
     login_as(supplier_admin)

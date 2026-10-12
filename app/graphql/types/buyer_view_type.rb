@@ -9,5 +9,7 @@ module Types
     field :supplier, resolver: Resolvers::Buyer::SupplierResolver
     field :purchase_orders, resolver: Resolvers::Buyer::PurchaseOrdersResolver
     field :purchase_order, resolver: Resolvers::Buyer::PurchaseOrderResolver
+    field :received_invoices, resolver: Resolvers::Buyer::ReceivedInvoicesResolver
+    field :received_invoice, resolver: Resolvers::Buyer::ReceivedInvoiceResolver
   end
 end

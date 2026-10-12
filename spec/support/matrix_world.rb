@@ -1,6 +1,7 @@
 require_relative "tenant_helpers"
 
-# 行列テストの世界（docs/architecture/context-map.md「テナントと所有」、docs/architecture/data-model.md「RLS」）。ペルソナごとにテナントと admin のユーザーを作り、
+# 行列テストの世界（docs/architecture/context-map.md「テナントと所有」、docs/architecture/data-model.md「RLS」）。ペルソナごとにテナントと、
+# admin と member のユーザーを 1 人ずつ作り、
 # テナントの表ごとに、どのペルソナも自社の行を factory で 1 件以上持つようにする。
 # そのうえで、supplier が受注側になる取引関係を 3 つ結び、supplier の公開品目を 1 件足す
 # （表ごとの行は factory の既定のままなので、品目は公開しない）。
@@ -20,7 +21,8 @@ class MatrixWorld
     revoked_buyer: { permissions: ALL_PERMISSIONS, traits: [ :revoked ] }
   }.freeze
 
-  attr_reader :tenants, :users
+  # users は admin、members は member のユーザー
+  attr_reader :tenants, :users, :members
 
   # 行列の spec のファイルごとに、世界を 1 回だけ作って全 example で使い回す（docs/guides/testing.md「行列テストとの分担」）。
   # example ごとに作ると、表の数に比例する世界を表の数に比例する example ぶん作り、時間が表の数の 2 乗で伸びる。
@@ -87,6 +89,7 @@ class MatrixWorld
   def initialize
     @tenants = PERSONAS.index_with { |persona| create_tenant(persona.to_s) }
     @users = PERSONAS.index_with { |persona| as(persona) { FactoryBot.create(:user, :admin) } }
+    @members = PERSONAS.index_with { |persona| as(persona) { FactoryBot.create(:user) } }
     @rows = self.class.tenant_tables.index_with do |table|
       PERSONAS.index_with { |persona| as(persona) { FactoryBot.create(self.class.factory_name(table)) } }
     end
@@ -104,7 +107,7 @@ class MatrixWorld
   # reload・destroy と、関連先のインスタンスの書き換えは捕まえない。行列の spec はそれらを呼ばない規則で守る
   # 行の書き換えは DB の上で巻き戻るが、オブジェクトの書き換えは巻き戻らず、後の example に渡る
   def freeze
-    [ @tenants, @users, @partnerships, *@rows.values, *@linked_orders.values ].each do |records|
+    [ @tenants, @users, @members, @partnerships, *@rows.values, *@linked_orders.values ].each do |records|
       records.each_value(&:freeze).freeze
     end
     [ @rows, @linked_orders ].each(&:freeze)

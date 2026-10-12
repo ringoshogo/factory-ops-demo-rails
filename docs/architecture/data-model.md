@@ -137,7 +137,7 @@
 | `receipt_inspections`（入荷検収） | `inbound_shipment_id`・`inspected_on` | `inbound_shipment_id` 一意（入荷 1 件に 1 回） |
 | `receipt_inspection_lines` | `inbound_shipment_line_id`・`accepted_quantity` | `inbound_shipment_line_id` 一意。検収数量は 0 以上（CHECK 制約）で、出荷数量以下（登録時にアプリで確かめる） |
 | `received_invoices`（「請求書発行」の写し） | `invoice_id`→・`supplier_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_on`・`subtotal`・`tax_total`・`total` | `invoice_id` 一意。`total = subtotal + tax_total` |
-| `received_invoice_lines` | `purchase_order_line_id`・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`amount` | — |
+| `received_invoice_lines` | `purchase_order_line_id`・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`amount` | 発注明細へ複合外部キーでつなぐ。他社の発注明細を運ぶ「請求書発行」は、受け手で失敗する |
 
 購買が持つ相手側の ID は、`supplier_tenant_id`・`shipment_id`・`invoice_id` の 3 つだけである。受注・受注明細・品目の ID は、イベントが運ばないので購買には入らない（「イベントの受け口と冪等キー」）。
 
@@ -190,7 +190,7 @@
 
 確定も、締めと破棄と同じ請求条件の行をロックしてから、請求書が下書きのまま残っているかを確かめる。ロックを取らずに読んでから書くと、破棄のコミットの後に消えた下書きを確定して「請求書発行」を出すか、同じ下書きに番号を 2 回振りうる。破棄が先なら確定は `NOT_FOUND` に、確定が先なら破棄は `CONFLICT` になる。
 
-確定した請求書と、それに結んだ税率ごとの集計と明細は変えない。`invoices` のトリガーが、`issued_at` のある行の UPDATE と DELETE を拒む。`invoice_tax_summaries` と `billable_items` のトリガーは、発行済みの請求書に結んだ行の INSERT・UPDATE・DELETE と、発行済みの請求書へ結び付ける UPDATE を拒む。公開 API の拒否（`CONFLICT`）だけでは、公開 API を通らない書き込みを止められないからである。
+確定した請求書と、それに結んだ税率ごとの集計と明細は変えない。`invoices` のトリガーが、`issued_at` のある行の UPDATE と DELETE を拒む。`invoice_tax_summaries` と `billable_items` のトリガーは、発行済みの請求書に結んだ行の INSERT・UPDATE・DELETE と、発行済みの請求書へ結び付ける UPDATE を拒む。公開 API の拒否（`CONFLICT`）だけでは、公開 API を通らない書き込みを止められないからである。トリガーは所有ロールの書き換えも拒む。子の表のトリガーは、結んだ請求書の行を下書きでも共有ロック（`FOR SHARE`）で取ってから、確定しているかを確かめる。確定がコミットしていなければそのコミットを待ってから確かめ、子の行の書き換えが先なら確定がそのコミットを待つ。確定の状態を検索の条件に入れてロックすると、まだ下書きに見える行がロックの前に条件で外れ、待たずに通るからである。
 
 ## コンテキストに属さないパッケージのテーブル
 

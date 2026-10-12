@@ -64,6 +64,14 @@ RSpec.describe "テナントの境界", type: :request do
     "Mutation.discardDraftInvoice(input.invoiceId)" => {
       ids: documents, reach: not_found, run: ->(id) { mutate("discardDraftInvoice", invoiceId: id) }
     },
+    "Mutation.issueInvoice(input.invoiceId)" => {
+      ids: documents, reach: not_found, run: ->(id) { mutate("issueInvoice", invoiceId: id) }
+    },
+    # 受注側の請求書の ID は、写しの受領請求書の ID とは別の ID なので、写しを引けない
+    "BuyerView.receivedInvoice(id)" => {
+      ids: documents, reach: nil,
+      run: ->(id) { query("query($id: ID!) { buyer { receivedInvoice(id: $id) { id } } }", id:).dig("buyer", "receivedInvoice") }
+    },
     "Mutation.adjustStock(input.itemId)" => {
       ids: documents, reach: not_found, run: ->(id) { mutate("adjustStock", itemId: id, type: "INBOUND", quantity: 1) }
     },
@@ -163,7 +171,7 @@ RSpec.describe "テナントの境界", type: :request do
 
   describe "相手の ID を入口に持ち込む" do
     # 2 社が取引関係を結び、2 件の発注を発注 → 受注 → 引当 → 出荷指示 → 出荷計上まで進め、発注側に入荷を届ける。
-    # 1 件目の入荷は検収せずに残し、2 件目は検収して、受注側が締めて下書きの請求書を作る。
+    # 1 件目の入荷は検収せずに残し、2 件目は検収して、受注側が締めて請求書を確定し、発注側に受領請求書を届ける。
     # 3 件目の発注には取消を依頼し、受注側に審査中の審査を作る。
     # 発注側は、自社が受注側の取引関係と品目も持つ
     before do
@@ -209,6 +217,8 @@ RSpec.describe "テナントの境界", type: :request do
       mutate!("setBillingTerm", "billingTerm { closingDay }", customerTenantId: buyer.id, closingDay: 31)
       invoice_id = mutate!("closeBillingPeriod", "invoice { id }", customerTenantId: buyer.id,
         closingDate: Date.current.end_of_month.iso8601).dig("invoice", "id")
+      mutate!("issueInvoice", "invoice { id }", invoiceId: invoice_id)
+      deliver_enqueued_events
 
       login_as(buyer_admin)
       # 3 件目の発注に取消を依頼し、受注側に審査中の審査を作る
