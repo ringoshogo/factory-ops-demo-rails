@@ -16,7 +16,7 @@
    bin/rails runner 'SolidQueue::Job.where(class_name: "Imports::RunJob").order(id: :desc).limit(20).each { puts [ _1.id, _1.status, *_1.arguments["arguments"] ].join(" ") }'
    ```
 
-2. 止まった取り込みの行を、ジョブの引数のテナントで開いて読む。状況は時刻列から決まる（`../architecture/data-model.md`「取り込み（`imports`）」）。`staged_rows` は置き場へ写した行の数である。
+2. 止まった取り込みの行を、ジョブの引数のテナントで開いて読む。状況は時刻列から決まる（`../architecture/data-model.md`「取り込み（`imports`）」）。`staged_rows` は置き場へ写した最後の行番号で、見出しを 1 行目に数える。
 
    ```sh
    TENANT_ID=<テナント ID> IMPORT_ID=<取り込み ID> bin/rails runner 'Tenancy.with_tenant(ENV.fetch("TENANT_ID")) { pp ActiveRecord::Base.connection.select_one("SELECT kind, total_rows, applied_rows, failed_rows, started_at, staged_at, finished_at, failed_at, failure_reason, (SELECT max(row_number) FROM import_rows WHERE import_id = imports.id) AS staged_rows FROM imports WHERE id = $1", "import", [ ENV.fetch("IMPORT_ID") ]) }'

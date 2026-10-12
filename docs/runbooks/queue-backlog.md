@@ -19,7 +19,7 @@
 2. 止めたキューが無いかと、キューごとの待ちの数を読む。止めたキューは、誰かが前の障害で止めたまま戻していないことがある。
 
    ```sh
-   bin/rails runner 'SolidQueue::Queue.all.each { puts [ _1.name, _1.size, (_1.paused? ? "paused" : "running") ].join(" ") }'
+   bin/rails runner 'puts "paused: #{SolidQueue::Pause.pluck(:queue_name).inspect}"; pp SolidQueue::ReadyExecution.group(:queue_name).count'
    ```
 
 3. 失敗したジョブを、キューとジョブのクラスと例外のクラスで数える。同じ例外が並ぶなら、原因は 1 つである。
