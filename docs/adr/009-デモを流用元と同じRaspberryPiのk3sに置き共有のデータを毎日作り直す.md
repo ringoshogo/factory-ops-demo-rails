@@ -28,25 +28,26 @@ M33 までで、デモは手元（`bin/rails server` と `next start`）で動�
 ## 決定
 
 1. **共有の 1 つのデータを毎日作り直す。** 訪問者ごとのデータの分離（流用元の「デモを開始」）は作らない。作者の判断（OI-14）である。訪問者の書き込みは、次の作り直しまで全員に見える。訪問者に許す操作は OI-148 で作者が決める。
-2. **画面だけを公開し、Rails は公開しない。** Ingress は Next の `frontend` だけに置き、Rails の `web` は `ClusterIP` の Service だけにする。画面は Rails を Next のサーバーから呼び（M33「Rails をどこから呼ぶか」）、ブラウザが Rails を直接呼ぶ取り込みのファイルの送信も、Next の `rewrites` で同じオリジンの下に出す。Rails を外から呼べないので、GraphQL の入口を外に晒さず、CORS も開けない。
-3. **作り直しは、Web とワーカーを 0 にしてから DB ごと作り直す。** CronJob が `bin/rails demo:reset` を流し、Kubernetes の API で `web` と `jobs` の Deployment を 0 にして Pod が消えるのを待ち、所有ロールで DB を消して作り直し、`DemoWorld` で世界を作り、成功しても失敗しても 1 に戻す。DB の接続が残らず、シードがその場で流すジョブを `bin/jobs` が同時に流さない。監査ログの行は消さず、DB ごと作り直すので、追記だけの保証は変えない。作り直しの数分は、画面が「API に届かない」の表示になる。
+2. **画面だけを公開し、Rails は公開しない。** Ingress は Next の `frontend` だけに置き、Rails の `web` は `ClusterIP` の Service だけにする。画面は Rails を Next のサーバーから呼び（M33「Rails をどこから呼ぶか」）、ブラウザが Rails を直接呼ぶ取り込みのファイルの送信も、Next の `rewrites` で同じオリジンの下に出す。GraphQL の入口はクラスタの外から届かず、外から届く Rails の入口は、Next を通した取り込みのファイルの受け口だけになる。CORS も開けない。TLS は Cloudflare で終わり、Rails には Next から http で届くので、本番の環境で `config.assume_ssl` を有効にして、`Secure` のセッションの Cookie を応答に書けるようにする。
+3. **作り直しは、Web とワーカーを 0 にしてから DB ごと作り直す。** CronJob が `bin/rails demo:reset` を流し、Kubernetes の API で `web` と `jobs` の Deployment を 0 にして Pod が消えるのを待ち、所有ロールで DB を消して作り直し、`DemoWorld` で世界を作り、成功しても失敗しても 1 に戻す。DB の接続が残らず、シードがその場で流すジョブを `bin/jobs` が同時に流さない。監査ログの行は消さず DB ごと消すので、行の書き換えと削除を止める仕組み（トリガー）は変えない。ただし、公開の配置の監査ログは 1 日で消え、保存期間（7 年）と「表を落とす DDL はマイグレーションのレビューで止める」（`../architecture/data-model.md`「監査ログ（`platform`）」）を守らない。公開の配置は業務の記録を持たないデモで、DB を消す工程は `DEMO_WORLD_ENABLED` を渡した作り直しだけであり、本物の本番の配置ではこの工程が入口で止まるからである。作り直しの数分は、画面が「API に届かない」の表示になる。
 4. **本番の環境でデモの世界を作るのは、`DEMO_WORLD_ENABLED=1` を渡したプロセスだけにする。** 配置は本番の環境（`RAILS_ENV=production`）で動かし、作り直しの CronJob にだけこの変数を渡す。所有ロールの資格情報を作り直しとマイグレーションの工程にだけ渡すのと同じ形である。Web とワーカーは、この変数を持たないので、いまと同じく `DemoWorld` と `Partnerships::Onboarding` を呼べない。
-5. **ワーカーは Solid Queue の async のモードで、1 つのプロセスにする。** キューごとのワーカーの分け方（`007` 決定 7）はそのままにし、ワーカーをプロセスではなくスレッドにする。fork のモードでは、スーパーバイザ・ワーカー 4 つ・ディスパッチャ・スケジューラの 7 プロセスがそれぞれ Rails を抱え、同居する Raspberry Pi のメモリを圧迫する。
+5. **ワーカーは Solid Queue の async のモードで、1 つのプロセスにする。** キューごとのワーカーの分け方（`007` 決定 7）はそのままにし、ワーカーをプロセスではなくスレッドにする。全ワーカーが 1 つの接続プールを分け合うので、プールの大きさをワーカーのスレッドとポーリングと心拍の和で決める。fork のモードでは、スーパーバイザ・ワーカー 4 つ・ディスパッチャ・スケジューラの 7 プロセスがそれぞれ Rails を抱え、同居する Raspberry Pi のメモリを圧迫する。
 6. **イメージは、GitHub ホストのランナーで QEMU と buildx を使い、`linux/arm64` で作る。** タグは git の SHA に固定し、GHCR に置く。リポジトリが private の間はパッケージも private なので、流用元と同じく読み取りの Secret で取りに行く。流用元は Go をクロスコンパイルして `RUN` の無い Dockerfile で済ませたが、Rails と Next はイメージの中で依存を入れて組み立てるので、その手は使えない。
 
-メールは外へ送らない。公開の配置では、通知の送り先を `NOTIFICATIONS_PROVIDER=file_system` でファイルに替える。ホスト名・作り直しの時刻・Raspberry Pi の機種とメモリは、作者が決める（OI-145〜OI-147）。
+メールは外へ送らない。公開の配置では、通知の送り先を `NOTIFICATIONS_PROVIDER=file_system` でファイルに替える。共有のアカウントでは、1 人のログアウトがセッションの世代を進めると、同じアカウントのほかの訪問者が全員切れるので、公開の配置ではログアウトで世代を進めない（既定。作者が OI-149 で決める）。ホスト名・作り直しの時刻・Raspberry Pi の機種とメモリ・訪問者に許す操作は、作者が決める（OI-145〜OI-148）。
 
 ## 結果
 
 ### 得られるもの
 
 - **作者が既に持つ Raspberry Pi と Cloudflare Tunnel だけで公開できる。** 新しい費用もアカウントも要らない。
-- **公開の面が画面の 1 つだけになる。** Rails の GraphQL とファイルの受け口は、クラスタの外から届かない。
+- **公開の面が画面の 1 つだけになる。** Rails の GraphQL の入口はクラスタの外から届かず、ファイルの受け口も Next の同じオリジンを通してだけ届く。
 - **作り直しの間に、データを書く者が作り直しのほかにいない。** 消す DB に接続が残らず、ジョブを二重に流さない。
 
 ### 引き受けるコスト
 
 - **訪問者の書き込みが全員に見える。** 取引関係を失効させた訪問者がいれば、次の作り直しまで、ほかの訪問者も失効した後の画面を見る。
+- **公開の配置の監査ログは 1 日しか残らない。** 監査の仕組みを見せることはできるが、記録を残すことはできない。
 - **作り直しの数分は、画面が API に届かない。** 時刻は利用の少ない時間に置く（OI-146）。
 - **async のモードは、Solid Queue が既定にしていない形である。** 重い取り込みが CPU と GVL をイベントの配送と分け合う。キューごとのワーカーは分かれたままなので、取り込みがイベントのキューを待たせることはない。
 - **QEMU の上の組み立ては遅い。** Rails のイメージは、ネイティブの拡張を持つ gem を arm64 で組み立てる。
@@ -61,7 +62,7 @@ M33 までで、デモは手元（`bin/rails server` と `next start`）で動�
 - 実機で測ったメモリが同居できる量に収まらない → ワーカーを Web の Puma の中で動かす（Solid Queue の Puma のプラグイン）か、配置先を分ける。
 - 訪問者の書き込みでデモが壊れる日が続く → 壊す操作を公開の配置で止めるか、訪問者ごとのデータの分離（流用元の形）を作る。
 - `images` のジョブが 20 分を超える → arm64 の GitHub ホストのランナーに移す。リポジトリが private の間に使えるかは、移すときに GitHub の文書で確かめる。
-- async のモードで、取り込みの間にイベントの配送の遅れの警報（`../slo.md`）の閾値を超える → fork のモードに戻し、メモリの見積もりを直す。
+- async のモードで、取り込みを流す間に、発注の登録から受注の確定までが画面で分かるほど遅れる（作者が実機の手順で測る。この配置はメトリクスを集めない） → fork のモードに戻し、メモリの見積もりを直す。
 
 ## 代替案
 
@@ -87,5 +88,8 @@ M33 までで、デモは手元（`bin/rails server` と `next start`）で動�
 
 ## 確認した事項
 
-- Solid Queue 1.7.0 の README「Fork vs. async mode」：`bin/jobs --mode async` か `SOLID_QUEUE_SUPERVISOR_MODE=async` で、ワーカー・ディスパッチャ・スケジューラをスーパーバイザと同じプロセスのスレッドで動かす。async のモードでは `processes` の設定を無視する。
+- Solid Queue 1.7.0 の README「Fork vs. async mode」：`bin/jobs --mode async` か `SOLID_QUEUE_SUPERVISOR_MODE=async` で、ワーカー・ディスパッチャ・スケジューラをスーパーバイザと同じプロセスのスレッドで動かす。async のモードでは `processes` の設定を無視する。同じ README の接続の数の段落は、async のモードではプロセスの中のワーカーの要るものを足し合わせるとする。
+- actionpack 8.1.4 の `lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`：`request.ssl?` が偽なら、`Secure` の Cookie を書かない。
+- activerecord 8.1.4 の `lib/active_record/tasks/database_tasks.rb` の `check_protected_environments!`：`DISABLE_DATABASE_ENVIRONMENT_CHECK` があれば、本番の環境の DB を消すタスクの確かめを飛ばす。
+- PostgreSQL 18 の公式イメージは、データを `/var/lib/postgresql/18/docker` に置く（本リポジトリの `compose.yaml` のコメント）。
 - 流用元（`958de71`）の `deploy/`：名前空間 `factory-ops`、Traefik の Ingress、`local-path` の PVC、Secret を手で入れる運用、`ghcr-pull-secret`、`timeZone: Asia/Tokyo` と `concurrencyPolicy: Forbid` の CronJob。
