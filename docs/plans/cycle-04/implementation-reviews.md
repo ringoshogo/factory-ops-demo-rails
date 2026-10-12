@@ -149,3 +149,97 @@ bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 f
 ### 残件の処理
 
 引当先が M37 の `open` と `blocked-user` は無かった。実装で決めたことは OI-127 に judgment で積んだ。実装レビューの R1 の直しで決めたことは OI-128 に、違和感の 1 つは IB-52 に積んだ。GraphQL を通らない公開 API の所有の条件は、計画どおり範囲外で、M32 の作るもの 10（OI-118）が扱う。
+
+## M30 メトリクス
+
+PR（`m30-metrics`、base は `main`）。PR #49（`cycle-04-plan`）と PR #50（`m37-scope-matrix`）が未マージなので、その commit も差分に見える。M30 の差分は `8fc96cc..` である。
+
+### 実装の記録
+
+#### RED と、壊して落ちる記録
+
+計画が最初に落とすとした 3 つは、次のとおりに落ちた。
+
+- `metrics_subscriber_spec.rb` の「`graphql.operation_completed` で `graphql_operation_duration_seconds` が増える」：購読者の `emit` とメトリクスの定義を空にした形で、期待の不一致（`expected ... to have changed by 1, but was changed by 0`）で落ちた（`8fc96cc` の上で、`bundle exec rspec spec/platform/metrics_subscriber_spec.rb`、1 example, 1 failure）。
+- `mutation_payload_spec.rb`（OI-119）：規則で拒否した mutation と、成功の mutation の後に拒否される mutation を並べた要求の 2 つが、`data` が null でない（`{"establishPartnership" => nil}`、`{"first" => {...}, "denied" => nil}`）期待の不一致で落ちた（`c4d0ccc` の上で、3 examples, 2 failures）。いまの振る舞いは、書き込みを戻した要求で先に成功した mutation の payload を返すことだったので、実装を SDL に合わせた（OI-130）。
+- `item_prices_spec.rb`・`catalog_spec.rb` の最大値 + 1（OI-121）：期待の不一致ではなく、保存の時点の `ActiveModel::RangeError` で落ちた（`a7df5eb` の上で、2 examples, 2 failures）。読み込みの失敗と同じく RED に数えず、下の壊して落ちる記録で代える。
+
+ほかの spec は実装の後に書いたので、次の壊して落ちる記録で RED に代える。壊したファイルは複製から戻し、壊すときと戻すときに更新時刻を進めた。`37c3ef7` の上で、壊したファイルを確かめる spec のファイルだけを流した。
+
+購読者と定義（`spec/platform/metrics_subscriber_spec.rb`、21 examples）：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| `result` の `success` を `ok` に写さない | 2：`graphql_operation_duration_seconds` が増える・`other` になる |
+| 登録の表を見ずに操作名をそのまま使う | 1：`other` になる |
+| `FORBIDDEN` の出どころを当てず、いつも `none` にする | 1：トップレベルのエラーの数え方 |
+| ミリ秒を秒に直さない | 5：時間を数える 5 つのヒストグラム |
+| `enqueued_at` の無いジョブを数えないのをやめる | 1：登録を通らずに実行したジョブ |
+| `small` の境目を `<` にする | 1：取り込みの大きさ（10,000 行） |
+| `total_rows` の無い取り込みを `small` にしない | 1：取り込みの大きさ（行を数える前の失敗） |
+| `graphql_operation_duration_seconds` のバケットから 0.5 を外す | 2：0.5 秒の閾値と、ミリ秒を秒に直す example |
+| `import_duration_seconds` のバケットから 300 を外す | 1：300 秒の閾値 |
+| `external_requests_total` のラベルに `tenant_id` を足す | 2：ラベルの名前の確かめと、そのメトリクスの example |
+| 登録の表の `queries` から 1 つ消す | 1：画面の問い合わせの一覧と一致する |
+
+値の置き場と exporter（`spec/platform/metrics_spec.rb`、9 examples）：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| 設定のキューを 0 で埋めない | 2：キューごとに数える・子のプロセスの `queue_ready_jobs{queue="events"} 0.0`。最初の形は子のプロセスの 1 件だけが落ち、数える example はジョブの無い設定のキューを既定の 0 のままで見ていたので、前もって値を書く形に直した（`37c3ef7`） |
+| ゲージの `aggregation: :most_recent` を外す | 1：子のプロセス（`pid` のラベルが付く） |
+| `DirectFileStore` を選ばない | 1：子のプロセス |
+| 収集のブロックを、どのプロセスにも登録する | 1：ワーカーのプロセスでだけ登録する |
+| `PROMETHEUS_EXPORTER_PORT` の確かめを外す | 1 |
+| `METRICS_PROCESS` とプロセスの種類の食い違いを許す | 1 |
+| `METRICS_PROCESS` の許す値の確かめを外す | 1。最初の形は種類の違いの例外で通っていたので、許す値の一覧の文言で確かめる形に直した（`37c3ef7`） |
+| ディレクトリを空にしない | 1 |
+| test の環境で立てないのをやめる | 1 |
+
+イベントを出す側：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| 操作の終わりのイベントを、結果のあるときだけ出す（例外では出さない） | `graphql_entry_spec.rb` の 1：例外のときのイベント |
+| code の無いエラーを `none` にしない | `graphql_entry_spec.rb` の 1 |
+| 決まらない文書の `operation_type` を `none` にしない | `graphql_entry_spec.rb` の 1 |
+| `unauthorized_object` の出どころを `rule` にする | 2：`graphql_entry_spec.rb` の `object` と `base_classes_spec.rb` の型の規則 |
+| `unauthorized_field` の出どころを `rule` にする | `base_classes_spec.rb` の 1：フィールドの規則 |
+| `enforce_rule!` の出どころを `object` にする | 2：`graphql_entry_spec.rb` の `rule` と `base_classes_spec.rb` のリゾルバ |
+| 宣言の無い拒否の出どころを `rule` にする | `base_classes_spec.rb` の 1 |
+| `ForbiddenError` が出どころを積まない | 7：出どころを確かめる 6 件と、`FORBIDDEN` のロールバックの 1 件（購読者が足りない出どころで例外を上げる） |
+| `ForbiddenError` が出どころの値を確かめない | `base_classes_spec.rb` の 1 |
+| SendGrid の接続の失敗でイベントを出さない | `sendgrid_spec.rb` の 1 |
+| SendGrid の 429 を `4xx` にまとめる | `sendgrid_spec.rb` の 1 |
+| 確実な通知の受け付けのイベントを出さない | `critical_delivery_job_spec.rb` の 1 |
+| ログの購読者の項目から `acceptance_ms` を落とす | `logging_spec.rb` の 1 |
+
+OI-119・OI-121：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| 単価の検証から最大値の上限を外す | 5：request spec の 2 と、公開 API の単体の 3（どれも保存の時点の例外） |
+| 単価の上限を `less_than` にする（1 つ下げる） | 5：最大値ちょうどを受け付ける request spec の 2 と単体の 3 |
+| mutation の戻り値の `null false` を外す | 8：`mutation_payload_spec.rb` の 2、`partnerships_spec.rb` の役割の 4、`base_classes_spec.rb` の 2 |
+
+#### 確かめたこと
+
+`37c3ef7` に台帳と計画の直しを足した作業ツリー（`40c9e81` と同じ内容）で、Ruby 3.4.11 で M30 の完了条件と共通の完了条件を流した。
+
+```sh
+bundle exec rspec spec/platform/metrics_subscriber_spec.rb spec/platform/logging_spec.rb spec/requests/graphql_entry_spec.rb \
+  spec/requests/mutation_payload_spec.rb spec/requests/item_prices_spec.rb spec/requests/catalog_spec.rb \
+  packs/notifications/spec packs/imports/spec   # 197 examples, 0 failures
+bin/ci                                         # 全工程が通る（brakeman は警告 0、rspec は 2521 examples, 0 failures）。2 分 14 秒
+BASE_REF=origin/main bin/check-branch-coverage # 一覧は空
+bin/check-open-items --due M30                 # 終了コード 0
+bundle exec rspec --tag concurrency            # 2 回続けて 59 examples, 0 failures
+```
+
+分岐の網羅率の警告は 0 件で、example を足した件数も 0 件である。
+
+手で確かめたこと（開発の環境、`a7df5eb` の後の作業ツリー）：`PROMETHEUS_EXPORTER_PORT=9394 METRICS_PROCESS=web bin/rails server` に `SupplierDashboard` の問い合わせを 1 回流すと、`curl -s localhost:9394/metrics` に `graphql_operation_duration_seconds_bucket{operation="SupplierDashboard",operation_type="query",outcome="ok",le="0.1"} 1.0` などが出た。同じサーバーの Rails のルートの `/metrics` は 404 だった。`PROMETHEUS_EXPORTER_PORT=9395 METRICS_PROCESS=jobs bin/jobs` を起こし、定期のジョブ（`Notifications::ProcessInboxJob`）が 1 回流れた後、`curl -s localhost:9395/metrics` に、fork した worker のプロセスが書いた `job_duration_seconds_count{job_class="Notifications::ProcessInboxJob",queue="default"} 1.0` と、supervisor が数えた `queue_ready_jobs{queue="events"} 0.0` など 4 つのキューの行が出た。`queue_ready_jobs` の行に `pid` のラベルは無かった。
+
+### 残件の処理
+
+引当先が M30 の `open` は OI-119・OI-121 で、どちらも閉じた。OI-124 は judgment のまま、出どころのラベルを実装した。実装で決めたことは OI-129〜OI-133 に judgment で積んだ。
