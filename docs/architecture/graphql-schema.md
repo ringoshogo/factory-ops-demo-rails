@@ -498,7 +498,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 品目の CSV の取り込み | `startImport`（種類が `items` のとき） | 種類で役割が変わるので、規則の形は `../implementation-plan.md` M29 で決める |
 | 監査ログを読む | `viewer.auditLogs` | `Platform::AuditLogPolicy#index?` |
 
-規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、値を返すペルソナの `member` で呼んで、`admin` に限る mutation が `FORBIDDEN` になって何も書かないことと、`member` に許す mutation が値を返すことを確かめる。
+規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、`member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`member` に許す mutation は、どのペルソナの `member` にも `admin` と同じ結果になり、値を返さないときは何も書かないことを確かめる。
 
 自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
 
@@ -617,7 +617,7 @@ type AuditLog {
 | `BillingTerm.customer`・`BillableItem.customer`・`Invoice.customer` | `Partnerships::Directory.tenants` |
 | `BillableItem.salesOrderLine` | `Sales::SalesOrders.lines_by_ids` |
 | `supplier.dashboard` | `Sales::SalesOrders.count_by_status`・`Inventory::Stocks.below_safety_stock`・`Fulfillment::ShipmentRequests.due_within`・`Billing::BillableItems.unbilled_total` |
-| `Item.unitPrice`・`Item.prices` | `Sales::ItemPrices.price_at`・`history` |
+| `Item.unitPrice`・`Item.prices` | `Sales::Catalog`（今日の単価を `Sales::ItemPrices.price_at` で引いて品目の値に載せる）・`Sales::ItemPrices.history` |
 | `BillableItem.priceExplanation` | `Sales::ItemPrices.explain`（ルートパッケージが、請求対象明細の受注明細 ID と請求書の発行時刻を渡す） |
 | `supplier.imports`・`supplier.import`・`Import.rowErrors` | `Imports::Runs` |
 | `viewer.auditLogs` | `Platform::AuditLogs`（「監査ログ」） |
