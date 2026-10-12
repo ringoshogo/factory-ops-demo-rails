@@ -89,7 +89,9 @@ RSpec.describe "表の行列" do
                 connection.exec_update("UPDATE #{quoted_table} SET owner_tenant_id = $1 WHERE id = $2", "Matrix",
                   [ world.tenants[other], id ])
               end
-            }.to raise_error(ActiveRecord::StatementInvalid, append_only ? /permission denied/ : /row-level security/)
+            }.to raise_error(ActiveRecord::StatementInvalid, MatrixExpectations::REWRITE_REJECTED_BY_TRIGGER.fetch(table) do
+              append_only ? /permission denied/ : /row-level security/
+            end)
           end
         end
       end

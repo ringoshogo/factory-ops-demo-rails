@@ -16,7 +16,7 @@ RSpec.describe Sales::OrderCancellation do
   end
 
   after do
-    delete_owned_rows([ supplier.id, buyer.id ], %w[cancellation_reviews sales_order_lines sales_orders items])
+    delete_owned_rows([ supplier.id, buyer.id ], %w[cancellation_reviews sales_order_lines sales_orders item_prices items])
   end
 
   def cancel = described_class.cancel(actor, sales_order_id: order.id)

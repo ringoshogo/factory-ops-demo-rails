@@ -16,10 +16,17 @@ module Sales
         .to_h { [ _1.customer_part_number, _1.item ] }
     end
 
-    # 受注明細に写す品目の値。単価・品目名・税率は照合した時点のカタログの値を写す
-    def self.copy(item)
-      { item_id: item&.id, item_name: item&.name, unit_price: item&.unit_price, tax_rate_percent: item&.tax_rate_percent }
+    # 受注明細に写す品目の値。品目名・税率は照合した時点のカタログの値を、単価は受注日に有効な、いま信じている単価を写し、
+    # その有効日を priced_on に残す（docs/adr/006 決定 5）。prices は ItemPrice.current の行を品目 ID ごとに束ねたもの
+    def self.copy(item, order_date, prices)
+      return { item_id: nil, item_name: nil, unit_price: nil, priced_on: nil, tax_rate_percent: nil } unless item
+
+      { item_id: item.id, item_name: item.name, unit_price: ItemPrice.price_on(prices[item.id], order_date), priced_on: order_date,
+        tax_rate_percent: item.tax_rate_percent }
     end
+
+    # 品目 ID ごとの現在の単価の行。明細ごとに引かず、受注をまとめて照合するときに 1 回で引く
+    def self.prices(item_ids) = ItemPrice.current.where(item_id: item_ids).group_by(&:item_id)
 
     # 全明細が照合できた受注を確定し、「受注確定」を出す。受注・受注明細・品目の ID は運ばない。
     # 明細を読み込み済みの呼び出し元は lines に渡し、受注ごとに明細を引き直さない。

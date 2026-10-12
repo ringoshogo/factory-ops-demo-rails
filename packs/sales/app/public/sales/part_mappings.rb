@@ -7,7 +7,8 @@ module Sales
       Page.of(relation, first:, after:) { |mappings| mappings.map { to_value(_1) } }
     end
 
-    # 取引先の得意先品番に自社の品目を対応させ、その品番で照合待ちの受注を照合し直す。全明細が照合できた受注は確定する。
+    # 取引先の得意先品番に自社の品目を対応させ、その品番で照合待ちの受注を照合し直す。明細には受注日の単価を写す。
+    # 全明細が照合できた受注は確定する。
     # 取引先は、自社が受注側の取引関係（失効したものを含む）の相手に限る。失効の前の発注も受注まで進むからである。
     # 既にある対応は品目を差し替える。照合済みの明細は変えない
     def self.register(actor, customer_tenant_id:, customer_part_number:, item_id:)
@@ -38,10 +39,11 @@ module Sales
         .where(customer_tenant_id: mapping.customer_tenant_id, confirmed_at: nil, cancelled_at: nil)
         .where(id: unmatched.select(:sales_order_id)).order(:id).lock.to_a
       lines = SalesOrderLine.where(sales_order_id: orders.map(&:id)).order(:sales_order_id, :id).lock.group_by(&:sales_order_id)
+      prices = PartMatching.prices([ mapping.item_id ])
       orders.each do |order|
         order_lines = lines.fetch(order.id)
         order_lines.select { !_1.matched? && _1.customer_part_number == mapping.customer_part_number }
-          .each { _1.update!(PartMatching.copy(mapping.item)) }
+          .each { _1.update!(PartMatching.copy(mapping.item, order.order_date, prices)) }
         PartMatching.confirm(order, order_lines) if order_lines.all?(&:matched?)
       end
     end

@@ -11,6 +11,20 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: btree_gist; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS btree_gist WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION btree_gist; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION btree_gist IS 'support for indexing common datatypes in GiST';
+
+
+--
 -- Name: audit_logs_append_only(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -109,6 +123,35 @@ BEGIN
   END IF;
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+
+--
+-- Name: item_prices_immutable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.item_prices_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'pg_temp'
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION '単価の行は消せない（item_prices %）', OLD.id;
+  ELSIF TG_OP = 'INSERT' THEN
+    IF NOT upper_inf(NEW.recorded_period) OR lower_inf(NEW.recorded_period) THEN
+      RAISE EXCEPTION '単価の行は、記録期間の始まりがあり終わりの無い現在の行として足す';
+    END IF;
+    RETURN NEW;
+  END IF;
+  IF NOT upper_inf(OLD.recorded_period) OR upper_inf(NEW.recorded_period) OR isempty(NEW.recorded_period)
+     OR lower(NEW.recorded_period) IS DISTINCT FROM lower(OLD.recorded_period)
+     OR (NEW.id, NEW.owner_tenant_id, NEW.item_id, NEW.unit_price, NEW.valid_period, NEW.reason, NEW.recorded_by_user_id)
+        IS DISTINCT FROM
+        (OLD.id, OLD.owner_tenant_id, OLD.item_id, OLD.unit_price, OLD.valid_period, OLD.reason, OLD.recorded_by_user_id) THEN
+    RAISE EXCEPTION '単価の行は、現在の行の記録期間を閉じる以外に変えられない（item_prices %）', OLD.id;
   END IF;
   RETURN NEW;
 END
@@ -550,6 +593,33 @@ COMMENT ON TABLE public.invoices IS '[請求] 請求書。発行の時刻が空�
 
 
 --
+-- Name: item_prices; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.item_prices (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    unit_price bigint NOT NULL,
+    valid_period daterange NOT NULL,
+    recorded_period tstzrange NOT NULL,
+    reason character varying,
+    recorded_by_user_id uuid,
+    item_id uuid NOT NULL,
+    CONSTRAINT item_prices_unit_price_non_negative CHECK ((unit_price >= 0)),
+    CONSTRAINT item_prices_valid_period_not_empty CHECK ((NOT isempty(valid_period)))
+);
+
+ALTER TABLE ONLY public.item_prices FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE item_prices; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.item_prices IS '[受注] 販売単価の履歴。有効期間と記録期間を持ち、行を書き換えずに改定と訂正を足す';
+
+
+--
 -- Name: items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -559,13 +629,11 @@ CREATE TABLE public.items (
     code character varying NOT NULL,
     name character varying NOT NULL,
     unit character varying NOT NULL,
-    unit_price bigint NOT NULL,
     tax_rate_percent integer DEFAULT 10 NOT NULL,
     published boolean DEFAULT false NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT items_tax_rate_percent_check CHECK ((tax_rate_percent = ANY (ARRAY[8, 10]))),
-    CONSTRAINT items_unit_price_non_negative CHECK ((unit_price >= 0))
+    CONSTRAINT items_tax_rate_percent_check CHECK ((tax_rate_percent = ANY (ARRAY[8, 10])))
 );
 
 ALTER TABLE ONLY public.items FORCE ROW LEVEL SECURITY;
@@ -832,7 +900,8 @@ CREATE TABLE public.sales_order_lines (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     sales_order_id uuid NOT NULL,
-    CONSTRAINT sales_order_lines_matched_together CHECK ((((item_id IS NULL) AND (item_name IS NULL) AND (unit_price IS NULL) AND (tax_rate_percent IS NULL)) OR ((item_id IS NOT NULL) AND (item_name IS NOT NULL) AND (unit_price IS NOT NULL) AND (tax_rate_percent IS NOT NULL)))),
+    priced_on date,
+    CONSTRAINT sales_order_lines_matched_together CHECK ((((item_id IS NULL) AND (item_name IS NULL) AND (unit_price IS NULL) AND (priced_on IS NULL) AND (tax_rate_percent IS NULL)) OR ((item_id IS NOT NULL) AND (item_name IS NOT NULL) AND (unit_price IS NOT NULL) AND (priced_on IS NOT NULL) AND (tax_rate_percent IS NOT NULL)))),
     CONSTRAINT sales_order_lines_quantity_positive CHECK ((quantity > 0))
 );
 
@@ -1942,6 +2011,22 @@ ALTER TABLE ONLY public.invoices
 
 
 --
+-- Name: item_prices item_prices_current_no_overlap; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.item_prices
+    ADD CONSTRAINT item_prices_current_no_overlap EXCLUDE USING gist (owner_tenant_id WITH =, item_id WITH =, valid_period WITH &&) WHERE (upper_inf(recorded_period));
+
+
+--
+-- Name: item_prices item_prices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.item_prices
+    ADD CONSTRAINT item_prices_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: items items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2607,6 +2692,20 @@ CREATE UNIQUE INDEX index_invoices_on_owner_tenant_id_and_invoice_number ON publ
 --
 
 CREATE UNIQUE INDEX index_invoices_one_draft_per_customer ON public.invoices USING btree (owner_tenant_id, customer_tenant_id) WHERE (issued_at IS NULL);
+
+
+--
+-- Name: index_item_prices_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_item_prices_on_owner_tenant_id_and_id ON public.item_prices USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_item_prices_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_item_prices_on_owner_tenant_id_and_item_id ON public.item_prices USING btree (owner_tenant_id, item_id);
 
 
 --
@@ -3282,6 +3381,13 @@ CREATE TRIGGER invoices_issued_immutable BEFORE DELETE OR UPDATE ON public.invoi
 
 
 --
+-- Name: item_prices item_prices_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER item_prices_immutable BEFORE INSERT OR DELETE OR UPDATE ON public.item_prices FOR EACH ROW EXECUTE FUNCTION public.item_prices_immutable();
+
+
+--
 -- Name: users users_bump_session_version; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3406,6 +3512,14 @@ ALTER TABLE ONLY public.sales_order_sequences
 
 ALTER TABLE ONLY public.billable_items
     ADD CONSTRAINT fk_rails_2afbdad4ce FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: item_prices fk_rails_2bccb734c3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.item_prices
+    ADD CONSTRAINT fk_rails_2bccb734c3 FOREIGN KEY (owner_tenant_id, item_id) REFERENCES public.items(owner_tenant_id, id);
 
 
 --
@@ -3582,6 +3696,14 @@ ALTER TABLE ONLY public.receipt_inspection_lines
 
 ALTER TABLE ONLY public.shipping_instructions
     ADD CONSTRAINT fk_rails_7b67c8f9e5 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: item_prices fk_rails_7bb36e7fcf; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.item_prices
+    ADD CONSTRAINT fk_rails_7bb36e7fcf FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
 
 
 --
@@ -3941,6 +4063,12 @@ ALTER TABLE public.invoice_tax_summaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: item_prices; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.item_prices ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4042,6 +4170,13 @@ CREATE POLICY owner_write ON public.invoice_tax_summaries USING ((owner_tenant_i
 --
 
 CREATE POLICY owner_write ON public.invoices USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: item_prices owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.item_prices USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -4196,6 +4331,15 @@ CREATE POLICY owner_write ON public.stocks USING ((owner_tenant_id = public.curr
 --
 
 CREATE POLICY owner_write ON public.users USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: item_prices partner_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY partner_read ON public.item_prices FOR SELECT USING ((upper_inf(recorded_period) AND (EXISTS ( SELECT 1
+   FROM public.items i
+  WHERE (i.id = item_prices.item_id)))));
 
 
 --
@@ -4370,6 +4514,8 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261012200100'),
+('20261012200000'),
 ('20261012100000'),
 ('20261012000000'),
 ('20261011210000'),

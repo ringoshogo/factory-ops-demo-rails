@@ -20,7 +20,7 @@ RSpec.describe Sales::PartMappings do
 
   after do
     delete_owned_rows([ supplier.id, buyer.id ],
-      %w[sales_order_lines sales_orders sales_order_sequences customer_part_mappings items partnership_grants partnerships])
+      %w[sales_order_lines sales_orders sales_order_sequences customer_part_mappings item_prices items partnership_grants partnerships])
   end
 
   def statuses

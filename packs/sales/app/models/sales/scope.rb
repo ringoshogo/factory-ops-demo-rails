@@ -1,8 +1,13 @@
 module Sales
-  # 公開 API が品目・受注・取消の審査・対応表を引くときに必ず通す、policy の relation_scope
+  # 公開 API が品目・単価の行・受注・取消の審査・対応表を引くときに必ず通す、policy の relation_scope
   module Scope
     def self.call(actor, name, **options)
       apply(ItemPolicy, Item.all, actor, name, options)
+    end
+
+    # 単価の行は品目と同じ規則で見せる
+    def self.item_prices(actor, name)
+      apply(ItemPolicy, ItemPrice.all, actor, name, {})
     end
 
     def self.sales_orders(actor, name)

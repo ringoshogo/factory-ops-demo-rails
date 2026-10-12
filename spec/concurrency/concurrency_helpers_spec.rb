@@ -73,6 +73,20 @@ RSpec.describe ConcurrencyHelpers do
     SQL
   end
 
+  # 単価の行は、トリガーが所有ロールの削除も拒む（docs/adr/006 決定 3）
+  it "後始末は単価の行も消し、止めたトリガーを戻す" do
+    Tenancy.with_tenant(tenant.id) { FactoryBot.create(:item, unit_price: 100) }
+    owner = OwnerConnection.lease_connection
+    expect { owner.transaction { owner.execute("DELETE FROM item_prices WHERE owner_tenant_id = #{owner.quote(tenant.id)}") } }
+      .to raise_error(ActiveRecord::StatementInvalid, /単価の行は消せない/)
+
+    delete_owned_rows([ tenant.id ], %w[item_prices items])
+
+    expect(owner.select_value("SELECT count(*) FROM item_prices WHERE owner_tenant_id = $1", "Spec", [ tenant.id ])).to eq(0)
+    expect(owner.select_values("SELECT tgenabled FROM pg_trigger WHERE NOT tgisinternal AND tgrelid = 'item_prices'::regclass"))
+      .to eq([ "O" ])
+  end
+
   it "後始末は、そのテナントの名義で登録した送信のジョブも消し、別のテナントのジョブは残す" do
     other = FactoryBot.create(:tenant)
     [ tenant, other ].each do |owner|
