@@ -74,11 +74,16 @@ module Fulfillment
     end
 
     # 審査の出荷停止を解除済みにする。行が無ければ解除済みの行を作る。1 文の upsert にするのは、行を読んでから書く間に
-    # 停止が割り込んで解除前の行を作り、解除が失われることを防ぐためである。解除の時刻は最初に解除したときのまま変えない
+    # 停止が割り込んで解除前の行を作り、解除が失われることを防ぐためである。解除の時刻は最初に解除したときのまま変えない。
+    # 審査 ID の一意索引はテナントをまたぐので、他社の同じ審査 ID の行に当たったときに備え、更新に所有の条件を書く。
+    # 当たれば行を作りも書きもしないので、失敗させて知らせる
     def self.release_hold(cancellation_review_id, sales_order_id)
       now = Time.current
-      ShippingHold.upsert(hold_row(cancellation_review_id, sales_order_id, released_at: now), unique_by: :source_cancellation_review_id,
-        on_duplicate: Arel.sql("released_at = COALESCE(shipping_holds.released_at, EXCLUDED.released_at), updated_at = EXCLUDED.updated_at"))
+      written = ShippingHold.upsert(hold_row(cancellation_review_id, sales_order_id, released_at: now),
+        unique_by: :source_cancellation_review_id, returning: :id,
+        on_duplicate: Arel.sql("released_at = COALESCE(shipping_holds.released_at, EXCLUDED.released_at), updated_at = EXCLUDED.updated_at " \
+          "WHERE shipping_holds.owner_tenant_id = EXCLUDED.owner_tenant_id"))
+      raise ActiveRecord::RecordNotFound, "他社の出荷停止と同じ審査 ID: #{cancellation_review_id}" if written.rows.empty?
     end
 
     # 受注ごとのアドバイザリロックを、トランザクションの終わりまで取る。出荷依頼がまだ無い受注には行ロックを掛ける行が無いので、

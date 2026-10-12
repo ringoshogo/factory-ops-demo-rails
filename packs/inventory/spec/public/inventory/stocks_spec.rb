@@ -83,6 +83,7 @@ RSpec.describe Inventory::Stocks do
           # 対照：開いた後は、他社の在庫が見え、自社の在庫は変える
           before = reread(theirs)
           expect(described_class.set_safety_stock(actor, item_id: own.item_id, safety_stock: 12)).to be_success
+          expect(own.reload.safety_stock).to eq(12)
 
           result = described_class.set_safety_stock(actor, item_id: theirs.item_id, safety_stock: 99)
           expect(failures(result)).to eq([ [ :not_found, [ :item_id ] ] ])

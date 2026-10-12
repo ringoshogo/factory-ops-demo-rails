@@ -144,7 +144,8 @@ RSpec.describe Fulfillment::SalesEventReceiver do
 
     # イベントの受け手は操作者のいない入口なので、所有の条件を RLS に任せない。出荷取消は出荷依頼を FOR UPDATE で引いて書き、
     # 出荷停止を UPDATE で解除するので、SELECT だけを開いても RLS の UPDATE のポリシーが他社の行を除き、条件の抜けが見えない
-    # （docs/guides/testing.md「行列テストとの分担」）。他社の受注の出荷依頼と解除前の停止を置き、2 か所を 1 つの example で確かめる
+    # （docs/guides/testing.md「行列テストとの分担」）。他社の受注の出荷依頼と解除前の停止を置き、2 か所を 1 つの example で確かめる。
+    # 出荷停止の解除の upsert は、審査 ID の一意索引が他社の行に導くので、その更新にも所有の条件を書き、別の example で確かめる
     describe "RLS の SELECT と UPDATE を開いたとき" do
       include_context "RLS の SELECT と UPDATE を開く"
 
@@ -157,15 +158,37 @@ RSpec.describe Fulfillment::SalesEventReceiver do
 
         Tenancy.with_tenant(supplier.id) do
           cross_read!
-          # 対照：開いた後は、他社の出荷依頼と停止が見え、自社の出荷依頼は取消済にする
+          # 対照：開いた後は、他社の出荷依頼と停止が見え、自社の出荷依頼は取消済にし、自社の停止は解除する。
+          # 審査 ID を空にして、停止の解除が審査の upsert ではなく、受注ごとの UPDATE によることを確かめる
           before = theirs.map { reread(_1) }
           described_class.handle(event)
+          described_class.handle(held)
           described_class.handle(cancelled.with(cancellation_review_id: nil))
           expect(Fulfillment::ShipmentRequest.find_by!(owner_tenant_id: supplier.id, sales_order_id: event.sales_order_id).cancelled_at)
+            .to be_present
+          expect(Fulfillment::ShippingHold.find_by!(owner_tenant_id: supplier.id, source_cancellation_review_id: review_id).released_at)
             .to be_present
 
           described_class.handle(cancelled.with(sales_order_id: their_order_id, cancellation_review_id: nil, ready_for_shipment: false))
           expect(theirs.map { reread(_1) }).to eq(before)
+        end
+      end
+
+      it "出荷停止解除は、他社の同じ審査 ID の出荷停止を書かずに失敗する" do
+        their_hold = Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:shipping_hold) }
+
+        Tenancy.with_tenant(supplier.id) do
+          cross_read!
+          # 対照：開いた後は、他社の停止が見え、自社の審査の停止は解除する
+          before = reread(their_hold)
+          described_class.handle(held)
+          described_class.handle(released)
+          expect(Fulfillment::ShippingHold.find_by!(owner_tenant_id: supplier.id, source_cancellation_review_id: review_id).released_at)
+            .to be_present
+
+          expect { described_class.handle(released.with(cancellation_review_id: their_hold.source_cancellation_review_id)) }
+            .to raise_error(ActiveRecord::RecordNotFound)
+          expect(reread(their_hold)).to eq(before)
         end
       end
     end

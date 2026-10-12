@@ -57,6 +57,7 @@ RSpec.describe Partnerships::Authentication, "の操作者のいない入口" do
       # 対照：開いた後は、他社のユーザーが見え、自社のユーザーのセッションは失効させる
       before = reread(stranger)
       expect(described_class.revoke_sessions(admin.id, session_version: 0)).to eq(1)
+      expect(admin.reload.session_version).to eq(1)
 
       expect(described_class.revoke_sessions(stranger.id, session_version: 0)).to eq(0)
       expect(reread(stranger)).to eq(before)

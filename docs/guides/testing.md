@@ -146,9 +146,11 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 UPDATE と `SELECT ... FOR UPDATE` で行を引く公開 API は、SELECT だけを開いても、RLS の UPDATE のポリシー（`owner_write`）が他社の行を対象から除くので、所有の条件を外しても単体が落ちない。そのため文脈は UPDATE のポリシーも開く。UPDATE のポリシーの `WITH CHECK` は `false` で、許可のポリシーの `WITH CHECK` は OR でつながるので、書いた後の行は `owner_write` の `WITH CHECK`（自社の行）だけで判定される。所有の条件を外した公開 API は、他社の行を引いて書こうとして RLS の違反の例外になり、example が落ちる。ただし、設定が `on` の間は、他社の行を自社の名義に書き換える UPDATE と `INSERT ... ON CONFLICT DO UPDATE` が `WITH CHECK` を通る。example は、`cross_read!` で開いたまま同じ接続で他社の行を読み直し、所有の列を含めて変わらないことを確かめて、この書き換えを捕まえる（文脈の `reread`）。所有ロールの接続で読み直さないのは、example のトランザクションの中で作った行と書き込みが別の接続から見えないからである。テストを書く人は、条件の付いた書き込み（出荷済の時刻が空のときだけ書く、など）には、書く側の分岐を通る他社の行を選ぶ。
 
+`INSERT ... ON CONFLICT DO UPDATE` は、テナントをまたぐ一意索引で衝突すると他社の行を更新しにいく。公開 API は、更新の `WHERE` に所有の条件を書き、他社の行に当たったら失敗させる。文脈を開かなければ `owner_write` の `USING` が、開けば `WITH CHECK` が例外にするので、条件を外しても RLS の例外になり、条件があるときの失敗と区別できる（出荷停止の解除。`Fulfillment::SalesEventReceiver` の `release_hold`）。
+
 次の 3 つの形は、文脈を開いても所有の条件の抜けが見えないので、所有の条件を書いたうえで単体では確かめない。どれも、所有の条件は別の守りと重なる二重の守りである。
 
-- 冪等キーにグローバルな一意索引がある受け手：他社に同じキーの行を作れないので、他社の行を引く入力を作れない。出荷依頼の作成と出荷停止の記録と解除（`Fulfillment::SalesEventReceiver` の `create_request`・`hold`・`release`）、受注の連結（`Sales::PurchaseOrderTranslator`）、請求対象の記録（`Billing::SalesEventReceiver`）、受領請求書の記録（`Purchasing::BillingEventReceiver`）がこれに当たる。一意索引が、他社の行への書き込みを止める
+- 冪等キーにグローバルな一意索引があり、キーが重なれば書かずに飛ばす受け手（`ON CONFLICT DO NOTHING` と、有無を読んでから作る形）：他社に同じキーの行を作れないので、他社の行を引く入力を作れない。出荷依頼の作成と出荷停止の記録（`Fulfillment::SalesEventReceiver` の `create_request`・`hold`）、受注の連結（`Sales::PurchaseOrderTranslator`）、請求対象の記録（`Billing::SalesEventReceiver`）、受領請求書の記録（`Purchasing::BillingEventReceiver`）がこれに当たる。一意索引が、他社の行への書き込みを止める
 - 行ロックだけを取って書かない箇所：他社の行のロックは黙って通り、結果が変わらない。出荷停止の受け手が出荷依頼をロックする箇所（`Fulfillment::SalesEventReceiver` の `hold`）がこれに当たる。続けて書く出荷停止の行は、自社の名義で作る
 - DELETE：文脈は DELETE のポリシーを開かないので、他社の行は DELETE の対象にならない。`owner_write` が他社の行を除く
 

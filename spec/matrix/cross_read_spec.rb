@@ -8,11 +8,6 @@ RSpec.describe "共有の文脈「RLS の SELECT と UPDATE を開く」" do
   # ポリシーの足し外しは所有ロールの接続で表のロックを取るので、example ごとのトランザクションの外で走らせる
   self.use_transactional_tests = false
 
-  def cross_read_policies
-    ActiveRecord::Base.lease_connection
-      .select_value("SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND policyname = 'matrix_cross_read'")
-  end
-
   # 足した 2 つのポリシーの形ごとの表の数。名前・操作・USING・WITH CHECK が同じ行をまとめる
   def cross_policy_shapes
     ActiveRecord::Base.lease_connection.select_rows(<<~SQL)
@@ -21,6 +16,14 @@ RSpec.describe "共有の文脈「RLS の SELECT と UPDATE を開く」" do
       GROUP BY 1, 2, 3, 4, 5 ORDER BY 1
     SQL
   end
+
+# 2 つのポリシーの名前ごとの表の数。形が違っても同じ名前なら数える
+def cross_policy_counts
+  ActiveRecord::Base.lease_connection.select_rows(<<~SQL).to_h
+    SELECT policyname::text, count(*) FROM pg_policies
+    WHERE schemaname = 'public' AND policyname IN ('matrix_cross_read', 'matrix_cross_update') GROUP BY 1
+  SQL
+end
 
   # 文脈を使う内側の example group を走らせ、example の結果を返す。実行の絞り込みと --order rand を内側に掛けない
   def run_inner_group(&body)
@@ -73,11 +76,12 @@ RSpec.describe "共有の文脈「RLS の SELECT と UPDATE を開く」" do
   end
 
   it "with_policies は、足すのに失敗したら、先にあったポリシーを外さずに送出する" do
+    tables = MatrixWorld.tenant_tables.size
     MatrixCrossRead.with_policies do
       expect { MatrixCrossRead.with_policies { nil } }.to raise_error(/matrix_cross_read か matrix_cross_update のポリシーがすでにある/)
-      expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
+      expect(cross_policy_counts).to eq("matrix_cross_read" => tables, "matrix_cross_update" => tables)
     end
-    expect(cross_read_policies).to eq(0)
+    expect(cross_policy_counts).to eq({})
   end
 
   it "同じ名前のポリシーがすでにあれば、足さずに失敗し、あったポリシーを外さない" do
@@ -85,7 +89,22 @@ RSpec.describe "共有の文脈「RLS の SELECT と UPDATE を開く」" do
       results = run_inner_group { it("走らない") { nil } }
 
       expect(results.first.last).to include("matrix_cross_read か matrix_cross_update のポリシーがすでにある")
-      expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
+      tables = MatrixWorld.tenant_tables.size
+      expect(cross_policy_counts).to eq("matrix_cross_read" => tables, "matrix_cross_update" => tables)
+    end
+  end
+
+  # 足すのは 1 つのトランザクションなので、最後に足す表の UPDATE のポリシーだけが重なって失敗しても、前に足しかけた
+  # ポリシーは残らない。先にあったポリシーは、どの行も対象にしない形（USING (false)）で置き、example の後で外す
+  it "最後の表の UPDATE のポリシーだけが先にあれば、足さずに失敗し、足しかけたポリシーを残さず、あったポリシーを外さない" do
+    owner = OwnerConnection.lease_connection
+    last = owner.quote_table_name(MatrixWorld.tenant_tables.last)
+    owner.execute("CREATE POLICY matrix_cross_update ON #{last} FOR UPDATE USING (false)")
+    begin
+      expect { MatrixCrossRead.with_policies { nil } }.to raise_error(/matrix_cross_read か matrix_cross_update のポリシーがすでにある/)
+      expect(cross_policy_counts).to eq("matrix_cross_update" => 1)
+    ensure
+      owner.execute("DROP POLICY IF EXISTS matrix_cross_update ON #{last}")
     end
   end
 end
