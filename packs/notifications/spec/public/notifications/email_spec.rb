@@ -30,7 +30,7 @@ RSpec.describe Notifications::Email do
     end
 
     it "同じ通知キーの 2 回目は、送信記録もジョブも足さない。別の通知キーなら足す" do
-      2.times { deliver }
+      expect(2.times.map { deliver }).to eq([ deliveries.sole.id, nil ])
       expect([ deliveries.size, jobs("Notifications::CriticalDeliveryJob").count ]).to eq([ 1, 1 ])
 
       deliver(key: "received_invoice:2")

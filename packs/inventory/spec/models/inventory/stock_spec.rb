@@ -48,6 +48,15 @@ RSpec.describe Inventory::Stock do
     expect(stock.reload.on_hand).to eq(10)
   end
 
+  it "安全在庫の変更は安全在庫だけを書き、数量を一緒に書き換えようとすると拒否する" do
+    stock.change_safety_stock!(4)
+    expect(stock.reload.slice(:on_hand, :safety_stock)).to eq("on_hand" => 10, "safety_stock" => 4)
+
+    stock.on_hand = 99
+    expect { stock.change_safety_stock!(5) }.to raise_error(ActiveRecord::ReadOnlyRecord)
+    expect(stock.reload.slice(:on_hand, :safety_stock)).to eq("on_hand" => 10, "safety_stock" => 4)
+  end
+
   # readonly? はクラス単位の一括の書き込みを止めない。在庫の行は在庫のパッケージの外から参照できない（packwerk の
   # enforce_privacy）ので、パッケージの中のコードが一括の書き込みを呼ばないことで、move! を唯一の入口に保つ。
   # 例外は、数量 0 の行を足すだけの lock_for の insert_all である。呼び出しは Prism の構文木から拾い、

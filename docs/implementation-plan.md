@@ -83,7 +83,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M9 | カタログ | 経路 1 が `view_catalog` の付与でだけ開く |
 | M10 | 発注登録と受注の連結 | 発注と受注がイベントだけで連結し、同じイベントで受注が 2 件できない |
 | M11 | 品番の対応表と照合のやり直し | 照合できない明細を持つ受注が確定しない |
-| M12 | 在庫と引当 | 有効在庫が負にならず、在庫の変更が必ず移動履歴を残す |
+| M12 | 在庫と引当 | 有効在庫が負にならず、在庫の数量の変更が必ず移動履歴を残す |
 | M13 | 出荷指示と出荷実績の計上 | 出荷が `active` の引当だけを消費する |
 | M14 | 出荷計上の還流と経路 3 | 経路 3 が `view_shipments` の付与と自社の発注でだけ開く |
 | M15 | コメントの規約と掃除 | コメントに開発の経緯・マイルストーンの番号・予定を書けない |
@@ -443,7 +443,7 @@ M21 以降は、横断の仕組み（M15〜M20）に合わせて、次も作る�
 
 ## M12 在庫と引当
 
-**目的**：有効在庫は負にならない。在庫の変更は必ず 1 つの内部メソッドを通り、移動履歴を残す。全量を引き当てた受注だけが出荷可能になる。
+**目的**：有効在庫は負にならない。在庫の数量の変更は必ず 1 つの内部メソッドを通り、移動履歴を残す。全量を引き当てた受注だけが出荷可能になる。
 
 **作るもの**
 
@@ -1458,8 +1458,8 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
 **作るもの**
 
 1. 世界の作り方 `DemoWorld`（`lib/demo_world.rb`）と、それを呼ぶ `db/seeds.rb`。M33 の E2E の世界（`bin/rails e2e:prepare`）も同じ `DemoWorld` で作る。シードと E2E の世界を別々に書くと、片方だけが古くなる。`DemoWorld.build(namespace:, variant:)` は次の契約を持つ。
-   - `namespace`：テナントのコード・取引用コード・会社名の接尾辞・メールアドレスの接尾辞に入れる文字列。テナントのコード・取引用コード・ユーザーのメールアドレスは DB 全体で一意なので、同じ DB に複数の世界を作るときは別の値を渡す。シードは空の文字列を渡す
-   - `variant`：`:seed` か `:e2e`。`:e2e` は、シードの中身に加えて、M33 が求める中身の違うデータ（最も長い品目名と取引先名、ボタンのある行と無い行、状況の enum の全値の行）を足す
+   - `namespace`：テナントのコード・会社名の接尾辞・メールアドレスの接尾辞に入れる文字列。テナントのコード・ユーザーのメールアドレスは DB 全体で一意なので、同じ DB に複数の世界を作るときは別の値を渡す。シードは空の文字列を渡す。取引用コードも DB 全体で一意だが、推測できない無作為の値にする（`data-model.md`「取引関係と権限付与（`partnerships`）」）ので、`namespace` を入れずに世界ごとの乱数で作る（OI-139）
+   - `variant`：`:seed` か `:e2e`。`:e2e` は、シードの中身に加えて、M33 が求める中身の違うデータ（最も長い品目名と取引先名、ボタンのある行と無い行、状況の enum の止まっていられる全値の行）を足す。発注の「送信済み」と取り込みの「待機中・置き場へ写し中・反映中」は、ジョブが次の状況へ進めるので含めない（OI-138）。アカウントの一覧の形と名前の付け方は OI-139 による
    - 返り値：作ったテナントの ID とアカウント（ペルソナごとのメールアドレスとパスワード）。M33 の E2E は、これでログインする
    - 冪等：同じ `namespace` の受注側のテナントがあれば、何も作らずに、あるテナントとアカウントを返す。冪等は `namespace` ごとに判定する
 2. 中身：受注側に青嵐精機工業、発注側に架空の組立メーカー 2 社（全権限の付与ありと、失効済み）を作る。流用元（factory-ops-demo の `958de71`）の `backend/internal/seed/default.go` から品目（`ITM-001`〜`ITM-020`、単価・安全在庫・初期在庫）を写し、発注側の 2 社の名前に得意先の `CUS-001`・`CUS-002` を使う（OI-123）。得意先の住所と担当者、ほかの 3 社は写さない。本デモの得意先はテナントで、住所と担当者を持たないからである。受注・出荷・検収・請求書の確定まで進んだ取引と、途中の取引を混ぜる。品目には、単価の改定の予約と訂正を 1 件ずつ含める。取り込みも 1 件（一部の行が失敗したもの）含める。
@@ -1468,13 +1468,14 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
 5. 公開 API が無い 2 つの書き込み：いまはテナントとユーザーを作る公開 API と、安全在庫を設定する公開 API が無い（テストは factory で表へ書く）。次の 2 つを足す（OI-125）。
    - `Partnerships::Onboarding.register(name:, code:, partner_code:, users:)`：テナントと、`admin`・`member` のユーザーを作り、テナントの ID を返す。テナントがまだ無いので、操作者を取らず、テナントの設定の外で呼ぶ（`tenants` への書き込みは追加だけを許す、`data-model.md`「RLS」）。操作者のいない入口の規則のうち、`Tenancy.require_tenant!` だけを通さない例外である（`graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。ユーザーは作ったテナントの `Tenancy.with_tenant` の中で書く。`production` の環境では呼べない（例外）。サインアップの入口ではなく、シードと E2E の準備のためのものである
    - `Inventory::Stocks.set_safety_stock(actor, item_id:, safety_stock:)`：自社の在庫の安全在庫を変える。所有の条件を scope で明示する。役割は問わない（在庫の調整 `adjustStock` と同じ）。GraphQL の入口は足さない
+   - `DemoWorld` が冪等を判定するために、`Partnerships::Onboarding.tenant_id(code:)` も足す。行の無いときと上限の扱いは OI-140 による
    - どちらも単体の spec（`packs/partnerships/spec/public/partnerships/onboarding_spec.rb`・`packs/inventory/spec/public/inventory/stocks_spec.rb`）で、他社の行を書けないこと（生 SQL の対照つき）と、`production` で呼べないことを確かめる
 6. 境界：`lib/demo_world.rb` はルートパッケージに属し、各パッケージの `app/public` だけを呼ぶ（packwerk の privacy）。業務の表へ直接書かないので RLS と policy を通り、GraphQL の入口を足さないので入口の行列の行は増えない。作るもの 5 の 2 つの公開 API は GraphQL を通らない入口なので、表の行列（生 SQL）と単体で確かめる。
 7. 役割の制限：シードは GraphQL を通らない入口なので、`admin` に限る操作（`graphql-schema.md`「役割による制限」の表の、取引関係・取消・検収・請求・単価の改定と訂正・品目の取り込み）の公開 API を呼ぶ前に、mutation と同じ policy の規則を操作者で評価し、拒否なら例外で止める（同じ節の、GraphQL を通らない入口の規則）。
 8. アカウント：シードのアカウント（メールアドレスと、共通のパスワード）を `db/seeds/demo_accounts.json` の 1 か所に置き、`DemoWorld` はそこから読む（`namespace` を接尾辞として足す）。M33 のログインの画面がこの一覧を並べるか（OI-09）にかかわらず、ここに置く。パスワードはデモの手元で使う値で、本番の資格情報を書かない。シードは `production` の環境では動かない。
 9. 業務の今日（OI-117）：作るもの 1〜8 より先に作る。シードと画面に出る日付が、これで決まるからである。
    - `config/application.rb` で `config.time_zone = "Asia/Tokyo"` にする。業務の日付は、どれも `Date.current`（と `Time.current` の日付）で決め、日本時間の今日になる（`context-map.md`「検収と請求の流れ」）。ダッシュボードのリゾルバの `Time.current.in_time_zone("Asia/Tokyo")` を外し、`Date.current` にする（`graphql-schema.md`「読み取りの一覧」）
-   - 既存の行は書き換えない。時刻の列（`timestamptz`）は時刻帯を持つので変わらず、日付の列（受注日・検収日など）は書いたときの日付のまま残る。DB のセッションの時刻帯は UTC のままにし、SQL で今日を取らない（いまの SQL に `CURRENT_DATE`・`now()::date` は無い）
+   - 既存の行は書き換えない。時刻の列は Rails が UTC で書く（`ActiveRecord.default_timezone` の既定）ので変わらず、日付の列（受注日・検収日など）は書いたときの日付のまま残る。DB のセッションの時刻帯は UTC のままにし、SQL で今日を取らない（いまの SQL に `CURRENT_DATE`・`now()::date` は無い）
    - 時刻帯を混ぜる呼び出しを止める：`.rubocop.yml` で `Rails/Date` と `Rails/TimeZone` を有効にし、`Date.today`・`Time.now`・`Time.parse` などシステムの時刻帯で決まる呼び出しを落とす。`spec/rubocop/` に、2 つの Cop が有効であることを確かめる example を足す
    - テストの時刻の比較：`spec/requests/dashboard_spec.rb` に、日本時間の 0〜9 時（UTC の前日の 15〜24 時）に `travel_to` で受注を作り、受注日とダッシュボードの `businessDate` がどちらも日本時間の日付で一致する example を足す。`packs/purchasing/spec`・`packs/sales/spec`・`packs/billing/spec`・`packs/imports/spec` の、日付を決める公開 API（発注日・受注日・検収日・発行日・単価の有効日・取り込みの改定日）に、同じ境目の example を 1 つずつ足す。UTC を前提に書いた既存の比較は、全件を流して落ちたものを日本時間の今日で書き直す
    - 影響：シードの日付（作るもの 3）と M33 の画面の日付は、どれも日本時間の今日になる。`guides/config.md`「application.rb で変えたこと」に時刻帯を書く
@@ -1498,7 +1499,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 業務の今日（作るもの 9）で最初に落とすテストは、`dashboard_spec.rb` の日本時間の 0〜9 時の example（受注日が UTC の前日になり、期待の不一致で落ちる）である。作るもの 10 は、直す公開 API の単体の「設定を `on` にしても他社の行を数えない」example（所有の条件が無いので、他社の行を数えて落ちる）、作るもの 11 は `item_prices_spec.rb` の 201 文字の example（`INVALID_INPUT` の期待で落ちる）である。
 
 - `spec/scenarios/seeds_spec.rb`：`DemoWorld.build(namespace: "", variant: :seed)` の後、両社の `admin` と `member` でログインして確かめる。受注側は `supplier.dashboard`・`supplier.salesOrders`・`supplier.invoices`・`supplier.imports` が値を返す。全権限の付与がある発注側は、`buyer.suppliers` とそのカタログ・出荷が値を返す。失効済みの発注側は、`buyer.suppliers` とカタログ・出荷が空になり（`graphql-schema.md`「発注側の視点」の経路 2）、自社の `buyer.purchaseOrders`・`buyer.receivedInvoices` は値を返す
-- `spec/scenarios/demo_world_spec.rb`：同じ DB に `namespace` の違う 2 組を作れ、それぞれの 2 回目は行を増やさない。操作者を `member` に替えると、`admin` に限る段がどれも例外で止まる。`variant: :e2e` は、状況の enum の全値の行を持つ。作った後に、実行したジョブの `solid_queue_ready_executions` の行が残らず、取り込みの同時実行の鍵のセマフォ（`solid_queue_semaphores`）が上限の値（1）に戻り、同じテナントで次の取り込みを始めると、そのジョブが blocked にならずに ready になる。セマフォの行は返した後も残る（solid_queue 1.7.0 の `app/models/solid_queue/semaphore.rb` の `signal` は値を足すだけで、行を消さない）
+- `spec/scenarios/demo_world_spec.rb`：同じ DB に `namespace` の違う 2 組を作れ、それぞれの 2 回目は行を増やさない。操作者を `member` に替えると、`admin` に限る段がどれも例外で止まる。`variant: :e2e` は、状況の enum の止まっていられる全値の行を持つ（OI-138）。作った後に、実行したジョブの `solid_queue_ready_executions` の行が残らず、取り込みの同時実行の鍵のセマフォ（`solid_queue_semaphores`）が上限の値（1）に戻り、同じテナントで次の取り込みを始めると、そのジョブが blocked にならずに ready になる。セマフォの行は返した後も残る（solid_queue 1.7.0 の `app/models/solid_queue/semaphore.rb` の `signal` は値を足すだけで、行を消さない）
 - 置き場：2 つとも `spec/scenarios` に置く。どの層の置き場にも当たらないファイルは `bin/test-layers` が落とす
 
 **範囲外**：公開の配置と訪問者ごとのデータ（M33 の著者判断 8）、性能の測定のための大量のデータ、サインアップの入口。
@@ -1617,7 +1618,7 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
   | 流用元の規則 | 本デモでの置き方 |
   |---|---|
   | 同じ種類の要素の寸法・そろえ・はみ出しを、最初のタスクで全画面について測る | 流用元の `e2e/support/tokens.ts`・`table-align.ts`・`contrast.ts` と、カードの高さ・はみ出し（`scrollWidth <= clientWidth`）の検査を写し、M33 の最初の作業で置く。測る画面の一覧は `app/` のルートのファイルから作り、手で並べない。足した画面が測られないまま通らないようにするためである |
-  | 中身の違うデータを作ってから測る | `DemoWorld` の `variant: :e2e` が、最も長い品目名と取引先名、ボタンのある行と無い行、各状況の enum の全値の行を入れる（M32）。シードの短くそろった中身だけで測らない |
+  | 中身の違うデータを作ってから測る | `DemoWorld` の `variant: :e2e` が、最も長い品目名と取引先名、ボタンのある行と無い行、各状況の enum の止まっていられる全値の行を入れる（M32、OI-138・OI-139）。シードの短くそろった中身だけで測らない |
   | 寸法・色・フォーカスは、アニメーションと色の遷移が終わってから測る。キーは 1 つ押すごとにフォーカスの移りを待つ | 流用元の `e2e/support/style.ts`・`router.ts` の待ち方をそのまま使う |
   | 数える前に画面の変化を待ち、遷移の後は着いたことを先に確かめる | 同上。イベントで進む表示（発注 → 受注確定）はワーカーの処理を待つので、`expect.poll` と再読み込みで待ち、固定の時間は待たない |
   | 1 回だけ落ちたテストを、再実行で緑にして流さない | CPU の遅延（CDP の `Emulation.setCPUThrottlingRate`）で再現率を測り、待ち方の誤りか製品の競合かを分ける。Playwright の `retries` は 0 にする |

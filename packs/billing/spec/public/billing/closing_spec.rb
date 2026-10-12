@@ -6,6 +6,8 @@ require_relative "../../../../../spec/support/events"
 # 消費税を税率ごとに 1 回だけ切り捨てる。確定は請求番号を振り、「請求書発行」を出す。入力と状態は上から順に確かめ、
 # 最初に当たった結果を返す（docs/architecture/data-model.md「請求（`billing`）」、docs/architecture/context-map.md「検収と請求の流れ」5）
 RSpec.describe Billing::Closing do
+  include ActiveSupport::Testing::TimeHelpers
+
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:customer) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "admin", partner_code: "") }
@@ -272,6 +274,19 @@ RSpec.describe Billing::Closing do
             "amount" => line.amount.to_s }
         end
       } ] ])
+    end
+
+    # 発行日は確定した時刻の、業務の今日（日本時間）の日付である（docs/architecture/context-map.md「検収と請求の流れ」）
+    it "日本時間の 0〜9 時に確定した請求書の発行日は、日本時間の日付になる" do
+      item("2026-09-10")
+      draft = close("2026-09-20").value
+      now = Time.utc(2026, 10, 11, 16, 0)
+
+      travel_to(now) { expect(issue(draft.id)).to be_success }
+
+      # 対照：この時刻の UTC の日付は前日である
+      expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+      expect(published_invoices.sole.last.fetch("issued_on")).to eq("2026-10-12")
     end
 
     it "請求番号は自社の確定の順に 1 ずつ増え、下書きの破棄では欠番にならない" do

@@ -1,6 +1,7 @@
 require "rails_helper"
 require_relative "../../../../../spec/support/events"
 require_relative "../../../../../spec/support/shared_examples/idempotent_receiver"
+require_relative "../../../../../spec/support/cross_read"
 
 # 購買からのイベントの受注側の受け手。「取消依頼」では審査を作って出荷停止を出し、受注が出荷済みか取消済なら審査を作らずに自動で却下する。
 # 「検収完了」では検収数量を記録し、受注を検収済にする
@@ -126,6 +127,27 @@ RSpec.describe Sales::PurchasingEventReceiver do
 
       expect(Tenancy.with_tenant(supplier.id) { Sales::SalesOrders.find(actor, other.id) }.status).to eq(:inspected)
       expect(shipped_order_value.status).to eq(:shipped)
+    end
+
+    # イベントの受け手は操作者のいない入口なので、冪等キーの有無も所有の条件を RLS に任せずに読む
+    # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
+    describe "RLS の SELECT を開いたとき" do
+      include_context "RLS の SELECT を開く"
+
+      it "他社に同じ出荷実績 ID の検収の記録があっても、自社の検収を記録する" do
+        Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:inspection_record, shipment_id:) }
+
+        Tenancy.with_tenant(supplier.id) do
+          cross_read!
+          # 対照：開いた後は、他社の同じ出荷実績 ID の記録が SELECT で見える
+          expect(Sales::InspectionRecord.where(shipment_id:).where.not(owner_tenant_id: supplier.id).exists?).to be(true)
+          described_class.handle(inspected)
+        end
+
+        # SELECT は example の終わりまで開いたままなので、自社の記録に絞って数える
+        expect(records.count { _1.first == supplier.id }).to eq(2)
+        expect(shipped_order_value.status).to eq(:inspected)
+      end
     end
 
     it "受注明細ごとに検収数量を記録し、受注を検収済にする。数量 0 の明細も記録する" do

@@ -5,6 +5,8 @@ module Sales
   class ItemPrice < TenantRecord
     belongs_to :item
 
+    attribute :recorded_period, RecordedPeriodType.new
+
     # 上限は列の型（bigint）の最大値。超えた値は保存の時点で ActiveModel::RangeError になり、ユーザーエラーに写らない
     BIGINT_MAX = 9_223_372_036_854_775_807
     validates :unit_price, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: BIGINT_MAX }

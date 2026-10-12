@@ -34,7 +34,10 @@ module FactoryOpsDemoRails
     # These settings can be overridden in specific environments using the files
     # in config/environments, which are processed later.
     #
-    # config.time_zone = "Central Time (US & Canada)"
+    # 業務の今日（受注日・発注日・検収日・請求書の発行日・単価の有効日）は Date.current で決まるので、使う会社のある日本時間にする。
+    # UTC のままだと、日本時間の 0〜9 時の操作が前日の日付になる。DB に書く時刻は ActiveRecord.default_timezone の UTC のままで、
+    # 既存の行は変わらない（docs/architecture/context-map.md「検収と請求の流れ」、docs/guides/config.md「application.rb で変えたこと」）
+    config.time_zone = "Asia/Tokyo"
     # config.eager_load_paths << Rails.root.join("extras")
 
     # Only loads a smaller set of middleware suitable for API only apps.

@@ -19,10 +19,10 @@ module Partnerships
       Login.new(user_id: row["id"], tenant_id: row["owner_tenant_id"], session_version: row["session_version"])
     end
 
-    # Tenancy.with_tenant の中で呼ぶ。RLS の下で引くので、別テナントのユーザーは見つからない。
+    # Tenancy.with_tenant の中で呼ぶ。開いたテナントのユーザーだけを引くので、別テナントのユーザーは見つからない。
     # セッションの世代がユーザーの今の世代と違えば、ログアウトかパスワードの変更より前のセッションなので拒む
     def self.actor(user_id, session_version:)
-      user = User.find_by(id: user_id)
+      user = own_users.find_by(id: user_id)
       return unless user && user.session_version == session_version
 
       to_actor(user)
@@ -32,13 +32,20 @@ module Partnerships
     # 役割は呼んだ時点の役割を読むので、依頼の後に admin でなくなったユーザーは member として返る。
     # 別テナントのユーザーと消えたユーザーは nil になる
     def self.acting_user(user_id)
-      User.find_by(id: user_id)&.then { to_actor(_1) }
+      own_users.find_by(id: user_id)&.then { to_actor(_1) }
     end
 
     # Tenancy.with_tenant の中で呼ぶ。ユーザーの世代を進め、発行済みのすべてのセッションを使えなくする。
     # 世代が今のものと違うセッションでは進めない。無効になった Cookie で、他の端末のログインを切らせない
     def self.revoke_sessions(user_id, session_version:)
-      User.where(id: user_id, session_version: session_version).update_all("session_version = session_version + 1")
+      own_users.where(id: user_id, session_version: session_version).update_all("session_version = session_version + 1")
+    end
+
+    # ログインの後の 3 つは操作者のいない入口の公開 API なので、テナントの設定を求め、所有の条件を RLS に任せずに書く
+    # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
+    def self.own_users
+      Tenancy.require_tenant!
+      User.where(owner_tenant_id: Current.tenant_id)
     end
 
     # 壊れたダイジェストもパスワード違いと同じに扱い、同じだけ時間を掛ける
@@ -53,6 +60,6 @@ module Partnerships
       Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role,
         partner_code: Tenant.find(user.owner_tenant_id).partner_code)
     end
-    private_class_method :password_matches?, :to_actor
+    private_class_method :own_users, :password_matches?, :to_actor
   end
 end

@@ -2,17 +2,21 @@ module Sales
   # 購買からの「取消依頼」と「検収完了」の受け手（docs/architecture/context-map.md「取消の流れ」2・4、「検収と請求の流れ」2・3）。
   # 受注側テナントの名義で、自社の受注に取消の審査を作って出荷へ「出荷停止」を出すか、検収数量を記録して受注を検収済にし、
   # 請求へ「請求対象確定」を出す。
-  # 取引関係の状態は見ない。「発注登録」の受け手は、受注を作る腐敗防止層（PurchaseOrderTranslator）である
+  # 取引関係の状態は見ない。「発注登録」の受け手は、受注を作る腐敗防止層（PurchaseOrderTranslator）である。
+  # イベントの受け手は操作者のいない入口なので、テナントの設定を求め、所有の条件を RLS に任せずに書き、値を返さない
+  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
   module PurchasingEventReceiver
     # 「検収完了」が、受注側の「出荷計上」より先に届いた。再配送に任せる
     class NotShippedYet < StandardError; end
 
     def self.handle(event)
+      Tenancy.require_tenant!
       case event
       when Contracts::CancellationRequested then review(event)
       when Contracts::ReceiptInspected then inspect_shipment(event)
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
+      nil
     end
 
     # 冪等キーは取消依頼 ID。受注の行ロックが、同じ依頼の配送と審査の決着を直列にする。
@@ -21,7 +25,7 @@ module Sales
     def self.review(event)
       order = SalesOrder.lock.find_by!(owner_tenant_id: Current.tenant_id, source_purchase_order_id: event.purchase_order_id,
         customer_tenant_id: event.buyer_tenant_id)
-      return if CancellationReview.exists?(source_cancellation_request_id: event.cancellation_request_id)
+      return if CancellationReview.exists?(owner_tenant_id: Current.tenant_id, source_cancellation_request_id: event.cancellation_request_id)
       return publish_rejected(order, event) if order.shipped_at || order.cancelled_at
 
       review = order.cancellation_reviews.create!(owner_tenant_id: order.owner_tenant_id,
@@ -43,7 +47,7 @@ module Sales
     def self.inspect_shipment(event)
       order = SalesOrder.lock.find_by!(owner_tenant_id: Current.tenant_id, source_purchase_order_id: event.purchase_order_id,
         customer_tenant_id: event.buyer_tenant_id)
-      return if InspectionRecord.exists?(shipment_id: event.shipment_id)
+      return if InspectionRecord.exists?(owner_tenant_id: Current.tenant_id, shipment_id: event.shipment_id)
       raise NotShippedYet, "受注 #{order.id} はまだ出荷済でない" unless order.shipped_at
 
       lines = order.lines.index_by(&:source_purchase_order_line_id)

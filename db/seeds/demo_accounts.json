@@ -1,0 +1,11 @@
+{
+  "password": "factory-ops-demo",
+  "accounts": [
+    { "persona": "supplier_admin", "tenant": "supplier", "role": "admin", "email": "admin@seiran.example", "name": "高橋 美咲" },
+    { "persona": "supplier_member", "tenant": "supplier", "role": "member", "email": "member@seiran.example", "name": "佐々木 健" },
+    { "persona": "granted_buyer_admin", "tenant": "granted_buyer", "role": "admin", "email": "admin@tokai-sanki.example", "name": "伊藤 花子" },
+    { "persona": "granted_buyer_member", "tenant": "granted_buyer", "role": "member", "email": "member@tokai-sanki.example", "name": "山田 太郎" },
+    { "persona": "revoked_buyer_admin", "tenant": "revoked_buyer", "role": "admin", "email": "admin@kitakanto-automation.example", "name": "鈴木 一郎" },
+    { "persona": "revoked_buyer_member", "tenant": "revoked_buyer", "role": "member", "email": "member@kitakanto-automation.example", "name": "中村 由美" }
+  ]
+}

@@ -1,5 +1,6 @@
 require "rails_helper"
 require_relative "../../../../../spec/support/owner_connection"
+require_relative "../../../../../spec/support/cross_read"
 
 # 既存の品目の単価と受注明細の有効日を、単価の履歴の形へ写すデータの移行（docs/adr/006 決定 1、docs/adr/001 決定 4）。
 # 移行の前の DB の形（items.unit_price があり、照合済みの明細の priced_on が空でよい）は、列を消した後のテストの DB には無い。
@@ -8,6 +9,7 @@ require_relative "../../../../../spec/support/owner_connection"
 RSpec.describe "Sales::ItemPrices.backfill" do
   include ConcurrencyHelpers
   include ActiveSupport::Testing::TimeHelpers
+  include_context "RLS の SELECT を開く"
 
   self.use_transactional_tests = false
 
@@ -109,6 +111,24 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     expect(price_rows(tenant.id).map(&:first)).to eq([ mine[:item].id ])
     expect(price_rows(other.id)).to be_empty
     expect(priced_on(theirs[:line].id)).to be_nil
+  end
+
+  # 操作者のいない入口（rake タスク）の公開 API なので、所有の条件を RLS に任せない
+  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
+  it "RLS の SELECT を開いても、他社の品目と明細を数えず、触れない" do
+    mine = legacy_rows(tenant.id, unit_price: 150)
+    theirs = legacy_rows(other.id, unit_price: 300)
+
+    result = Tenancy.with_tenant(tenant.id) do
+      cross_read!
+      # 対照：開いた後は、他社の品目が SELECT で見える
+      expect(Sales::Item.where(id: theirs[:item].id).exists?).to be(true)
+      Sales::ItemPrices.backfill
+    end
+
+    expect(result).to eq(items: 1, lines: 1)
+    expect(price_rows(tenant.id).map(&:first)).to eq([ mine[:item].id ])
+    expect([ price_rows(other.id), priced_on(theirs[:line].id) ]).to eq([ [], nil ])
   end
 
   # 列を消すマイグレーションを、所有ロールのトランザクションの中で流し、ブロックの後に巻き戻す。

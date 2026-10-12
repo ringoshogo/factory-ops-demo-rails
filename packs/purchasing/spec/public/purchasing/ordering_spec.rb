@@ -3,6 +3,8 @@ require "rails_helper"
 # 発注の登録。発注できない相手は理由を区別せず NOT_PERMITTED にし、明細の誤りは項目を指す INVALID_INPUT にする。
 # どちらの失敗も、発注も「発注登録」も残さない（docs/architecture/context-map.md「発注の連結と品番の照合」1、「取引関係の失効」）
 RSpec.describe Purchasing::Ordering do
+  include ActiveSupport::Testing::TimeHelpers
+
   let!(:buyer) { FactoryBot.create(:tenant) }
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:partnership) do
@@ -38,6 +40,17 @@ RSpec.describe Purchasing::Ordering do
       buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id, desired_delivery_on: "2026-11-02")
     expect(published.sole.lines.map { _1.slice("part_number", "quantity") })
       .to eq([ { "part_number" => "MY-BOLT", "quantity" => 10 }, { "part_number" => "MY-NUT", "quantity" => 3 } ])
+  end
+
+  # 業務の今日は日本時間で決まる（docs/architecture/context-map.md「検収と請求の流れ」）
+  it "日本時間の 0〜9 時に登録した発注の発注日は、日本時間の日付になる" do
+    now = Time.utc(2026, 10, 11, 16, 0)
+
+    result = travel_to(now) { place }
+
+    # 対照：この時刻の UTC の日付は前日である
+    expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+    expect(result.value.order_date).to eq(Date.new(2026, 10, 12))
   end
 
   describe "発注できない相手" do

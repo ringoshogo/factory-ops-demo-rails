@@ -3,6 +3,8 @@ require "rails_helper"
 # 受注側の腐敗防止層。「発注登録」から受注を 1 件だけ作り、全明細が照合できれば「受注確定」、できなければ「品番照合待ち」を出す。
 # 発注側へ返すイベントは、受注側の内部の ID を運ばない（docs/architecture/context-map.md「発注の連結と品番の照合」2〜4）
 RSpec.describe Sales::PurchaseOrderTranslator do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:buyer) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
@@ -35,6 +37,20 @@ RSpec.describe Sales::PurchaseOrderTranslator do
       .to eq([ [ item.id, "六角ボルト M8", 120, 10, 2 ] ])
     expect(published.sole).to have_attributes(class: Contracts::SalesOrderConfirmed, purchase_order_id: event.purchase_order_id,
       lines: [ { "purchase_order_line_id" => event.lines.sole["purchase_order_line_id"], "item_name" => "六角ボルト M8", "unit_price" => "120" } ])
+  end
+
+  # 受注日と、明細の単価を決めた有効日は、業務の今日（日本時間）で決まる（docs/architecture/context-map.md「検収と請求の流れ」、
+  # docs/adr/006 決定 6）
+  it "日本時間の 0〜9 時に届いた発注の受注日と単価の有効日は、日本時間の日付になる" do
+    now = Time.utc(2026, 10, 11, 16, 0)
+
+    travel_to(now) { described_class.handle(event_for("MY-BOLT")) }
+
+    # 対照：この時刻の UTC の日付は前日である
+    expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+    line = lines_of(orders.sole).sole
+    expect([ orders.sole.order_date, Sales::ItemPrices.explain(actor, [ line.id ], as_of: nil).fetch(line.id).priced_on ])
+      .to eq([ Date.new(2026, 10, 12), Date.new(2026, 10, 12) ])
   end
 
   it "受注を確定したら、自社の admin への新しい受注の通知を撃ちっぱなしで送り、照合待ちで止まった受注では送らない" do

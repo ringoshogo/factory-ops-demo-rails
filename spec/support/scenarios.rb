@@ -20,9 +20,7 @@ module ScenarioHelpers
 
   # 登録済みのイベントのうち、最も古い 1 件だけを受け手まで流す
   def deliver_oldest_event(times: 1)
-    job = enqueued_event_jobs.first
-    BulletDetection.wrap { times.times { ActiveJob::Base.execute(job.arguments) } }
-    job.finished!
+    BulletDetection.wrap { DemoWorld::Jobs.execute(enqueued_event_jobs.first, times:) }
   end
 
   # 登録済みのイベントのうち、event_name のペイロードを古い順に返す

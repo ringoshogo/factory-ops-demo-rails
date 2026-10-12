@@ -4,6 +4,9 @@ module Sales
   # 記録の時刻は、ロックを取った後に 1 回だけ取る。DB の now() はトランザクションの始まりの時刻なので、ロックを待った操作が、
   # 先にコミットした操作の行をその始まりより前の時刻で閉じようとして失敗する（docs/adr/006 決定 3）
   module ItemPrices
+    # 訂正の理由の上限（docs/architecture/graphql-schema.md「mutation の一覧」）
+    MAX_REASON_LENGTH = 200
+
     # 改定日からの単価を予約する。改定日を含む現在の行を閉じ、改定日の前日までの元の単価と、改定日から元の行の終わりまでの
     # 新しい単価の行を足す。改定日を含む行の単価が同じなら何も書かないので、同じ予約をもう一度流しても行は増えない
     def self.schedule(actor, item_id:, unit_price:, effective_on:)
@@ -37,6 +40,9 @@ module Sales
     # 現在の行を、同じ有効期間で正しい単価の行に置き換える。閉じた行は訂正できない
     def self.correct(actor, item_price_id:, unit_price:, reason:)
       return OperationResult.failure(:invalid_input, path: [ :reason ], message: "訂正の理由を書く") if reason.blank?
+      if reason.length > MAX_REASON_LENGTH
+        return OperationResult.failure(:invalid_input, path: [ :reason ], message: "訂正の理由は #{MAX_REASON_LENGTH} 文字までにする")
+      end
 
       ItemPrice.transaction(requires_new: true) do
         row = Scope.item_prices(actor, :own).find_by(id: item_price_id)

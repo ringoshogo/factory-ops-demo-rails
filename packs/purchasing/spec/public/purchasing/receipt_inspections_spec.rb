@@ -72,6 +72,17 @@ RSpec.describe Purchasing::ReceiptInspections, ".record" do
     expect(find_order.status).to eq(:inspected)
   end
 
+  # 検収日は自社の日付で、業務の今日は日本時間で決まる（docs/architecture/context-map.md「検収と請求の流れ」）
+  it "日本時間の 0〜9 時に登録した検収の検収日は、日本時間の日付になる" do
+    now = Time.utc(2026, 10, 20, 16, 0)
+
+    travel_to(now) { expect(record).to be_success }
+
+    # 対照：この時刻の UTC の日付は前日である
+    expect(now.utc.to_date).to eq(Date.new(2026, 10, 20))
+    expect([ inspections.sole.inspected_on, published.sole.inspected_on ]).to eq([ Date.new(2026, 10, 21), "2026-10-21" ])
+  end
+
   it "成功の値は、検収済になった発注である" do
     expect(record.value).to have_attributes(id: order.id, status: :inspected)
   end

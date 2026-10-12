@@ -108,7 +108,8 @@ RSpec.describe "N+1 の検出", type: :request, bullet: false do
       read_lines = n_plus_one
       result = run_inner_example(type: :request) do
         post "/session", params: { email:, password: "password" }, as: :json
-        allow(self).to receive(:enqueued_event_jobs).and_return([ instance_double(SolidQueue::Job, arguments: {}, finished!: true) ], [])
+        job = instance_double(SolidQueue::Job, id: 0, arguments: {}, finished!: true, unblock_next_blocked_job: false)
+        allow(DemoWorld::Jobs).to receive(:ready).and_return([ job ], [])
         allow(ActiveJob::Base).to receive(:execute) { read_lines.call }
 
         deliver_enqueued_events

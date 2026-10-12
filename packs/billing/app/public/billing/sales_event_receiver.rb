@@ -1,13 +1,17 @@
 module Billing
   # 受注からの「請求対象確定」の受け手（docs/architecture/context-map.md「検収と請求の流れ」4）。
   # 受注側テナントの名義で、未請求の請求対象明細を書く。取引関係の状態は見ない。
-  # 締めのロック（請求条件の行）は取らないので、締めの最中に届いた明細は未請求のまま残り、次の締めで集まる
+  # 締めのロック（請求条件の行）は取らないので、締めの最中に届いた明細は未請求のまま残り、次の締めで集まる。
+  # イベントの受け手は操作者のいない入口なので、テナントの設定を求め、所有の条件を RLS に任せずに書き、値を返さない
+  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
   module SalesEventReceiver
     def self.handle(event)
+      Tenancy.require_tenant!
       case event
       when Contracts::BillableItemConfirmed then record(event)
       else raise ArgumentError, "unexpected event: #{event.class}"
       end
+      nil
     end
 
     # 冪等キーは出荷実績 ID と受注明細 ID の組で、行があれば（請求済みでも）何もしない。同時に届いた配送は一意索引が止める

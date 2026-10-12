@@ -131,6 +131,16 @@ RSpec.describe Sales::ItemPrices do
       expect(prices.size).to eq(1)
     end
 
+    # 単価の有効日の今日は日本時間で決まる（docs/adr/006 決定 6、docs/architecture/context-map.md「検収と請求の流れ」）
+    it "日本時間の 0〜9 時には、日本時間の今日からの改定を受け付け、その前日からの改定を INVALID_INPUT にする" do
+      now = Time.utc(2026, 10, 11, 16, 0)
+
+      # 対照：この時刻の UTC の日付は前日である
+      expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+      expect(failures(schedule(unit_price: 120, effective_on: Date.new(2026, 10, 11), at: now))).to eq([ [ :invalid_input, [ :effective_on ] ] ])
+      expect(schedule(unit_price: 120, effective_on: Date.new(2026, 10, 12), at: now)).to be_success
+    end
+
     it "単価は bigint の最大値ちょうどまでを受け付ける" do
       expect(schedule(unit_price: 9_223_372_036_854_775_807, effective_on: t1.to_date)).to be_success
       expect(price_on(t1.to_date)).to eq(9_223_372_036_854_775_807)
@@ -175,6 +185,16 @@ RSpec.describe Sales::ItemPrices do
       expect(failures(correct(row, unit_price: 9_223_372_036_854_775_808))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
       expect(prices.map(&:unit_price)).to eq([ 100 ])
       expect(correct(row, unit_price: 9_223_372_036_854_775_807)).to be_success
+    end
+
+    # 理由の上限は 200 文字（docs/architecture/graphql-schema.md「mutation の一覧」）
+    it "理由は 200 文字ちょうどを受け付け、201 文字は理由を指す INVALID_INPUT で何も書かない" do
+      row = prices.sole
+
+      expect(failures(correct(row, reason: "あ" * 201))).to eq([ [ :invalid_input, [ :reason ] ] ])
+      expect(prices.map(&:unit_price)).to eq([ 100 ])
+      expect(correct(row, reason: "あ" * 200)).to be_success
+      expect(prices.map { [ _1.unit_price, _1.reason ] }).to eq([ [ 90, "あ" * 200 ] ])
     end
 
     it "見えない行は NOT_FOUND" do

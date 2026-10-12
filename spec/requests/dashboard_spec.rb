@@ -55,6 +55,26 @@ RSpec.describe "受注側のダッシュボード", type: :request do
 
   # リゾルバは受注の一覧の規則だけを評価するので、ほかの 3 つの一覧の規則が役割で違う答えを返すと、
   # その一覧を読めない役割にもダッシュボードが集計を返す（docs/architecture/graphql-schema.md「読み取りの一覧」）
+  # 業務の今日はアプリの時刻帯（日本時間）の Date.current で決まり、受注日とダッシュボードの今日が同じ出どころになる
+  # （docs/architecture/context-map.md「検収と請求の流れ」、docs/architecture/graphql-schema.md「読み取りの一覧」）
+  it "日本時間の 0〜9 時に作った受注の受注日と、ダッシュボードの今日が、どちらも日本時間の日付になる" do
+    buyer = FactoryBot.create(:tenant)
+    event = Contracts::PurchaseOrderPlaced.new(purchase_order_id: SecureRandom.uuid, buyer_tenant_id: buyer.id,
+      supplier_tenant_id: supplier.id, desired_delivery_on: nil,
+      lines: [ { "purchase_order_line_id" => SecureRandom.uuid, "part_number" => "P-1", "quantity" => 1 } ])
+    travel_to(now) { as_supplier { Sales::PurchaseOrderTranslator.handle(event) } }
+    order_id = as_supplier { Sales::SalesOrders.list(actor, first: 10, after: nil).values.find { _1.customer_tenant_id == buyer.id }.id }
+
+    result = travel_to(now) do
+      query("query($id: ID!) { supplier { dashboard { businessDate } salesOrder(id: $id) { orderDate } } }", id: order_id)
+    end
+
+    # 対照：この時刻の UTC の日付は前日である
+    expect(now.utc.to_date).to eq(Date.new(2026, 10, 11))
+    expect([ result.dig("supplier", "dashboard", "businessDate"), result.dig("supplier", "salesOrder", "orderDate") ])
+      .to eq([ "2026-10-12", "2026-10-12" ])
+  end
+
   it "4 つの一覧の規則が、admin と member のどちらにも、ダッシュボードの規則と同じ答えを返す" do
     answers = %w[admin member].to_h do |role|
       user = actor.with(role:)

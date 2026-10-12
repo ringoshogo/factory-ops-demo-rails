@@ -1697,7 +1697,7 @@ enum StockMovementType {
 
 type SupplierDashboard {
   """
-  集計の基準にした今日（Asia/Tokyo）
+  集計の基準にした業務の今日（日本時間）
   """
   businessDate: ISO8601Date!
 

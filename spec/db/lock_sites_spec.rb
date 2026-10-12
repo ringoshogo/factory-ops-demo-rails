@@ -46,6 +46,10 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     "Inventory::Allocation.locked_allocations" => {
       spec: "spec/concurrency/cancel_vs_ship_spec.rb", mentions: %w[OrderCancellation.cancel Shipping.post]
     },
+    "Inventory::Stocks.set_safety_stock" => {
+      reason: "シードと E2E の世界の準備だけが呼ぶ。在庫の行ロックで同じ在庫の調整・引当と直列になり、数量は変えないので、" \
+        "並んだ調整・引当の結果を変えない。安全在庫だけを書くことは packs/inventory/spec/models/inventory/stock_spec.rb が確かめる"
+    },
     "Notifications::CriticalDeliveryJob.perform" => { spec: "packs/notifications/spec/concurrency/notifications/delivery_lock_spec.rb" },
     "Notifications::Email.redeliver_failed" => {
       reason: "運用者が rake タスクから流す再送の操作。同時の再送は送信記録の行ロックで直列になり、待った側は失敗の時刻を消した行を" \

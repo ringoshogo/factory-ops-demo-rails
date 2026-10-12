@@ -33,3 +33,11 @@ FactoryOps/ExternalEffectEnqueue:
 # コメントに経緯・マイルストーンの番号・予定を書かせない（docs/guides/comments.md「機械で止めるもの」）
 FactoryOps/NoHistoryComment:
   Enabled: true
+
+# 業務の今日をアプリの時刻帯（config.time_zone）の Date.current・Time.current で決め、システムの時刻帯で決まる
+# Date.today・Time.now・Time.parse などを混ぜない（docs/guides/config.md「application.rb で変えたこと」）
+Rails/Date:
+  Enabled: true
+
+Rails/TimeZone:
+  Enabled: true
