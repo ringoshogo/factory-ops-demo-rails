@@ -42,6 +42,18 @@ RSpec.describe "表の行列" do
         connection.select_value("SELECT owner_tenant_id FROM #{quoted_table} WHERE id = $1", "Matrix", [ id ])
       end
 
+      # 自社の行を写し、ID と所有テナントだけを変えた行を、RETURNING を付けずに INSERT する。factory の INSERT は RETURNING を付けるので、
+      # 新しい行が SELECT のポリシーでも拒まれ、書き込みのポリシーの WITH CHECK を緩めても同じ例外で落ちる。RETURNING の無い INSERT は
+      # WITH CHECK だけが拒む
+      def insert_copy_owned_by(owner_tenant_id, source_id)
+        connection.exec_query(<<~SQL, "Matrix", [ owner_tenant_id, source_id ])
+          INSERT INTO #{quoted_table}
+          SELECT (jsonb_populate_record(NULL::#{quoted_table},
+            to_jsonb(source) || jsonb_build_object('id', uuidv7(), 'owner_tenant_id', $1::uuid))).*
+          FROM #{quoted_table} source WHERE source.id = $2
+        SQL
+      end
+
       MatrixWorld::PERSONAS.each do |persona|
         others = MatrixWorld::PERSONAS - [ persona ]
         partner_reads = reads.fetch(persona, {})
@@ -59,6 +71,9 @@ RSpec.describe "表の行列" do
           others.each do |other|
             expect {
               world.as(persona) { FactoryBot.create(MatrixWorld.factory_name(table), owner_tenant_id: world.tenants[other]) }
+            }.to raise_error(ActiveRecord::StatementInvalid, /row-level security/)
+            expect {
+              world.as(persona) { insert_copy_owned_by(world.tenants[other], world.row(table, persona).id) }
             }.to raise_error(ActiveRecord::StatementInvalid, /row-level security/)
           end
         end
