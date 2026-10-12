@@ -136,6 +136,17 @@ RSpec.describe "カタログの GraphQL", type: :request do
         "errors" => [])
     end
 
+    # 単価の列は bigint。上限を超える値は、トップレベルのエラーにせず、項目を指すユーザーエラーにする
+    it "新しい品目の単価は bigint の最大値ちょうどを受け付け、最大値 + 1 は項目を指す INVALID_INPUT で作らない" do
+      expect(mutate("saveItem", code: "N-2", name: "上限", unit: "個", unitPrice: "9223372036854775808"))
+        .to match("item" => nil, "errors" => [ include("code" => "INVALID_INPUT", "path" => [ "unitPrice" ]) ])
+      expect(mutate("saveItem", code: "N-1", name: "上限", unit: "個", unitPrice: "9223372036854775807"))
+        .to match("item" => include("code" => "N-1", "unitPrice" => "9223372036854775807"), "errors" => [])
+      codes = query("{ supplier { items { nodes { code } } } }").dig("supplier", "items", "nodes").pluck("code")
+      expect(codes).to include("N-1")
+      expect(codes).not_to include("N-2")
+    end
+
     it "入力の誤りを、項目を指す INVALID_INPUT のユーザーエラーで返す" do
       expect(mutate("saveItem", code: "N-1", name: "x", unit: "個", unitPrice: 1, taxRatePercent: 5)["errors"])
         .to match([ include("code" => "INVALID_INPUT", "path" => [ "taxRatePercent" ]) ])

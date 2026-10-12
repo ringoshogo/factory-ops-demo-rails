@@ -52,7 +52,12 @@ RSpec.describe Sales::Catalog do
     expect(failure.(save(tax_rate_percent: 5))).to eq([ [ :invalid_input, [ :tax_rate_percent ] ] ])
     expect(failure.(save(code: ""))).to eq([ [ :invalid_input, [ :code ] ] ])
     expect(failure.(save(unit_price: -1))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
+    expect(failure.(save(unit_price: 9_223_372_036_854_775_808))).to eq([ [ :invalid_input, [ :unit_price ] ] ])
     expect(described_class.items(actor, first: 10, after: nil).values).to be_empty
+  end
+
+  it "単価は bigint の最大値ちょうどまでを受け付ける" do
+    expect(save(unit_price: 9_223_372_036_854_775_807).value).to have_attributes(unit_price: 9_223_372_036_854_775_807)
   end
 
   it "見えない品目の公開の状態は変えられず、品目 ID を指す NOT_FOUND を返す" do
