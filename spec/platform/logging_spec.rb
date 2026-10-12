@@ -122,7 +122,7 @@ RSpec.describe "ログの出口と書式" do
       end
     end
 
-    # ジョブの文脈の置き換えと戻し方（ApplicationJob#perform_now）は、文脈をスレッドごとに持つことを前提にする（OI-35）
+    # ジョブの文脈の置き換えと戻し方（ApplicationJob#perform_now）は、文脈をスレッドごとに持つことを前提にする
     it "Rails の文脈の分離の単位はスレッドである" do
       expect(ActiveSupport::IsolatedExecutionState.isolation_level).to eq(:thread)
     end

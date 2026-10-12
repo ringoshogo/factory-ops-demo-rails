@@ -1073,7 +1073,7 @@ test "$(grep -rh "def login_as(user)" spec | wc -l)" -eq 1   # spec/support/requ
 1. 確定と写し：`Billing::Closing.issue`（確定で請求番号を振る。採番の表 `invoice_sequences` を足す。M24 で決めた。入力と結果、ロック、確定した請求書を変えないトリガーは `data-model.md`「請求（`billing`）」。OI-84）、請求書発行のイベントと配送表の行、購買の受け手 `Purchasing::BillingEventReceiver`（`received_invoices`・明細）、`Purchasing::ReceivedInvoices`、`issueInvoice`、`buyer.receivedInvoices`・`buyer.receivedInvoice`。`issueInvoice` の規則は `Billing::InvoicePolicy#issue?` で、`admin` に限る。`issueInvoice` は `audit` で、監査の行は `graphql-schema.md`「監査ログ」の表にある。`received_invoices`・`received_invoice_lines`・`invoice_sequences` の表の行列の行と、S1 の表に `issueInvoice(input.invoiceId)`・`buyer.receivedInvoice(id)` の行を足す。購買は「請求書発行」をイベントの契約だけで受けるので、パッケージの依存は変わらない
 2. 締め日（OI-77）：締め日が今日より後の締めを許し、確定も締め日を過ぎるのを待たずにできる（`data-model.md`「請求（`billing`）」）。締めの後に届いた、検収日が締め日以前の検収は、次の締めで集まる
 3. 役割による制限（OI-71〜OI-73）：サイクル 02 で作った mutation の規則のうち、`graphql-schema.md`「役割による制限」の表で `admin` に限るものを、`user.admin?` を条件に含める形に直す。対象は `Sales::SalesOrderPolicy#review?`・`#cancel?`、`Purchasing::PurchaseOrderPolicy#request_cancellation?`・`#inspect_receipt?`、`Billing::InvoicePolicy#set_term?`・`#close?`・`#discard?` の 7 つで、いまはどれも役割を問わない。`member` で `admin` に限る操作を呼んでいる既存の request spec（`spec/requests/inspections_spec.rb`・`spec/requests/billing_spec.rb`・`spec/requests/cancellations_spec.rb`）は、`admin` で呼ぶ形に直す
-4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表ごとの行の数と中身が、監査の行を含めて変わらないこと。既存の行を書き換えるだけの mutation は行の数を変えないので、中身も比べる）を確かめる。`member` の行は、値を返すペルソナの `member` でも値を返すことを確かめる（OI-90）。役割を持たない mutation の行があれば落ちる
+4. 行列テストの役割の列：`MatrixWorld` が、各ペルソナのテナントに `admin` に加えて `member` のユーザーを作る。`spec/matrix/graphql_expectations.rb` の mutation の行は、許す役割（`admin` か `member`）を必ず持つ。`graphql_matrix_spec.rb` は、`admin` の行を、値を返すペルソナの `member` でも呼び、`FORBIDDEN` になって何も書かれないこと（呼ぶ前と後で、そのペルソナのテナントの表ごとの行の数と中身が、監査の行を含めて変わらないこと。既存の行を書き換えるだけの mutation は行の数を変えないので、中身も比べる）を確かめる。`member` の行は、どのペルソナの `member` で呼んでも `admin` と同じ結果になり、値を返さないときは何も書かれないことを確かめる（OI-90・OI-107）。役割を持たない mutation の行があれば落ちる
 
 役割による制限をここに置くのは、確定（`issueInvoice`）で同じ形の規則を初めから作るからである。サイクル 03 は 6 つのマイルストーンで上限に達しているので、新しいマイルストーンは作らない。M36 は業務の振る舞いを変えないマイルストーンなので入れず、行列テストの役割の列は、M36 で作り直した世界に足す。
 
@@ -1302,6 +1302,7 @@ bundle exec rspec packs/imports/spec/concurrency/imports/parallel_imports_spec.r
 - ラベルの規則：テナント ID・ユーザー ID・伝票の ID をラベルにしない。値の種類が増え続けて保存が膨らみ、メトリクスの基盤にテナントの情報が流れるからである。テナントごとの調査は、ログ（相関 ID）で行う。`operation` には、クライアントが自由に付ける `operationName` をそのまま使わない。`config/graphql_operations.yml` に登録した名前だけを使い、それ以外は `other` にする。登録した名前が、M17 の画面の問い合わせの一覧の操作名と一致することを、テストで確かめる。
 - 公開の仕方：`yabeda-prometheus` の exporter を、Web とワーカーのプロセスでそれぞれ別のポート（9394・9395）で立てる。ポートは内部のネットワークにだけ開き、公開のロードバランサーに出さない。Rails のルートには `/metrics` を置かない。Puma を複数のプロセスで動かすときは、prometheus-client の `DirectFileStore` を使う。
 - `spec/platform/metrics_subscriber_spec.rb`：構造化イベントごとに、対応するメトリクスが増える。登録していない `operationName` は `other` になる。定義したすべてのメトリクスのラベルに、`tenant`・`user`・`_id` で終わる名前が無い。
+- サイクル 03 の逸脱検査から送った確かめ：mutation の戻り値の null の伝わり方（OI-119）と、`unitPrice` に `bigint` の最大値を超える値を送ったときの結果（OI-121）を request spec で確かめ、決めた側に SDL か実装を合わせる。作者の判断を待つ 2 つ（操作者を取らない公開 API の規則は OI-118、`correctItemPrice` の理由の上限は OI-120）は、決まった形で文書とコードを直す。決まるまでこのマイルストーンを終えない。
 
 **判断**：Yabeda と Prometheus にするか、OpenTelemetry にするか
 
@@ -1383,6 +1384,8 @@ CI にも、`promtool` の 2 つの検査を足す。各手順書の「確かめ
 **目的**：デモを開いた人が、両方の視点と 3 つの読む経路をすぐ見られる。
 
 **作るもの**：`db/seeds.rb`。受注側に青嵐精機工業、発注側に架空の組立メーカー 2 社（全権限の付与あり・失効済み）を作る。factory-ops-demo の品目と得意先を写し、受注・出荷・検収・請求書まで進んだ取引と途中の取引を混ぜる。品目には、単価の改定の予約と訂正を 1 件ずつ含める。取り込みも 1 件（一部の行が失敗したもの）含める。シードは公開 API とイベントを通して作り、表へ直接書かない。
+
+業務の日付をどの時刻帯の今日で決めるか（OI-117）は、シードと画面に出る日付を決めるので、作者の判断を受けてからシードを作る。決めた形にアプリの日付の決め方を合わせる作業も、このマイルストーンに入れる。
 
 **完了条件**：`bin/rails db:reset` が通り、両社のユーザーでログインして `buyer`・`supplier` の主な問い合わせが値を返す。
 
