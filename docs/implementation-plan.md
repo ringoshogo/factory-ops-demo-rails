@@ -1639,7 +1639,7 @@ bin/check-schema-compat   # 破壊的な変更 0 件
 
 **判断**：別のコンテキストの値を、SQL の中でどう渡すか
 
-- **既定の推奨**：在庫の公開 API が、scope を掛けた relation を SQL の文字列にし、列の名前と一緒に値（`SqlSubquery`）で返す。受け取る側は、文字列を副問い合わせとして結ぶだけで、条件を足すことも外すこともできない。モデルと書き込みの入口は在庫のパッケージの外に出ない（`adr/002`「AR モデルは公開しない」）。
+- **既定の推奨**：在庫の公開 API が、scope を掛けた relation を SQL の文字列にし、列の名前と一緒に値（`SqlSubquery`）で返す。受け取る側は、文字列を副問い合わせとして結ぶだけで、条件を足すことも外すこともできない。結ぶ側は文字列を `Arel.sql` で包み、Brakeman（共通の完了条件）が SQL の埋め込みの警告を出したら、`config/brakeman.ignore` に指紋と、値が scope を掛けた公開 API の戻り値だけであるという理由を書く。モデルと書き込みの入口は在庫のパッケージの外に出ない（`adr/002`「AR モデルは公開しない」）。
 - **比べた案**：(a) relation をそのまま返す。受け取る側が `unscope`・`rewhere`・`update_all` を呼べ、在庫の scope と書き込みの入口が境界を越える。packwerk は定数の参照しか見ないので、これを止められない。(b) 受注明細 ID の配列を受け取り、引当数量を返す（いまの `quantities_for`）。行を読んだ後でしか状況が決まらず、SQL の中で絞り込めない。
 - **裏返る条件**：SQL の文字列にした副問い合わせを、受け取る側で結べない（PostgreSQL の実行計画で、一覧の SQL が遅くなりクエリ数の予算の spec の時間を大きく延ばすなど） → 引当の有無を受注の側に写す列を足す（受け手で写しを保つ）。
 - **撤退コスト**：小。値と公開 API を 1 つ消し、受注の式を (b) の読み方に戻す。
@@ -1862,6 +1862,7 @@ GitHub のリポジトリを public にする時期（OI-06）は、まだ決め
    | `FRONTEND_ORIGIN` | ○ | — | — | — | — | 取り込みのファイルの受け口が、ブラウザの `Origin` を公開の画面のオリジン（OI-145）と比べる（`config/application.rb`） |
    | `NOTIFICATIONS_PROVIDER=file_system` | ○ | ○ | — | — | ○ | 作るもの 5 |
    | `DEMO_WORLD_ENABLED=1` | — | — | — | — | ○ | 作るもの 4 |
+   | `SHARED_DEMO_ACCOUNTS=1` | ○ | — | — | — | — | 作るもの 7（OI-149） |
    | `SOLID_QUEUE_SUPERVISOR_MODE=async` | — | ○ | — | — | — | `adr/009` 決定 5 |
    | Rails の URL（M33 が決めた名前） | — | — | ○ | — | — | Next のサーバーが `http://web:3000` を呼ぶ |
 
@@ -1878,8 +1879,8 @@ GitHub のリポジトリを public にする時期（OI-06）は、まだ決め
    Kubernetes の API は、Pod の ServiceAccount のトークンで Net::HTTP から呼び、`kubectl` のイメージを足さない。監査ログの行は、追記だけの表で、所有ロールでも消せず `TRUNCATE` もトリガーが止める（`architecture/data-model.md`「監査ログ（`platform`）」）。作り直しは行を消さず DB ごと消すので、行の書き換えと削除を止める仕組みは変えない。ただし、公開の配置の監査ログは 1 日で消え、保存期間（7 年）を守らない。公開の配置は業務の記録を持たないデモであり、DB を消す工程は `DEMO_WORLD_ENABLED` を渡した作り直しだけで、本物の本番の配置では手順 1 で止まるからである（`adr/009` 決定 3）。
 4. 本番の環境でデモの世界を許す条件（`adr/009` 決定 4）：いまは、`DemoWorld`・`Partnerships::Onboarding`・`Inventory::Stocks.set_safety_stock` の 3 つが、本番の環境で `ProductionEnvironment` を上げて止まる（`git grep ProductionEnvironment` で集めた一覧。この一覧を正本にする）。環境変数 `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ、本番の環境でも動くようにする。条件は `packs/platform` の 1 か所に置き、3 つがそれを読む。この変数は `daily-reset` にだけ渡し、`web`・`jobs`・`migrate` には渡さない。
 5. メールを送らない：公開の配置のアカウントのメールアドレスは実在しないので、メールを外へ送らない。本番の環境の通知の送り先（`config.x.notifications.provider`）を環境変数 `NOTIFICATIONS_PROVIDER` で `file_system` に替えられるようにし、`sendgrid`（省いたとき）と `file_system` のほかの値は起動で落とす。配置では `file_system` を渡し、書き出す先（`tmp/mails`）を `emptyDir` にする。`emptyDir` は Pod と一緒に消え、作り直しが毎日 `web` と `jobs` の Pod を作り直すので、溜まるのは 1 日分である。大きさの上限（`sizeLimit`）を超えると kubelet が Pod を追い出すので、上限は 1 日分のメールより十分に大きくする。
-6. セッションの Cookie を書く：本番の環境のセッションの Cookie は `Secure` で（`config/application.rb` の `session_store`）、actionpack 8.1.4 は `request.ssl?` が偽の応答に `Secure` の Cookie を書かない（`lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`）。Next は Rails を http で呼ぶので、このままではログインの応答に `Set-Cookie` が無く、M33 の認証が Cookie を写せない。本番の環境で `config.assume_ssl = true` にする。TLS は Cloudflare で終わり、Rails には Next からしか届かないからである（`adr/009` 決定 2）。
-7. 共有のアカウントのログアウト：OI-149 の既定のとおり、公開の配置ではログアウトでセッションの世代を進めない。`SHARED_DEMO_ACCOUNTS=1` を渡した `web` では、`DELETE /session` は Cookie を消すだけにする。世代を進めると、同じアカウントでログインしているほかの訪問者のセッションがすべて切れるからである（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1）。作者が OI-149 で既定を変えれば、この項を直す。
+6. セッションの Cookie を書く：本番の環境のセッションの Cookie は `Secure` で（`config/application.rb` の `session_store`）、actionpack 8.1.4 は `request.ssl?` が偽の応答に `Secure` の Cookie を書かない（`lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`）。Next は Rails を http で呼ぶので、このままではログインの応答に `Set-Cookie` が無く、M33 の認証が Cookie を写せない。本番の環境で `config.assume_ssl = true` にする。TLS は Cloudflare で終わり、Rails には Next からしか届かないからである（`adr/009` 決定 2）。Rails はこのとき `ActionDispatch::AssumeSSL` をミドルウェアに足すので、本番の環境のミドルウェアの並びを許した一覧と比べる `spec/platform/logging_spec.rb`（`adr/008`）の一覧に足す。
+7. 共有のアカウントのログアウト：OI-149 の既定のとおり、公開の配置ではログアウトでセッションの世代を進めない。`SHARED_DEMO_ACCOUNTS=1` を渡した `web` では、`DELETE /session` は Cookie を消すだけにする。世代を進めると、同じアカウントでログインしているほかの訪問者のセッションがすべて切れるからである（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1）。このとき、ログアウトの前に写し取られた Cookie は使えるままになる（`SessionsController#destroy` が世代を進める理由）。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。作者が OI-149 で既定を変えれば、この項を直す。
 8. 資源の見積もり：各コンテナに、次の requests と limits を書く。値は arm64 の実機で測っていない見積もりで、作者が実機で測って直す（作者の手順 4）。
 
    | コンテナ | requests（CPU・メモリ） | limits（CPU・メモリ） | なぜこの値か |
@@ -1904,7 +1905,7 @@ GitHub のリポジトリを public にする時期（OI-06）は、まだ決め
 **完了条件**
 
 ```sh
-bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_reset_spec.rb spec/platform/production_boot_spec.rb spec/scenarios/demo_world_spec.rb packs/partnerships/spec/public/partnerships/onboarding_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb spec/requests/sessions_spec.rb   # 0 failures
+bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_reset_spec.rb spec/platform/production_boot_spec.rb spec/platform/logging_spec.rb spec/scenarios/demo_world_spec.rb packs/partnerships/spec/public/partnerships/onboarding_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb spec/requests/sessions_spec.rb   # 0 failures
 ```
 
 ほかに、M41 の PR で CI の `images` のジョブが通ること（arm64 の 2 つのイメージを作り、Rails のイメージで本番の環境を読み込める）を確かめる。
@@ -1913,7 +1914,7 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 - `demo_reset_spec.rb`：Kubernetes の API を WebMock で受け、DB の作り直しとシードを差し替えて確かめる。本番の環境で `DEMO_WORLD_ENABLED` が無いか `1` でなければ、Kubernetes の API も DB のタスクも呼ばずに例外で止まる。`1` なら、0 にして Pod の一覧が空になってから作り直し、`DISABLE_DATABASE_ENVIRONMENT_CHECK` を作り直しの間だけ立てる。作り直しが例外で終わっても 1 に戻す。入口の条件を外すと無いときの example が、`ensure` を外すと失敗の example が、Pod の一覧の待ちを外すと Pod が残っている間に作り直しを始めないことの example が落ちる
 - `demo_world_spec.rb`・`onboarding_spec.rb`・`stocks_spec.rb`：本番の環境で `DEMO_WORLD_ENABLED` が無ければ例外、あれば動く。`demo_world_spec.rb` は `DemoWorld.build` を最後まで流して確かめる（3 つのうち 1 つでも条件を読まなければ、途中で止まって落ちる）。条件を外すと、無いときの example が落ちる
-- `production_boot_spec.rb`：子のプロセスで本番の環境を起こす（`spec/platform/logging_spec.rb` の子のプロセスと同じ形）。`NOTIFICATIONS_PROVIDER` の未設定・`file_system`・ほかの値で、送り先と起動の失敗を確かめる。http の `POST /session` の応答が `Secure` のセッションの Cookie を `Set-Cookie` に持つことを確かめる。`assume_ssl` を外すと、この example が落ちる
+- `production_boot_spec.rb`：子のプロセスで本番の環境を起こす（`spec/platform/logging_spec.rb` の子のプロセスと同じ形）。`NOTIFICATIONS_PROVIDER` の未設定・`file_system`・ほかの値で、送り先と起動の失敗を確かめる。http の `POST /session` の応答が `Secure` のセッションの Cookie を `Set-Cookie` に持つことを確かめる。本番の環境の DB はテストと CI に無いので、子のプロセスの中で `Partnerships::Authentication.authenticate` を差し替えてから、`Rack::MockRequest` で `POST /session` を流す。`assume_ssl` を外すと、この example が落ちる
 - `sessions_spec.rb`：`SHARED_DEMO_ACCOUNTS=1` のとき、`DELETE /session` でセッションの世代が進まず、同じユーザーのほかのセッションが続くことを確かめる。無いときは、いまのとおり世代が進んでほかのセッションが切れる。条件を外すと、変数があるときの example が落ちる
 
 **作者が実機で確かめること**：作るもの 9 の手順 1〜6。結果（測ったメモリ、公開の URL で確かめたこと、流用元のデモが動くこと）を、作者が PR か台帳に書く。実機の確かめは M41 の完了条件に入れず、作者が結果を書くまで公開しない。
