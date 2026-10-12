@@ -138,12 +138,14 @@ RSpec.describe MatrixWorld do
       end
     end
 
-    # 4 つの公開 API の scope を、絞らない relation に差し替える
+    # 4 つの公開 API が通す policy の relation_scope を、絞らずに relation を返すものに差し替える。
+    # scope の入口（各パッケージの Scope）はパッケージの外に見せないので、公開している policy の側で外す
     def remove_dashboard_scopes
-      allow(Sales::Scope).to receive(:sales_orders) { Sales::SalesOrder.all }
-      allow(Inventory::Scope).to receive(:call) { |_actor, relation| relation }
-      allow(Fulfillment::Scope).to receive(:call) { |_actor, relation| relation }
-      allow(Billing::Scope).to receive(:call) { |_actor, relation| relation }
+      [ Sales::SalesOrderPolicy, Inventory::StockPolicy, Fulfillment::ShipmentRequestPolicy, Billing::InvoicePolicy ].each do |policy|
+        allow(policy).to receive(:new).and_wrap_original do |original, *args, **options|
+          original.call(*args, **options).tap { |instance| allow(instance).to receive(:apply_scope) { |relation, **| relation } }
+        end
+      end
     end
 
     # 2 回目の入口の行列が空振りしないことのガード。設定を on にした応答が他社の行を含まなければ、
