@@ -233,9 +233,12 @@ RSpec.describe DemoWorld do
     end
 
     # admin に限る公開 API は Operations からだけ呼び、規則の評価を飛ばす呼び出しを DemoWorld の中に置かない。
-    # 呼び出しは Prism の構文木から拾い、コメントと文字列の中の語を呼び出しと取り違えない
+    # 呼び出しは Prism の構文木から拾い、コメントと文字列の中の語を呼び出しと取り違えない。
+    # 対象は docs/architecture/graphql-schema.md「役割による制限」の表の admin に限る操作のすべてで、
+    # Operations がまだ持たない操作（権限付与の取り下げ・下書きの破棄）も含める
     it "DemoWorld は、admin に限る公開 API を Operations の外から呼ばない" do
-      admin_apis = operations.values.map { |(_, _, (api, method))| [ api.name, method ] }
+      through_operations = operations.values.map { |(_, _, (api, method))| [ api.name, method ] }
+      admin_apis = through_operations + [ [ "Partnerships::Management", :withdraw ], [ "Billing::Closing", :discard ] ]
       calls = lambda do |path|
         found = []
         visit = lambda do |node|
@@ -248,7 +251,7 @@ RSpec.describe DemoWorld do
         found & admin_apis
       end
 
-      expect(calls.call(Rails.root.join("lib/demo_world/operations.rb").to_s)).to match_array(admin_apis)
+      expect(calls.call(Rails.root.join("lib/demo_world/operations.rb").to_s)).to match_array(through_operations)
       expect((Dir[Rails.root.join("lib/demo_world.rb")] + Dir[Rails.root.join("lib/demo_world/*.rb")])
         .reject { _1.end_with?("operations.rb") }.flat_map { calls.call(_1) }).to eq([])
     end
