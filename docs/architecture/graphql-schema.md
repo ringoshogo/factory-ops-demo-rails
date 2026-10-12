@@ -484,7 +484,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 ### 役割による制限
 
-どの操作をどの役割に許すかは、`context-map.md`「自社の中の役割」で決まる。`admin` に限る操作は、次の policy の規則が `user.admin?` を条件に含めて判定し、拒否は `FORBIDDEN` で返す。対象の無い操作は、操作者に対して評価する。表に無い mutation の規則は、自社のユーザーなら役割を問わない。
+どの操作をどの役割に許すかは、`context-map.md`「自社の中の役割」で決まる。`admin` に限る操作は、次の policy の規則が `user.admin?` を条件に含めて判定し、拒否は `FORBIDDEN` で返す。対象の無い操作は、操作者に対して評価する。入力で許す役割が変わる操作は、対象を引く mutation にし、入力の値を含む対象の値を作って規則に見せる。対象の無い操作の規則は操作者しか見られないからである。表に無い mutation の規則は、自社のユーザーなら役割を問わない。
 
 | 操作 | mutation・フィールド | policy の規則 |
 |---|---|---|
@@ -495,10 +495,10 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 受注側の取消 | `cancelSalesOrder` | `Sales::SalesOrderPolicy#cancel?` |
 | 請求条件の設定・締め・下書きの破棄・確定 | `setBillingTerm`・`closeBillingPeriod`・`discardDraftInvoice`・`issueInvoice` | `Billing::InvoicePolicy#set_term?`（対象なし）・`#close?`（対象なし）・`#discard?`・`#issue?` |
 | 単価の改定の予約と訂正 | `scheduleItemPrice`・`correctItemPrice` | `Sales::ItemPolicy#change_price?` |
-| 品目の CSV の取り込み | `startImport`（種類が `items` のとき） | 種類で役割が変わるので、規則の形は `../implementation-plan.md` M29 で決める |
+| 品目の CSV の取り込み | `startImport`（種類が `items` のとき） | `Imports::ImportPolicy#start?`（対象は取り込みの依頼の値で、置いたファイルと種類を持つ。種類が `items` なら `admin` に限り、`stocks` なら役割を問わない。取り込みのジョブも、チャンクごとに同じ規則を、取り込みを始めたユーザーのいまの役割で評価し直す） |
 | 監査ログを読む | `viewer.auditLogs` | `Platform::AuditLogPolicy#index?` |
 
-規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、`member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`member` に許す mutation は、どのペルソナの `member` にも `admin` と同じ結果になり、値を返さないときは何も書かないことを確かめる。
+規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、mutation の行ごとに許す役割を持ち、`member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`member` に許す mutation は、どのペルソナの `member` にも `admin` と同じ結果になり、値を返さないときは何も書かないことを確かめる。入力で許す役割が変わる mutation は、行列に変種ごとの行（`Mutation.startImport` と `Mutation.startImport#stocks`）を持つ。
 
 自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
 
@@ -539,6 +539,7 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 | `setItemPublished` | `item.set_published` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
 | `scheduleItemPrice` | `item_price.schedule` | 対象の品目 | 空（カタログを見る全相手に及ぶ） |
 | `correctItemPrice` | `item_price.correct` | 対象の単価の行 | 空（カタログを見る全相手に及ぶ） |
+| `startImport` | `import.start` | 成功の値の取り込み | 空（品目の取り込みは、カタログを見る全相手に及ぶ） |
 | `registerPartMapping` | `part_mapping.register` | 成功の値の対応表の行 | 入力の `customerTenantId`（確定させる受注は、すべてこの相手の受注である） |
 | `placePurchaseOrder` | `purchase_order.place` | 成功の値の発注 | 入力の `supplierTenantId` |
 | `requestPurchaseOrderCancellation` | `purchase_order.request_cancellation` | 対象の発注 | その発注の受注側 |
@@ -670,10 +671,10 @@ type SalesOrderStatusCount {
 
 | mutation | 呼ぶ公開 API | 出すイベント |
 |---|---|---|
-| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。公開の状態は `setItemPublished` だけが変える。`unitPrice` は、作るときは有効期間 `(,)` の単価の行になる。既存の品目の単価は変えず、今日の単価と違う値は役割を問わず `INVALID_INPUT` にする。単価の改定は `scheduleItemPrice` を、入力の誤りは `correctItemPrice` を使う。今日の単価と同じ値は無視する） | なし |
+| `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。`saveItem` は公開の状態を変えない。公開の状態を変えるのは `setItemPublished` と、品目の CSV の取り込み（`published` の列）である。`unitPrice` は、作るときは有効期間 `(,)` の単価の行になる。既存の品目の単価は変えず、今日の単価と違う値は役割を問わず `INVALID_INPUT` にする。単価の改定は `scheduleItemPrice` を、入力の誤りは `correctItemPrice` を使う。今日の単価と同じ値は無視する） | なし |
 | `scheduleItemPrice` | `Sales::ItemPrices.schedule`（品目 ID・単価・改定日で指定し、品目を返す。改定日は今日以降。改定日を含む行の単価と同じなら何も書かない。単価の行の無い品目は `CONFLICT`） | なし |
 | `correctItemPrice` | `Sales::ItemPrices.correct`（単価の行 ID・正しい単価・理由で指定し、品目を返す。理由は必須。現在の行でなければ `CONFLICT`） | なし |
-| `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類。同じファイルの 2 回目は `CONFLICT`） | なし |
+| `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類で指定し、待機中の取り込みを返す。自社の置いたファイルでなければ `NOT_FOUND`、同じファイルの 2 回目は `CONFLICT`。ジョブはコミットの後に登録する） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する。出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は `CONFLICT`） | 受注取消・出荷取消 |

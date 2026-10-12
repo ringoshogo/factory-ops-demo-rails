@@ -1,0 +1,8 @@
+# CSV の取り込み（docs/adr/007 決定 5 の A-4）。置き場の行を、受注の品目と単価・在庫の公開 API で反映する
+enforce_dependencies: strict
+enforce_privacy: strict
+dependencies:
+  - packs/platform
+  - packs/partnerships
+  - packs/sales
+  - packs/inventory

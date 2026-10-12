@@ -28,6 +28,26 @@ module Inventory
       result
     end
 
+    # 在庫数を目標の数量に合わせる（CSV の在庫の取り込み）。在庫の行をロックしてから差を取り、差を入庫か出庫で移す。
+    # ロックの前に読んだ数量で差を取ると、同時の調整や引当とずれる。引当済みの数量より少ない目標は受け付けない
+    def self.set_quantity(actor, item_id:, quantity:, reason:)
+      return invalid_input(:quantity, "Quantity must be a non-negative integer") unless quantity.is_a?(Integer) && quantity >= 0
+
+      result = nil
+      Stock.transaction(requires_new: true) do
+        stock = Stock.lock_for(actor.tenant_id, [ item_id ]).fetch(item_id)
+        if quantity < stock.allocated
+          result = invalid_input(:quantity, "Quantity must be at least the allocated stock (#{stock.allocated})")
+          raise ActiveRecord::Rollback
+        end
+
+        difference = quantity - stock.on_hand
+        stock.move!(difference.positive? ? "inbound" : "outbound", difference.abs, reason:) unless difference.zero?
+        result = OperationResult.success(Stocks.to_value(stock))
+      end
+      result
+    end
+
     def self.invalid_input(attribute, message) = OperationResult.failure(:invalid_input, path: [ attribute ], message:)
     private_class_method :invalid_input
   end

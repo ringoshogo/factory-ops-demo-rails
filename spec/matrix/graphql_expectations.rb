@@ -6,6 +6,7 @@ module MatrixExpectations
   OUTCOMES = %i[value empty null not_found not_permitted invalid_input forbidden].freeze
 
   # "型.フィールド" => { query:, variables: ->(world) { ... }（省略可）, role:（mutation だけ）, expect: { ペルソナ => 結果 } }。
+  # 入力で許す役割が変わる mutation は、"型.フィールド#変種" の形で変種ごとに行を持つ。
   # query は対象のフィールドを 1 つだけ選ぶ。variables は世界の行の ID を引数に渡すときに書く。
   # role は mutation を許す役割（:admin か :member）で、docs/architecture/graphql-schema.md「役割による制限」の表に合わせる。
   # expect はペルソナの admin で呼んだ結果である
@@ -107,6 +108,29 @@ module MatrixExpectations
       role: :admin,
       query: "mutation($input: CorrectItemPriceInput!) { correctItemPrice(input: $input) #{ITEM_MUTATION} }",
       variables: ->(world) { { input: { itemPriceId: world.row("item_prices", :supplier).id, unitPrice: 110, reason: "入力の誤り" } } },
+      expect: ONLY_SUPPLIER
+    },
+    # 取り込みは書いたテナントだけが所有する。どのペルソナにも自社の行だけが返る
+    "SupplierView.imports" => {
+      query: "{ supplier { imports { nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.import" => {
+      query: "query($id: ID!) { supplier { import(id: $id) { id } } }",
+      variables: ->(world) { { id: world.row("imports", :supplier).id } },
+      expect: only(:supplier)
+    },
+    # supplier の置いたファイルの取り込み。品目の CSV は単価の列を含むので admin に限り、在庫の CSV は役割を問わない
+    "Mutation.startImport" => {
+      role: :admin,
+      query: "mutation($input: StartImportInput!) { startImport(input: $input) { import { id } errors { code } } }",
+      variables: ->(world) { { input: { fileId: world.row("import_files", :supplier).id, kind: "ITEMS" } } },
+      expect: ONLY_SUPPLIER
+    },
+    "Mutation.startImport#stocks" => {
+      role: :member,
+      query: "mutation($input: StartImportInput!) { startImport(input: $input) { import { id } errors { code } } }",
+      variables: ->(world) { { input: { fileId: world.row("import_files", :supplier).id, kind: "STOCKS" } } },
       expect: ONLY_SUPPLIER
     },
     # 対応表は受注側だけが所有する。どのペルソナにも自社の行だけが返る

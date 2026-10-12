@@ -25,8 +25,14 @@ module Partnerships
       user = User.find_by(id: user_id)
       return unless user && user.session_version == session_version
 
-      Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role,
-        partner_code: Tenant.find(user.owner_tenant_id).partner_code)
+      to_actor(user)
+    end
+
+    # Tenancy.with_tenant の中で呼ぶ。セッションを持たないジョブが、操作を依頼したユーザーとして公開 API を呼ぶときの操作者。
+    # 役割は呼んだ時点の役割を読むので、依頼の後に admin でなくなったユーザーは member として返る。
+    # 別テナントのユーザーと消えたユーザーは nil になる
+    def self.acting_user(user_id)
+      User.find_by(id: user_id)&.then { to_actor(_1) }
     end
 
     # Tenancy.with_tenant の中で呼ぶ。ユーザーの世代を進め、発行済みのすべてのセッションを使えなくする。
@@ -42,6 +48,11 @@ module Partnerships
       BCrypt::Password.new(DUMMY_DIGEST).is_password?(password.to_s)
       false
     end
-    private_class_method :password_matches?
+
+    def self.to_actor(user)
+      Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role,
+        partner_code: Tenant.find(user.owner_tenant_id).partner_code)
+    end
+    private_class_method :password_matches?, :to_actor
   end
 end

@@ -223,7 +223,7 @@ flowchart LR
 4. **イベントは、発行元の業務データと同じトランザクションでジョブとして登録する。** Solid Queue を業務 DB と同じ接続に置き、イベントのジョブはコミットの後に回さず、トランザクションの中で投入する。操作が戻ればイベントも消え、確定すればイベントも必ず残るので、outbox は要らない。受け手は冪等に処理する（`../adr/005-イベントのジョブをトランザクション内で登録する.md`）。
 5. **GraphQL 層はルートパッケージに置き、各コンテキストの公開 API だけを使う。** コンテキスト同士の依存を、GraphQL 層が代わりに作らない。
 
-許可する依存の向きは次のとおり。表は、いまあるパッケージの `package.yml` の `dependencies` と一致させ、まだ作っていないパッケージを載せない。パッケージを作るマイルストーンが、そのパッケージの行と、それに依存するパッケージの依存先を足す（取り込みは M29）。
+許可する依存の向きは次のとおり。表は、いまあるパッケージの `package.yml` の `dependencies` と一致させ、まだ作っていないパッケージを載せない。パッケージを作るマイルストーンが、そのパッケージの行と、それに依存するパッケージの依存先を足す。
 
 | パッケージ | 依存してよい先 |
 |---|---|
@@ -233,6 +233,7 @@ flowchart LR
 | `billing` | `platform`、`partnerships`、`contracts` |
 | `inventory` | `platform`、`partnerships` |
 | `notifications` | `platform`、`partnerships` |
+| `imports` | `platform`、`partnerships`、`sales`、`inventory` |
 | `partnerships`・`contracts` | `platform` だけ |
 | `platform` | なし |
 | ルートパッケージ | すべて |

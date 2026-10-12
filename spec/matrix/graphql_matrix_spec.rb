@@ -63,8 +63,11 @@ RSpec.describe "入口の行列", type: :request do
     lists.all?(Array) && lists.all?(&:empty?) ? :empty : :value
   end
 
+  # 変種の行（"型.フィールド#変種"）は、同じフィールドの行として数える
+  def self.field_key(key) = key.split("#").first
+
   it "入口のフィールドと mutation すべてに期待値があり、無いフィールドの期待値は無い" do
-    expect(MatrixExpectations::GRAPHQL.keys).to match_array(schema_entries)
+    expect(MatrixExpectations::GRAPHQL.keys.map { self.class.field_key(_1) }.uniq).to match_array(schema_entries)
   end
 
   # ペルソナのテナントが所有する行の、テナントの表ごとの行数と中身の要約。監査の行も含む。
@@ -100,7 +103,7 @@ RSpec.describe "入口の行列", type: :request do
   end
 
   MatrixExpectations::GRAPHQL.each do |key, entry|
-    type_name, field_name = key.split(".")
+    type_name, field_name = field_key(key).split(".")
 
     describe key do
       MatrixWorld::PERSONAS.each do |persona|

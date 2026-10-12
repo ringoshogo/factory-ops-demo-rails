@@ -28,7 +28,13 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     },
     "Fulfillment::Shipping.post" => { spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb" },
     "Inventory::Stock.lock_for" => { spec: "packs/inventory/spec/concurrency/inventory/stock_lock_spec.rb" },
+    "Imports::Chunk.locked" => {
+      spec: "packs/imports/spec/concurrency/imports/parallel_imports_spec.rb", mentions: %w[Staging.run Applying.next_chunk Finalizing.run]
+    },
     "Inventory::Adjustment.adjust" => { spec: "spec/concurrency/stock_allocation_spec.rb" },
+    "Inventory::Adjustment.set_quantity" => {
+      spec: "packs/imports/spec/concurrency/imports/parallel_imports_spec.rb", mentions: %w[Adjustment.set_quantity Applying.next_chunk]
+    },
     "Inventory::Allocation.allocate" => { spec: "spec/concurrency/stock_allocation_spec.rb" },
     "Inventory::Allocation.move" => { spec: "spec/concurrency/cancel_vs_ship_spec.rb", mentions: %w[OrderCancellation.cancel Shipping.post] },
     "Inventory::Allocation.locked_allocations" => {

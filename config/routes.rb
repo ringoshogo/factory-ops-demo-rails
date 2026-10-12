@@ -5,6 +5,8 @@ Rails.application.routes.draw do
 
   resource :session, only: %i[create destroy]
   post "graphql", to: "graphql#execute"
+  # 取り込むファイルを置く。ブラウザから multipart/form-data で送るので、Origin で CSRF を防ぐ（ImportFilesController）
+  post "imports/files", to: "import_files#create"
   # SendGrid のイベント Webhook。セッションを使わず、署名で認証する（docs/adr/007 決定 5 の A-3）
   post "webhooks/sendgrid/events", to: "webhooks/sendgrid_events#create"
 end

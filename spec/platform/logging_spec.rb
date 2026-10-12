@@ -290,6 +290,14 @@ RSpec.describe "ログの出口と書式" do
 
       expect(failed.fetch("payload")).to eq("kind" => "received_invoice", "delivery_id" => "d1", "reason" => "http_400", "attempts" => 1)
       expect(dropped.fetch("payload")).to eq("kind" => "new_sales_order", "reason" => "retries_exhausted:http_503", "attempts" => 3)
+
+      chunk = emit("imports.chunk_applied", { kind: "items", import_id: "i1", applied_rows: 499, failed_rows: 1, filename: "顧客.csv" })
+      finished = emit("imports.finished", { kind: "items", import_id: "i1", result: "partially_failed", total_rows: 500,
+        applied_rows: 499, failed_rows: 1, duration_ms: 1200, filename: "顧客.csv" })
+
+      expect(chunk.fetch("payload")).to eq("kind" => "items", "import_id" => "i1", "applied_rows" => 499, "failed_rows" => 1)
+      expect(finished.fetch("payload")).to eq("kind" => "items", "import_id" => "i1", "result" => "partially_failed", "total_rows" => 500,
+        "applied_rows" => 499, "failed_rows" => 1, "duration_ms" => 1200)
     end
 
     it "表に無いイベントは、name・context・timestamp だけを書く" do

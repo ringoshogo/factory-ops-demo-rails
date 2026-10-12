@@ -10,3 +10,4 @@ dependencies:
   - packs/sales
   - packs/purchasing
   - packs/notifications
+  - packs/imports
