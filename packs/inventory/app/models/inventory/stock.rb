@@ -41,7 +41,8 @@ module Inventory
       @changing_safety_stock = false
     end
 
-    # move! を通らない数量の書き換えを止める。change_safety_stock! は安全在庫だけを書き換えられる
-    def readonly? = (persisted? && !@moving && !(@changing_safety_stock && changed == [ "safety_stock" ])) || super
+    # move! を通らない数量の書き換えを止める。change_safety_stock! は安全在庫だけを書き換えられる。
+    # 同じ値の設定は変わる属性が無いが、update! は保存の前に readonly? を見るので、空も許す
+    def readonly? = (persisted? && !@moving && !(@changing_safety_stock && (changed - [ "safety_stock" ]).empty?)) || super
   end
 end

@@ -120,6 +120,29 @@ RSpec.describe DemoWorld do
   end
 
   describe DemoWorld::Jobs do
+    # ワーカーと同じく、実行待ちのジョブだけを流す。時刻を待つジョブと、同時実行の上限で待つジョブは動かさない
+    it "実行待ちでないジョブは流さずに残し、実行待ちのジョブは流す" do
+      tenant_id = FactoryBot.create(:tenant).id
+      admin = Tenancy.with_tenant(tenant_id) { FactoryBot.create(:user, :admin) }
+      actor = Tenancy.with_tenant(tenant_id) { Partnerships::Authentication.acting_user(admin.id) }
+      import = Tenancy.with_tenant(tenant_id) do
+        file = Imports::Files.store(actor, filename: "stocks.csv", content: "item_code,quantity\n").value
+        Imports::Runs.start(actor, Imports::Runs.request(actor, file_id: file.id, kind: "stocks")).value
+      end
+      job = SolidQueue::Job.where(class_name: "Imports::RunJob", finished_at: nil).where("arguments LIKE ?", "%#{import.id}%").sole
+      SolidQueue::ReadyExecution.where(job_id: job.id).delete_all
+      SolidQueue::ScheduledExecution.create!(job:, scheduled_at: 1.hour.from_now, queue_name: job.queue_name, priority: job.priority)
+
+      DemoWorld::Jobs.drain([ "Imports::RunJob" ])
+      expect(job.reload.finished_at).to be_nil
+
+      # 対照：同じジョブも、実行待ちになれば流す
+      SolidQueue::ScheduledExecution.where(job_id: job.id).delete_all
+      SolidQueue::ReadyExecution.create!(job:, queue_name: job.queue_name, priority: job.priority)
+      DemoWorld::Jobs.drain([ "Imports::RunJob" ])
+      expect(job.reload.finished_at).to be_present
+    end
+
     it "テナントの設定の中では流さない。ジョブは宛先テナントの設定を開くので、入れ子になる" do
       expect { Tenancy.with_tenant(FactoryBot.create(:tenant).id) { DemoWorld::Jobs.drain } }.to raise_error(ArgumentError, /外で呼ぶ/)
     end

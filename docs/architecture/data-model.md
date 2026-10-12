@@ -103,7 +103,7 @@
 | `allocations`（引当） | `sales_order_line_id`→・`item_id`・`quantity`・`status`（`active` / `released` / `consumed`） | `sales_order_line_id` 一意。`(owner, item_id)` で `stocks` を参照する |
 | `stock_movements`（在庫移動履歴） | `item_id`・`type`（`inbound` / `outbound` / `allocate` / `deallocate` / `ship`）・`quantity`（正の数）・`reason`・`allocation_id` | 追記だけ。増減の向きは `type` が決める。`allocation_id` は引当を動かす移動（`allocate` / `deallocate` / `ship`）にだけ入る |
 
-在庫を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。行の無い品目の在庫は空として返す。
+在庫の数量（`on_hand`・`allocated`）を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。安全在庫（`safety_stock`）は数量ではないので、移動履歴を残さずに `Inventory::Stock#change_safety_stock!` だけで変える。これを呼ぶ公開 API は、シードと E2E の世界の準備のための `Inventory::Stocks.set_safety_stock` だけで、本番の環境では呼べない。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。行の無い品目の在庫は空として返す。
 
 引当は、受注明細ごとに 1 行を持ち、未引当の量を有効在庫の範囲で足していく。有効在庫が足りなければ、引き当てられた分だけ引き当て、残りは次の引当で埋める。解除（`released`）と消費（`consumed`）は終わりの状態で、その明細は引き当て直さない。受注明細 ID ごとの引当数量は、解除した引当を数えない。安全在庫を下回るとは、有効在庫が `safety_stock` より小さいことをいう。
 

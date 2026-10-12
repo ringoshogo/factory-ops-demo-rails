@@ -57,6 +57,13 @@ RSpec.describe Inventory::Stocks do
       expect(Tenancy.with_tenant(supplier.id) { Inventory::StockMovement.where(item_id: own.item_id).count }).to eq(0)
     end
 
+    it "今と同じ値も成功し、何も変えない" do
+      expect(set(own.item_id, 3).value).to have_attributes(item_id: own.item_id, safety_stock: 3)
+      expect(set(own.item_id, 12)).to be_success
+      expect(set(own.item_id, 12).value).to have_attributes(safety_stock: 12, on_hand: 10)
+      expect(safety_stock_seen_by(supplier, own.item_id)).to eq(12)
+    end
+
     it "他社の品目は NOT_FOUND で、他社の在庫を書かない" do
       expect(failures(set(theirs.item_id, 99))).to eq([ [ :not_found, [ :item_id ] ] ])
       # 対照：他社の設定の生 SQL は他社の在庫を読み、値は元のままである
