@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 受注側の品目の保存。品目コードで引き、無ければ非公開で作り、あれば更新する。公開の状態は set_published だけが変える。
+# 受注側の品目の保存。品目コードで引き、無ければ非公開で作り、あれば更新する。公開の状態は変えない（変えるのは set_published と取り込みの bulk_upsert）。
 # 新しい品目は最初の単価を持ち、既存の品目の単価は変えない（docs/architecture/graphql-schema.md「mutation の一覧」）
 RSpec.describe Sales::Catalog do
   let(:supplier) { FactoryBot.create(:tenant) }

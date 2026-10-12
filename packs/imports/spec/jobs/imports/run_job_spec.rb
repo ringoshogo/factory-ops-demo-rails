@@ -63,7 +63,14 @@ RSpec.describe Imports::RunJob do
   def staged_rows(import) = tenancy { Imports::ImportRow.where(import_id: import.id).count }
   def row_errors(import) = tenancy { Imports::Runs.row_errors(actor, import.id, first: 100, after: nil).values.map { [ _1.row_number, _1.message ] } }
   def movements = tenancy { Inventory::Stocks.movements(actor, first: 100, after: nil).values.map { [ _1.item_id, _1.type, _1.quantity ] } }
-  def on_hand(codes) = tenancy { Inventory::Stocks.for_items(actor, Sales::Catalog.ids_by_codes(actor, codes).values_at(*codes)) }
+  # 品目コードの順の在庫数。在庫の行の無い品目は nil
+  def on_hand(codes)
+    tenancy do
+      ids = Sales::Catalog.ids_by_codes(actor, codes).values_at(*codes)
+      stocks = Inventory::Stocks.for_items(actor, ids)
+      ids.map { stocks[_1]&.on_hand }
+    end
+  end
   def items = tenancy { Sales::Catalog.items(actor, first: 100, after: nil).values.to_h { [ _1.code, _1.unit_price ] } }
 
   describe "中断と再開" do
@@ -92,7 +99,7 @@ RSpec.describe Imports::RunJob do
       run_all(import)
 
       expect(import_of(import)).to have_attributes(status: :succeeded, total_rows: 5, applied_rows: 5, failed_rows: 0)
-      expect(on_hand(%w[A B C D E]).values.map(&:on_hand)).to eq([ 1, 2, 3, 4, 5 ])
+      expect(on_hand(%w[A B C D E])).to eq([ 1, 2, 3, 4, 5 ])
       expect(movements.map { _1[1..] }.sort).to eq([ 1, 2, 3, 4, 5 ].map { [ "inbound", _1 ] })
     end
 
@@ -115,7 +122,30 @@ RSpec.describe Imports::RunJob do
       expect(import_of(import)).to have_attributes(status: :succeeded, total_rows: 5, applied_rows: 5, failed_rows: 0)
       expect(staged_rows(import)).to eq(5)
       expect(movements.size).to eq(5)
-      expect(on_hand(%w[A B C D E]).values.map(&:on_hand)).to eq([ 1, 2, 3, 4, 5 ])
+      expect(on_hand(%w[A B C D E])).to eq([ 1, 2, 3, 4, 5 ])
+    end
+  end
+
+  describe "同じ取り込みの 2 つのジョブ" do
+    # 後のジョブが置き場へ写す段階の始めを過ぎた後に、先のジョブが取り込みを終えてファイルの中身を消す順を、1 つの接続で作る
+    it "置き場へ写し始めた後のジョブは、先のジョブが取り込みを終えていたら、例外にせずに何も書かずに終える" do
+      tenancy { FactoryBot.create(:item, code: "A") }
+      import = start("stocks", stocks_csv("A,2"))
+      first_check = true
+      allow(Imports::Chunk).to receive(:locked).and_wrap_original do |original, *args, &block|
+        result = original.call(*args, &block)
+        if first_check
+          first_check = false
+          described_class.new(import.id, tenant).perform_now
+        end
+        result
+      end
+
+      expect { Imports::Staging.run(import.id, tenant) { nil } }.not_to raise_error
+
+      expect(import_of(import)).to have_attributes(status: :succeeded, total_rows: 1, applied_rows: 1)
+      expect(staged_rows(import)).to eq(1)
+      expect(movements.size).to eq(1)
     end
   end
 
@@ -134,7 +164,7 @@ RSpec.describe Imports::RunJob do
 
       expect(import_of(import)).to have_attributes(status: :partially_failed, applied_rows: 2, failed_rows: 1)
       expect(movements.size).to eq(2)
-      expect(on_hand(%w[A B]).values.map(&:on_hand)).to eq([ 3, 4 ])
+      expect(on_hand(%w[A B])).to eq([ 3, 4 ])
       expect(row_errors(import)).to eq([ [ 3, "item_code: no item with this code" ] ])
       expect(items.keys).to match_array(%w[A B])
     end
@@ -229,7 +259,21 @@ RSpec.describe Imports::RunJob do
 
       expect(row_errors(import).map { [ _1[0], _1[1].split(":").first ] })
         .to eq([ [ 2, "quantity" ], [ 4, "item_code" ], [ 5, "quantity" ], [ 6, "row has 1 columns, expected 2" ], [ 7, "item_code" ] ])
-      expect(on_hand(%w[A B]).values.map(&:on_hand)).to eq([ 5, 7 ])
+      expect(on_hand(%w[A B])).to eq([ 5, 7 ])
+    end
+
+    # 上限は列の型（数量は integer、単価は bigint）の最大値。上限ちょうどと上限 + 1 を仕様の値で書く（IB-25）
+    it "数量は 2147483647 まで、単価は 9223372036854775807 までを反映し、1 大きい値の行を失敗にする" do
+      tenancy { %w[A B].each { FactoryBot.create(:item, code: _1) } }
+      stocks = start("stocks", stocks_csv("A,2147483647", "B,2147483648"))
+      prices = start("items", items_csv("MAX-1,上限,個,10,false,9223372036854775807,", "MAX-2,上限超え,個,10,false,9223372036854775808,"))
+
+      [ stocks, prices ].each { run_all(_1) }
+
+      expect(on_hand(%w[A])).to eq([ 2_147_483_647 ])
+      expect(row_errors(stocks)).to eq([ [ 3, "quantity: must be an integer between 0 and 2147483647" ] ])
+      expect(items.slice("MAX-1", "MAX-2")).to eq("MAX-1" => 9_223_372_036_854_775_807)
+      expect(row_errors(prices)).to eq([ [ 3, "unit_price: must be an integer between 0 and 9223372036854775807" ] ])
     end
 
     it "見出しだけのファイルは、0 行の取り込みとして完了する" do
@@ -295,6 +339,22 @@ RSpec.describe Imports::RunJob do
       expect(import_of(import)).to have_attributes(status: :failed, applied_rows: 0)
       expect(tenancy { Imports::Import.find(import.id).failure_reason }).to eq("not_permitted")
       expect(items).to be_empty
+    end
+
+    it "反映の途中で admin でなくなったら、次のチャンクで取り込み全体を失敗にし、反映したチャンクは残して残りを書かない" do
+      stub_const("Imports::Applying::CHUNK_ROWS", 1)
+      import = start("items", items_csv("N-1,ボルト,個,10,false,120,", "N-2,ナット,個,10,false,30,"))
+      stop_at(:apply, 2)
+      run_next(import)
+      expect(import_of(import)).to have_attributes(status: :applying, applied_rows: 1)
+
+      tenancy { admin.update!(role: "member") }
+      allow(described_class.queue_adapter).to receive(:stopping?).and_return(false)
+      run_all(import)
+
+      expect(import_of(import)).to have_attributes(status: :failed, applied_rows: 1, failed_rows: 0)
+      expect(tenancy { Imports::Import.find(import.id).failure_reason }).to eq("not_permitted")
+      expect(items).to eq("N-1" => 120)
     end
 
     it "在庫の取り込みは、member の名義でも反映する" do

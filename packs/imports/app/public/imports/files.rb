@@ -1,7 +1,7 @@
 module Imports
   # 取り込むファイルを置く（POST /imports/files）。置くだけで、業務の表には何も起きない
   module Files
-    # import_files の CHECK 制約と同じ値。置き場へ写す段階はファイルを 1 度に読むので、メモリをこの大きさで抑える
+    # import_files の CHECK 制約と同じ値。業務 DB の bytea に置くファイルの大きさを抑える
     MAX_BYTES = 10 * 1024 * 1024
     MAX_FILENAME_LENGTH = 255
 

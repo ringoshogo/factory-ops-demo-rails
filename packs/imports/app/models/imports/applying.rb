@@ -53,7 +53,9 @@ module Imports
     end
 
     # 改定日と単価は検証を通り、品目は単価の行を持つので、失敗は日付が変わった瞬間か不変条件の崩れである。
-    # 品目の列を書いた後なので、行の失敗にせずチャンクごと戻し、ジョブのやり直しで検証からやり直す
+    # 品目の列を書いた後なので、行の失敗にせず例外でチャンクごと戻す。その実行で段階かカーソルを進めていれば、Continuable が
+    # 続きから登録し直し、検証からやり直す（activejob 8.1.4 の resume_errors_after_advancing の既定は真）。進めていなければ
+    # 失敗したジョブになり、運用者が imports:reenqueue で登録し直す
     def self.schedule!(actor, item_id:, unit_price:, effective_on:)
       scheduled = Sales::ItemPrices.schedule(actor, item_id:, unit_price:, effective_on:)
       raise "単価の改定の予約に失敗した（#{message(scheduled)}）" unless scheduled.success?

@@ -10,7 +10,7 @@ class CreateImports < ActiveRecord::Migration[8.1]
       t.uuid :uploaded_by_user_id, null: false
       t.timestamps
 
-      # 上限は Imports::Files::MAX_BYTES と同じ値。置き場を読む stage は中身を 1 度に読むので、メモリをこの大きさで抑える
+      # 上限は Imports::Files::MAX_BYTES と同じ値。業務 DB の bytea に置くファイルの大きさを抑える
       t.check_constraint "byte_size BETWEEN 0 AND 10485760", name: "import_files_byte_size_limit"
       t.check_constraint "content IS NULL OR octet_length(content) = byte_size", name: "import_files_content_size"
     end

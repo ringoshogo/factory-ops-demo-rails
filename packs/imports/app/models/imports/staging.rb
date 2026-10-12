@@ -22,7 +22,7 @@ module Imports
       end
       return unless kind
 
-      with_file(tenant_id, file_id, byte_size) do |io|
+      with_file(import_id, tenant_id, file_id, byte_size) do |io|
         csv = CSV.new(io)
         return fail(import_id, tenant_id, "header_mismatch") unless CsvContract.header?(kind, csv.shift)
 
@@ -47,13 +47,17 @@ module Imports
       fail(import_id, tenant_id, "malformed_csv")
     end
 
-    # ファイルの中身を一時ファイルに写し、UTF-8 として開いて渡す。表計算のソフトが付ける BOM は、開くときに読み飛ばす
-    def self.with_file(tenant_id, file_id, byte_size, &)
+    # ファイルの中身を一時ファイルに写し、UTF-8 として開いて渡す。表計算のソフトが付ける BOM は、開くときに読み飛ばす。
+    # 断片ごとに取り込みの行をロックし、終えた取り込みなら渡さずに戻る。同じ取り込みの先のジョブが終えると、中身はもう消えている
+    def self.with_file(import_id, tenant_id, file_id, byte_size, &)
       Tempfile.create([ "import", ".csv" ], binmode: true) do |file|
         (0...byte_size).step(SLICE_BYTES) do |offset|
-          file.write(Tenancy.with_tenant(tenant_id) do
+          slice = Chunk.locked(import_id, tenant_id) do
             ImportFile.where(id: file_id).pick(Arel.sql("substring(content FROM #{offset + 1} FOR #{SLICE_BYTES})"))
-          end)
+          end
+          return unless slice
+
+          file.write(slice)
         end
         file.flush
         File.open(file.path, "r:bom|utf-8", &)

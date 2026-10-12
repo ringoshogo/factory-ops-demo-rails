@@ -1347,6 +1347,7 @@ bundle exec rspec spec/platform/metrics_subscriber_spec.rb
   - **状態の警報**：`queue_failed_jobs` が 10 分続けて 0 より大きい。`queue_ready_jobs{queue="events"}` が 5 分続けて 1,000 を超える。`notification_failures_total{kind="received_invoice"}` が増えた。`external_requests_total{status="429"}` の割合が 10 分続けて 20% を超える。`graphql_top_level_errors_total{code="FORBIDDEN"}` が増えた（scope と規則の食い違いで、テナントの境界の不具合の兆し）。実行中の取り込みで、`import_rows_total` が 15 分増えない。
   - どの警報も `annotations.runbook` に手順書のパスを持つ。
 - 警報の規則のテスト（`config/prometheus/alerts_test.yml`）：`promtool test rules` で、イベントのキューの滞留と、確実な通知の失敗の 2 つの警報が、条件を満たした系列で発火することを確かめる。
+- 取り込まれないファイルの後始末（OI-116）：置いたまま `startImport` しないファイルの中身を消す経路を足す（一定の時間を過ぎたファイルの中身を消す定期のジョブか、テナントごとの件数の上限）。どちらにしたかと、消すまでの時間を `data-model.md`「取り込み（`imports`）」に書く。
 - 手順書（`docs/runbooks/`）：各手順書は「警報 → 確かめること（流すコマンド）→ 止血 → 復旧 → 事後にすること」の順に書く。
 
   | 手順書 | 障害 | 止血と復旧の要点 |

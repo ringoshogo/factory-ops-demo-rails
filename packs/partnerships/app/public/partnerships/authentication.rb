@@ -48,6 +48,7 @@ module Partnerships
       BCrypt::Password.new(DUMMY_DIGEST).is_password?(password.to_s)
       false
     end
+
     def self.to_actor(user)
       Actor.new(user_id: user.id, tenant_id: user.owner_tenant_id, name: user.name, email: user.email, role: user.role,
         partner_code: Tenant.find(user.owner_tenant_id).partner_code)
