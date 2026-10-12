@@ -37,6 +37,14 @@ RSpec.describe "GraphQL の入口", type: :request do
     expect(response.parsed_body.dig("data", "viewer")).to eq("id" => user_a, "email" => "a@example.com")
   end
 
+  # Tenant の型は ID と名前だけを持ち、取引用コード（p-a）は partnerCode でしか返さない
+  it "viewer.tenant は自社テナントの ID と名前を返す" do
+    login_as("a@example.com")
+    execute_graphql("{ viewer { tenant { id name } } }")
+
+    expect(response.parsed_body.dig("data", "viewer", "tenant")).to eq("id" => tenant_a, "name" => "a")
+  end
+
   describe "認証" do
     it "未ログインなら実行せずに 401" do
       expect(FactoryOpsSchema).not_to receive(:execute)

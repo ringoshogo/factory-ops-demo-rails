@@ -10,7 +10,8 @@ RSpec.describe "テナントの境界", type: :request do
   not_found = { "errors" => [ { "code" => "NOT_FOUND" } ] }
 
   # 入口（型.フィールド(引数の道)）ごとに、相手の ID を入れる引数と、入れる ID の種類と、届かないときの結果。
-  # run は相手の ID を受け取って入口を呼び、結果を返す。ほかの引数には発注側の自社の正しい値を入れる
+  # run は相手の ID を受け取って入口を呼び、結果を返す。ほかの引数には発注側の自社の正しい値を入れる。
+  # own は自社の ID を返し、その ID を入れれば自社の行が返ることを、相手の ID を入れる前に確かめる（対照）
   boundary = {
     "BuyerView.purchaseOrder(id)" => {
       ids: documents, reach: nil,
@@ -26,6 +27,26 @@ RSpec.describe "テナントの境界", type: :request do
     "SupplierView.salesOrder(id)" => {
       ids: documents, reach: nil,
       run: ->(id) { query("query($id: ID!) { supplier { salesOrder(id: $id) { id } } }", id:).dig("supplier", "salesOrder") }
+    },
+    "SupplierView.item(id)" => {
+      ids: documents, reach: nil, own: -> { own_item_id },
+      run: ->(id) { query("query($id: ID!) { supplier { item(id: $id) { id } } }", id:).dig("supplier", "item") }
+    },
+    # 相手の受注は、発注側のテナントを得意先にしている
+    "SupplierView.salesOrders(filter.customerTenantId)" => {
+      ids: %i[supplier_tenant buyer_tenant outsider_tenant], reach: [], own: -> { own_customer.id },
+      run: lambda do |id|
+        query("query($id: ID) { supplier { salesOrders(filter: { customerTenantId: $id }) { nodes { id } } } }", id:)
+          .dig("supplier", "salesOrders", "nodes")
+      end
+    },
+    # 自社の発注は相手を受注側にしているので、相手のテナント ID は自社の行を返す対照にし、届かない ID には入れない
+    "BuyerView.purchaseOrders(filter.supplierTenantId)" => {
+      ids: [ *documents, :buyer_tenant, :outsider_tenant ], reach: [], own: -> { supplier.id },
+      run: lambda do |id|
+        query("query($id: ID) { buyer { purchaseOrders(filter: { supplierTenantId: $id }) { nodes { id } } } }", id:)
+          .dig("buyer", "purchaseOrders", "nodes")
+      end
     },
     "SupplierView.stockMovements(itemId)" => {
       ids: documents, reach: [],
@@ -254,8 +275,11 @@ RSpec.describe "テナントの境界", type: :request do
         .dig("supplier", "salesOrders", "nodes").flat_map { _1["cancellationReviews"] }.sole["id"]
       login_as(buyer_admin)
       mutate!("establishPartnership", "partnership { id }", partnerCode: own_customer.partner_code)
-      # 発注側も受注側として自社の未請求明細を持つ。相手の ID で絞った一覧が、絞り込みで空になることを確かめる
-      Tenancy.with_tenant(buyer.id) { FactoryBot.create(:billable_item, customer_tenant_id: own_customer.id) }
+      # 発注側も受注側として自社の未請求明細と受注を持つ。相手の ID で絞った一覧が、絞り込みで空になることを確かめる
+      Tenancy.with_tenant(buyer.id) do
+        FactoryBot.create(:billable_item, customer_tenant_id: own_customer.id)
+        FactoryBot.create(:sales_order, customer_tenant_id: own_customer.id)
+      end
       expect(query("{ supplier { billableItems { nodes { id } } } }").dig("supplier", "billableItems", "nodes").size).to eq(1)
       @own_item_id = mutate!("saveItem", "item { id }", code: "OWN-1", name: "自社品目", unit: "個", unitPrice: "10").dig("item", "id")
       # 絞らない在庫の移動履歴と品番の対応表が、自社の行を返すようにする
@@ -278,6 +302,9 @@ RSpec.describe "テナントの境界", type: :request do
         # 絞った一覧が空でも、絞り込みが相手の行を落としたことにならない
         if row.fetch(:reach) == []
           expect(instance_exec(nil, &row.fetch(:run))).to be_present, "#{entry} を絞らずに引いた一覧が空。自社の行を準備に足す"
+        end
+        if row[:own]
+          expect(instance_exec(instance_exec(&row[:own]), &row.fetch(:run))).to be_present, "#{entry} に自社の ID を入れても自社の行が返らない"
         end
         results = row.fetch(:ids).index_with { |kind| instance_exec(partner_ids.fetch(kind), &row.fetch(:run)) }
 

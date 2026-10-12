@@ -6,6 +6,10 @@ module Types
     # ConnectionBehaviors が足す GraphQL::Types::Relay::PageInfo は宣言を持たないので差し替える
     own_fields.delete("pageInfo")
     field :page_info, PageInfoType, null: false
+    field :total_count, Integer, null: false,
+      description: "絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える"
+
+    def total_count = object.total_count
 
     class << self
       def perspective(value = nil)

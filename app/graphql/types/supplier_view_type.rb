@@ -7,6 +7,7 @@ module Types
 
     field :partnerships, resolver: Resolvers::Supplier::PartnershipsResolver
     field :items, resolver: Resolvers::Supplier::ItemsResolver
+    field :item, resolver: Resolvers::Supplier::ItemResolver
     field :part_mappings, resolver: Resolvers::Supplier::PartMappingsResolver
     field :sales_orders, resolver: Resolvers::Supplier::SalesOrdersResolver
     field :sales_order, resolver: Resolvers::Supplier::SalesOrderResolver

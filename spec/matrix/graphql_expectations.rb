@@ -29,11 +29,17 @@ module MatrixExpectations
       query: "{ viewer { id } }",
       expect: EVERYONE
     },
+    # 自社テナントの ID と名前。取引用コードは含めない
+    "Viewer.tenant" => {
+      role: :member,
+      query: "{ viewer { tenant { id name } } }",
+      expect: EVERYONE
+    },
     # 自社の監査ログ。世界のペルソナは admin で、どのペルソナにも自社の行だけが返る
     "Viewer.auditLogs" => {
       role: :admin,
       member: :forbidden,
-      query: "{ viewer { auditLogs { nodes { action } } } }",
+      query: "{ viewer { auditLogs { totalCount nodes { action } } } }",
       expect: EVERYONE
     },
     # 自社テナントの取引用コード。admin にだけ返し、member には null を返す
@@ -63,13 +69,26 @@ module MatrixExpectations
     },
     "SupplierView.items" => {
       role: :member,
-      query: "{ supplier { items { nodes { id } } } }",
+      query: "{ supplier { items { totalCount nodes { id } } } }",
       expect: EVERYONE
+    },
+    # 並べ替えと絞り込みの変種の行。世界のどのペルソナにも、絞り込みに当たる行と当たらない行がある（MatrixWorld#add_filter_rows）
+    "SupplierView.items#filter" => {
+      role: :member,
+      query: "query($orderBy: ItemOrder, $filter: ItemFilter) { supplier { items(orderBy: $orderBy, filter: $filter) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "NAME", direction: "ASC" }, filter: { keyword: MatrixWorld::FILTER_ITEM_NAME } } },
+      expect: EVERYONE
+    },
+    "SupplierView.item" => {
+      role: :member,
+      query: "query($id: ID!) { supplier { item(id: $id) { id } } }",
+      variables: ->(world) { { id: world.row("items", :supplier).id } },
+      expect: only(:supplier)
     },
     # 経路 1。有効な取引関係と view_catalog の付与がある発注側にだけ開き、付与があっても失効で閉じる
     "SupplierPartnership.catalog" => {
       role: :member,
-      query: "{ buyer { suppliers { catalog { nodes { code } } } } }",
+      query: "{ buyer { suppliers { catalog { totalCount nodes { code } } } } }",
       expect: { supplier: :empty, granted_buyer: :value, ungranted_buyer: :empty, revoked_buyer: :empty, stranger: :empty }
     },
     "Mutation.establishPartnership" => {
@@ -129,7 +148,7 @@ module MatrixExpectations
     # 取り込みは書いたテナントだけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.imports" => {
       role: :member,
-      query: "{ supplier { imports { nodes { id } } } }",
+      query: "{ supplier { imports { totalCount nodes { id } } } }",
       expect: EVERYONE
     },
     "SupplierView.import" => {
@@ -154,7 +173,7 @@ module MatrixExpectations
     # 対応表は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.partMappings" => {
       role: :member,
-      query: "{ supplier { partMappings { nodes { id } } } }",
+      query: "{ supplier { partMappings { totalCount nodes { id } } } }",
       expect: EVERYONE
     },
     # supplier の品目を、supplier の取引先（granted_buyer）の品番に対応させる
@@ -169,7 +188,18 @@ module MatrixExpectations
     },
     "BuyerView.purchaseOrders" => {
       role: :member,
-      query: "{ buyer { purchaseOrders { nodes { id } } } }",
+      query: "{ buyer { purchaseOrders { totalCount nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "BuyerView.purchaseOrders#filter" => {
+      role: :member,
+      query: "query($orderBy: PurchaseOrderOrder, $filter: PurchaseOrderFilter) " \
+        "{ buyer { purchaseOrders(orderBy: $orderBy, filter: $filter) { totalCount nodes { id } } } }",
+      variables: lambda { |world|
+        { orderBy: { field: "ORDER_NO", direction: "DESC" },
+          filter: { supplierTenantId: world.tenants[:supplier], orderDateFrom: MatrixWorld::FILTER_ORDER_DATE.iso8601,
+                    orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601 } }
+      },
       expect: EVERYONE
     },
     # 経路 3。自社の発注に連結した出荷が、有効な取引関係と view_shipments の付与がある発注側にだけ見え、
@@ -188,7 +218,18 @@ module MatrixExpectations
     },
     "SupplierView.salesOrders" => {
       role: :member,
-      query: "{ supplier { salesOrders { nodes { id } } } }",
+      query: "{ supplier { salesOrders { totalCount nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.salesOrders#filter" => {
+      role: :member,
+      query: "query($orderBy: SalesOrderOrder, $filter: SalesOrderFilter) " \
+        "{ supplier { salesOrders(orderBy: $orderBy, filter: $filter) { totalCount nodes { id } } } }",
+      variables: lambda { |world|
+        { orderBy: { field: "DUE_DATE", direction: "DESC" },
+          filter: { customerTenantId: world.tenants[:granted_buyer], orderDateFrom: MatrixWorld::FILTER_ORDER_DATE.iso8601,
+                    orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601 } }
+      },
       expect: EVERYONE
     },
     # 発注に連結した受注。発注側の granted_buyer にも見えない
@@ -201,12 +242,24 @@ module MatrixExpectations
     # 在庫は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.stocks" => {
       role: :member,
-      query: "{ supplier { stocks { nodes { onHand } } } }",
+      query: "{ supplier { stocks { totalCount nodes { onHand } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.stocks#filter" => {
+      role: :member,
+      query: "query($orderBy: StockOrder, $filter: StockFilter) { supplier { stocks(orderBy: $orderBy, filter: $filter) { totalCount nodes { onHand } } } }",
+      variables: ->(_world) { { orderBy: { field: "AVAILABLE", direction: "DESC" }, filter: { belowSafetyStock: true } } },
       expect: EVERYONE
     },
     "SupplierView.stockMovements" => {
       role: :member,
-      query: "{ supplier { stockMovements { nodes { id } } } }",
+      query: "{ supplier { stockMovements { totalCount nodes { id } } } }",
+      expect: EVERYONE
+    },
+    "SupplierView.stockMovements#filter" => {
+      role: :member,
+      query: "query($filter: StockMovementFilter) { supplier { stockMovements(filter: $filter) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { filter: { types: [ "OUTBOUND" ] } } },
       expect: EVERYONE
     },
     "Mutation.adjustStock" => {
@@ -225,7 +278,14 @@ module MatrixExpectations
     # 出荷は受注側だけが所有する。どのペルソナにも自社の行だけが返る
     "SupplierView.shipmentRequests" => {
       role: :member,
-      query: "{ supplier { shipmentRequests { nodes { id } } } }",
+      query: "{ supplier { shipmentRequests { totalCount nodes { id } } } }",
+      expect: EVERYONE
+    },
+    # 出荷依頼は並べ替えだけを持つ。世界のどのペルソナにも、期限のある行と無い行がある
+    "SupplierView.shipmentRequests#orderBy" => {
+      role: :member,
+      query: "query($orderBy: ShipmentRequestOrder) { supplier { shipmentRequests(orderBy: $orderBy) { totalCount nodes { id dueDate } } } }",
+      variables: ->(_world) { { orderBy: { field: "DUE_DATE", direction: "ASC" } } },
       expect: EVERYONE
     },
     # 出荷指示の無い出荷依頼に指示を作る
@@ -304,12 +364,12 @@ module MatrixExpectations
     },
     "SupplierView.billableItems" => {
       role: :member,
-      query: "{ supplier { billableItems { nodes { id } } } }",
+      query: "{ supplier { billableItems { totalCount nodes { id } } } }",
       expect: EVERYONE
     },
     "SupplierView.invoices" => {
       role: :member,
-      query: "{ supplier { invoices { nodes { id } } } }",
+      query: "{ supplier { invoices { totalCount nodes { id } } } }",
       expect: EVERYONE
     },
     "SupplierView.invoice" => {
@@ -366,7 +426,7 @@ module MatrixExpectations
     # 受領請求書は発注側だけが所有する。どのペルソナにも自社の行だけが返る
     "BuyerView.receivedInvoices" => {
       role: :member,
-      query: "{ buyer { receivedInvoices { nodes { id } } } }",
+      query: "{ buyer { receivedInvoices { totalCount nodes { id } } } }",
       expect: EVERYONE
     },
     "BuyerView.receivedInvoice" => {

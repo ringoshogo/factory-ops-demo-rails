@@ -102,6 +102,48 @@ RSpec.describe "入口の行列", type: :request do
     end
   end
 
+  # 問い合わせの中の、名前が name のフィールドの選択をすべて返す
+  def self.selections_named(selections, name)
+    selections.flat_map do |selection|
+      found = selection.respond_to?(:name) && selection.name == name ? [ selection ] : []
+      found + selections_named(selection.selections, name)
+    end
+  end
+
+  # 件数も RLS の SELECT を開いた 2 回目の比較にかけるため、コネクションを返すフィールドの行は totalCount を読む。
+  # 対象はスキーマから集める（docs/guides/dev-cycle.md「テストから書く」）
+  it "コネクションを返すフィールドの行は、すべて問い合わせで totalCount を読む" do
+    connections = schema_entries.select do |path|
+      FactoryOpsSchema.get_field(*path.split(".")).type.unwrap.include?(GraphQL::Types::Relay::ConnectionBehaviors)
+    end
+    missing = MatrixExpectations::GRAPHQL.select { |key, _entry| connections.include?(self.class.field_key(key)) }.reject do |key, entry|
+      fields = self.class.selections_named(GraphQL.parse(entry[:query]).definitions.sole.selections, self.class.field_key(key).split(".").last)
+      fields.any? { |field| field.selections.any? { _1.name == "totalCount" } }
+    end
+
+    expect(connections).to include("SupplierView.salesOrders", "Viewer.auditLogs", "SupplierPartnership.catalog")
+    expect(missing.keys).to eq([])
+  end
+
+  # 絞り込みの変種の行が、世界の行を実際に絞ることを確かめる。当たる行が無いか全行が当たると、絞り込みの scope の抜けが
+  # RLS の SELECT を開いた 2 回目の比較に出ない
+  MatrixExpectations::GRAPHQL.select { |key, _entry| key.end_with?("#filter") }.each do |key, entry|
+    type_name, field_name = field_key(key).split(".")
+    base = MatrixExpectations::GRAPHQL.fetch(field_key(key))
+
+    it "#{key} は、どのペルソナでも、絞らない一覧の件数より少なく、0 より多い件数に絞る" do
+      counts = MatrixWorld::PERSONAS.index_with do |persona|
+        login_as(world.users[persona])
+        [ base, entry ].map do |row|
+          post "/graphql", params: { query: row[:query], variables: row[:variables]&.call(world) || {} }, as: :json
+          response.parsed_body.dig("data", *parent_paths.fetch(type_name), field_name, "totalCount")
+        end
+      end
+
+      expect(counts.reject { |_persona, (all, filtered)| filtered.positive? && filtered < all }).to eq({})
+    end
+  end
+
   it "期待値はすべてのペルソナについて、決めた結果の種類で書かれている" do
     MatrixExpectations::GRAPHQL.each do |key, entry|
       expect(entry[:expect].keys).to match_array(MatrixWorld::PERSONAS), key
