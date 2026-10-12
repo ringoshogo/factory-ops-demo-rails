@@ -72,8 +72,9 @@ export default async function SupplierDashboardPage() {
 
       {/* KPI は 1 つの面を区切り線で 3 つに分ける。1024px 未満は縦に並べる */}
       <div className="grid lg:grid-cols-3">
+        {/* 集計の数字からは、同じ条件で絞った一覧へ飛ぶ。出荷依頼の一覧の入口は期限で絞れないので、同じ行を並べた下の表へ飛ぶ */}
         <Kpi
-          href="/supplier/shipment-requests?tab=open&sort=due_date&dir=asc"
+          href="#due-soon"
           testId="due-soon-link"
           label="出荷期限が近い出荷依頼"
           value={<span data-testid="due-soon-count">{dueSoon.length}</span>}
@@ -190,7 +191,7 @@ export default async function SupplierDashboardPage() {
         </div>
       </div>
 
-      <div>
+      <div id="due-soon">
         <SectionHeading>出荷期限が近い出荷依頼</SectionHeading>
         <div className="overflow-x-auto">
           <Table>

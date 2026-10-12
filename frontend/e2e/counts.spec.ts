@@ -53,3 +53,14 @@ test("安全在庫を下回る在庫の件数が、ダッシュボードと在�
   await page.goto("/supplier/stocks");
   expect(await number(page, page.getByTestId("list-count").innerText())).toBeGreaterThan(alerts);
 });
+
+test("出荷期限が近い出荷依頼の件数から、同じ行を並べた表へ飛ぶ", async ({ page }, testInfo) => {
+  await login(page, testInfo, "supplier_admin");
+  await page.goto("/supplier/dashboard");
+  const dueSoon = await number(page, page.getByTestId("due-soon-count").innerText());
+  expect(dueSoon).toBeGreaterThan(0);
+
+  await page.getByTestId("due-soon-link").click();
+  await expect(page).toHaveURL(/#due-soon$/);
+  await expect(page.locator("#due-soon").getByTestId("due-soon-row")).toHaveCount(dueSoon);
+});
