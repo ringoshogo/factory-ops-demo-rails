@@ -3,20 +3,28 @@ require "open3"
 # コメントや文書が「<文書>.md「<節>」」の形で指す節が、その文書の見出しにあることを確かめる（docs/guides/comments.md「書くこと」）。
 # 見出しを変えた人が参照を直し忘れると、grep で根拠を引けなくなる。見出しは全体のほか、「：」で区切った前と後のどちらで指してもよい。
 # ファイル名はバッククォートで囲んでもよい。ほかのリポジトリの文書（このリポジトリに無いディレクトリの下の文書）は確かめない。
+# 同じ名前の文書が複数あれば（README.md と deploy/README.md）、パスの全体が一致する文書を指す。
 # 証跡と台帳（docs/plans/）はその時点の記録なので見ない。Markdown のコードブロックと、拾い方の見本を持つこの spec は、悪い例を含むので見ない。
 RSpec.describe "節の参照" do
   root = File.expand_path("../..", __dir__)
   reference = /([\w.\/-]+\.md)`?((?:「[^」]+」)+)/
 
-  # 文書のファイル名から、その文書の見出しで指せる名前の一覧を引く
+  # 文書のパスから、その文書の見出しで指せる名前の一覧を引く
   section_names = lambda do |docs|
     docs.to_h do |path, text|
       names = text.lines(chomp: true).grep(/\A#+ /).flat_map do |line|
         heading = line.sub(/\A#+\s+/, "")
         [ heading, *heading.split("：") ]
       end
-      [ File.basename(path), names ]
+      [ path, names ]
     end
+  end
+
+  # 参照に書いた文書の名前（相対のパスや、docs/ を省いたパスでもよい）に当たる文書のパス。パスの全体が一致する文書があれば、それだけを返す
+  documents_for = lambda do |doc, names|
+    target = doc.sub(%r{\A(\.\./)+}, "")
+    candidates = names.keys.select { |path| path == target || path.end_with?("/#{target}") }
+    candidates.include?(target) ? [ target ] : candidates
   end
 
   # 参照を拾い、見出しに無い節を「ファイル:行 文書「節」」の形で返す
@@ -35,8 +43,10 @@ RSpec.describe "節の参照" do
           segments = doc.delete_prefix("../").split("/")
           next [] if segments.size > 1 && !directories.include?(segments.first)
 
-          known = names[File.basename(doc)]
-          next [ "#{path}:#{lineno} #{doc}（文書が無い）" ] unless known
+          candidates = documents_for.call(doc, names)
+          next [ "#{path}:#{lineno} #{doc}（文書が無い）" ] if candidates.empty?
+
+          known = candidates.flat_map { names[_1] }
 
           sections.scan(/「([^」]+)」/).flatten.reject { |section| known.include?(section) }
             .map { |section| "#{path}:#{lineno} #{doc}「#{section}」" }
@@ -79,5 +89,15 @@ RSpec.describe "節の参照" do
         "docs/guides/b.md:1 data-model.md「出荷」"
       ]
     )
+  end
+
+  it "同じ名前の文書は、パスの全体が一致する文書の見出しで確かめる" do
+    docs = { "README.md" => "# 説明\n\n## 開発環境\n", "deploy/README.md" => "# 配置\n\n## Secret\n" }
+    files = {
+      "app/a.rb" => "# README.md「開発環境」 deploy/README.md「Secret」\n# README.md「Secret」 deploy/README.md「開発環境」\n",
+      "deploy/kustomization.yaml" => ""
+    }
+
+    expect(broken_references.call(files, section_names.call(docs))).to eq([ "app/a.rb:2 README.md「Secret」", "app/a.rb:2 deploy/README.md「開発環境」" ])
   end
 end

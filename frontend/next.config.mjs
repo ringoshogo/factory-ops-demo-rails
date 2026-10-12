@@ -14,6 +14,9 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // 公開の配置のイメージ (frontend/Dockerfile) だけが NEXT_OUTPUT=standalone を渡し、node_modules を持たないサーバーを組み立てる。
+  // 手元と E2E の next start は standalone の出力では動かないと警告するので、渡さないときは既定の出力のままにする
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   turbopack: { root: REPO_ROOT },
   outputFileTracingRoot: REPO_ROOT,
   async headers() {

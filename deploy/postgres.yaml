@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+# 所有ロールとアプリのロールを、docker/initdb/01_roles.sql と同じ属性で、Secret のパスワードで作る。PVC が空の初回の起動でだけ流れる。
+# 業務の DB はここで作らず、所有ロールが migrate の db:prepare で作って持ち主になる。作り直しで所有ロールが DB を消せるようにするためである
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+data:
+  01_roles.sh: |
+    #!/bin/sh
+    set -eu
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
+      -v owner="$OWNER_ROLE" -v owner_password="$OWNER_PASSWORD" \
+      -v app="$APP_ROLE" -v app_password="$APP_PASSWORD" <<'SQL'
+    CREATE ROLE :"owner" LOGIN CREATEDB BYPASSRLS PASSWORD :'owner_password';
+    CREATE ROLE :"app" LOGIN NOSUPERUSER NOBYPASSRLS PASSWORD :'app_password';
+    SQL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # ReadWriteOnce の PVC を、新旧の Pod が同時に掴めない
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          # 開発と CI と同じ 18 系を、小版まで固定する。公式のイメージは arm64 を含む
+          image: postgres:18.6
+          args:
+            # web の 3 と jobs の 20 の接続プールに、migrate・daily-reset・手の作業の分を足す
+            - "-c"
+            - "max_connections=40"
+          env:
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: superuser-password
+            # 初期化のスクリプトだけが読む。Rails の DB_OWNER_* と名前を分け、所有ロールの資格情報を持つコンテナを数えやすくする
+            - name: OWNER_ROLE
+              value: factory_owner
+            - name: OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: owner-password
+            - name: APP_ROLE
+              value: factory_app
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: app-password
+          ports:
+            - containerPort: 5432
+          # 見積もりで、実機で測っていない（deploy/README.md「作者の手順」4）。流用元の PostgreSQL と同じ上限にし、
+          # shared_buffers は既定の 128MB のまま、接続ごとのメモリが max_connections まで増える
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts:
+            # 18 のイメージはデータを /var/lib/postgresql/18/docker に置く。16 の /var/lib/postgresql/data に付けると PVC の外に書く
+            - name: data
+              mountPath: /var/lib/postgresql
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: initdb
+          configMap:
+            name: postgres-initdb
+            # 実行できない .sh は、イメージの起動のスクリプトが自分のシェルに読み込む。set -eu が起動の残りに効かないように、別のプロセスで流させる
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

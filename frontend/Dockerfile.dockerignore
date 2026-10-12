@@ -1,0 +1,10 @@
+# frontend/Dockerfile の文脈（リポジトリの根）に入れるもの。この名前のファイルは、根の .dockerignore の代わりに読まれる。
+# 画面のコードと、ログインの画面が読むアカウントの一覧だけを入れ、Rails のコードと手元の生成物を入れない
+**
+!frontend/**
+!db/seeds/demo_accounts.json
+frontend/node_modules
+frontend/.next
+frontend/test-results
+frontend/playwright-report
+frontend/Dockerfile*

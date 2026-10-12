@@ -1,0 +1,62 @@
+# 所有ロールで業務の DB を作り（初回）、マイグレーションを流し、アプリのロールに権限を付ける。
+# Job の spec は変えられないので、2 回目からは適用の前に消す（deploy/README.md「作者の手順」2）
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  labels:
+    app: migrate
+spec:
+  # 初回の適用では postgres の起動を待たずに始まり、接続に失敗しうる。db:prepare は何度流してもよいので、再試行させる
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: migrate
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: migrate
+          image: ghcr.io/ringoshogo/factory-ops-demo-rails/api
+          args: ["bin/rails", "db:prepare", "db:grant_app_role"]
+          env:
+            - name: RAILS_ENV
+              value: production
+            - name: SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: rails-credentials
+                  key: secret-key-base
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            # db:grant_app_role が、権限を付けるアプリのロールの名前を読む
+            - name: DB_APP_USER
+              value: factory_app
+            - name: DB_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: app-password
+            # 所有ロールは RLS を素通りするので、資格情報は DB を作る工程（migrate と daily-reset）にだけ渡す（config/database.yml）
+            - name: DB_OWNER_USER
+              value: factory_owner
+            - name: DB_OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: owner-password
+          # 見積もりで、実機で測っていない（deploy/README.md「作者の手順」4）。daily-reset と同じ値にする
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi

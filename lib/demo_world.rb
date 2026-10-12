@@ -119,7 +119,7 @@ class DemoWorld
 
   # 同じ namespace の受注側のテナントがあれば、何も作らずに、あるテナントとアカウントを返す
   def build
-    raise ProductionEnvironment, "DemoWorld は本番の環境では動かない" if Rails.env.production?
+    raise ProductionEnvironment, "DemoWorld は本番の環境では DEMO_WORLD_ENABLED=1 のときだけ動く" unless Platform::DemoWorldGate.open?
 
     existing = Partnerships::Onboarding.tenant_id(code: code_of(:supplier))
     return Result.new(tenant_ids: TENANTS.keys.index_with { Partnerships::Onboarding.tenant_id(code: code_of(_1)) }, accounts:) if existing

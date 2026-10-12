@@ -1,6 +1,7 @@
 require "rails_helper"
 require "prism"
 require_relative "../support/cross_read"
+require_relative "../support/env_helpers"
 
 # シードと E2E の世界の作り方（README.md「開発環境」）。同じ DB に namespace ごとの世界を作れ、namespace ごとに冪等である。
 # GraphQL を通らない入口なので、admin に限る操作は mutation と同じ規則を評価してから呼ぶ
@@ -8,6 +9,7 @@ require_relative "../support/cross_read"
 # 実行待ちの行と同時実行の制御のセマフォを残さない（solid_queue 1.7.0 の app/models/solid_queue/claimed_execution.rb の finalize）
 RSpec.describe DemoWorld do
   include_context "RLS の SELECT と UPDATE を開く"
+  include EnvHelpers
 
   def namespace = "w#{SecureRandom.hex(3)}"
 
@@ -71,12 +73,27 @@ RSpec.describe DemoWorld do
       expect { described_class.build(namespace:, variant: :seed) }.to raise_error(DemoWorld::Failed, /items.csv が終わらない（queued）/)
     end
 
-    it "本番の環境では、何も作らずに例外にする" do
+    it "本番の環境では、DEMO_WORLD_ENABLED が無いか 1 でなければ、何も作らずに例外にする" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
       counts = row_counts
 
-      expect { described_class.build(namespace:, variant: :seed) }.to raise_error(DemoWorld::ProductionEnvironment)
+      [ nil, "true" ].each do |value|
+        with_env("DEMO_WORLD_ENABLED" => value) do
+          expect { described_class.build(namespace:, variant: :seed) }.to raise_error(DemoWorld::ProductionEnvironment)
+        end
+      end
       expect(row_counts).to eq(counts)
+    end
+
+    # 世界を作る途中で呼ぶ公開 API（テナントの作成・安全在庫）も、同じ条件で本番の環境を止めている。どれか 1 つでも条件を
+    # 読まなければ、途中で止まる（docs/adr/009 決定 4）
+    it "本番の環境でも、DEMO_WORLD_ENABLED=1 なら世界を最後まで作る" do
+      allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
+
+      world = with_env("DEMO_WORLD_ENABLED" => "1") { described_class.build(namespace:, variant: :seed) }
+
+      expect(world.tenant_ids.values).to all(be_present)
+      expect(actor_of(world, "supplier_admin").role).to eq("admin")
     end
   end
 

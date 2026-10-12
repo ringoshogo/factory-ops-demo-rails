@@ -71,5 +71,41 @@ RSpec.describe "セッション", type: :request do
       expect(session[:user_id]).to be_nil
       expect(session[:tenant_id]).to be_nil
     end
+
+    # 同じアカウントでログインしたもう 1 人の訪問者。別の Cookie を持つ
+    def other_visitor
+      open_session.tap do |visitor|
+        visitor.post "/session", params: { email: "a@example.com", password: "secret" }, as: :json
+        expect(visitor.response).to have_http_status(:no_content)
+      end
+    end
+
+    def viewer_status(visitor)
+      visitor.post "/graphql", params: { query: "{ viewer { id } }" }, as: :json
+      visitor.response.status
+    end
+
+    it "セッションの世代を進め、同じユーザーのほかのセッションも切る" do
+      visitor = other_visitor
+      expect(viewer_status(visitor)).to eq(200)
+
+      login(email: "a@example.com", password: "secret")
+      delete "/session", as: :json
+
+      expect(viewer_status(visitor)).to eq(401)
+    end
+
+    # 公開の配置では、全員がログインの画面に並ぶ同じアカウントを使う（docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）
+    it "共有のデモのアカウントの配置では、世代を進めず、ほかのセッションが続く" do
+      allow(Rails.configuration.x).to receive(:shared_demo_accounts).and_return(true)
+      visitor = other_visitor
+
+      login(email: "a@example.com", password: "secret")
+      delete "/session", as: :json
+
+      expect(response).to have_http_status(:no_content)
+      expect(session[:user_id]).to be_nil
+      expect(viewer_status(visitor)).to eq(200)
+    end
   end
 end

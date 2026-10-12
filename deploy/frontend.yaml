@@ -1,0 +1,87 @@
+# 画面（Next の standalone のサーバー）。外へ出すのはこれだけで、Cloudflare Tunnel が Traefik へ送る（docs/adr/009 決定 2）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # 新旧の Pod を同時に置くと、Raspberry Pi のメモリに Node の 1 プロセス分が上乗せになる
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: frontend
+          image: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend
+          ports:
+            - containerPort: 3000
+          env:
+            # Next のサーバーが Rails を呼ぶ先。実行の時に読むので、イメージを作り直さずに変えられる
+            - name: RAILS_URL
+              value: http://web:3000
+            # standalone のサーバーは HOSTNAME で待ち受ける。コンテナの実行環境が Pod の名前を入れるので、全てのアドレスに戻す
+            - name: HOSTNAME
+              value: 0.0.0.0
+          # 見積もりで、実機で測っていない（deploy/README.md「作者の手順」4）。Node の 1 プロセスで、サーバーコンポーネントの
+          # 描画の間だけ増える
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          # ログインの画面（/）は Rails を呼ばずに描くので、Rails が作り直しで止まっている間も ready のままでいる
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend
+spec:
+  ingressClassName: traefik # k3s に同梱の Ingress のコントローラ
+  rules:
+    # ホスト名は kustomization.yaml の public-site から入る
+    - host: PUBLIC_HOST
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 3000

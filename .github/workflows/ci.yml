@@ -255,3 +255,72 @@ jobs:
           name: playwright-results
           path: frontend/test-results/
           retention-days: 7
+
+  # 公開の配置の 2 つのイメージを linux/arm64 で作る（docs/adr/009 決定 6、deploy/README.md）。PR では作って確かめるだけにし、
+  # main への push のときだけ git の SHA のタグで GHCR に置く。latest のタグは付けない
+  images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
+      FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # Kustomize の置き換えを描き、Kubernetes の型と照らす。ubuntu のランナーには kubectl が入っている
+      - name: Validate manifests
+        run: |
+          kubectl kustomize deploy > "$RUNNER_TEMP/rendered.yaml"
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar -xz -C "$RUNNER_TEMP" kubeconform
+          "$RUNNER_TEMP/kubeconform" -strict -summary "$RUNNER_TEMP/rendered.yaml"
+
+      # GitHub ホストのランナーは amd64 なので、arm64 のイメージを QEMU の上で組み立てる
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build API image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          tags: ${{ env.API_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      # 本番の環境（eager_load）で全コードを読み込めることを、arm64 のイメージのまま確かめる。DB には繋がない
+      - name: Boot API image in production
+        run: |
+          docker run --rm --platform linux/arm64 -e SECRET_KEY_BASE_DUMMY=1 "$API_IMAGE" \
+            bin/rails runner 'abort "eager_load が偽" unless Rails.application.config.eager_load; puts "eager_load: ok"'
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/arm64
+          tags: ${{ env.FRONTEND_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push images
+        if: github.event_name == 'push'
+        run: |
+          docker push "$API_IMAGE"
+          docker push "$FRONTEND_IMAGE"
