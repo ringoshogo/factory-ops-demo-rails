@@ -44,6 +44,47 @@ module Sales
       OperationResult.failure(:conflict, path: [ :code ])
     end
 
+    # bulk_upsert の 1 行の結果。created は、この呼び出しで品目を作ったか
+    Upserted = Data.define(:item_id, :created)
+
+    # 取り込みの品目の行を、品目コードで書く（docs/architecture/data-model.md「取り込み（`imports`）」）。rows は
+    # { code:, name:, unit:, tax_rate_percent:, published:, unit_price: } の配列で、コードは重ならず、列は呼ぶ側が検証した値である。
+    # 品目の列は 1 つの upsert_all で書き、新しい品目には unit_price を有効期間 (,) の単価の行として足す（save と同じ形）。
+    # 既存の品目の単価には触れない。単価の改定は、admin に限る ItemPrices の操作だけが行う。
+    # 単価の空の新しい品目は書かずに INVALID_INPUT にする。品目コードごとの結果を返す。
+    # upsert は既存の品目の行をロックするので、同じ品目への save・改定の予約とは品目の行ロックで直列になる。
+    # 行をコードの順に並べ、並んだ取り込みがロックを同じ順で取るようにする。同じ新しいコードを並んで書くと、後の upsert は
+    # 一意索引で先のコミットを待ってから更新に回り、作った品目として数えないので、最初の単価の行は 1 つになる
+    def self.bulk_upsert(actor, rows)
+      rows = rows.sort_by { _1[:code] }
+      existing = Scope.call(actor, :own).where(code: rows.map { _1[:code] }).pluck(:code).to_set
+      rejected, writable = rows.partition { |row| row[:unit_price].nil? && !existing.include?(row[:code]) }
+      results = rejected.to_h do |row|
+        [ row[:code], OperationResult.failure(:invalid_input, path: [ :unit_price ], message: "Unit price is required for a new item") ]
+      end
+      return results if writable.empty?
+
+      written = Item.upsert_all(
+        writable.map { { owner_tenant_id: Current.tenant_id, **_1.slice(:code, :name, :unit, :tax_rate_percent, :published) } },
+        unique_by: %i[owner_tenant_id code], returning: Arel.sql("id, code, xmax = 0 AS created")
+      )
+      at = Time.current
+      prices = writable.to_h { [ _1[:code], _1[:unit_price] ] }
+      written.each do |item|
+        if item["created"]
+          ItemPrice.add!(item_id: item["id"], unit_price: prices.fetch(item["code"]), valid_from: nil, valid_to: nil, at:,
+            recorded_by_user_id: actor.user_id)
+        end
+        results[item["code"]] = OperationResult.success(Upserted.new(item_id: item["id"], created: item["created"]))
+      end
+      results
+    end
+
+    # 品目コードごとの自社の品目 ID。見えないコードと無いコードは含まない
+    def self.ids_by_codes(actor, codes)
+      Scope.call(actor, :own).where(code: codes).pluck(:code, :id).to_h
+    end
+
     def self.set_published(actor, item_id:, published:)
       item = Scope.call(actor, :own).lock.find_by(id: item_id)
       return OperationResult.failure(:not_found, path: [ :item_id ]) unless item

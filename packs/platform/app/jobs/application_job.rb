@@ -52,9 +52,20 @@ class ApplicationJob < ActiveJob::Base
     replace_error_context(previous_error_context)
   end
 
+  # テナントのトランザクションの単位。:per_job は実行全体を 1 つの Tenancy.with_tenant で包む。
+  # :per_chunk は包まず、ジョブがチャンクごとに開いて閉じる。実行全体を包むと、途中のチャンクがコミットされず、
+  # 進み具合が見えず、止まったときに終えたチャンクも戻る（docs/adr/007 決定 5 の A-4）
+  class_attribute :tenant_transaction_unit, instance_writer: false, default: :per_job
+
+  def self.tenant_transaction(unit)
+    raise ArgumentError, "tenant_transaction は :per_job か :per_chunk にする（#{unit.inspect}）" unless %i[per_job per_chunk].include?(unit)
+
+    self.tenant_transaction_unit = unit
+  end
+
   around_perform do |job, block|
     tenant_id = job.perform_tenant_id
-    tenant_id ? Tenancy.with_tenant(tenant_id, &block) : block.call
+    tenant_id && job.tenant_transaction_unit == :per_job ? Tenancy.with_tenant(tenant_id, &block) : block.call
   end
 
   # 実行時に設定するテナント。空ならテナントを設定せずに実行する
