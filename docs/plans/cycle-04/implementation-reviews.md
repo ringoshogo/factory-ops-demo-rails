@@ -463,3 +463,141 @@ bundle exec rspec spec/platform/alerts_runbook_spec.rb spec/platform/ci_checks_s
 ### 残件の処理
 
 引当先が M31 の `open` は OI-116 で、閉じた。OI-122・OI-126 は judgment のまま、判断どおりに実装した。実装で決めたことは OI-134〜OI-137 に judgment で積んだ。実装レビューの違和感と落ちない守りは IB-55〜IB-59 に積んだ。
+
+## M32 シードデータ
+
+PR #53（`m32-seeds`、base は `main`）。PR #49・#50・#51・#52 が未マージなので、その commit も差分に見える。M32 の差分は `21140a9..` である。
+
+どちらの系統も Go だった。Critical と High は無く、Medium と Low はすべて同じブランチの `baec471` で直した。High が無いので、読み直しには出していない。どちらの系統も、`21140a9..034862e` の diff を `034862e` の版で読んだ。Claude は `034862e` の worktree を別名のテスト DB（`factory_ops_demo_rails_test_m32rc`）で流し（完了条件の rspec は 1398 examples, 0 failures）、実装を 22 か所壊して確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた控えのファイルから結果を読んだ。Codex は 1 回目が「モデルが混み合っている」で失敗し、同じ依頼で出し直した 2 回目が結果を返した。Codex はテストを流さず、依頼に書いた実行結果と対象の commit を照らして判定した。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go | — |
+| Claude | Go | — |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R3・R5） | 指摘（F-9） |
+| 正しさ | 指摘（R1・R2） | 指摘（F-1） |
+| 境界と規約 | 指摘なし | 指摘（F-5・F-6） |
+| テストの検出力 | 指摘（R1・R2） | 指摘（F-3・F-4） |
+| 参照の維持 | 指摘（R4・R5） | 指摘（F-2・F-7・F-8） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | M32-R1・F-1：安全在庫に今と同じ値を渡すと、変わる属性が無く `readonly?` が真のままなので、`ActiveRecord::ReadOnlyRecord` が上がる | `readonly?` が、安全在庫の設定の中では、変わる属性が安全在庫だけか空のときに書き込みを許すようにした。同じ値の設定が成功して何も変えない example を足した | `baec471` |
+| Medium | Codex・Claude | M32-R2・F-5：共有の文脈「RLS の SELECT を開く」の `after(:context)` が、足すのに失敗したときもポリシーを外し、同じ DB で先に足した別の実行のポリシーを消す | 足し終えたときだけ外す形（`MatrixWorld.share_per_file` と同じ）にし、ガードの spec `spec/matrix/cross_read_spec.rb` を足した | `baec471` |
+| Medium | Claude | F-2：`DemoWorld` は `admin` の操作者で相手に効果が及ぶ操作を行うが監査の行を書かず、「監査ログ」の節は書き込みの入口に挙げていない | 記録しないと決め、理由（人の操作ではなくデモの準備で、本番では動かない）を `graphql-schema.md`「監査ログ」に書いた。判断は OI-141 に積んだ | `baec471` |
+| Low | Claude | F-3：受け手に足した `Tenancy.require_tenant!` と値を返さないことを、どの spec も確かめない | `spec/contracts/receivers_spec.rb` を足した。配送表の受け手ごとにテナントの外で例外になることと、シードの世界を作る間のどの受け手の戻り値も `nil` であることを確かめる | `baec471` |
+| Low | Claude | F-4：`DemoWorld::Jobs.ready` の実行待ちへの絞り込みを外しても落ちない | 時刻を待つ取り込みのジョブを流さずに残し、実行待ちに戻すと流す example を足した | `baec471` |
+| Low | Claude | F-6：`Onboarding.tenant_id(code:)` が、操作者のいない入口の規則の例外に載っていない | `graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の例外の文に足した | `baec471` |
+| Low | Claude | F-7：ADR 005 決定 6 が、テストの流し方をシードと 1 つにしたことを書いていない | 決定 6 に、`DemoWorld::Jobs` で流し、実行待ちだけを動かし、ワーカーと同じ後始末をすることを足した | `baec471` |
+| Low | Claude | F-8：時刻帯を変えたので、GraphQL の `ISO8601DateTime` とイベントの時刻が `+09:00` 付きになるが、`config.md` に無い | `config.md`「application.rb で変えたこと」に、時点は変わらず表記がオフセット付きになると書いた | `baec471` |
+| Low | Codex・Claude | M32-R3・F-9：作るもの 10 の、操作者を取らない公開 API の一覧が証跡に無い | 下の「実装の記録」に一覧を書いた | — |
+| Low | Codex | M32-R4：在庫の正本と計画が、在庫を変える処理はすべて `move!` を通り移動履歴を残すと書き、安全在庫の入口を書いていない | `data-model.md`「在庫（`inventory`）」と計画の M12 の行と節を、在庫の数量の変更に限る書き方にし、安全在庫は `change_safety_stock!` だけで変えると書いた | `baec471` |
+| Low | Codex | M32-R5：計画の `namespace` の契約は取引用コードにも入れると書くが、実装は乱数だけで作る | 取引用コードは推測できない無作為の値にするので、`namespace` を入れずに乱数で作ると決め、計画の契約を直し、OI-139 に書き足した | `baec471` |
+
+違和感は次のように扱った。
+
+- Claude 1：`DemoWorld::Jobs.execute` はジョブを claim しないので、`bin/jobs` を起こしたままシードを流すと、同じジョブを両方が動かしうる → `README.md`「開発環境」に、シードの間は `bin/jobs` を止めると書き（`baec471`）、仕組みで止めるかを IB-61 に積んだ
+- Claude 2：`provider_job_id` を渡さない → IB-61 に含めた
+- Claude 3：冪等を受注側のテナントの有無だけで判定するので、途中で失敗した世界も 2 回目は黙って返る → IB-62 に積んだ
+- Claude 4：2 件目の請求書（下書き）の期間の終わりが翌月末で、画面に未来の期間の下書きが出る → OI-139 の (4) の判断のとおりで、`Billing::Closing` は未来の締め日を拒まない設計なので、そのままにした
+- Claude 5：分岐の網羅率の残りの 2 件は防御の分岐で、通す example が無いことは妥当 → 下の「分岐の網羅率」のとおり
+- Claude 6：`INVALID_INPUT` の文の言語が混ざる → IB-63 に積んだ
+- Codex：IB-60 の対象のうち、公開 API が流した SQL を所有ロールの接続で流し直せば確かめられる箇所がある → IB-60 に書き足した
+
+### 実装の記録
+
+#### 操作者を取らない公開 API の一覧（作るもの 10）
+
+`21140a9` の `packs/*/app/public` から、操作者（`Partnerships::Actor`）を第 1 引数に取らない公開のメソッドを列挙し、次のように扱った。
+
+| 公開 API | 呼ぶ入口 | 直す前 | 扱い |
+|---|---|---|---|
+| `Partnerships::Recipients.admin_ids`・`emails` | 通知の送信の登録とジョブ | `require_tenant!` はあり、所有の条件は無い | 所有の条件を足した |
+| `Partnerships::Authentication.authenticate` | ログイン | テナントが決まる前で、RLS の外の関数で引く | 規則の例外として直さない |
+| `Partnerships::Authentication.actor`・`acting_user`・`revoke_sessions` | セッションの復元・取り込みのジョブ・ログアウト | どちらも無い | `require_tenant!` と所有の条件を足した |
+| `Partnerships::Access.lock_pair!` | 取引関係と発注の公開 API の中 | 表を読まない（アドバイザリロック） | 対象外 |
+| `Partnerships::Onboarding.register`・`tenant_id` | シードと E2E の準備（M32 で足した） | — | テナントが決まる前の規則の例外。本番では例外 |
+| `Notifications::Email.deliver_critical`・`deliver_best_effort` | イベントの受け手と公開 API の中 | `require_tenant!` はあり、ジョブを返す | 送信記録の ID と `nil` を返すようにした |
+| `Notifications::Email.redeliver_failed` | rake タスク | `require_tenant!` はあり、所有の条件は無い | 所有の条件を足した（`FOR UPDATE` なので、外しても落ちない。IB-60） |
+| `Notifications::Catalog.fetch`・`validate_params!`、`Notifications::Setup.verify!`、`Notifications::FakeProvider` | 送信の登録・起動・テスト | DB を読まない | 対象外 |
+| `Notifications::Inbox.receive_sendgrid` | Webhook | テナントの表ではない受信の表だけに書く | 対象外 |
+| `Imports::Runs.reenqueue` | rake タスク | `require_tenant!` はあり、所有の条件は無い | 所有の条件を足した |
+| `Imports::Files.purge_abandoned` | 定期のジョブ | 規則のとおり（M31） | 直さない |
+| `Sales::ItemPrices.backfill` | rake タスク | 規則のとおり | 直さない。RLS の SELECT を開いた example を足した |
+| `Contracts.publish` | 公開 API の中 | ジョブを登録するだけで、テナントの行を返さない | 対象外 |
+| 配送表の 7 つの受け手（`Sales::PurchaseOrderTranslator`・`Sales::PurchasingEventReceiver`・`Sales::FulfillmentEventReceiver`・`Purchasing::SupplierEventReceiver`・`Purchasing::BillingEventReceiver`・`Fulfillment::SalesEventReceiver`・`Billing::SalesEventReceiver`） | イベントのジョブ | `require_tenant!` は無く、冪等キーの読みの一部に所有の条件が無く、書いた行やジョブを返すものがある | `require_tenant!` と所有の条件を足し、`nil` を返すようにした。受注の照合が使う `Sales::PartMatching.prices`（パッケージの中）にも所有の条件を足した |
+
+#### RED と、壊して落ちる記録
+
+壊したファイルは複製から戻し、壊すときと戻すときに更新時刻を進めた。壊したファイルを確かめる spec のファイルだけを流した。
+
+RED（期待の不一致で落ちたもの）：
+
+- `spec/scenarios/seeds_spec.rb` のダッシュボードの 2 つ（admin・member）：`DemoWorld` が発注を作らない形で、`expected collection contained: ["ALLOCATED", ...] actual collection contained: []`
+- 業務の今日の境目の 7 つ（`dashboard_spec.rb`・`ordering_spec.rb`・`receipt_inspections_spec.rb`・`purchase_order_translator_spec.rb`・`item_prices_spec.rb`・`closing_spec.rb`・`run_job_spec.rb`）：`config.time_zone` を入れる前に、どれも UTC の前日で落ちた（例：`expected: ["2026-10-12", "2026-10-12"] got: ["2026-10-12", "2026-10-11"]`、`expected: [[:invalid_input, [:effective_on]]] got: []`）。`run_job_spec.rb` の 1 つは、最初は品目を今の時刻で作ったので、さかのぼった時刻での改定の予約が記録期間の向きの誤りで落ち、品目を同じ時刻の 1 分前に作るように example を直してから、期待の不一致で落ちた
+- 理由の上限の 201 文字：単体は `expected: [[:invalid_input, [:reason]]] got: []`、request spec は成功の応答で落ちた
+- `lock_sites_spec.rb`：`Inventory::Stocks.set_safety_stock` の行を足す前に、表と集めたロックの食い違いで落ちた
+
+壊して落ちる記録（実装の後に書いた spec と example）：
+
+| 壊したもの | 落ちたもの |
+|---|---|
+| `config.time_zone` を入れた後に、販売単価の記録期間の型（`attribute :recorded_period, RecordedPeriodType.new`）を外す | `item_prices_spec.rb` の 25 件（終わりの無い記録期間が `[...,infinity)` で書かれ、足す行を確かめるトリガーが拒む） |
+| `RecordedPeriodType#serialize` を常に元の型の書き方にする | `recorded_period_type_spec.rb` の 2 |
+| `.rubocop.yml` の `Rails/Date` を無効にする・`Rails/TimeZone` を無効にする | `time_zone_cops_spec.rb` の 1（それぞれ）。最初は `--only` で Cop を絞っていたので、無効にしても落ちなかった。`--only` は無効の Cop も動かすので、絞らずに流して結果を選ぶ形に直した |
+| 理由の上限を 199・201 にする | 単体と request spec の 2（それぞれ） |
+| `Recipients` の所有の条件を外す | `recipients_spec.rb` の 1 |
+| `Authentication` の所有の条件を外す | `authentication_spec.rb` の 1 |
+| `Runs.reenqueue` の所有の条件を外す | `runs_spec.rb` の 1 |
+| `ItemPrices.backfill` の品目の所有の条件を外す | `item_prices_backfill_spec.rb` の 1（他社の品目の単価の行を書こうとして RLS が拒む） |
+| `PurchasingEventReceiver` の検収の冪等キーの所有の条件を外す | `purchasing_event_receiver_spec.rb` の 1 |
+| `deliver_critical` が送信記録の ID を返さない | `email_spec.rb` の 1 |
+| 受け手から `require_tenant!` を外す（`Billing::SalesEventReceiver`・`Sales::PurchaseOrderTranslator`）・`nil` を返さない（`Purchasing::SupplierEventReceiver`） | `receivers_spec.rb` の 1（それぞれ） |
+| `Onboarding` の本番の拒否・ユーザーの項目の検査・テナントの設定の中の拒否を外す | `onboarding_spec.rb` の 1（それぞれ） |
+| `set_safety_stock` の本番の拒否を外す・上限を 1 下げる・下限を -1 にする | `stocks_spec.rb` の 1（それぞれ） |
+| `readonly?` を、安全在庫だけが変わるときに限る（直す前の形）・常に許す | `stocks_spec.rb` の同じ値の example・`stock_spec.rb` の数量を一緒に書く example |
+| `DemoWorld` が発注を作らない | `seeds_spec.rb` の 2 |
+| `DemoWorld::Jobs.execute` から実行待ちの行の削除を外す・セマフォを返さない | `demo_world_spec.rb` の後始末の 1（それぞれ） |
+| `DemoWorld::Jobs.ready` の実行待ちへの絞り込みを外す | `demo_world_spec.rb` の 1（実装レビューの F-4 で足した） |
+| `Operations` の規則の評価を常に通す | `demo_world_spec.rb` の member の 1 |
+| `DemoWorld` が `Billing::Terms.set` を `Operations` を通さずに呼ぶ | `demo_world_spec.rb` の Prism の 1 |
+| 冪等の判定・本番の拒否・`namespace` の検査・`variant` の検査・取り込みの終わりの確かめ・E2E の追加・テナントの中で流す拒否を外す | `demo_world_spec.rb` の対応する 1（それぞれ。E2E の追加は 2） |
+| 共有の文脈の `add!` を外す・`cross_read!` を空にする | 文脈を使う example の対照の 3（それぞれ） |
+| 共有の文脈が足していないときも外す・外さない | `cross_read_spec.rb` の 1・2 |
+
+落ちなかったもの：`set_safety_stock` の scope を外しても、在庫の行を `FOR UPDATE` で読むので RLS の UPDATE のポリシーが他社の行を除き、落ちない。同じ理由で `redeliver_failed`・`revoke_sessions`・`backfill` の明細の UPDATE も落ちない。冪等キーにグローバルな一意索引がある受け手（受注の連結・審査・出荷依頼・入荷）と、自社の品目の ID で引く `PartMatching.prices` も、他社に同じキーの行を作れないので落ちない。どれも所有の条件を書いたうえで、IB-60 に積んだ。`redeliver_failed` に一度書いた RLS の SELECT を開く example は、外しても落ちないので消した。
+
+#### 日本時間の 0〜9 時の全件
+
+`spec/rails_helper` の後に読む一時の補助で `Time.now` を日本時間の 1 時半（UTC の前日の 16 時半）へずらし、時計を止めずに全件を流した（`47a6036` の後の作業ツリー）。2557 examples, 2 failures で、どちらも DB の `now()` と `Rails.event` の時計がアプリの時計とずれたことによるもの（ジョブの待ち時間のヒストグラム、監査ログの時刻の範囲）だった。UTC を前提に書いた比較で落ちたものは無く、書き直した既存の比較は無い。`travel_to` で時計を止めて全件を包む形は、入れ子の `travel_to` が例外になるので使えなかった。
+
+#### 分岐の網羅率
+
+`BASE_REF=origin/main bin/check-branch-coverage` の警告は、最初は 10 件だった。8 件に example を足した（`namespace` と `variant` の検査・公開 API の失敗の経路と、失敗の文に項目がある腕と無い腕・取り込みの終わりの確かめ・テナントの中で流す拒否・`RecordedPeriodType` の元の型の書き方）。残りの 2 件は足していない。`lib/demo_world.rb` の 248 行（受注の取り違えの防御。発注ごとにイベントを流し終えてから次へ進むので、最も新しい受注は必ずその発注のもの）と 267 行（未知の stage。stage は定数の表からしか来ない）は、届かない防御の分岐である。
+
+### 確かめたこと
+
+`baec471` で、Ruby 3.4.11 で M32 の完了条件と共通の完了条件を流した。
+
+```sh
+bin/ci                                             # 全工程が通る（brakeman は警告 0、rspec は 2615 examples, 0 failures）。2 分 36 秒
+BASE_REF=origin/main bin/check-branch-coverage     # 2 件（上の防御の分岐）
+bin/test-layers tmp/rspec.json                     # 単体 509・結合 216・シナリオ 123（14.5%）・ガード 1767
+bin/check-open-items --due M32                     # 終了コード 0
+bundle exec rspec --tag concurrency                # 2 回続けて 61 examples, 0 failures
+```
+
+`034862e` で、計画の完了条件の rspec のコマンドを流した（1398 examples, 0 failures）。
+
+手で確かめたこと（開発の環境、`2ca7521` と同じ内容の作業ツリー）：
+
+- `bin/rails db:reset` の後に `bin/rails db:seed` をもう一度流し、`tenants`・`users`・`items`・`sales_orders`・`purchase_orders`・`invoices`・`imports`・`stock_movements`・`item_prices`・`audit_logs`・`solid_queue_jobs`・`solid_queue_ready_executions` の行数が変わらないことを確かめた。取り込みのセマフォの値は 1 だった
+- `bin/rails server` と `bin/jobs` を起こし、6 つのアカウントでログインした。受注側の `supplier.dashboard` は 7 つの状況の件数・安全在庫を下回る ITM-006 と ITM-016・期限の近い出荷依頼 3 件・未請求の合計を返し、請求書は確定 2 件と下書き 1 件、取り込みは一部失敗 1 件だった。全権限の付与がある発注側は取引先と 3 つの権限と 12 件の発注を、失効済みの発注側は空の取引先と、出荷の無い 2 件の発注と受領請求書 1 件を返した
+- `bin/jobs` は、シードが残した通知のジョブ（撃ちっぱなし 13 件・確実な送信 2 件）を流して `tmp/mails/` に書き、失敗は 0 件だった。イベントと取り込みのジョブは流し直さなかった
+
+### 残件の処理
+
+引当先が M32 の OI-117・OI-118・OI-120 は閉じた。OI-123・OI-125 は judgment のまま、判断どおりに実装した。実装で決めたことは OI-138〜OI-140 に、実装レビューで決めたことは OI-141 に judgment で積んだ。落ちない守りと違和感は IB-60〜IB-63 に積んだ。
