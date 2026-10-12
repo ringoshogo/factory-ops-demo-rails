@@ -72,6 +72,10 @@ jobs:
           BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: bin/check-schema-compat
 
+      # 警報の規則の式と、テストの系列での発火と不発火を、Prometheus のイメージの promtool で確かめる（docs/slo.md）
+      - name: Check alert rules
+        run: bin/check-alerts
+
       # PR の本文に書いた OI-NN・IB-NN も台帳にあること。本文は式に直接埋め込まず、環境変数で渡す
       - name: Check ledger references in the PR body
         if: github.event_name == 'pull_request'

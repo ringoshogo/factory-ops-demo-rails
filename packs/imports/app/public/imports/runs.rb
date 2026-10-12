@@ -7,17 +7,31 @@ module Imports
       ImportRequestValue.new(file_id: file.id, owner_tenant_id: file.owner_tenant_id, kind:)
     end
 
+    # 置いたまま取り込まれずに中身を消したファイル。取り込みの行を書いた後に上げ、書いた行をセーブポイントごと戻す
+    class FilePurged < StandardError; end
+    private_constant :FilePurged
+
     # 取り込みの行を書き、コミットの後にジョブを登録する（docs/adr/007 決定 5 の A-4）。ジョブを失っても、取り込みは
-    # 待機中のまま画面に残り、運用者が reenqueue で拾い直せる。同じファイルの 2 回目は CONFLICT にする
+    # 待機中のまま画面に残り、運用者が reenqueue で拾い直せる。同じファイルの 2 回目と、中身を消したファイルは CONFLICT にする。
+    # ファイルの行をロックしてから中身の有無を読み、置いたままのファイルの後始末（Files.purge_abandoned）と直列にする。
+    # 取り込みの行の外部キーが取るロックは、中身を消す UPDATE と待ち合わない。取り込みの行を先に書くのは、取り込みを終えて
+    # 中身を消したファイルの 2 回目を、一意索引で「取り込み済み」と答えるためである
     def self.start(actor, request)
       import = Import.transaction(requires_new: true) do
-        Import.create!(owner_tenant_id: actor.tenant_id, import_file_id: request.file_id, kind: request.kind,
+        purged = ImportFile.where(id: request.file_id).lock.pick(Arel.sql("content IS NULL"))
+        created = Import.create!(owner_tenant_id: actor.tenant_id, import_file_id: request.file_id, kind: request.kind,
           requested_by_user_id: actor.user_id)
+        raise FilePurged if purged
+
+        created
       end
       RunJob.perform_later(import.id, import.owner_tenant_id)
       OperationResult.success(to_value(import))
     rescue ActiveRecord::RecordNotUnique
       OperationResult.failure(:conflict, path: [ :file_id ], message: "This file has already been imported")
+    rescue FilePurged
+      OperationResult.failure(:conflict, path: [ :file_id ],
+        message: "This file was removed because it was not imported within 24 hours. Upload it again")
     end
 
     def self.list(actor, first:, after:)

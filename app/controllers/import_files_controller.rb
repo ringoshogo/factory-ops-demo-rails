@@ -2,6 +2,8 @@
 # ApplicationController の application/json の制限を外し、代わりに Origin ヘッダを許可した origin と比べて CSRF を防ぐ
 # （docs/guides/config.md「CSRF を防ぐ前提：CORS を開けない」）。ファイルを置くだけで、業務の表には何も起きない
 class ImportFilesController < ApplicationController
+  include MaintenanceMode
+
   skip_before_action :require_json
   before_action :require_allowed_origin
 

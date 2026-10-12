@@ -13,6 +13,7 @@ CI.run do
   step "Tests: branch coverage", "bin/check-branch-coverage"
   step "Tests: layers", "bin/test-layers tmp/rspec.json"
   step "Schema: structure.sql round-trip", "bin/check-structure"
+  step "Alerts: promtool", "bin/check-alerts"
 
   step "Security: Gem audit", "bin/bundler-audit"
   step "Security: Brakeman code analysis", "bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error"

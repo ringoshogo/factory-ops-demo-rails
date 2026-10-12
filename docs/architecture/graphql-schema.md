@@ -675,7 +675,7 @@ type SalesOrderStatusCount {
 | `saveItem`・`setItemPublished` | `Sales::Catalog`（`saveItem` は品目コードで自社の品目を引き、無ければ非公開で作り、あれば更新する。`saveItem` は公開の状態を変えない。公開の状態を変えるのは `setItemPublished` と、品目の CSV の取り込み（`published` の列）である。`unitPrice` は、作るときは有効期間 `(,)` の単価の行になる。既存の品目の単価は変えず、今日の単価と違う値は役割を問わず `INVALID_INPUT` にする。単価の改定は `scheduleItemPrice` を、入力の誤りは `correctItemPrice` を使う。今日の単価と同じ値は無視する） | なし |
 | `scheduleItemPrice` | `Sales::ItemPrices.schedule`（品目 ID・単価・改定日で指定し、品目を返す。改定日は今日以降。改定日を含む行の単価と同じなら何も書かない。単価の行の無い品目は `CONFLICT`） | なし |
 | `correctItemPrice` | `Sales::ItemPrices.correct`（単価の行 ID・正しい単価・理由で指定し、品目を返す。理由は必須。現在の行でなければ `CONFLICT`） | なし |
-| `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類で指定し、待機中の取り込みを返す。自社の置いたファイルでなければ `NOT_FOUND`、同じファイルの 2 回目は `CONFLICT`。ジョブはコミットの後に登録する） | なし |
+| `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類で指定し、待機中の取り込みを返す。自社の置いたファイルでなければ `NOT_FOUND`、同じファイルの 2 回目と、置いてから 24 時間を過ぎて中身を消したファイルは `CONFLICT`（どちらも `path` は `["fileId"]`。中身を消したファイルは置き直しを促す文言。`data-model.md`「取り込み（`imports`）」）。ジョブはコミットの後に登録する） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
 | `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する。出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は `CONFLICT`） | 受注取消・出荷取消 |

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# 警報の規則（config/prometheus/alerts.yml）を promtool で確かめる（docs/slo.md）。check rules で文法と式を、test rules で
+# alerts_test.yml の系列に対する発火と不発火を確かめる。promtool をホストに入れずに済むよう、Prometheus のイメージで流す。
+# 版を固定するのは、Prometheus の版でヒストグラムの le の表記と式の評価が変わりうるからである。版を上げたら alerts.yml の le の
+# 表記を確かめ直す
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+IMAGE="prom/prometheus:v3.15.0"
+
+promtool() {
+  docker run --rm --entrypoint promtool -v "$PWD/config/prometheus:/rules:ro" -w /rules "$IMAGE" "$@"
+}
+
+promtool check rules alerts.yml
+promtool test rules alerts_test.yml

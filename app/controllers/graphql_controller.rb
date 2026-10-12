@@ -1,4 +1,6 @@
 class GraphqlController < ApplicationController
+  include MaintenanceMode
+
   # スキーマの実行全体を、セッションのテナントを設定した 1 つのトランザクションで包む。
   # トップレベルのエラーを返すか例外ならロールバックし、それ以外はユーザーエラーを返した場合も含めてコミットする
   def execute

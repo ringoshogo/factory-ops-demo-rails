@@ -7,6 +7,10 @@ default: &default
   purge_webhook_inbox:
     class: Notifications::PurgeInboxJob
     schedule: every day at 4am
+  # 置いてから 24 時間を過ぎても取り込みを始めないファイルの中身を消す。1 時間ごとなら、消えるのは置いてから 25 時間までに収まる
+  purge_abandoned_import_files:
+    class: Imports::PurgeAbandonedFilesJob
+    schedule: every hour
 
 development:
   <<: *default

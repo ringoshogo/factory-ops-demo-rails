@@ -35,6 +35,8 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     "Imports::Chunk.locked" => {
       spec: "packs/imports/spec/concurrency/imports/parallel_imports_spec.rb", mentions: %w[Staging.run Applying.next_chunk Finalizing.run]
     },
+    "Imports::Files.purge_abandoned" => { spec: "packs/imports/spec/concurrency/imports/purge_lock_spec.rb" },
+    "Imports::Runs.start" => { spec: "packs/imports/spec/concurrency/imports/purge_lock_spec.rb" },
     "Inventory::Adjustment.adjust" => { spec: "spec/concurrency/stock_allocation_spec.rb" },
     "Inventory::Adjustment.set_quantity" => {
       spec: "packs/imports/spec/concurrency/imports/parallel_imports_spec.rb", mentions: %w[Adjustment.set_quantity Applying.next_chunk]
