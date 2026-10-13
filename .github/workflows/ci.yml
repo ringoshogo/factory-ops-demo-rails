@@ -350,6 +350,19 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
 
+  needs_probe:
+    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Print needs
+        run: |
+          echo "event=${{ github.event_name }} ref=${{ github.ref }}"
+          echo '${{ toJSON(needs) }}'
+          echo "results=${{ join(needs.*.result, ',') }}"
+          echo "failure=${{ contains(needs.*.result, 'failure') }} cancelled=${{ contains(needs.*.result, 'cancelled') }} skipped=${{ contains(needs.*.result, 'skipped') }}"
+          echo "full=${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}"
+
   # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
   # ジョブの if: は、ジョブの名前を並べずに needs.*.result で決める。名前を並べると、needs に足したジョブを
@@ -358,7 +371,7 @@ jobs:
   # ログインと push のステップの if: は、main 以外のブランチへの push で publish が走っても GHCR に何も置かないためで、
   # ワークフローの契機を一時に広げて publish の条件を確かめるときにも、この if: でステップが skip される
   publish:
-    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
+    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images, needs_probe ]
     if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
     runs-on: ubuntu-24.04-arm
     permissions:
