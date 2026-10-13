@@ -32,6 +32,11 @@ export function DateText({
 /**
  * 期限 (希望納期・出荷期限)。未完了の伝票で 3 日以内か超過なら文言を後ろに添え、日付ごと注意色にする。
  * かんばんのカードは `prefix` で「納期」を前に置く。期限が無ければ「—」。
+ *
+ * 表のセルは折り返さない (whitespace-nowrap) ので、文言を添えると列の最小幅が「日付 文言」の幅になり、列の多い表が
+ * パネルからはみ出す。表のセルの中でだけ、日付と文言の間の空白で折り返せるようにし、日付と文言の中では折り返さない
+ * (日本語は文字の間で折り返せるので、全体を折り返し可にすると「10月1」と「6日」に割れる)。表の外 (かんばんのカード) は
+ * 1 行のまま省略し、カードの高さをそろえる。
  */
 export function DueDate({
   due,
@@ -47,15 +52,19 @@ export function DueDate({
   if (!due) return <span className={PLAIN}>—</span>;
   const note = dueNote(due, open, businessDate);
   return (
-    <span className={cn("tabular-nums", note ? NOTED : PLAIN)}>
-      {prefix && `${prefix} `}
-      <time dateTime={due} data-testid="due-date">
-        {formatDate(due, businessDate)}
-      </time>
+    <span className={cn("tabular-nums in-data-[slot=table-cell]:whitespace-normal", note ? NOTED : PLAIN)}>
+      <span className="whitespace-nowrap">
+        {prefix && `${prefix} `}
+        <time dateTime={due} data-testid="due-date">
+          {formatDate(due, businessDate)}
+        </time>
+      </span>
       {note && (
         <>
           {" "}
-          <span data-testid={note.overdue ? "due-overdue" : "due-note"}>{note.label}</span>
+          <span data-testid={note.overdue ? "due-overdue" : "due-note"} className="whitespace-nowrap">
+            {note.label}
+          </span>
         </>
       )}
     </span>

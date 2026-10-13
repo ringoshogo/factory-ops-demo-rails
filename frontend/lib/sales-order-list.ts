@@ -24,7 +24,14 @@ export const SALES_ORDER_TABS: readonly { tab: SalesOrderTab; label: string; sta
 /** 出荷も検収も取消もしていない受注の状況。期限に文言を添えるかどうかを決める。 */
 export const OPEN_SALES_ORDER_STATUSES = SALES_ORDER_TABS.find((t) => t.tab === "open")!.statuses!;
 
-export const SALES_ORDER_SORT_FIELDS: readonly SalesOrderOrderField[] = ["ORDER_NO", "ORDER_DATE", "DUE_DATE"];
+export const SALES_ORDER_SORT_FIELDS: readonly SalesOrderOrderField[] = [
+  "ORDER_NO",
+  "CUSTOMER_NAME",
+  "ORDER_DATE",
+  "DUE_DATE",
+  "STATUS",
+  "TOTAL_AMOUNT",
+];
 
 export type SalesOrderListQuery = {
   tab: SalesOrderTab;

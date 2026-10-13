@@ -89,4 +89,37 @@ RSpec.describe Purchasing::PurchaseOrders, ".list" do
     expect(list_ids(filter: range)).to eq([ [ last_day.id, other_supplier.id, hit.id ], 3 ])
     expect(list_ids(filter: { order_date_from: Date.new(2026, 10, 12), order_date_to: Date.new(2026, 10, 10) })).to eq([ [], 0 ])
   end
+
+  # 合計金額は明細の数量と確定した単価の積の和で、受注確定の前の明細があれば空にする。受注確定は全明細に一度に単価を写すので、
+  # 単価の写しの有る明細と無い明細が混ざる発注はできないが、混ざっても一部の合計を出さないことを、混ぜた行で確かめる
+  it "合計金額を持ち、合計で並べると受注確定の前の発注を向きによらず最後に置く" do
+    small, unconfirmed, large = Tenancy.with_tenant(buyer.id) do
+      [ [ 120 ], [ 120, nil ], [ 500, 120 ] ].map do |prices|
+        FactoryBot.create(:purchase_order).tap do |order|
+          prices.each do |price|
+            FactoryBot.create(:purchase_order_line, purchase_order: order, quantity: 2, confirmed_unit_price: price,
+              confirmed_item_name: price && "六角ボルト M8")
+          end
+        end
+      end
+    end
+
+    values = Tenancy.with_tenant(buyer.id) { described_class.list(actor, first: 10, after: nil).values.to_h { [ _1.id, _1.total_amount ] } }
+    expect(values).to eq(small.id => 240, unconfirmed.id => nil, large.id => 1240)
+    expect(list_ids(order_by: { field: :total_amount, direction: :asc })).to eq([ [ small, large, unconfirmed ].map(&:id), 3 ])
+    expect(list_ids(order_by: { field: :total_amount, direction: :desc })).to eq([ [ large, small, unconfirmed ].map(&:id), 3 ])
+  end
+
+  it "受注側の名前と、業務の進み順の状況で並べる" do
+    beta, alpha = %w[beta alpha].map { FactoryBot.create(:tenant, name: _1) }
+    a, b, c = Tenancy.with_tenant(buyer.id) do
+      [ [ beta, { cancelled_at: Time.current } ], [ alpha, { accepted_at: Time.current } ], [ beta, {} ] ].map do |tenant, attributes|
+        FactoryBot.create(:purchase_order, supplier_tenant_id: tenant.id, **attributes)
+      end
+    end
+
+    expect(list_ids(order_by: { field: :supplier_name, direction: :asc })).to eq([ [ b, a, c ].map(&:id), 3 ])
+    expect(list_ids(order_by: { field: :status, direction: :asc })).to eq([ [ c, b, a ].map(&:id), 3 ])
+    expect(list_ids(order_by: { field: :status, direction: :desc })).to eq([ [ a, b, c ].map(&:id), 3 ])
+  end
 end

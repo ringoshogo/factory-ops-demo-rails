@@ -9,7 +9,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }
@@ -22,7 +22,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }
@@ -35,7 +35,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }
@@ -48,7 +48,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }
@@ -61,7 +61,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }
@@ -74,7 +74,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }
@@ -87,7 +87,7 @@ query SupplierKanban {
         status
         cancellationReviewPending
         customer { id name }
-        lines { id quantity unitPrice }
+        totalAmount
         shipmentRequest { id status }
       }
     }

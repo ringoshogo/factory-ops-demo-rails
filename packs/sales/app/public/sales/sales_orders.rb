@@ -1,20 +1,13 @@
 module Sales
   # 受注側が自社の受注を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
-  # 状況は、行と一緒に SalesOrderStatus の SQL の式で読む。明細の引当数量は、在庫の Inventory::Allocation から受注明細 ID ごとにまとめて得る
+  # 状況と合計金額は、行と一緒に SalesOrderStatus と SalesOrderAmount の SQL の式で読む。明細の引当数量は、在庫の Inventory::Allocation から受注明細 ID ごとにまとめて得る
   module SalesOrders
-    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。伝票番号は桁をそろえた文字列なので、文字列の順が番号の順になる
-    ORDER_COLUMNS = {
-      order_no: [ SalesOrder.arel_table[:order_no], :string ],
-      order_date: [ SalesOrder.arel_table[:order_date], :date ],
-      due_date: [ SalesOrder.arel_table[:due_date], :date ]
-    }.freeze
-
     # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
     # filter は得意先と、両端を含む受注日の範囲と、状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
     def self.list(actor, first:, after:, order_by: nil, filter: {})
       status = SalesOrderStatus.expression(actor)
-      Page.of(filtered(Scope.sales_orders(actor, :own), status, **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS),
-        columns: [ status.as("status") ]) { to_values(_1) }
+      Page.of(filtered(Scope.sales_orders(actor, :own), status, **filter), first:, after:,
+        sort: Page::Sort.of(order_by, order_columns(actor, status)), columns: columns(status)) { to_values(_1) }
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
@@ -47,7 +40,22 @@ module Sales
       SalesOrderStatus::ALL.index_with { counts.fetch(_1.to_s, 0) }
     end
 
-    def self.with_status(actor, relation) = relation.select(SalesOrder.arel_table[Arel.star], SalesOrderStatus.expression(actor).as("status"))
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。伝票番号は桁をそろえた文字列なので、文字列の順が番号の順になる。
+    # 得意先の名前は取引関係の公開 API の副問い合わせから引き、状況は業務の進み順の位置で並べる
+    def self.order_columns(actor, status)
+      orders = SalesOrder.arel_table
+      { order_no: [ orders[:order_no], :string ],
+        order_date: [ orders[:order_date], :date ],
+        due_date: [ orders[:due_date], :date ],
+        customer_name: [ Partnerships::Directory.tenant_names_sql(actor).lookup(:name, :tenant_id, orders[:customer_tenant_id]), :string ],
+        total_amount: [ SalesOrderAmount.expression, :decimal ],
+        status: [ Page::Sort.rank(status, SalesOrderStatus::SORT_ORDER), :integer ] }
+    end
+
+    # 行と一緒に読む状況と合計金額の式
+    def self.columns(status) = [ status.as("status"), SalesOrderAmount.expression.as("total_amount") ]
+
+    def self.with_status(actor, relation) = relation.select(SalesOrder.arel_table[Arel.star], *columns(SalesOrderStatus.expression(actor)))
 
     # statuses の空の配列は、Arel の In が 1=0 にするので 0 件になる（activerecord 8.1 の Arel::Visitors::ToSql#visit_Arel_Nodes_In）
     def self.filtered(relation, status, customer_tenant_id: nil, order_date_from: nil, order_date_to: nil, statuses: nil)
@@ -58,14 +66,14 @@ module Sales
       relation
     end
 
-    # orders は状況の式を status の別名で読んだ受注
+    # orders は状況と合計金額の式を status・total_amount の別名で読んだ受注。合計は numeric で読むので、整数に戻す
     def self.to_values(orders)
       orders = orders.to_a
       pending = CancellationReview.pending.where(sales_order_id: orders.map(&:id)).pluck(:sales_order_id).to_set
       orders.map do |order|
         SalesOrderValue.new(id: order.id, owner_tenant_id: order.owner_tenant_id, order_no: order.order_no,
           customer_tenant_id: order.customer_tenant_id, order_date: order.order_date, due_date: order.due_date,
-          status: order["status"].to_sym, cancellation_review_pending: pending.include?(order.id))
+          status: order["status"].to_sym, cancellation_review_pending: pending.include?(order.id), total_amount: order["total_amount"]&.to_i)
       end
     end
 
@@ -73,6 +81,6 @@ module Sales
       SalesOrderLineValue.new(**line.slice(*(SalesOrderLineValue.members - [ :allocated_quantity ]).map(&:to_s)).symbolize_keys,
         allocated_quantity: allocated.fetch(line.id))
     end
-    private_class_method :with_status, :filtered, :to_values, :to_line_value
+    private_class_method :order_columns, :columns, :with_status, :filtered, :to_values, :to_line_value
   end
 end

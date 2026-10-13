@@ -48,4 +48,10 @@ RSpec.describe Purchasing::PurchaseOrderStatus do
     expect(list([])).to eq([ [], 0 ])
     expect(list(nil)).to eq([ [ [ inbound.id, :inbound ], [ sent.id, :sent ], [ cancelled.id, :cancelled ] ], 3 ])
   end
+
+  # 片方にだけ状況を足すと、足した状況の順位が空になり、状況で並べたときに黙って最後に並ぶ
+  it "状況で並べる順（SORT_ORDER）は、導出の優先順（ALL）と同じ状況の集まりを持つ" do
+    expect(described_class::SORT_ORDER).to match_array(described_class::ALL)
+    expect(described_class::SORT_ORDER.uniq.size).to eq(described_class::SORT_ORDER.size)
+  end
 end

@@ -21,8 +21,8 @@ query SupplierSalesOrders(
         dueDate
         status
         cancellationReviewPending
+        totalAmount
         customer { id name }
-        lines { id customerPartNumber itemName quantity allocatedQuantity unitPrice taxRatePercent }
         shipmentRequest { id status }
       }
       pageInfo { hasNextPage endCursor }

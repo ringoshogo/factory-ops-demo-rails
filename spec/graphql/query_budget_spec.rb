@@ -20,8 +20,9 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
   # 詳細の文書は、詳細の下の配列（受注の明細など）を一覧の親にし、seed は同じ詳細の下に行を足す。
   # list: nil は一覧を持たない文書（ログインしているユーザーと自社の情報だけを読む）で、親の件数で SQL が変わる余地が無いので、
   # エラーなく実行できることだけを確かめる
-  SALES_ORDER_NESTED = { "customer" => 1, "lines" => 2, "shipmentRequest" => 1 }.freeze
-  SALES_ORDER_SOURCES = { "customer" => [ Partnerships::Directory, :tenants ], "lines" => [ Sales::SalesOrders, :lines_for ],
+  # 受注一覧とかんばんは、合計を totalAmount で読み、明細を選ばない
+  SALES_ORDER_NESTED = { "customer" => 1, "shipmentRequest" => 1 }.freeze
+  SALES_ORDER_SOURCES = { "customer" => [ Partnerships::Directory, :tenants ],
                           "shipmentRequest" => [ Fulfillment::ShipmentRequests, :for_sales_orders ] }.freeze
   # かんばんの列。1 つ目を list、残りを more_lists に書く。列は first を 10 と数で書く
   KANBAN_COLUMNS = %w[awaitingPartMatch received partiallyAllocated allocated shipped inspected cancelled].freeze

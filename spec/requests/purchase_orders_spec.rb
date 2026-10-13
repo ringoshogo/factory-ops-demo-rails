@@ -124,6 +124,50 @@ RSpec.describe "発注登録と受注の連結", type: :request do
       .to match([ include("code" => "INVALID_INPUT", "path" => [ "lines", "0", "quantity" ]) ])
   end
 
+  # 一覧を別のコンテキストの値（受注側の名前）と合計で並べる（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe "発注の一覧の並べ替えと合計" do
+    # 引数の検証のエラーなら nodes は無く、nil を返す
+    def purchase_orders(order_by, fields)
+      graphql_body(<<~GRAPHQL, orderBy: order_by).dig("data", "buyer", "purchaseOrders", "nodes")
+        query($orderBy: PurchaseOrderOrder) { buyer { purchaseOrders(orderBy: $orderBy) { nodes { orderNo #{fields} } } } }
+      GRAPHQL
+    end
+
+    # lines は明細ごとの [数量, 確定した単価]。単価が nil の明細は受注確定の前
+    def order(order_no, supplier_tenant, lines)
+      Tenancy.with_tenant(buyer.id) do
+        FactoryBot.create(:purchase_order, order_no:, supplier_tenant_id: supplier_tenant.id).tap do |order|
+          lines.each do |quantity, price|
+            FactoryBot.create(:purchase_order_line, purchase_order: order, quantity:, confirmed_unit_price: price,
+              confirmed_item_name: price && "六角ボルト M8")
+          end
+        end
+      end
+    end
+
+    it "受注側の名前の順に並べる" do
+      other = FactoryBot.create(:tenant, name: "あおば製作所")
+      order("PO-000001", supplier, [ [ 1, 120 ] ])
+      order("PO-000002", other, [ [ 1, 120 ] ])
+      order("PO-000003", supplier, [ [ 1, 120 ] ])
+      login_as(buyer_member)
+
+      expect(purchase_orders({ field: "SUPPLIER_NAME", direction: "ASC" }, "supplier { name }"))
+        .to eq([ { "orderNo" => "PO-000002", "supplier" => { "name" => "あおば製作所" } },
+          { "orderNo" => "PO-000001", "supplier" => { "name" => "青嵐精機工業" } },
+          { "orderNo" => "PO-000003", "supplier" => { "name" => "青嵐精機工業" } } ])
+    end
+
+    it "bigint の上限を超える合計を 10 進の文字列で返し、受注確定の前の明細を含む発注の合計は空にする" do
+      order("PO-000001", supplier, [ [ 3, 2**63 - 1 ] ])
+      order("PO-000002", supplier, [ [ 1, nil ] ])
+      login_as(buyer_member)
+
+      expect(purchase_orders({ field: "TOTAL_AMOUNT", direction: "DESC" }, "totalAmount"))
+        .to eq([ { "orderNo" => "PO-000001", "totalAmount" => "27670116110564327421" }, { "orderNo" => "PO-000002", "totalAmount" => nil } ])
+    end
+  end
+
   describe "連結の冪等性" do
     context "受注側の ACL" do
       let!(:placed) do

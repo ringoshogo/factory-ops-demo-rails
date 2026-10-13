@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatBusinessDate } from "@/lib/dates";
-import { sumAmounts, yen } from "@/lib/format";
+import { totalAmountText, yen } from "@/lib/format";
 import {
   SupplierDashboardDocument,
   SupplierKanbanDocument,
@@ -245,10 +245,7 @@ function toCard(order: NonNullable<NonNullable<Kanban["received"]["nodes"]>[numb
     status: order.status,
     cancellationReviewPending: order.cancellationReviewPending,
     customerName: order.customer.name,
-    // 品番照合待ちの明細は単価が無いので、合計を出さない
-    total: order.lines.every((l) => l.unitPrice)
-      ? yen(sumAmounts(order.lines.map((l) => BigInt(l.unitPrice!) * BigInt(l.quantity))))
-      : null,
+    total: totalAmountText(order.totalAmount, "salesOrder"),
     shipmentRequest: order.shipmentRequest,
   };
 }

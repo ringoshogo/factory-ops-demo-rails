@@ -1125,6 +1125,11 @@ type PurchaseOrder {
   経路 3。view_shipments が無ければ空
   """
   supplierShipments: [SupplierShipment!]!
+
+  """
+  税抜の合計金額。受注確定の前の明細を含むと空
+  """
+  totalAmount: BigInt
 }
 
 """
@@ -1217,6 +1222,21 @@ enum PurchaseOrderOrderField {
   発注番号
   """
   ORDER_NO
+
+  """
+  状況。業務の進み順
+  """
+  STATUS
+
+  """
+  受注側の名前
+  """
+  SUPPLIER_NAME
+
+  """
+  合計金額。受注確定の前の明細を含む発注は向きによらず最後
+  """
+  TOTAL_AMOUNT
 }
 
 enum PurchaseOrderStatus {
@@ -1424,6 +1444,11 @@ type SalesOrder {
   """
   shipmentRequest: ShipmentRequest
   status: SalesOrderStatus!
+
+  """
+  税抜の合計金額。品番照合待ちの明細を含むと空
+  """
+  totalAmount: BigInt
 }
 
 """
@@ -1495,6 +1520,11 @@ input SalesOrderOrder {
 
 enum SalesOrderOrderField {
   """
+  得意先の名前
+  """
+  CUSTOMER_NAME
+
+  """
   希望納期
   """
   DUE_DATE
@@ -1508,6 +1538,16 @@ enum SalesOrderOrderField {
   受注番号
   """
   ORDER_NO
+
+  """
+  状況。業務の進み順
+  """
+  STATUS
+
+  """
+  合計金額。単価の無い明細を含む受注は向きによらず最後
+  """
+  TOTAL_AMOUNT
 }
 
 enum SalesOrderStatus {
@@ -1704,9 +1744,19 @@ input ShipmentRequestOrder {
 
 enum ShipmentRequestOrderField {
   """
+  得意先の名前
+  """
+  CUSTOMER_NAME
+
+  """
   出荷期限
   """
   DUE_DATE
+
+  """
+  状況。業務の進み順
+  """
+  STATUS
 }
 
 enum ShipmentRequestStatus {

@@ -21,8 +21,9 @@ query BuyerPurchaseOrders(
         desiredDeliveryOn
         status
         cancellationPending
+        totalAmount
         supplier { id name }
-        lines { id partNumber quantity confirmedItemName confirmedUnitPrice }
+        lines { id }
         inboundShipments { id shippedOn }
         supplierShipments { shippedOn }
       }

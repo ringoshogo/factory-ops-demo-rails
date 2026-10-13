@@ -5,6 +5,8 @@ module Fulfillment
   module ShipmentRequestStatus
     # 導出の優先順に並べた 5 つの状況
     ALL = %i[cancelled shipped on_hold instructed ready].freeze
+    # 状況で並べるときの業務の進み順。導出の優先順（ALL）とは別の一覧で、同じ状況の集まりを持つ
+    SORT_ORDER = %i[ready instructed on_hold shipped cancelled].freeze
 
     # 出荷指示と出荷実績は、所有テナントと出荷依頼の組の外部キーで出荷依頼と同じテナントに限られる。
     # 出荷停止は受注の ID を参照するだけで外部キーが無いので、所有テナントも出荷依頼にそろえ、他社の行を RLS に任せずに除く
