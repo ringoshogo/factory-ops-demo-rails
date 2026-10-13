@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ main, m42-ci-publish ]
 
 # 権限を書かないジョブの権限はリポジトリの設定で決まるので、最上位を読み取りだけにし、
 # GHCR へ書く packages: write は publish のジョブにだけ書く
