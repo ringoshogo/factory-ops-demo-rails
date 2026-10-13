@@ -68,7 +68,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作り、公開の配置（M41）で終える。フロントエンドの前に、画面が一覧を 1 ページずつ読むための API（M39・M40）を足す。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。 M42・M43 は、サイクル 05 の改善の探索（`plans/cycle-05/improvement.md`）で採用した変更で、節を M41 の後に置き、サイクル 06 で実装する。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。M42・M43 は、サイクル 05 の改善の探索（`plans/cycle-05/improvement.md`）で採用した変更で、節を M41 の後に置き、サイクル 06 で実装する。M44 は、サイクル 06 の計画レビューで、開いたままの Dependabot の PR の扱いを決めるために起こしたマイルストーンで、節を M43 の後に置き、M42 の後に実装する。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -115,6 +115,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M41 | Raspberry Pi の k3s への配置 | マニフェストが Secret を持たず、所有ロールの資格情報とデモの世界の許可が、作り直しとマイグレーションの工程にだけ渡る |
 | M42 | CI のランナーの版を固定し、公開の配置のイメージを arm64 で組み立てる | CI のジョブが OS の版を明示し、テストの落ちた commit のイメージが GHCR に置かれない |
 | M43 | 公開の配置の作り直しを、本番の環境でだけ動かす | 本番の環境の外では、作り直しが DB にも Kubernetes の API にも触れずに止まる |
+| M44 | 依存の更新を取り込み、Dependabot の更新をまとめる | 画面の Node の主版が、CI・画面のイメージ・`engines`・型定義でそろい、Dependabot の設定がどのエコシステムでも更新をまとめる |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -146,6 +147,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M41 | M33 | 画面のイメージを `frontend/` から作り、作り直しで M32 の `DemoWorld` を流す |
 | M42 | M41 | `images` のジョブと `image_inputs` の条件が M41 とサイクル 05 の再発防止にある |
 | M43 | M41 | 作り直しの `DemoReset` が M41 にある |
+| M44 | M42 | 版を上げる `uses:` の行が、M42 が分けたジョブを含む。`package-lock.json` と `ci.yml` を変える PR で流れる `images` のジョブが、M42 で arm64 のランナーに移っている |
 
 ---
 
@@ -1828,6 +1830,27 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 
 作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。サイクル 05 の逸脱検査が、画面が決めた 2 つの振る舞い（取消依頼のボタンを出す発注の状況、品番照合待ちを含む受注の合計金額）を作者に確かめる行にした（OI-178・OI-179）。作者の答えが既定と違えば、画面を直す。M33 は、OI-144・OI-177〜OI-179 が片付くまで終えない。
 
+**残り（サイクル 06）**：M33 は実装レビューまで終え、作者を待つ 4 行だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。取りまとめ役は、作者の答えを台帳の結果の欄に書いてから、行の種類ごとに次のとおり進める。「答えで作るものが変わる」行は、答えが来るまで着手しない。答えが既定と違えば、取りまとめ役が作るものと完了条件をこの表の下に書き、その差分を計画レビューの 2 系統に通してから実装者に渡す。差分の計画レビューでは、M33 の残りが 1 回の作業に収まるかと、サイクルのマイルストーンの数の上限も見直す（IB-67）。「値の差し替え」の行は、既定で作ってあるか既定で作り、答えが来たら値だけを替える。
+
+| ID | 種類 | 既定 | 既定のままなら | 既定と違えば |
+|---|---|---|---|---|
+| OI-144 | 答えで作るものが変わる | 並べ替えは一覧の表の列に限る（M39 の判断） | 作るものは無い | 並べたい値を一覧の表に写す列を、M39 の判断の (a) で足す。パッケージの表とマイグレーション・`orderBy` の列の enum・入口の行列と S1 の行・画面の見出しが変わる |
+| OI-177 | 答えで作るものが変わる | —（作者が指摘を出すまで、直すものが無い） | — | 取りまとめ役が、指摘を台帳の結果の欄に写すときに、指摘ごとに画面だけで済むか API に及ぶかを書く。画面だけの指摘は、直す画面と、直したことを確かめる E2E か単体のテストをこの表の下に書いて直す。API に及ぶ指摘だけを、上の差分の計画レビューに通す |
+| OI-178 | 値の差し替え | `SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED`・`INBOUND` で出し、`INSPECTED`・`CANCELLED`・`SUPPLIER_CANCELLED` で隠す | 下の既定の作りだけで終える | 下の関数の集合を答えの状況に替え、単体の期待を替える |
+| OI-179 | 答えで作るものが変わる | —（ダッシュボードは単価の無い明細があれば合計を出さず、受注一覧と受注詳細は 0 として一部の合計を出す。既定が 1 つに決まらない） | — （作るもの（1 つの関数と 3 つの画面の呼び出し）の形はどちらの答えでも同じだが、既定を置くと、いま動いている 2 つの画面のどちらかの表示を、作者の答えの前に取りまとめ役が変えることになる。値の差し替えとして既定で作ることはせず、答えを待つ） | 答えの形（出さない／一部を出す）を `frontend/lib/` の 1 つの関数にし、ダッシュボード・受注一覧・受注詳細がそれを呼ぶ。単体（`frontend/lib/*.test.ts`）で、単価の無い明細を含む受注と含まない受注の両方を確かめる |
+
+OI-178 の既定の作り：取消依頼のボタンを出す状況の集合を、`frontend/components/purchase-order-detail.tsx` の `CANCELLABLE` から `frontend/lib/purchase-order-flow.ts` の関数（`canRequestCancellation`）へ移し、`frontend/lib/purchase-order-flow.test.ts` が `PurchaseOrderStatus` のすべての値（codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める `frontend/lib/statuses.ts` の `PURCHASE_ORDER_STATUS` の鍵から集める）について、出すか隠すかを確かめる。受注側の `frontend/lib/sales-order-flow.ts` と同じ置き方にする。書いた時点で通るので、集合から 1 つの状況を外すと落ちることを、壊して落ちる記録に残す。
+
+残りの完了条件：
+
+```sh
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+cd frontend && npm run test:e2e
+bin/check-open-items --due M33
+```
+
+作者が答えないまま、ほかのマイルストーンを終えたら、取りまとめ役は M33 の残りを次のサイクルへ移す（`guides/dev-cycle.md`「全体の流れ」）。
+
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、API で並べられない列での並べ替え（M39 の判断）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
 **実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
@@ -1875,7 +1898,7 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
    PostgreSQL の `max_connections` は、`web` の 3 と `jobs` の 20 に、`migrate`・`daily-reset`・手の作業の分を足して 40 にする。
 
    Secret はリポジトリに置かず、作者が `kubectl create secret` で入れる（流用元と同じ）。マニフェストが参照する Secret の名前とキーは `deploy/README.md` の表に書き、`deploy/preflight.sh` が、マニフェストの `secretKeyRef` と `imagePullSecrets` から集めた名前とキーが名前空間にあることを確かめる（流用元の `deploy/preflight.sh` の形。集める正本はマニフェスト）。
-3. 毎日の作り直し（`adr/009` 決定 3）：CronJob `daily-reset` が、毎日 OI-146 の時刻（`timeZone: Asia/Tokyo`）に、Rails のイメージで `bin/rails demo:reset` を流す。`concurrencyPolicy: Forbid` にし、`startingDeadlineSeconds` を置いて、Raspberry Pi が止まっていて時刻を過ぎても、起動の後に決めた時間の内なら流す。Job は `backoffLimit: 0`（作り直しを途中から繰り返して DB を何度も消さない）と `activeDeadlineSeconds: 1800` を持つ。`demo:reset`（`lib/tasks/demo.rake`）は次の順に進む。
+3. 毎日の作り直し（`adr/009` 決定 3）：CronJob `daily-reset` が、毎日 OI-146 の時刻（`timeZone: Asia/Tokyo`）に、Rails のイメージで `bin/rails demo:reset` を流す。`concurrencyPolicy: Forbid` にし、`startingDeadlineSeconds` を置いて、Raspberry Pi が止まっていて時刻を過ぎても、起動の後に決めた時間の内なら流す。決めた時間を過ぎて起動した日の作り直しは飛ばされ、次の日の時刻に流れる。作者は、飛ばされた日に手で流してもよい（作るもの 9 の手順 3 と同じ流し方）。Job は `backoffLimit: 0`（作り直しを途中から繰り返して DB を何度も消さない）と `activeDeadlineSeconds: 1800` を持つ。`demo:reset`（`lib/tasks/demo.rake`）は次の順に進む。
    1. 本番の環境では、作るもの 4 の条件を満たさなければ、Kubernetes の API も DB も触らずに例外で止まる。ほかの作り直しが動いていても、何もせずに止まる。CronJob の `concurrencyPolicy: Forbid` は手で作った Job（作者の手順 3）を止めないので、所有ロールで保守用の DB（`postgres`）に接続してアドバイザリロックを取り、作り直しを直列にする。業務の DB は作り直しで消えるので、ロックをそこに置かない
    2. Kubernetes の API で `web` と `jobs` の Deployment を 0 にし、両方のラベルの Pod のうち終わっていないもの（phase が `Succeeded`・`Failed` でないもの）が無くなるまで待つ（上限 5 分。超えたら手順 5 へ進んで例外で終える）。Deployment の `status.replicas` は終了中の Pod を数えないので、Pod の一覧で待つ。追い出された Pod は `Failed` のまま一覧に残るが、コンテナは動いていない。DB を消す間に接続が残らないようにし、シードがその場で流すジョブを `bin/jobs` が同時に流さないようにする（OI-143 と同じ理由）
    3. 自分の接続を切ってから（`connection_handler.clear_all_connections!`。activerecord 8.1.4 では各プールの `disconnect!`）、所有ロールで DB を消して作り直し（`db:drop`・`db:prepare`）、アプリのロールに権限を付ける（`db:grant_app_role`）。この 3 つは子のプロセス（`bin/rails db:drop db:prepare db:grant_app_role`）で流す。rails 8.1 の `db:prepare` は、同じプロセスで既に接続を確かめた設定を初期化済みと見なし、作り直した DB に構造を読み込まずに終わるからである（`lib/tasks/e2e.rake` と同じ理由）。Rails は本番の環境の DB を消すタスクを `ActiveRecord::ProtectedEnvironmentError` で止め、`DISABLE_DATABASE_ENVIRONMENT_CHECK` があれば確かめを飛ばす（activerecord 8.1.4 の `lib/active_record/tasks/database_tasks.rb` の `check_protected_environments!`）。`demo:reset` は、手順 1 の条件を満たしたときにだけ、この変数を子のプロセスにだけ渡し、自分のプロセスには立てない
@@ -1886,7 +1909,7 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 4. 本番の環境でデモの世界を許す条件（`adr/009` 決定 4）：いまは、`DemoWorld`・`Partnerships::Onboarding`・`Inventory::Stocks.set_safety_stock` の 3 つが、本番の環境で `ProductionEnvironment` を上げて止まる（`git grep ProductionEnvironment` で集めた一覧。この一覧を正本にする）。環境変数 `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ、本番の環境でも動くようにする。条件は `packs/platform` の 1 か所に置き、3 つがそれを読む。この変数は `daily-reset` にだけ渡し、`web`・`jobs`・`migrate` には渡さない。
 5. メールを送らない：公開の配置のアカウントのメールアドレスは実在しないので、メールを外へ送らない。本番の環境の通知の送り先（`config.x.notifications.provider`）を環境変数 `NOTIFICATIONS_PROVIDER` で `file_system` に替えられるようにし、`sendgrid`（省いたとき）と `file_system` のほかの値は起動で落とす。配置では `file_system` を渡し、書き出す先（`tmp/mails`）を `emptyDir` にする。`emptyDir` は Pod と一緒に消え、作り直しが毎日 `web` と `jobs` の Pod を作り直すので、溜まるのは 1 日分である。大きさの上限（`sizeLimit`）を超えると kubelet が Pod を追い出すので、上限は 1 日分のメールより十分に大きくする。
 6. セッションの Cookie を書く：本番の環境のセッションの Cookie は `Secure` で（`config/application.rb` の `session_store`）、actionpack 8.1.4 は `request.ssl?` が偽の応答に `Secure` の Cookie を書かない（`lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`）。Next は Rails を http で呼ぶので、このままではログインの応答に `Set-Cookie` が無く、M33 の認証が Cookie を写せない。本番の環境で `config.assume_ssl = true` にする。TLS は Cloudflare で終わり、Rails には Next からしか届かないからである（`adr/009` 決定 2）。Rails はこのとき `ActionDispatch::AssumeSSL` をミドルウェアに足すので、本番の環境のミドルウェアの並びを許した一覧と比べる `spec/platform/logging_spec.rb`（`adr/008`）の一覧に足す。
-7. 共有のアカウントのログアウト：OI-149 の既定のとおり、公開の配置ではログアウトでセッションの世代を進めない。`SHARED_DEMO_ACCOUNTS=1` を渡した `web` では、`DELETE /session` は Cookie を消すだけにする。世代を進めると、同じアカウントでログインしているほかの訪問者のセッションがすべて切れるからである（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1）。このとき、ログアウトの前に写し取られた Cookie は使えるままになる（`SessionsController#destroy` が世代を進める理由）。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。作者が OI-149 で既定を変えれば、この項を直す。
+7. 共有のアカウントのログアウト：OI-149 の既定のとおり、公開の配置ではログアウトでセッションの世代を進めない。`SHARED_DEMO_ACCOUNTS=1` を渡した `web` では、`DELETE /session` は Cookie を消すだけにする。世代を進めると、同じアカウントでログインしているほかの訪問者のセッションがすべて切れるからである（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1）。このとき、ログアウトの前に写し取られた Cookie は使えるままになる（`SessionsController#destroy` が世代を進める理由）。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。作者は 2026-10-13 に既定のままと決めた（OI-149）。
 8. 資源の見積もり：各コンテナに、次の requests と limits を書く。値は arm64 の実機で測っていない見積もりで、作者が実機で測って直す（作者の手順 4）。
 
    | コンテナ | requests（CPU・メモリ） | limits（CPU・メモリ） | なぜこの値か |
@@ -1897,7 +1920,7 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
    | `postgres` | 100m・256Mi | 1000m・512Mi | 流用元の PostgreSQL と同じ上限。`shared_buffers` は既定の 128MB で、接続ごとのメモリが `max_connections` の 40 まで増える |
    | `migrate`・`daily-reset` | 100m・256Mi | 1000m・768Mi | Rails を読み込み、作り直しはシードの間にイベントのジョブをその場で流す。毎日の数分だけ動き、作り直しの間は `web` と `jobs` が止まっている |
 
-   常に動く 4 つのコンテナの limits の和は約 1.9GiB になる。流用元の limits の和（約 0.9GiB、Job を含む）と k3s 自身を足すと、3GiB 前後になる。Raspberry Pi のメモリが 4GB なら余裕が小さいので、作者に機種とメモリを確かめる（OI-147）。CPU の limits は、1 つのコンテナが流用元のデモの分まで使い切らないための上限で、コア数を超えない。
+   常に動く 4 つのコンテナの limits の和は約 1.9GiB になる。流用元の limits の和（約 0.9GiB、Job を含む）と k3s 自身を足すと、3GiB 前後になる。Raspberry Pi は Pi 4 Model B の 8GB の機種で、総量は 7.6Gi、スワップは無い（OI-147）。いまのノードの使用（流用元を含む）に本デモの limits の和を足しても総量に収まる。スワップが無いので、limits を超えたコンテナはスワップに逃げずに OOM で殺され、Deployment が作り直す（OI-182）。CPU の limits は、1 つのコンテナが流用元のデモの分まで使い切らないための上限で、コア数を超えない。
 9. 作者の手順（`deploy/README.md`）：作者が実機で行うことを、この順に書く。コマンドは、その実行にだけ効く形（`ssh` の先のコマンド、引数）で書き、ホストの全体の設定を変えるコマンドを書かない（`guides/dev-cycle.md`「文書の置き場と、書く前の振り分け」）。
    1. 名前空間と Secret を作る（値はその場で生成し、どこにも書き残さない）。GHCR の読み取りの Secret は、流用元の `ghcr-pull-secret` と同じ作り方で、この名前空間に作る
    2. `deploy/preflight.sh` で Secret がそろったことを確かめ、イメージのタグを main の SHA にして適用し、`migrate` の完了を見てから `web` が ready になるのを待つ
@@ -1929,6 +1952,29 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 **公開に伴う作者の判断**：public にしたリポジトリに利用条件のファイル（LICENSE）を置くかを、作者が決める（OI-181）。置くなら、作者が決めた条件のファイルを根に置く。
 
+**残り（サイクル 06）**：M41 は実装レビューまで終え、作者を待つ 6 行と作者の実機の手順だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-13 に OI-145〜OI-149 をどれも既定のままと決めた。取りまとめ役は、同じ日に Raspberry Pi に SSH で読むだけのコマンドを流して機種とメモリを確かめ（OI-147 の結果の欄）、Pi 4・スワップ無し・SD カードに合わせてプローブの時間切れを明示することにした（OI-182・OI-183）。残るのは、下のプローブの直しと、作者を待つ OI-181 と、作者の実機の手順である。「値の差し替え」の行は、答えが来たら次の場所の値だけを替える。
+
+| ID | 種類 | 既定（いまのマニフェスト） | 答えと、替える場所 |
+|---|---|---|---|
+| OI-145 | 値の差し替え（決まった） | `factory-ops-rails.hayatec.dev` | 既定のまま。替えるものは無い。名前空間 `factory-ops-rails` は、流用元の `factory-ops` とぶつからない |
+| OI-146 | 値の差し替え（決まった） | 日本時間の 4:30（`schedule: "30 4 * * *"`）、`startingDeadlineSeconds: 21600` | 既定のまま。作者は Raspberry Pi を時々夜に止めるので、飛ばされた日の扱い（次の日の時刻に流れる、手で流してもよい）を作るもの 3 と `deploy/README.md`「作り直しが飛ばされた日」に書く |
+| OI-147 | 値の差し替え（決まった） | 8GB の機種とみなし、作るもの 8 の表のまま | 既定のまま。Pi 4 Model B の 8GB（総量 7.6Gi、スワップ無し）で、作るもの 8 の表は替えない。作者の手順 4 で測った値で requests と limits を直す |
+| OI-148 | 答えで作るものが変わる（決まった） | すべての操作を許し、毎日の作り直しで戻す（作るものは無い） | 既定のまま。作るものは無い |
+| OI-149 | 値の差し替え（決まった） | `web` にだけ `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めない（作るもの 7） | 既定のまま。替えるものは無い |
+| OI-181 | 値の差し替え | LICENSE を置かない | 置くなら、作者が選んだ条件の `LICENSE` を根に置き、`README.md` の冒頭から指す |
+| — | 実機の確かめ | — | 作者が作るもの 9 の手順 1〜6（`deploy/README.md`「作者の手順」）を流し、結果を PR か台帳に書く。M41 の完了条件には入れず、結果が書かれるまで公開しない |
+
+プローブの直し（OI-182）：`deploy/` のすべての readiness・liveness・startup のプローブに `timeoutSeconds: 5` を書く。既定の 1 秒では、Pi 4 で 5 万行の取り込みを流す間に、`frontend` の `/` の描画、`web` の `/up`、`postgres` の `pg_isready` が時間切れになり、liveness が続けて落ちてコンテナが作り直されうるからである。`deploy_manifests_spec.rb` に、すべてのプローブが `timeoutSeconds` を明示することを確かめる example を足す。いまはどのプローブも書いていないので、期待の不一致で落ちる。作者の手順 4 の取り込みの確かめで、Pod の再起動の回数（`kubectl get pods` の `RESTARTS`）も見る。
+
+残りの完了条件：
+
+```sh
+bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/requests/sessions_spec.rb spec/platform/production_boot_spec.rb   # 0 failures
+bin/check-open-items --due M41
+```
+
+マニフェストを替えたら、CI のマニフェストの照合（M42 の後は `manifests` のジョブ）が通ることも確かめる。作者が答えないまま、ほかのマイルストーンを終えたら、取りまとめ役は M41 の残りを次のサイクルへ移す。
+
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
 **実装する文書の節**：`adr/009`、`config/database.yml` の `production`、`architecture/data-model.md`「RLS」・「監査ログ（`platform`）」、`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」・「監査ログ」・「1 回のリクエストがたどる道」、`guides/config.md`「ジョブ」・「環境ごとの設定」、流用元の `deploy/README.md`・`deploy/preflight.sh`・`deploy/daily-reset-cronjob.yaml`・`docs/plans/cycle-01-t34-release-runbook.md`
@@ -1941,13 +1987,13 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 **作るもの**
 
-1. 版の固定：amd64 のジョブの `runs-on` を `ubuntu-24.04` にし、`images` を `ubuntu-24.04-arm` にする。`ubuntu-latest` が残っていないことを `spec/platform/ci_checks_spec.rb` が確かめる。版を上げる時期（GitHub のランナーの廃止の告知か、Ubuntu の保守の終わりの前）を `guides/config.md`「CI の工程」に書く
-2. arm64 の組み立て：`images` から QEMU のステップを外し、arm64 のランナーで 2 つのイメージを組み立て、Rails のイメージを本番の環境で起こす。マニフェストの照合（kubectl と kubeconform）は、arm64 のランナーに kubectl があるかを確かめてから、amd64 のジョブに分けるか、arm64 の kubeconform を sha256 で確かめて取るかを決める
-3. 公開の条件：main への push の GHCR への push を、`test`・`e2e`・`frontend` が成功したときだけ行う。いまの `images` の `if:` は `!cancelled()` を含むので、`needs` を足すだけでは失敗のときも走る。成功を `needs.<ジョブ>.result == 'success'` で明示する。PR の `images` をテストの終わりまで待たせないために、組み立てと確かめは `images` に残し、push だけを別のジョブに分けるかを、ワークフロー全体の時間で決める
+1. 版の固定：amd64 のジョブ（`scan_ruby`・`lint`・`test`・`frontend`・`e2e`・`image_inputs` と、作るもの 2 で分ける `manifests`）の `runs-on` を `ubuntu-24.04` にし、arm64 のジョブ（`images` と、作るもの 3 で分ける `publish`）を `ubuntu-24.04-arm` にする。`spec/platform/ci_checks_spec.rb` が、どのジョブの `runs-on` も版の数字を含む名前（`/\Aubuntu-\d{2}\.\d{2}(-arm)?\z/`）で、`ubuntu-latest` でないことと、`images` と `publish` が `-arm` を持つことを確かめる。2 つの名前との完全一致にしないのは、版を上げる PR で spec を書き換えずに済ませるためである。版を上げる時期（GitHub のランナーの廃止の告知か、Ubuntu の保守の終わりの前）を `guides/config.md`「CI の工程」に書く
+2. arm64 の組み立て：`images` を `ubuntu-24.04-arm` で動かし、QEMU のステップを外す。buildx は GitHub Actions のキャッシュ（`type=gha`）に要るので残す。Rails のイメージを本番の環境で起こす確かめは、`images` に残す。マニフェストの照合（`kubectl kustomize` と kubeconform）は、amd64 のジョブ `manifests` に分け、いまのステップ（amd64 の kubeconform をリリースの sha256 と比べてから展開する）をそのまま移す。arm64 のランナーのイメージに kubectl があるかに頼らないためである。`manifests` は 1 分で終わるので、契機を絞らずに PR と main への push の両方で流す
+3. 公開の条件：GHCR への push を、`images` から別のジョブ `publish`（`ubuntu-24.04-arm`、main への push でだけ流す）に分ける。`publish` は、`needs` にワークフローのほかのすべてのジョブ（`image_inputs` と自分を除く）を持ち、どれも成功したときだけ、`images` と同じキャッシュの `scope` から 2 つのイメージを組み立て直して push する。`publish` の中の GHCR へのログインと push のステップには、`if: github.ref == 'refs/heads/main'` も書く。main 以外のブランチへの push で `publish` が走っても、GHCR には何も置かれない（下の確かめで、M42 のブランチへの push を使うためでもある）。`images` は組み立てと確かめだけにし、`packages: write` を持たない。ワークフローの最上位に `permissions: contents: read` を置き、`packages: write` は `publish` のジョブにだけ書く。権限を書かないジョブの権限は、リポジトリの設定で決まるからである。`publish` の `if:` は、ジョブの名前を並べずに `github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped')` にする。ジョブの名前を `if:` に並べると、`needs` に足したジョブを `if:` に足し忘れたときに、そのジョブが落ちても push する。名前に頼らない式なら、`needs` が全ジョブを持つこと（下の spec が守る）だけで条件が閉じる。状態の関数 `!cancelled()` を書くのは、書かないと GitHub が暗黙の `success()` を足し、push では `image_inputs` が skip されるので、その先の `publish` も skip されうるからである（GitHub の文書の、ワークフローの構文の `jobs.<job_id>.needs`「If a job fails or is skipped, all jobs that need it are skipped unless the jobs use a conditional expression that causes the job to continue.」と、式の状態の関数「A default status check of `success()` is applied unless you include one of these functions.」）。`ci_checks_spec.rb` は、イメージを push するジョブ（`docker push` か `push: true` を持つ）と `packages: write` を持つジョブが `publish` だけで、最上位の権限に `packages: write` が無いことと、`publish` の `needs` が、ワークフローの `jobs` から集めたジョブ（`image_inputs` と `publish` を除く）をすべて含むことを確かめる。期待するジョブの集合を `publish` の `needs` からではなくワークフローの `jobs` から集めるのは、`needs` に足し忘れたジョブを検査が写し取らないためである
 
 **判断**：push を別のジョブに分けるか、`images` 全体をテストの後に並べるか
 
-- **既定の推奨**：push だけを別のジョブ（`needs: [images, test, e2e, frontend]`、main への push だけ）に分け、同じキャッシュから組み立て直して push する。PR の待ち時間は `images` とテストの長い方のままになる
+- **既定の推奨**：push だけを別のジョブ `publish` に分け、同じキャッシュから組み立て直して push する。PR の待ち時間は `images` とテストの長い方のままになる
 - **比べた案**：`images` 全体に `needs` を足す案は、ジョブが 1 つで済むが、PR でも `images` がテストを待ち、ワークフロー全体の時間が和になる
 - **裏返る条件**：キャッシュが当たっても、組み立て直しに数分かかる → `images` 全体をテストの後に並べる
 - **撤退コスト**：小さい。ワークフローの変更だけで、イメージの中身は変えない
@@ -1958,16 +2004,19 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 bundle exec rspec spec/platform/ci_checks_spec.rb   # 0 failures
 ```
 
-期待の不一致で最初に落とすのは、`ci_checks_spec.rb` の、`runs-on` に `ubuntu-latest` が残っていないことを確かめる example である。ほかに、PR の CI で次を確かめ、証跡に時間を書く。
+期待の不一致で最初に落とすのは、`ci_checks_spec.rb` の、`runs-on` に `ubuntu-latest` が残っていないことを確かめる example と、イメージを push するジョブが `publish` だけであることを確かめる example である（いまは `images` が push する）。`publish` の `needs` の example は、`publish` を書いた後に、`needs` から 1 つのジョブを外すと落ちることを、壊して落ちる記録に残す。
 
-- `images` のジョブが、キャッシュが空のとき（キャッシュの `scope` を一時に変えて空にする）とキャッシュが効くときの両方で、10 分の内に終わる（`guides/config.md`「CI の工程」の予算）。ワークフロー全体の時間も書く
-- push の条件は、テストのジョブが失敗・skip・cancel のときに push のステップが走らないことを、式と、手で落とした実行の記録で確かめる（`guides/config.md`「CI の工程」の配線を変えたときの手順）
+ほかに、M42 の PR の CI で次を確かめ、証跡に実行の URL と時間を書く。
 
-**範囲外**：`image_inputs` の条件を外すこと（予算に収まった値を見て、別に決める）、2 つのイメージの push を 1 つの単位にすること、GHCR のパッケージの可視性
+- `images` のジョブの時間を、キャッシュが空のとき（キャッシュの `scope` を一時の名前に替えた commit）とキャッシュが効くとき（元に戻した commit の 2 回目）の 2 回測り、ワークフロー全体の時間と一緒に書く。予算（`guides/config.md`「CI の工程」の 10 分）を超えても M42 は終えられる。`images` は `image_inputs` が絞った PR でだけ流れるからである。IB-93 の効き目（キャッシュが空でも 10 分の内）は、サイクル 06 の改善の探索がこの値で判定し、超えていれば、`image_inputs` の条件を残すことを IB-93 の判定の記録に書く。`adr/009`「見直す条件」は、測った値で書き直す
+- `publish` の条件は、main への push でしか流れないので、M42 のブランチへの push で確かめてから戻す（`guides/config.md`「CI の工程」の配線を変えたときの手順）。一時の commit で、ワークフローの `on.push.branches` に M42 のブランチを足す。ログインと push のステップは `github.ref` の条件で skip されるので、ステップを書き換えず、`ci_checks_spec.rb` はどの一時の commit でも通る。ブランチへの push は `github.event_name == 'push'` で流れ、main への push と同じく `image_inputs` が skip されるので、確かめたい経路を通る。PR の契機に `publish` を足す形では、`image_inputs` が流れて成功するので、この経路を通らない。見るのは 3 回である。`publish` のほかのジョブがすべて成功した push で、`publish` が走り、ログインと push のステップが skip される。`test` だけをわざと落とした push（既存の spec のファイルに、RuboCop に当たらない落ちる example を 1 つ足す。新しいファイルにすると `bin/test-layers` も落ちる）で、`publish` が skip される。`if:` から `!cancelled()` を外し、ほかのジョブがすべて成功した push で、`publish` が skip される（状態の関数が要る根拠）。3 回目で `publish` が走ったときも `!cancelled()` は残し、見た結果を判断に書く。どの回も、`publish` のほかのジョブの結果（2 回目は `test` だけが落ちたこと）を実行の画面で見て、実行の URL を証跡に書く。3 回は force push を挟まずに続けて push する。`lint` の互換の検査は push の前の先端（`github.event.before`）を基準にし、force push で前の先端が消えると落ちるからである。最後に一時の commit を戻し、戻した commit で `on.push.branches` が `[ main ]` だけであることを証跡に書く
+- M42 をマージした後の最初の main への push で、`publish` が走り、ログインと push のステップが skip でなく実行されて、2 つのイメージが GHCR に置かれたことは、PR を積み重ねる間はマージを待てないので、取りまとめ役がサイクル 06 の振り返りで確かめて証跡に書く。作者は、`deploy/README.md`「作者の手順」の適用の前に、適用する SHA の 2 つのイメージが GHCR にあることを確かめる（いまの手順のまま）
 
-**実装する文書の節**：`adr/009` 決定 6・「見直す条件」、`guides/config.md`「CI の工程」、`guides/bin.md`「CI が使うもの」
+**範囲外**：`image_inputs` の条件を外すこと（予算に収まった値を見て、別に決める）、2 つのイメージの push を 1 つの単位にすること、GHCR のパッケージの可視性、`Dockerfile` の bootsnap の `-j 1`（Rails の生成のまま。手元で QEMU の上で組み立てる人のために残す）
 
-**文書に残すこと**：`adr/009` の QEMU の記述と「見直す条件」を、arm64 のランナーで組み立てる形と、移った後の見直す条件に書き直す。`guides/config.md`「CI の工程」の `images` の時間の記述と、版を上げる時期を書く。`guides/bin.md`「CI が使うもの」の表を、分けたジョブに合わせる。
+**実装する文書の節**：`adr/009` 決定 6・「結果」・「見直す条件」、`guides/config.md`「CI の工程」、`guides/bin.md`「CI が使うもの」、GitHub の文書の `jobs.<job_id>.needs` と状態の関数
+
+**文書に残すこと**：`adr/009` の QEMU の記述（決定 6、「結果」の「QEMU の上の組み立ては遅い」）と「見直す条件」を、arm64 のランナーで組み立てる形と、移った後の見直す条件に書き直す。`guides/config.md`「CI の工程」の `images` の時間の引用と、版を上げる時期を書く。`guides/bin.md`「CI が使うもの」の表に `manifests` と `publish` を足し、`images` の行を直す。`.github/workflows/ci.yml` の `image_inputs` と `images` のコメント（「20 分を超え」「amd64 なので QEMU の上で」）を直し、`publish` のジョブの直前のコメントに、ジョブの `if:` の理由（名前に頼らない式、状態の関数）と、ステップの `if:` の理由（main 以外のブランチへの push で走っても GHCR に置かない）を書く。`deploy/README.md` の、イメージを確かめるジョブと GHCR に置くジョブを `images` と書いた 2 か所を `images` と `publish` に、`guides/config.md`「CI の工程」の、マニフェストの照合を `images` のジョブとした文を `manifests` に直す。ほかに残る前の形は、`git grep` で「`images` のジョブ」と「QEMU」を数えて直す。本書の M41 の作るもの 1 の、QEMU と GHCR への push を書いた文を、M42 の後の形に合わせる。
 
 ## M43 公開の配置の作り直しを、本番の環境でだけ動かす
 
@@ -1976,7 +2025,7 @@ bundle exec rspec spec/platform/ci_checks_spec.rb   # 0 failures
 **作るもの**
 
 1. `DemoReset#run` の入口で、本番の環境で `DEMO_WORLD_ENABLED=1` のときだけ進み、それ以外は `Refused` で止まる。条件は `lib/tasks/demo.rake` ではなく `DemoReset#run` に置く（spec が `DemoReset` を直に呼ぶ）。`Refused` の文言を 2 つの条件に合わせる
-2. `spec/platform/demo_reset_spec.rb` の、作り直し・排他・戻しの example の準備に、本番の環境と `DEMO_WORLD_ENABLED=1` を与える
+2. `spec/platform/demo_reset_spec.rb` の、入口を通ることを前提にする example（`describe "作り直し"` のすべて。作り直し・戻し・排他・所有ロールの DB 設定が無いとき）の準備に、本番の環境（いまの `production!`）と `DEMO_WORLD_ENABLED=1` を与える。与えないと、入口の新しい条件でどれも `Refused` になり、確かめたい振る舞いに届かない
 
 **完了条件**
 
@@ -1991,3 +2040,55 @@ bundle exec rspec spec/platform/demo_reset_spec.rb   # 0 failures
 **実装する文書の節**：`adr/009` 決定 3・4、`deploy/README.md`「作り直しが途中で止まったとき」
 
 **文書に残すこと**：`lib/demo_reset.rb` の冒頭のコメントの 1 を、本番の環境の条件に合わせる。
+
+## M44 依存の更新を取り込み、Dependabot の更新をまとめる
+
+**目的**：リポジトリを public にした後、Dependabot が、画面の npm の依存と GitHub Actions の版上げの PR を 1 つの依存に 1 本ずつ開き、13 本が開いたまま残っている（#15・#16・#61〜#71）。1 本ずつでは、組で上げる依存（`react` と `react-dom`）が CI で落ち、`package-lock.json` か `ci.yml` を変える PR のたびに `images` のジョブが流れる。取り込める更新を 1 つのマイルストーンで入れ、次からは Dependabot が組の依存とエコシステムごとの小さな更新をまとめて開くようにし、画面の Node の主版と型定義の主版がずれないことを spec で守る。サイクル 06 の計画レビューで起こした。業務の振る舞いは変えない。
+
+**作るもの**
+
+1. 取り込む更新：Dependabot の PR はマージせず、同じ版を M44 のブランチで入れる（`npm install <依存>@<版>` と `uses:` の書き換え）。作者が M44 をマージすると、Dependabot は main で済んだ更新の PR を自分で閉じる。表は 2026-10-13 に開いていた PR の写しである。担当者は着手の時点で開いている PR を読み直し、版が進んだ PR は進んだ版で取り込む。表に無い新しい PR は、`groups` を入れた後の Dependabot に任せる。開いた PR の扱いは次のとおりである。
+
+   | PR | 更新 | 扱い | 理由 |
+   |---|---|---|---|
+   | #15・#16・#63・#64 | `actions/checkout` 7・`actions/cache` 6・`actions/upload-artifact` 7・`actions/setup-node` 7 | 取り込む | ワークフローの同じ action の `uses:` を、M42 が足したジョブを含めてすべて同じ主版にする。#16 の CI は `frontend`・`e2e`・`images` のジョブが無い頃の main で流れたので、M44 の CI で確かめる |
+   | #62・#69 | `react`・`react-dom` 19.3.0 | 組で取り込む | `react-dom` 19.3.0 は peer に `react` ^19.3.0 を求め、1 本ずつでは `npm ci` が ERESOLVE で落ちる（#69 の CI）。`package.json` は 2 つを同じ版に固定している |
+   | #61 | `graphql` 17 | 取り込む | 主版の上げ。codegen の生成物が変わらないことを `npm run codegen:check` で確かめる |
+   | #70 | `eslint` 10 | 取り込む | 主版の上げ。`eslint-config-next` の peer の範囲を `npm ls` で確かめる |
+   | #67・#68・#71 | `@base-ui/react` 1.9・`cn` 0.4・`lucide-react` 1.54 | 取り込む | `cn` は 0 系の小版の上げで、semver では 0 系の小版の上げが破壊的な変更を含みうるので、主版の上げと同じく commit を分ける |
+   | #66 | `typescript` 7 | 取り込まない | #66 の CI は `npm ci` を通った後、`npm run lint` が「typescript-eslint does not support TS 7.0」で落ちた。`typescript-eslint` が実行の時に TS 7 を受け付けないので、5 系に置く。`ignore` にはせず、Dependabot に TypeScript の主版の PR を開かせたままにする。開いた PR は `typescript-eslint` を上げても自動では流れ直さないので、上げる時機は改善の候補 IB-99 で見る |
+   | #65 | `@types/node` 26 | 取り込まない | 画面の Node は 22 系である（OI-163）。型定義の主版を実行の主版より上げると、22 に無い API が型検査を通る |
+
+   主版の上げ（`graphql`・`eslint`・`cn`）と組の上げ（`react`・`react-dom`）は、1 つずつ commit を分け、各 commit で画面の検査（完了条件の 2 行目）を流す。落ちた更新は、その commit を外して取り込まない行に移し、理由を証跡に書く
+2. Dependabot のまとめ方（`.github/dependabot.yml`）：3 つのエコシステム（bundler・github-actions・npm）のそれぞれに `groups` を置く。bundler と npm は、小版と修正版（`update-types: [minor, patch]`）を 1 本の PR にまとめ、主版の上げはまとめずに 1 本ずつ開かせて個別に確かめる。npm は、組で上げる依存のまとまり（`react`・`react-dom`・`@types/react`・`@types/react-dom`。`update-types` を絞らず、主版の上げも組で開く）を、小版と修正版のまとまりより先に置く。Dependabot は、依存を最初に当たったまとまりに入れるからである。0 系の依存（いまは `cn`・`class-variance-authority`）は、小版と修正版のまとまりの `exclude-patterns` に入れ、主版の上げと同じく 1 本ずつ開かせる。0 系の小版の上げは破壊的な変更を含みうるからである。github-actions は、主版を含めてすべて（`patterns: ["*"]`）を 1 本にまとめる（変えるのはワークフローの 1 ファイルで、その PR の CI がそのまま確かめる）。`@types/node` の主版の上げを `ignore` にし、理由（画面の Node の主版に合わせる）を `dependabot.yml` のコメントに書く
+3. Node の主版をそろえる検査：画面の Node の主版は `frontend/package.json` の `engines` を正本にし、`engines` をいまの `>=22.12` から 1 つの主版に収まる `^22.12` に直す。`>=22.12` は 24 系も許すので、主版を 1 つに決めない。`spec/platform/dependency_updates_spec.rb` が、`engines` が `^<主版>.<小版>` の形であることと、`.github/workflows/ci.yml` の `actions/setup-node` を使うすべてのステップの `node-version`、`frontend/Dockerfile` の `NODE_VERSION`、`frontend/package.json` の `@types/node` の範囲が、`engines` と同じ主版であることを確かめる。比べる先をワークフローから集めるときは、`actions/setup-node` を使うステップをすべて拾い、`node-version` を持たないステップ（`node-version-file` に替えたものを含む）があれば落とす。1 つだけを読むと、もう 1 つがずれても通る。`node-version` は整数でも文字列でも、先頭の数を主版として読む
+4. Dependabot の設定の検査：同じ spec が、`dependabot.yml` について次を確かめる。どのエコシステムも `groups` を持つ。bundler と npm の小版と修正版のまとまりの `update-types` が `minor` と `patch` だけである（主版を含めない）。npm の組の依存のまとまりが、組の 4 つを `patterns` に持ち、小版と修正版のまとまりより先にある。0 系の依存が小版と修正版のまとまりの `exclude-patterns` にある。0 系の依存は、`frontend/package.json` の範囲から集め、`dependabot.yml` からは集めない。github-actions のまとまりが `*` を持つ。`@types/node` の主版の上げが `ignore` にある
+
+**判断**：Dependabot の更新を、どの単位で 1 本の PR にするか
+
+- **既定の推奨**：エコシステムごとに小版と修正版を 1 本にまとめ、主版は 1 本ずつにし、組で上げる依存はまとまりにする。PR の数と `images` のジョブの回数が週に数本に減り、破壊的な変更は 1 本ずつ CI で確かめられる
+- **比べた案**：(a) エコシステムごとに主版も含めてすべてを 1 本にまとめる。PR は週に 1 本になるが、主版の上げが 1 つ落ちると、ほかの更新もまとめて止まる。(b) いまのまま 1 つの依存に 1 本。組の依存が 1 本ずつでは落ち、`images` のジョブが PR ごとに流れる
+- **裏返る条件**：まとめた PR が、1 つの更新で落ちたまま何週も止まる → 落ちる依存をまとまりから外す
+- **撤退コスト**：小さい。`dependabot.yml` の変更だけで、取り込んだ版は残る
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/platform/dependency_updates_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
+cd frontend && npm ci && npm ls --all > /dev/null && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+cd frontend && npm run test:e2e
+```
+
+`npm ls --all` は、範囲に合わない依存があると `ELSPROBLEMS` で失敗で終わる（npm の `lib/commands/ls.js`）。組の依存の不一致はふつう先の `npm ci` が ERESOLVE で止めるので、`npm ls` が捕まえるものがあることを、`npm install --legacy-peer-deps react-dom@<新しい版>` で `react` を古い版のままにした木で `npm ls --all` が失敗で終わることで 1 回確かめ、壊して落ちる記録に残す。
+
+期待の不一致で最初に落とすのは、`dependency_updates_spec.rb` の、`dependabot.yml` のどのエコシステムも `groups` を持つことを確かめる example である（いまは無い）。`fetch("groups")` のように鍵が無いことで例外になる書き方をせず、`expect(updates).to all(include("groups"))` のように期待の不一致で落ちる形で書く。`engines` の形の example も、いまの `>=22.12` で落ちる。Node の主版をそろえる example は、`engines` を直した後は通るので、`frontend/Dockerfile` の `NODE_VERSION` と、2 つ目の `actions/setup-node` の `node-version` を、それぞれ複製から 24 に替えると落ちることを、壊して落ちる記録に残す。Dependabot の設定の example は、小版と修正版のまとまりに `major` を足す、組のまとまりを後ろへ動かす、`cn` を `exclude-patterns` から外す、の 3 つで落ちることを記録に残す。
+
+ほかに、M44 の PR の CI で `frontend`・`e2e`・`images` が通ることを確かめる。`package-lock.json` と `ci.yml` を変えるので、`images` も流れる。
+
+**作者の手順**：M44 をマージするまで、Dependabot の PR をマージしない。M42 と M44 が同じ `ci.yml` と `package-lock.json` を変えるので、先にマージすると載せ直しになる。M44 をマージした後、Dependabot に閉じられずに残った PR（取り込まなかった `@types/node` 26 の PR を含む。`groups` を入れた直後の Dependabot の実行は、1 本ずつの PR を閉じて、まとめた PR を開き直すことがあり、番号が変わりうる）を、その時点の一覧を見て閉じる。`typescript` 7 の PR（いまは #66）は開いたままにする。
+
+**範囲外**：画面の Node の主版を上げること（上げるときは、この spec が 4 か所をそろえさせる）、`Dockerfile` と `frontend/Dockerfile` のベースのイメージの更新を Dependabot に載せること、Ruby の gem の更新（いま開いている PR は無い。まとめ方だけを決める）
+
+**実装する文書の節**：GitHub の文書の Dependabot の設定（`groups`・`ignore`）、`guides/config.md`「CI の工程」、`README.md`「画面」
+
+**文書に残すこと**：`guides/config.md`「CI の工程」に、Dependabot の更新のまとめ方と、`ignore` にした主版の上げとその理由と、TypeScript の主版の PR を開いたままにすることと、Node の主版の正本が `engines` であることを書く。`README.md`「画面」の Node の版の文と、`frontend/Dockerfile` の `NODE_VERSION` の直前のコメント（CI と同じ系にする理由）を、正本と spec に合わせる。

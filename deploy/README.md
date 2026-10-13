@@ -29,14 +29,14 @@ daily-reset          毎日、web と jobs を 0 にして DB ごと作り直し
 
 ## 作者が決める値
 
-作者が決める値には既定を入れてある。作者は、決めた値を次の場所で差し替える。
+作者は 2026-10-13 に、次の値をどれも既定のままと決めた（OI-145〜OI-149）。値を変えるときは、次の場所で差し替える。
 
 | 値 | 既定 | 差し替える場所 | 台帳 |
 |---|---|---|---|
 | 公開の画面のホスト名 | `factory-ops-rails.hayatec.dev` | `kustomization.yaml` の `public-site` の `host`。Ingress の `host` と `web` の `FRONTEND_ORIGIN` に写る | OI-145 |
 | 毎日の作り直しの時刻と、止めていた後に流す猶予 | 日本時間の 4:30、6 時間 | `daily-reset.yaml` の `schedule` と `startingDeadlineSeconds` | OI-146 |
-| 各コンテナの requests と limits | 実機で測っていない見積もり | 各マニフェストの `resources`。測った値で直したら `docs/adr/009` の「確認した事項」にも書く | OI-147 |
-| 訪問者に許す操作 | すべて許し、毎日の作り直しで戻す | 止めると決めたら、止め方を計画に起こす | OI-148 |
+| 各コンテナの requests と limits | 実機で測っていない見積もり（Raspberry Pi 4 Model B の 8GB、総量 7.6Gi、スワップ無しに収まる） | 各マニフェストの `resources`。測った値で直したら `docs/adr/009` の「確認した事項」にも書く | OI-147 |
+| 訪問者に許す操作 | すべて許し、毎日の作り直しで戻す | 止めることにしたら、止め方を計画に起こす | OI-148 |
 | 共有のアカウントのログアウト | セッションの世代を進めない | `web.yaml` の `SHARED_DEMO_ACCOUNTS`。消すと、ログアウトが同じアカウントのほかの訪問者を切る | OI-149 |
 
 ## Secret
@@ -142,7 +142,7 @@ ssh raspi kubectl top pods -n factory-ops
 ssh raspi free -h
 ```
 
-測った値で各マニフェストの `resources` を直す PR を作る（「作者が決める値」）。あわせて、画面で 5 万行の CSV の取り込みを流しながら発注を登録し、受注が確定するまでの時間を測る。async のモードで分かるほど遅れれば、`docs/adr/009` の「見直す条件」に当たる。
+測った値で各マニフェストの `resources` を直す PR を作る（「作者が決める値」）。あわせて、画面で 5 万行の CSV の取り込みを流しながら発注を登録し、受注が確定するまでの時間を測る。async のモードで分かるほど遅れれば、`docs/adr/009` の「見直す条件」に当たる。Raspberry Pi にはスワップが無く、データは SD カードに載るので、取り込みの後に `ssh raspi kubectl get pods -n factory-ops-rails` の `RESTARTS` が増えていないこと（limits を超えた OOM とプローブの時間切れが起きていないこと）も見る。
 
 ### 5. Cloudflare Tunnel に公開のホスト名を足す
 
@@ -169,6 +169,16 @@ ssh raspi kubectl scale deployment -n factory-ops-rails web jobs --replicas=1
 作り直しは、止められたとき（`activeDeadlineSeconds` を過ぎたときと、Job を消したとき）も、SIGTERM の後の猶予（`terminationGracePeriodSeconds`）の間に 1 に戻す。DB のタスクの途中で止められたときは、作りかけの DB に向けて `web` と `jobs` が起きるので、作者は手順 3 と同じく手で流し直す。
 
 作り直しは再試行しない（`backoffLimit: 0`）。途中で失敗した作り直しを繰り返して、DB を何度も消さないためである。失敗した日は、手順 3 と同じく手で流し直すか、次の日の作り直しを待つ。手で流した作り直しが定時の作り直しと重なっても、後から始めた方は、DB のアドバイザリロックを取れずに何もせずに止まる。CronJob の `concurrencyPolicy: Forbid` は、手で作った Job を止めないからである。
+
+### 作り直しが飛ばされた日
+
+Raspberry Pi を作り直しの時刻（日本時間の 4:30）に止めていて、時刻から 6 時間（`startingDeadlineSeconds`）を過ぎて起動した日は、その日の作り直しが飛ばされる。データは前の日のまま残り、次の日の時刻に作り直される。前の日の訪問者の書き込みを残したくなければ、作者は手順 3 と同じく手で流す。Job の名前は日ごとに変える。
+
+```sh
+ssh raspi kubectl create job -n factory-ops-rails --from=cronjob/daily-reset manual-reset-$(date +%Y%m%d)
+```
+
+飛ばされたかは、`ssh raspi kubectl get jobs -n factory-ops-rails -l app=daily-reset` にその日の Job が無いことで分かる。
 
 ### 送らないメール
 
