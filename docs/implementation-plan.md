@@ -2054,9 +2054,9 @@ bundle exec rspec spec/platform/demo_reset_spec.rb   # 0 failures
    | #15・#16・#63・#64 | `actions/checkout` 7・`actions/cache` 6・`actions/upload-artifact` 7・`actions/setup-node` 7 | 取り込む | ワークフローの同じ action の `uses:` を、M42 が足したジョブを含めてすべて同じ主版にする。#16 の CI は `frontend`・`e2e`・`images` のジョブが無い頃の main で流れたので、M44 の CI で確かめる |
    | #62・#69 | `react`・`react-dom` 19.3.0 | 組で取り込む | `react-dom` 19.3.0 は peer に `react` ^19.3.0 を求め、1 本ずつでは `npm ci` が ERESOLVE で落ちる（#69 の CI）。`package.json` は 2 つを同じ版に固定している |
    | #61 | `graphql` 17 | 取り込む | 主版の上げ。codegen の生成物が変わらないことを `npm run codegen:check` で確かめる |
-   | #70 | `eslint` 10 | 取り込む | 主版の上げ。`eslint-config-next` の peer の範囲を `npm ls` で確かめる |
    | #67・#68・#71 | `@base-ui/react` 1.9・`cn` 0.4・`lucide-react` 1.54 | 取り込む | `cn` は 0 系の小版の上げで、semver では 0 系の小版の上げが破壊的な変更を含みうるので、主版の上げと同じく commit を分ける |
    | #66 | `typescript` 7 | 取り込まない | #66 の CI は `npm ci` を通った後、`npm run lint` が「typescript-eslint does not support TS 7.0」で落ちた。`typescript-eslint` が実行の時に TS 7 を受け付けないので、5 系に置く。`ignore` にはせず、Dependabot に TypeScript の主版の PR を開かせたままにする。開いた PR は `typescript-eslint` を上げても自動では流れ直さないので、上げる時機は改善の候補 IB-99 で見る |
+   | #70 | `eslint` 10 | 取り込まない | 入れると `npm ls --all` が `ELSPROBLEMS` で落ちた。`eslint-config-next` 16.4.0 が入れる `eslint-plugin-import`・`eslint-plugin-jsx-a11y`・`eslint-plugin-react` の peer の範囲が `eslint` 9 までである（`npm run lint` は通り、#70 の CI も通ったが、CI は `npm ls --all` を流さない）。`typescript` 7 と同じく `ignore` にせず PR を開いたままにする（OI-185）。上げる時機は改善の候補 IB-103 で見る |
    | #65 | `@types/node` 26 | 取り込まない | 画面の Node は 22 系である（OI-163）。型定義の主版を実行の主版より上げると、22 に無い API が型検査を通る |
 
    主版の上げ（`graphql`・`eslint`・`cn`）と組の上げ（`react`・`react-dom`）は、1 つずつ commit を分け、各 commit で画面の検査（完了条件の 2 行目）を流す。落ちた更新は、その commit を外して取り込まない行に移し、理由を証跡に書く
@@ -2085,7 +2085,7 @@ cd frontend && npm run test:e2e
 
 ほかに、M44 の PR の CI で `frontend`・`e2e`・`images` が通ることを確かめる。`package-lock.json` と `ci.yml` を変えるので、`images` も流れる。
 
-**作者の手順**：M44 をマージするまで、Dependabot の PR をマージしない。M42 と M44 が同じ `ci.yml` と `package-lock.json` を変えるので、先にマージすると載せ直しになる。M44 をマージした後、Dependabot に閉じられずに残った PR（取り込まなかった `@types/node` 26 の PR を含む。`groups` を入れた直後の Dependabot の実行は、1 本ずつの PR を閉じて、まとめた PR を開き直すことがあり、番号が変わりうる）を、その時点の一覧を見て閉じる。`typescript` 7 の PR（いまは #66）は開いたままにする。
+**作者の手順**：M44 をマージするまで、Dependabot の PR をマージしない。M42 と M44 が同じ `ci.yml` と `package-lock.json` を変えるので、先にマージすると載せ直しになる。M44 をマージした後、Dependabot に閉じられずに残った PR（取り込まなかった `@types/node` 26 の PR を含む。`groups` を入れた直後の Dependabot の実行は、1 本ずつの PR を閉じて、まとめた PR を開き直すことがあり、番号が変わりうる）を、その時点の一覧を見て閉じる。`typescript` 7 の PR（いまは #66）と `eslint` 10 の PR（いまは #70）は開いたままにする。
 
 **範囲外**：画面の Node の主版を上げること（上げるときは、この spec が 4 か所をそろえさせる）、`Dockerfile` と `frontend/Dockerfile` のベースのイメージの更新を Dependabot に載せること、Ruby の gem の更新（いま開いている PR は無い。まとめ方だけを決める）
 
