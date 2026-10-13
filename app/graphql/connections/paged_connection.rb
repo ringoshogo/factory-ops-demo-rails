@@ -10,6 +10,8 @@ module Connections
 
     def cursor_for(node) = page.cursors.fetch(nodes.index(node))
 
+    def total_count = page.total_count
+
     private
 
     def page

@@ -1,6 +1,7 @@
-query SupplierStocks($first: Int, $after: String) {
+query SupplierStocks($first: Int, $after: String, $orderBy: StockOrder, $filter: StockFilter) {
   supplier {
-    stocks(first: $first, after: $after) {
+    stocks(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+      totalCount
       nodes {
         onHand
         allocated

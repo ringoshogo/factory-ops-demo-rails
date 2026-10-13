@@ -1,6 +1,7 @@
-query SupplierStockMovements($first: Int, $after: String, $itemId: ID) {
+query SupplierStockMovements($first: Int, $after: String, $itemId: ID, $filter: StockMovementFilter) {
   supplier {
-    stockMovements(first: $first, after: $after, itemId: $itemId) {
+    stockMovements(first: $first, after: $after, itemId: $itemId, filter: $filter) {
+      totalCount
       nodes {
         id
         type

@@ -1,6 +1,7 @@
-query SupplierSalesOrders($first: Int, $after: String) {
+query SupplierSalesOrders($first: Int, $after: String, $orderBy: SalesOrderOrder, $filter: SalesOrderFilter) {
   supplier {
-    salesOrders(first: $first, after: $after) {
+    salesOrders(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+      totalCount
       nodes {
         id
         orderNo

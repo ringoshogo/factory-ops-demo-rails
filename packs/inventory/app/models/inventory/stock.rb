@@ -21,6 +21,10 @@ module Inventory
       stocks.order(:item_id).lock.index_by(&:item_id)
     end
 
+    # 有効在庫が安全在庫より小さい在庫。等しい在庫は含まない（docs/architecture/data-model.md「在庫（`inventory`）」）。
+    # ダッシュボードの集計と、そこから飛ぶ在庫の一覧の絞り込みが、この 1 つの条件を使う
+    scope :below_safety_stock, -> { where("on_hand - allocated < safety_stock") }
+
     def available = on_hand - allocated
 
     # 在庫を変える唯一の入口。呼ぶ側がこの行をロックしてから呼ぶ

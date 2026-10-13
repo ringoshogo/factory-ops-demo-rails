@@ -2,8 +2,14 @@ module Fulfillment
   # 受注側が自社の出荷依頼と、その出荷指示・出荷実績を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
   # *_for は親の ID の配列を取り、ID ごとの値のハッシュを返す
   module ShipmentRequests
-    def self.list(actor, first:, after:)
-      Page.of(Scope.call(actor, ShipmentRequest.all), first:, after:) { |requests| to_values(actor, requests) }
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）
+    ORDER_COLUMNS = { due_date: [ ShipmentRequest.arel_table[:due_date], :date ] }.freeze
+
+    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる
+    def self.list(actor, first:, after:, order_by: nil)
+      Page.of(Scope.call(actor, ShipmentRequest.all), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |requests|
+        to_values(actor, requests)
+      end
     end
 
     # 見えない ID は存在しない ID と同じく nil になる

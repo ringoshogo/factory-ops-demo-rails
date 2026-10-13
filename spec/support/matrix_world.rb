@@ -8,13 +8,17 @@ require_relative "matrix_cross_read"
 # （表ごとの行は factory の既定のままなので、品目は公開しない）。
 # さらに supplier と取引関係を結んだ発注側ごとに、supplier への発注と、それに連結した supplier の受注と出荷実績を 1 組足す。
 # 連結元の ID を持ち合う行でも、相手からは見えないことと、出荷実績を読む経路 3 が付与と失効に従うことを確かめるためである。
-# 最後に、どのペルソナにもダッシュボードの各集計に当たる行を足す
+# 最後に、どのペルソナにもダッシュボードの各集計に当たる行と、一覧の絞り込みに当たる行を足す
 class MatrixWorld
   include TenantHelpers
 
   PERSONAS = %i[supplier granted_buyer ungranted_buyer revoked_buyer stranger].freeze
 
   ALL_PERMISSIONS = %w[view_catalog place_orders view_shipments].freeze
+
+  # 一覧の絞り込みに当たる行の受注日・発注日と品目名。factory の既定の日付（今日）と品目名の行は当たらない
+  FILTER_ORDER_DATE = Date.new(2000, 1, 1)
+  FILTER_ITEM_NAME = "絞り込みの品目".freeze
 
   # supplier との取引関係。revoked_buyer は全権限の付与を持ったまま失効させ、付与があっても失効で閉じることを確かめる
   PARTNERSHIPS = {
@@ -107,7 +111,12 @@ class MatrixWorld
     end
     as(:supplier) { FactoryBot.create(:item, :published) }
     @linked_orders = PARTNERSHIPS.keys.index_with { |buyer| link_orders(buyer) }
-    PERSONAS.each { |persona| as(persona) { add_dashboard_rows(persona) } }
+    PERSONAS.each do |persona|
+      as(persona) do
+        add_dashboard_rows(persona)
+        add_filter_rows
+      end
+    end
   end
 
   # 世界のオブジェクトを example の間で使い回すので、属性を凍らせ、example の中の属性の代入を例外にする。
@@ -145,6 +154,16 @@ class MatrixWorld
   def add_dashboard_rows(persona)
     FactoryBot.create(:stock, item_id: row("items", persona).id, on_hand: 1, safety_stock: 2)
     FactoryBot.create(:shipment_request, due_date: Date.current)
+  end
+
+  # 一覧の絞り込み（入口の行列の "#filter" の行）に当たる行。どのペルソナにも当たる行と当たらない行があるので、
+  # 公開 API が絞り込みか件数の scope を外すと、RLS の SELECT を開いた入口の行列で他社のこの行が応答に入る。
+  # 在庫の安全在庫はダッシュボードの行が当たり、出荷依頼は並べ替えだけなので足さない
+  def add_filter_rows
+    FactoryBot.create(:sales_order, customer_tenant_id: tenants[:granted_buyer], order_date: FILTER_ORDER_DATE)
+    FactoryBot.create(:purchase_order, supplier_tenant_id: tenants[:supplier], order_date: FILTER_ORDER_DATE)
+    FactoryBot.create(:stock_movement, type: "outbound")
+    FactoryBot.create(:item, name: FILTER_ITEM_NAME)
   end
 
   # 受注側の ACL が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、

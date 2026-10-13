@@ -65,4 +65,46 @@ RSpec.describe Sales::Catalog do
 
     expect(result.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :item_id ] ] ])
   end
+
+  # 一覧の並べ替えと絞り込み（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe ".items" do
+    def items(first: 2, **options)
+      codes = []
+      after = nil
+      loop do
+        page = described_class.items(actor, first:, after:, **options)
+        codes.concat(page.values.map(&:code))
+        break [ codes, page.total_count ] unless page.has_next_page
+
+        after = page.cursors.last
+      end
+    end
+
+    it "品目コードか品目名で、品目コードと ID の組で並べる" do
+      [ [ "B-1", "ナット" ], [ "A-1", "ボルト" ], [ "C-1", "ナット" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
+
+      expect(items(order_by: { field: :code, direction: :asc })).to eq([ %w[A-1 B-1 C-1], 3 ])
+      expect(items(order_by: { field: :name, direction: :desc })).to eq([ %w[A-1 C-1 B-1], 3 ])
+    end
+
+    it "keyword は、前後の空白を除いて、品目コードか品目名に含む品目に、大文字と小文字を区別せずに絞る。空なら絞らない" do
+      [ [ "BOLT-8", "六角ボルト" ], [ "nut-1", "Bolt 用ナット" ], [ "W-1", "ワッシャー" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
+
+      expect(items(filter: { keyword: "  bolt\u3000" })).to eq([ %w[nut-1 BOLT-8], 2 ])
+      expect(items(filter: { keyword: "ボルト" })).to eq([ %w[BOLT-8], 1 ])
+      expect(items(filter: { keyword: "NUT" })).to eq([ %w[nut-1], 1 ])
+      expect(items(filter: { keyword: " " })[1]).to eq(3)
+      expect(items(filter: { keyword: nil })[1]).to eq(3)
+    end
+
+    it "keyword の % と _ と \\ は、ワイルドカードではなく文字として扱う" do
+      [ "50%OFF", "A_1", "A\\1", "AB1", "500FF" ].each { FactoryBot.create(:item, code: _1) }
+
+      expect(items(filter: { keyword: "%" })).to eq([ %w[50%OFF], 1 ])
+      expect(items(filter: { keyword: "_" })).to eq([ %w[A_1], 1 ])
+      expect(items(filter: { keyword: "\\" })).to eq([ [ "A\\1" ], 1 ])
+      # 対照：ワイルドカードでない文字は、そのまま部分一致で絞る
+      expect(items(filter: { keyword: "A" })[1]).to eq(3)
+    end
+  end
 end

@@ -19,6 +19,57 @@ RSpec.describe Sales::SalesOrders do
 
   def count_by_status = Tenancy.with_tenant(supplier.id) { described_class.count_by_status(actor) }
 
+  # 一覧を最後のページまで first 件ずつたどり、受注 ID と件数を返す
+  def list_ids(first: 2, **options)
+    Tenancy.with_tenant(supplier.id) do
+      ids = []
+      after = nil
+      loop do
+        page = described_class.list(actor, first:, after:, **options)
+        ids.concat(page.values.map(&:id))
+        break [ ids, page.total_count ] unless page.has_next_page
+
+        after = page.cursors.last
+      end
+    end
+  end
+
+  # 一覧の並べ替えと絞り込み（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe ".list" do
+    it "並べ替えの列ごとに、列の値と ID の組で並べ、値の無い受注を向きによらず最後に置く" do
+      a, b, c, d = Tenancy.with_tenant(supplier.id) do
+        [ [ "SO-000003", 2, nil ], [ "SO-000001", 3, 5 ], [ "SO-000002", 1, 5 ], [ "SO-000004", 2, 1 ] ].map do |order_no, days, due|
+          FactoryBot.create(:sales_order, order_no:, order_date: Date.new(2026, 10, days), due_date: due && Date.new(2026, 11, due))
+        end
+      end
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:sales_order) }
+
+      expect(list_ids(order_by: { field: :order_no, direction: :asc })).to eq([ [ b, c, a, d ].map(&:id), 4 ])
+      expect(list_ids(order_by: { field: :order_date, direction: :desc })).to eq([ [ b, d, a, c ].map(&:id), 4 ])
+      expect(list_ids(order_by: { field: :due_date, direction: :asc })).to eq([ [ d, b, c, a ].map(&:id), 4 ])
+      expect(list_ids(order_by: { field: :due_date, direction: :desc })).to eq([ [ c, b, d, a ].map(&:id), 4 ])
+      # 対照：並べ替えを省くと、作った順の新しいものから
+      expect(list_ids).to eq([ [ d, c, b, a ].map(&:id), 4 ])
+    end
+
+    it "得意先と、両端を含む受注日の範囲で絞り、件数も同じ条件で数える。受注日の始まりが終わりより後なら空" do
+      customer = FactoryBot.create(:tenant)
+      hit, before_range, other_customer, last_day = Tenancy.with_tenant(supplier.id) do
+        [ [ customer, 10 ], [ customer, 9 ], [ FactoryBot.create(:tenant), 10 ], [ customer, 12 ] ].map do |tenant, day|
+          FactoryBot.create(:sales_order, customer_tenant_id: tenant.id, order_date: Date.new(2026, 10, day))
+        end
+      end
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:sales_order, customer_tenant_id: customer.id, order_date: Date.new(2026, 10, 10)) }
+      range = { order_date_from: Date.new(2026, 10, 10), order_date_to: Date.new(2026, 10, 12) }
+
+      expect(list_ids(filter: { customer_tenant_id: customer.id, **range })).to eq([ [ last_day.id, hit.id ], 2 ])
+      expect(list_ids(filter: { customer_tenant_id: customer.id })).to eq([ [ last_day.id, before_range.id, hit.id ], 3 ])
+      expect(list_ids(filter: range)).to eq([ [ last_day.id, other_customer.id, hit.id ], 3 ])
+      expect(list_ids(filter: { order_date_from: Date.new(2026, 10, 12), order_date_to: Date.new(2026, 10, 10) })).to eq([ [], 0 ])
+      expect(list_ids(filter: { customer_tenant_id: other.id })).to eq([ [], 0 ])
+    end
+  end
+
   describe ".count_by_status" do
     it "状況ごとに数え、取消済も数える" do
       Tenancy.with_tenant(supplier.id) do

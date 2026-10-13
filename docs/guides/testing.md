@@ -115,6 +115,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 - 1 件を引くフィールドは `null` になる
 - 一覧を ID で絞るフィールドは空になる。spec は、同じ入口を絞らずに引いた一覧が空でないことを先に確かめる。絞らない一覧も空なら、絞った一覧が空でも絞り込みを確かめたことにならないので、準備に自社の行を足す
+- 表に自社の ID（`own`）を書いた入口は、その ID を入れて自社の行が返ることを、相手の ID を入れる前に確かめる。絞り込みの入力型の ID（`SalesOrderFilter.customerTenantId` など）と 1 件を引くフィールド（`supplier.item(id:)`）がそうで、自社の ID でも何も返らない入口は、相手の ID で空か `null` になっても境界を確かめたことにならない
 - 対象を引く mutation は `NOT_FOUND` になる
 - `placePurchaseOrder` は、相手の有無と取引関係を区別しない `NOT_PERMITTED` になる（[graphql-schema.md「ID と `node`」](../architecture/graphql-schema.md#id-と-node)）
 
@@ -136,7 +137,8 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 - `MatrixWorld.share_per_file(self, cross_read: true)` は、世界を開く前に、テナントの表ごとに、設定 `app.matrix_cross_read` が `on` のときだけ全行を読ませる SELECT のポリシー（`matrix_cross_read`）と、全行を UPDATE の対象に入れる UPDATE のポリシー（`matrix_cross_update`）を所有ロールの接続で足し、世界を閉じた後に外す（`spec/support/matrix_cross_read.rb`）。UPDATE のポリシーは下の操作者のいない入口の単体のためのもので、入口の行列は読み取りしか送らないので効かない。ポリシーの足し外しは表のロックを取るので、世界のトランザクションが開いている間に行うと待ち合う。足すのは 1 つのトランザクションなので、途中で失敗しても残らない。外すのは足し終えたときだけで、この判定は `MatrixCrossRead.share`（グループの前後）と `with_policies`（ブロックの間）だけが持つ。ポリシーを使う補助と spec はこの 2 つを通し、`remove!` を直に呼ばない。呼ぶ側が足し外しを対にして書くと、足すのに失敗しても外す形を補助ごとに書き直すことになるので、`spec/matrix/cross_read_spec.rb` が直の呼び出しを落とす。接続先の名前がテストの DB でなければ足さずに失敗する
 - 設定は example の中で `MatrixCrossRead.on!` が `SET LOCAL` と同じ形で入れ、example のセーブポイントと一緒に戻る。ロールや DB の既定には書かない
 - ポリシーの SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。`structure.sql` に混ざれば `bin/check-structure` が、消し忘れれば `spec/db/tenant_enforcement_spec.rb`（テナントの表のポリシーは `owner_write` と 6 つの表の `partner_read` だけ）が落とす
-- `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと、公開 API の値も入口の要求の応答も他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行を持つ
+- `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと、公開 API の値も入口の要求の応答も他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行と、一覧の絞り込みに当たる行を持つ
+- 件数も 2 回目の比較にかけるため、コネクションを返すフィールドの行は、問い合わせで `totalCount` を読む。並べ替えと絞り込みを持つ一覧は、両方を渡す変種の行（`"SupplierView.salesOrders#filter"` の形）を持つ。`spec/matrix/graphql_matrix_spec.rb` が、コネクションを返すフィールドをスキーマから集めて行の問い合わせが `totalCount` を選ぶことと、変種の行の絞り込みがどのペルソナでも 0 件より多く、絞らない一覧の件数より少ない件数に絞ることを確かめる。当たる行が無いか全行が当たると、絞り込みの scope の抜けが 2 回目の比較に出ないからである。絞り込みの項目を足す人は、`MatrixWorld#add_filter_rows` に当たる行を足す
 - 1 つのテストの DB で、行列の spec と「RLS の SELECT と UPDATE を開く」の文脈を使う spec を、同時に 2 つの実行から流さない。ポリシーの名前は実行ごとに変わらないので、後から足す実行は「ポリシーがすでにある」で失敗する。並行で流すときは、別名のテストの DB を使う。途中で止めた実行が残したポリシーも同じ失敗になるので、ほかに流している実行が無いことを確かめてから `bin/rails runner -e test 'require "./spec/support/matrix_world"; MatrixCrossRead.remove!'` で外す
 - 表の行列（`table_matrix_spec.rb`）には掛けない。表の行列は生 SQL で RLS そのものを確かめるからである
 

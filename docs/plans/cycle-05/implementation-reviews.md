@@ -152,3 +152,110 @@ bundle exec rspec --tag concurrency                                # 2 回続け
 ### 残件の処理
 
 引当先が M38 の行は、着手の前と PR の前に台帳を読み、無かった。実装で決めたことは OI-150・OI-151 に、実装レビューの M38-1 の直しで決めたことは OI-152 に judgment で積んだ。違和感は IB-71・IB-72 に積んだ。範囲外の IB-59（操作者のいない入口の `Tenancy.require_tenant!` が `TenantRecord` の `default_scope` に隠れること）は扱っていない。
+
+## M39 一覧の件数と並べ替え、列での絞り込み
+
+`m39-list-ordering`（base は `main`）の PR。PR #55（`cycle-05-plan`）と PR #56（`m38-update-policy`）が未マージなので、その commit も差分に見える。M39 の差分は `ef7f95d..` である。
+
+Codex は Go、Claude は Conditional Go で、Medium の R1（範囲の外の日付と正しくない UTF-8 のカーソルが 500 になる）を直せば Go とした。どちらの系統も、`ef7f95d..0fcd396` の diff を `0fcd396` の版で読んだ。Codex は read-only のサンドボックスでテストを流さず、依頼に書いた実行結果を前提にし、DB の要らない再現だけを流した。Claude は行列と共有の文脈を使う spec のほかの M39 の spec を流し、`bin/rails runner` でカーソルの 500 を再現した。Critical・High が無かったので、読み直しは回していない。指摘は `870aacb`（コード）と `dc2a367`（文書）で直した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Conditional Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R3） | 指摘（R3） |
+| 正しさ | 指摘（R1・R2） | 指摘（R1） |
+| 境界と規約 | 指摘（R1） | 指摘なし |
+| テストの検出力 | 指摘（R1・R2） | 指摘（R1） |
+| 参照の維持 | 指摘（R3・R4） | 指摘（R2・R3・R4） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Claude・Codex | Claude R1・Codex R2：カーソルの日付は `Date.iso8601` を通るだけで、PostgreSQL の date の範囲の外の年も受け付ける。文字列は正しくない UTF-8 も通る。どちらも行を読むときの SQL のエラーになり、`Invalid cursor` ではなく 500 を返す | 日付を西暦 1 年から PostgreSQL の date の上限（5874897 年）までに、文字列を正しい UTF-8 に限った。`page_spec.rb` に、範囲の両端と外側（整数の下限を含む）と正しくない UTF-8 の example を足した | `870aacb` |
+| Medium | Codex | R1：`Page` のテナントの確かめが `||=` の右辺にあり、一度読んだ値は、テナントの外でも別のテナントの中でも例外にならずに返る | 読むたびにテナントを確かめる形にし、4 つの読み口を外と別のテナントで読む example を足した | `870aacb` |
+| Low | Claude | R2：`testing.md`「行列テストとの分担」に、コネクションの行が `totalCount` を読む規則と、絞り込みの変種の行と世界の行の関係が無い | 同じ節の 2 回目の比較の箇条に溶かし込み、世界の説明を直した | `dc2a367` |
+| Low | Claude・Codex | R3：`graphql-schema.md` の `Viewer` の SDL に `tenant` が無い。計画の作るもの 6 が、OI-154 と食い違って「相手のテナントの ID で一覧は空」のまま | SDL に `tenant: Tenant!` を書き、作るもの 6 を OI-154 の形に直した。直す前の文言は、`git grep` で計画にも設計文書にも残っていないことを確かめた | `dc2a367` |
+| Low | Claude・Codex | R4：`keyword` の `%`・`_` の扱いと大文字と小文字の区別が、`sanitize_sql_like` と Arel の `matches` と DB の既定のエスケープ文字に依存するのに、根拠を引いていない | `matches` に ESCAPE と `case_sensitive: false` を明示し、依存する Arel のメソッドをコメントに引いた | `870aacb` |
+
+違和感は次のように扱った。
+
+- Claude 1：`pageInfo` だけを選んでも値への写しが流れる → IB-73
+- Claude 2・Codex 1：件数と行が別の SQL で、同時の書き込みで食い違いうる → IB-74
+- Claude 3：リストの要素の下のコネクションの `totalCount` が、親ごとに `COUNT(*)` を流す → IB-75
+- Claude 4：有効在庫の定義が 3 か所にある → IB-76
+- Codex 2：文字列の並べ替えの照合順序を記録していない → IB-77
+- Claude 5：依頼の版に証跡の M39 の節が無く、壊して落ちる記録が依頼の本文にだけあった → IB-78
+
+### 実装の記録
+
+#### 計画との違い
+
+計画に書かれていないことを決めたものは、OI-153〜OI-157 に judgment で積んだ。`Page` が件数だけでなく行も読まれたときに引き、作ったテナントの外で読むと例外にする（OI-153）。発注の受注側の絞り込みの S1 の行は、相手のテナント ID を自社の行の対照にする（OI-154）。予算の spec の受注と発注の `filter` は日付の範囲だけを渡す（OI-155）。`keyword` の前後の空白に全角の空白を含める（OI-156）。並べ替えの入力型の `field` と `direction` をどちらも必須にする（OI-157）。
+
+OI-153 の結果、ページの値をテナントの外で読んでいた 4 つの spec（`invoices_spec.rb`・`received_invoices_spec.rb`・`runs_spec.rb`・`audit_logs_spec.rb`）が `Tenancy::MissingTenant` で落ちたので、値を中で読む形に直した（`aafbb35`）。どの example も、確かめる値は変えていない。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：
+
+- `page_spec.rb` の ASC と DESC の境目の example は、`Page.of` が `sort:` を受け取るだけで無視する仮の形で、`got:` が id の降順のまま落ちた
+- `graphql_matrix_spec.rb`「コネクションを返すフィールドの行は、すべて問い合わせで totalCount を読む」は、`got: ["Viewer.auditLogs", "SupplierView.items", "SupplierPartnership.catalog", ...]`（13 行）で落ちた
+- 5 つの公開 API の spec の並べ替えと絞り込みの 11 examples は、引数を受け取るだけの仮の形で、並びと件数の期待の不一致で落ちた（在庫移動履歴の example は、最初に作った準備が CHECK 制約に当たったので、準備を直してから流し直した）
+
+ほかの example は実装の後に書いたので、次の壊して落ちる記録で RED に代える。実装を 1 か所ずつ壊し、壊した箇所を確かめる spec のファイルだけを流し、複製から戻して更新時刻を進めた。`0fcd396` の上で壊し、実装レビューの直しの 3 つは `870aacb` の上で壊した。
+
+| 壊したもの | 流した spec | 落ちた example |
+|---|---|---|
+| 件数の relation から scope と絞り込みを外す（`relation.unscope(:where).count`） | `graphql_matrix_spec.rb` | 96（うち RLS を開いた比較 91、絞り込みの変種の行が世界を絞る確かめ 5） |
+| 並べ替えから id を外す | `page_spec.rb` | 3（ASC・DESC の境目と、計算した式の並べ替え） |
+| 値のある行の後ろの条件から「値が空のもの」を外す | 同上 | 3 |
+| 値が空の行の後ろの条件を、値のある行と同じ形にする | 同上 | 2 |
+| `nulls_last` を外す | 同上 | 2（DESC だけ。PostgreSQL の ASC の既定は NULLS LAST） |
+| カーソルから向きを外す | 同上 | 1（向きだけを変えたカーソルを拒む） |
+| カーソルの整数の範囲を確かめない | 同上 | 1 |
+| カーソルの日付の範囲を確かめない | 同上 | 1 |
+| カーソルの文字列の文字コードを確かめない | 同上 | 1 |
+| テナントの外で読んでも例外にしない | 同上 | 1 |
+| 一度読んだ値をテナントを確かめずに返す | 同上 | 1 |
+| `Page::Sort.of` が表に無い列を拒まない | 同上 | 1 |
+| `totalCount` だけの問い合わせでページを読む | `query_budget_spec.rb` | 7（視点の直下の一覧の、件数だけの問い合わせの SQL の件数） |
+| 在庫の一覧の `belowSafetyStock` を別の SQL で書き、不等号を `<=` にする | `stocks_spec.rb` | 1（ダッシュボードと一覧の件数を同じ世界で比べる） |
+| 移動の種類の空の配列を絞らない扱いにする | 同上 | 1 |
+| `keyword` の `%` をエスケープしない | `catalog_spec.rb`（packs） | 1 |
+| `keyword` の前後の空白を除かない | 同上 | 1 |
+| `keyword` の上限を 101 にする／99 にする | `spec/requests/catalog_spec.rb` | どちらも 1（100 文字と 101 文字の example） |
+| 受注の得意先の絞り込みを外す | `sales_orders_spec.rb`・`tenant_boundary_spec.rb`・`graphql_matrix_spec.rb` | 2（公開 API の spec と S1。行列は受注日でも絞るので落ちない） |
+| 受注日の終わりを含めない | `sales_orders_spec.rb` | 1 |
+| 発注の受注側の絞り込みを外す | `purchase_orders_spec.rb`・`tenant_boundary_spec.rb`・`graphql_matrix_spec.rb` | 2（公開 API の spec と S1） |
+| 発注日の始まりを含めない | `purchase_orders_spec.rb` | 1 |
+| 受注の一覧の scope を外す | `graphql_matrix_spec.rb` | 10（RLS を開いた比較） |
+| 品目の一覧の絞り込みを外す | 同上 | 1（絞り込みの変種の行が世界を絞る確かめ） |
+| `supplier.item` の scope を外す | 同上 | 4（RLS を開いた比較） |
+| `viewer.tenant` が別のテナントを返す | `graphql_entry_spec.rb` | 1 |
+
+テストの基盤として足したものは、行列の「絞り込みの変種の行が世界の行を絞る」確かめと `MatrixWorld#add_filter_rows`、予算の spec の `total_count_only`、S1 の表の `own` である。絞り込みを外すと前者が落ち（上の表）、`own` の確かめは自社の ID で行が返らなければ落ちる。
+
+### 確かめたこと
+
+`dc2a367` で、Ruby 3.4.11 で M39 の完了条件と共通の完了条件を流した。この worktree では `bin/ci` の Setup の工程が落ちる（IB-72）ので、`config/ci.rb` の Setup のほかの工程を同じコマンドで 1 つずつ流した。
+
+```sh
+bundle exec rspec <完了条件の 1 つ目のコマンド>      # 47 examples, 0 failures
+bundle exec rspec <完了条件の 2 つ目のコマンド>      # 1512 examples, 0 failures
+bin/check-schema-compat                              # 落とす変更なし（足したのは省いてよい引数・フィールド・型だけ）
+COVERAGE=1 bundle exec rspec                         # 2752 examples, 0 failures（2 分 9 秒）
+BASE_REF=origin/main bin/check-branch-coverage       # 一覧は空
+bin/check-open-items --due M39                       # 終了コード 0
+bundle exec rspec --tag concurrency                  # 2 回続けて 61 examples, 0 failures
+```
+
+rubocop・packwerk・brakeman・bundler-audit・`bin/check-structure`・`bin/check-alerts`・`bin/check-commit-refs` も通った。分岐の網羅率の警告は 0 件で、example を足した件数も 0 件である。
+
+行列の spec の時間（手元、`bundle exec rspec <ファイル>` を 2 回ずつ、`dc2a367`）は、`graphql_matrix_spec.rb` が 577 examples で 9.11 秒・9.40 秒、`table_matrix_spec.rb` が 804 examples で 7.46 秒・7.36 秒である。M38 の記録（491 examples、7.99 秒・7.37 秒）より入口の行列が 86 examples と約 1.5 秒増えた。2 ファイルを合わせて約 17 秒で、IB-50 の調べ直す条件（合わせて 30 秒を超える）には当たらない。
+
+### 残件の処理
+
+引当先が M39 の行は、着手の前と PR の前に台帳を読み、OI-12 だけだった。`supplier.item(id:)` と `viewer.tenant` を足して閉じた（`8f63a4d`）。OI-07・OI-78 の作者の判断（サーバーで並べ替えと絞り込み、件数）はこの PR で反映し、OI-144（並べ替えの列を一覧の表の列に限る）は既定のまま進めた（引当先は M33）。実装で決めたことは OI-153〜OI-157 に judgment で積み、違和感は IB-73〜IB-78 に積んだ。件数とページを同じ relation から引く形は、`Page.of` が relation を 1 つだけ受け取ることで守っており、IB-68 の候補と関わる。

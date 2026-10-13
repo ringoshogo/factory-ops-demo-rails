@@ -2,8 +2,14 @@ module Sales
   # 受注側が自社の品目カタログを読み書きする（docs/architecture/graphql-schema.md「読み取りの一覧」「mutation の一覧」）。
   # 品目の値の単価は、今日の単価を item_prices から引く（docs/adr/006 決定 5）
   module Catalog
-    def self.items(actor, first:, after:)
-      Page.of(Scope.call(actor, :own), first:, after:) { |items| to_values(actor, items) }
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）
+    ORDER_COLUMNS = { code: [ Item.arel_table[:code], :string ], name: [ Item.arel_table[:name], :string ] }.freeze
+
+    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。filter の keyword で品目コードか品目名を検索する
+    def self.items(actor, first:, after:, order_by: nil, filter: {})
+      Page.of(searched(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |items|
+        to_values(actor, items)
+      end
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
@@ -93,6 +99,19 @@ module Sales
       OperationResult.success(to_values(actor, [ item ]).first)
     end
 
+    # keyword の前後の空白（全角の空白を含む）を除き、品目コードか品目名に含む品目に、大文字と小文字を区別せずに絞る。
+    # % と _ はワイルドカードにせず、文字として探す。空の keyword は絞らない
+    def self.searched(relation, keyword: nil)
+      keyword = keyword.to_s.gsub(/\A[[:space:]]+|[[:space:]]+\z/, "")
+      return relation if keyword.empty?
+
+      # sanitize_sql_like は % と _ と \ の前に \ を置く。ESCAPE を明示して DB の既定のエスケープ文字に頼らず、
+      # case_sensitive: false で PostgreSQL の ILIKE にする（Arel::Predications#matches、activerecord 8.1）
+      pattern = "%#{Item.sanitize_sql_like(keyword)}%"
+      code, name = %i[code name].map { Item.arel_table[_1] }
+      relation.where(code.matches(pattern, "\\", false).or(name.matches(pattern, "\\", false)))
+    end
+
     # 今日の単価は品目の一覧に対して 1 回で引く
     def self.to_values(actor, items)
       items = items.to_a
@@ -101,6 +120,6 @@ module Sales
         ItemValue.new(**item.slice(*(ItemValue.members - [ :unit_price ]).map(&:to_s)).symbolize_keys, unit_price: prices.fetch(item.id))
       end
     end
-    private_class_method :to_values
+    private_class_method :searched, :to_values
   end
 end

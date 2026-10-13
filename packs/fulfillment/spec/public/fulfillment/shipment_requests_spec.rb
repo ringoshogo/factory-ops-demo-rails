@@ -51,4 +51,31 @@ RSpec.describe Fulfillment::ShipmentRequests do
       expect(later.id).not_to be_in(due_within.map(&:id))
     end
   end
+
+  # 一覧の並べ替え（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe ".list" do
+    def list_ids(first: 2, **options)
+      Tenancy.with_tenant(supplier.id) do
+        ids = []
+        after = nil
+        loop do
+          page = described_class.list(actor, first:, after:, **options)
+          ids.concat(page.values.map(&:id))
+          break [ ids, page.total_count ] unless page.has_next_page
+
+          after = page.cursors.last
+        end
+      end
+    end
+
+    it "出荷期限と ID の組で並べ、期限の無い出荷依頼を向きによらず最後に置く。件数は他社の出荷依頼を数えない" do
+      a, b, c, d = [ nil, 3, 3, 1 ].map { request(_1) }
+      request(1, tenant: other)
+
+      expect(list_ids(order_by: { field: :due_date, direction: :asc })).to eq([ [ d, b, c, a ].map(&:id), 4 ])
+      expect(list_ids(order_by: { field: :due_date, direction: :desc })).to eq([ [ c, b, d, a ].map(&:id), 4 ])
+      # 対照：並べ替えを省くと、作った順の新しいものから
+      expect(list_ids).to eq([ [ d, c, b, a ].map(&:id), 4 ])
+    end
+  end
 end

@@ -123,6 +123,39 @@ RSpec.describe "カタログの GraphQL", type: :request do
 
       expect(graphql_body("{ supplier { items(after: \"x\") { nodes { id } } } }")["errors"].map { _1["message"] }).to eq([ "Invalid cursor" ])
     end
+
+    it "orderBy の列と向きで並べ、そのカーソルで続きを返し、件数を返す。向きを変えたカーソルはトップレベルのエラーにする" do
+      login_as(supplier_member)
+      query = <<~GRAPHQL
+        query($after: String, $direction: OrderDirection!) {
+          supplier { items(first: 1, after: $after, orderBy: { field: CODE, direction: $direction }) { totalCount nodes { code } pageInfo { endCursor } } }
+        }
+      GRAPHQL
+
+      first = graphql_body(query, direction: "ASC").dig("data", "supplier", "items")
+      expect(first.slice("totalCount", "nodes")).to eq("totalCount" => 2, "nodes" => [ { "code" => "A-1" } ])
+      after = first.dig("pageInfo", "endCursor")
+      expect(graphql_body(query, direction: "ASC", after:).dig("data", "supplier", "items", "nodes")).to eq([ { "code" => "B-1" } ])
+      expect(graphql_body(query, direction: "DESC", after:)["errors"].map { _1["message"] }).to eq([ "Invalid cursor" ])
+    end
+
+    it "keyword は 100 文字ちょうどを受け付け、101 文字はトップレベルのエラーにする" do
+      login_as(supplier_member)
+      query = "query($keyword: String) { supplier { items(filter: { keyword: $keyword }) { totalCount } } }"
+
+      expect(graphql_body(query, keyword: "あ" * 100)).to eq("data" => { "supplier" => { "items" => { "totalCount" => 0 } } })
+      expect(graphql_body(query, keyword: "あ" * 101)["errors"].map { _1["message"] }).to eq([ "keyword is too long (maximum is 100)" ])
+    end
+  end
+
+  # 見えない ID は S1（spec/scenarios/tenant_boundary_spec.rb）と入口の行列が確かめる
+  describe "supplier.item" do
+    it "自社の品目を ID で 1 件返す" do
+      login_as(supplier_member)
+
+      expect(graphql_body("query($id: ID!) { supplier { item(id: $id) { code } } }", id: unpublished.id).dig("data", "supplier", "item"))
+        .to eq("code" => "A-1")
+    end
   end
 
   # 同じコードの更新・公開の状態・入力の誤りの分岐は Sales::Catalog の spec が確かめる

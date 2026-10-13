@@ -2,8 +2,19 @@ module Sales
   # 受注側が自社の受注を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
   # 状況と引当数量は、在庫の Inventory::Allocation から受注明細 ID ごとの引当数量をまとめて得て導出する
   module SalesOrders
-    def self.list(actor, first:, after:)
-      Page.of(Scope.sales_orders(actor, :own), first:, after:) { |orders| to_values(actor, orders) }
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。伝票番号は桁をそろえた文字列なので、文字列の順が番号の順になる
+    ORDER_COLUMNS = {
+      order_no: [ SalesOrder.arel_table[:order_no], :string ],
+      order_date: [ SalesOrder.arel_table[:order_date], :date ],
+      due_date: [ SalesOrder.arel_table[:due_date], :date ]
+    }.freeze
+
+    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
+    # filter は得意先と、両端を含む受注日の範囲で絞る
+    def self.list(actor, first:, after:, order_by: nil, filter: {})
+      Page.of(filtered(Scope.sales_orders(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |orders|
+        to_values(actor, orders)
+      end
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
@@ -36,6 +47,13 @@ module Sales
       SalesOrderStatus::ALL.index_with { counts.fetch(_1, 0) }
     end
 
+    def self.filtered(relation, customer_tenant_id: nil, order_date_from: nil, order_date_to: nil)
+      relation = relation.where(customer_tenant_id:) if customer_tenant_id
+      relation = relation.where(order_date: order_date_from..) if order_date_from
+      relation = relation.where(order_date: ..order_date_to) if order_date_to
+      relation
+    end
+
     def self.to_values(actor, orders)
       orders = orders.to_a
       lines = SalesOrderLine.where(sales_order_id: orders.map(&:id)).to_a
@@ -54,6 +72,6 @@ module Sales
       SalesOrderLineValue.new(**line.slice(*(SalesOrderLineValue.members - [ :allocated_quantity ]).map(&:to_s)).symbolize_keys,
         allocated_quantity: allocated.fetch(line.id))
     end
-    private_class_method :to_values, :to_line_value
+    private_class_method :filtered, :to_values, :to_line_value
   end
 end

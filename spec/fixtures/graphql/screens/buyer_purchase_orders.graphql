@@ -1,6 +1,7 @@
-query BuyerPurchaseOrders($first: Int, $after: String) {
+query BuyerPurchaseOrders($first: Int, $after: String, $orderBy: PurchaseOrderOrder, $filter: PurchaseOrderFilter) {
   buyer {
-    purchaseOrders(first: $first, after: $after) {
+    purchaseOrders(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+      totalCount
       nodes {
         id
         orderNo

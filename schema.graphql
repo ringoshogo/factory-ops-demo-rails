@@ -78,6 +78,11 @@ type AuditLogConnection {
   """
   nodes: [AuditLog]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -146,6 +151,11 @@ type BillableItemConnection {
   """
   nodes: [BillableItem]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -174,7 +184,7 @@ type BillingTerm {
 
 type BuyerView {
   purchaseOrder(id: ID!): PurchaseOrder
-  purchaseOrders(after: String, first: Int): PurchaseOrderConnection!
+  purchaseOrders(after: String, filter: PurchaseOrderFilter, first: Int, orderBy: PurchaseOrderOrder): PurchaseOrderConnection!
   receivedInvoice(id: ID!): ReceivedInvoice
   receivedInvoices(after: String, first: Int): ReceivedInvoiceConnection!
   supplier(supplierTenantId: ID!): SupplierPartnership
@@ -394,6 +404,11 @@ type ImportConnection {
   """
   nodes: [Import]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -449,6 +464,11 @@ type ImportRowErrorConnection {
   """
   nodes: [ImportRowError]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -572,6 +592,11 @@ type InvoiceConnection {
   """
   nodes: [Invoice]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -660,6 +685,11 @@ type ItemConnection {
   """
   nodes: [Item]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -675,6 +705,30 @@ type ItemEdge {
   The item at the end of the edge.
   """
   node: Item
+}
+
+input ItemFilter {
+  """
+  前後の空白を除いて、品目コードか品目名に含む品目に絞る。大文字と小文字を区別せず、% と _ は文字として扱う。空なら絞らない。100 文字まで
+  """
+  keyword: String
+}
+
+input ItemOrder {
+  direction: OrderDirection!
+  field: ItemOrderField!
+}
+
+enum ItemOrderField {
+  """
+  品目コード
+  """
+  CODE
+
+  """
+  品目名
+  """
+  NAME
 }
 
 """
@@ -843,6 +897,18 @@ type Mutation {
   ): WithdrawPermissionPayload!
 }
 
+enum OrderDirection {
+  """
+  昇順
+  """
+  ASC
+
+  """
+  降順
+  """
+  DESC
+}
+
 """
 Information about pagination in a connection.
 """
@@ -889,6 +955,11 @@ type PartMappingConnection {
   """
   nodes: [PartMapping]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1013,6 +1084,11 @@ type PublishedCatalogItemConnection {
   """
   nodes: [PublishedCatalogItem]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1065,6 +1141,11 @@ type PurchaseOrderConnection {
   """
   nodes: [PurchaseOrder]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1080,6 +1161,12 @@ type PurchaseOrderEdge {
   The item at the end of the edge.
   """
   node: PurchaseOrder
+}
+
+input PurchaseOrderFilter {
+  orderDateFrom: ISO8601Date
+  orderDateTo: ISO8601Date
+  supplierTenantId: ID
 }
 
 type PurchaseOrderLine {
@@ -1103,6 +1190,28 @@ input PurchaseOrderLineInput {
   """
   partNumber: String!
   quantity: Int!
+}
+
+input PurchaseOrderOrder {
+  direction: OrderDirection!
+  field: PurchaseOrderOrderField!
+}
+
+enum PurchaseOrderOrderField {
+  """
+  希望納期
+  """
+  DESIRED_DELIVERY_ON
+
+  """
+  発注日
+  """
+  ORDER_DATE
+
+  """
+  発注番号
+  """
+  ORDER_NO
 }
 
 enum PurchaseOrderStatus {
@@ -1194,6 +1303,11 @@ type ReceivedInvoiceConnection {
   """
   nodes: [ReceivedInvoice]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1321,6 +1435,11 @@ type SalesOrderConnection {
   """
   nodes: [SalesOrder]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1338,6 +1457,12 @@ type SalesOrderEdge {
   node: SalesOrder
 }
 
+input SalesOrderFilter {
+  customerTenantId: ID
+  orderDateFrom: ISO8601Date
+  orderDateTo: ISO8601Date
+}
+
 type SalesOrderLine {
   allocatedQuantity: Int!
   customerPartNumber: String!
@@ -1351,6 +1476,28 @@ type SalesOrderLine {
   quantity: Int!
   taxRatePercent: Int
   unitPrice: BigInt
+}
+
+input SalesOrderOrder {
+  direction: OrderDirection!
+  field: SalesOrderOrderField!
+}
+
+enum SalesOrderOrderField {
+  """
+  希望納期
+  """
+  DUE_DATE
+
+  """
+  受注日
+  """
+  ORDER_DATE
+
+  """
+  受注番号
+  """
+  ORDER_NO
 }
 
 enum SalesOrderStatus {
@@ -1504,6 +1651,11 @@ type ShipmentRequestConnection {
   """
   nodes: [ShipmentRequest]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1526,6 +1678,18 @@ type ShipmentRequestLine {
   item: Item!
   quantity: Int!
   salesOrderLine: SalesOrderLine!
+}
+
+input ShipmentRequestOrder {
+  direction: OrderDirection!
+  field: ShipmentRequestOrderField!
+}
+
+enum ShipmentRequestOrderField {
+  """
+  出荷期限
+  """
+  DUE_DATE
 }
 
 enum ShipmentRequestStatus {
@@ -1611,6 +1775,11 @@ type StockConnection {
   """
   nodes: [Stock]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1626,6 +1795,13 @@ type StockEdge {
   The item at the end of the edge.
   """
   node: Stock
+}
+
+input StockFilter {
+  """
+  真なら、ダッシュボードの stocksBelowSafetyStock と同じ条件（有効在庫が安全在庫より小さい）で絞る。偽か省けば絞らない
+  """
+  belowSafetyStock: Boolean
 }
 
 type StockMovement {
@@ -1651,6 +1827,11 @@ type StockMovementConnection {
   """
   nodes: [StockMovement]
   pageInfo: PageInfo!
+
+  """
+  絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える
+  """
+  totalCount: Int!
 }
 
 """
@@ -1666,6 +1847,13 @@ type StockMovementEdge {
   The item at the end of the edge.
   """
   node: StockMovement
+}
+
+input StockMovementFilter {
+  """
+  移動の種類。空の配列は 0 件を返し、省くか null なら絞らない
+  """
+  types: [StockMovementType!]
 }
 
 enum StockMovementType {
@@ -1693,6 +1881,33 @@ enum StockMovementType {
   出荷
   """
   SHIP
+}
+
+input StockOrder {
+  direction: OrderDirection!
+  field: StockOrderField!
+}
+
+enum StockOrderField {
+  """
+  引当
+  """
+  ALLOCATED
+
+  """
+  有効在庫（現在庫 - 引当）
+  """
+  AVAILABLE
+
+  """
+  現在庫
+  """
+  ON_HAND
+
+  """
+  安全在庫
+  """
+  SAFETY_STOCK
 }
 
 type SupplierDashboard {
@@ -1752,14 +1967,15 @@ type SupplierView {
   imports(after: String, first: Int): ImportConnection!
   invoice(id: ID!): Invoice
   invoices(after: String, first: Int): InvoiceConnection!
-  items(after: String, first: Int): ItemConnection!
+  item(id: ID!): Item
+  items(after: String, filter: ItemFilter, first: Int, orderBy: ItemOrder): ItemConnection!
   partMappings(after: String, customerTenantId: ID, first: Int): PartMappingConnection!
   partnerships: [Partnership!]!
   salesOrder(id: ID!): SalesOrder
-  salesOrders(after: String, first: Int): SalesOrderConnection!
-  shipmentRequests(after: String, first: Int): ShipmentRequestConnection!
-  stockMovements(after: String, first: Int, itemId: ID): StockMovementConnection!
-  stocks(after: String, first: Int): StockConnection!
+  salesOrders(after: String, filter: SalesOrderFilter, first: Int, orderBy: SalesOrderOrder): SalesOrderConnection!
+  shipmentRequests(after: String, first: Int, orderBy: ShipmentRequestOrder): ShipmentRequestConnection!
+  stockMovements(after: String, filter: StockMovementFilter, first: Int, itemId: ID): StockMovementConnection!
+  stocks(after: String, filter: StockFilter, first: Int, orderBy: StockOrder): StockConnection!
 }
 
 type Tenant {
@@ -1813,6 +2029,11 @@ type Viewer {
   """
   partnerCode: String
   role: String!
+
+  """
+  自社テナント。取引用コードは含めない（partnerCode が admin にだけ返す）
+  """
+  tenant: Tenant!
 }
 
 """

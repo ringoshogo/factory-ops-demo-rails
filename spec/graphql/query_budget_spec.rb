@@ -12,34 +12,35 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
 
   # 操作名ごとに、操作者・応答の data から一覧の親までの道・入れ子ごとの各親の件数・入れ子を引くソースの公開 API とメソッドを持つ。
   # 単数の入れ子の件数は 1 で、値があることを表す。sources に無い入れ子は、親の値に含まれていてソースを通らない。
-  # variables は first のほかに渡す変数を返すメソッドの名前。1 つの問い合わせが一覧を 2 つ持つなら、2 つ目からを
+  # variables は first のほかに渡す変数を返すメソッドの名前。並べ替えと絞り込みを持つ一覧は、それを渡す。
+  # 1 つの問い合わせが一覧を 2 つ持つなら、2 つ目からを
   # more_lists に { list:, nested: } で書き、seed は 1 回でどの一覧にも親を 1 件ずつ足す
   SCREENS = {
     "SupplierSalesOrders" => {
-      actor: :supplier_member, list: %w[supplier salesOrders nodes],
+      actor: :supplier_member, list: %w[supplier salesOrders nodes], variables: :sales_orders_variables,
       nested: { "customer" => 1, "lines" => 2, "shipmentRequest" => 1 },
       sources: { "customer" => [ Partnerships::Directory, :tenants ], "lines" => [ Sales::SalesOrders, :lines_for ],
                  "shipmentRequest" => [ Fulfillment::ShipmentRequests, :for_sales_orders ] }
     },
     "SupplierShipmentRequests" => {
-      actor: :supplier_member, list: %w[supplier shipmentRequests nodes],
+      actor: :supplier_member, list: %w[supplier shipmentRequests nodes], variables: :shipment_requests_variables,
       nested: { "salesOrder" => 1, "customer" => 1, "lines" => 2, "instruction" => 1 },
       sources: { "salesOrder" => [ Sales::SalesOrders, :by_ids ], "customer" => [ Partnerships::Directory, :tenants ],
                  "lines" => [ Fulfillment::ShipmentRequests, :lines_for ],
                  "instruction" => [ Fulfillment::ShipmentRequests, :instructions_for ] }
     },
     "SupplierItems" => {
-      actor: :supplier_member, list: %w[supplier items nodes],
+      actor: :supplier_member, list: %w[supplier items nodes], variables: :items_variables,
       nested: { "stock" => 1 },
       sources: { "stock" => [ Inventory::Stocks, :for_items ] }
     },
     "SupplierStocks" => {
-      actor: :supplier_member, list: %w[supplier stocks nodes],
+      actor: :supplier_member, list: %w[supplier stocks nodes], variables: :stocks_variables,
       nested: { "item" => 1 },
       sources: { "item" => [ Sales::Catalog, :items_for ] }
     },
     "SupplierStockMovements" => {
-      actor: :supplier_member, list: %w[supplier stockMovements nodes],
+      actor: :supplier_member, list: %w[supplier stockMovements nodes], variables: :stock_movements_variables,
       nested: { "item" => 1 },
       sources: { "item" => [ Sales::Catalog, :items_for ] }
     },
@@ -71,7 +72,7 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
       sources: {}
     },
     "BuyerPurchaseOrders" => {
-      actor: :buyer_member, list: %w[buyer purchaseOrders nodes],
+      actor: :buyer_member, list: %w[buyer purchaseOrders nodes], variables: :purchase_orders_variables,
       nested: { "supplier" => 1, "lines" => 2, "inboundShipments" => 1, "supplierShipments" => 1 },
       sources: { "supplier" => [ Partnerships::Directory, :tenants ], "lines" => [ Purchasing::PurchaseOrders, :lines_for ],
                  "inboundShipments" => [ Purchasing::PurchaseOrders, :inbound_shipments_for ],
@@ -125,7 +126,10 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item).id) }
   end
 
-  def seed_supplier_stocks = seed_supplier_items
+  # 安全在庫の絞り込みに当てるため、安全在庫を割った在庫にする
+  def seed_supplier_stocks
+    as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item).id, on_hand: 0, safety_stock: 1) }
+  end
 
   def seed_supplier_stock_movements
     as_supplier { FactoryBot.create(:stock_movement, item_id: seed_supplier_items.item_id) }
@@ -166,6 +170,23 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
   end
 
   def catalog_variables = { "supplierTenantId" => @catalog_supplier.id }
+
+  # 絞り込みの値は、seed が作る親がすべて当たるものにする。当たらないと 0 件どうしを比べ、N+1 を件数に出せない。
+  # 受注と発注は、入れ子の取引先のソースの負例のために親ごとに別の取引先を作るので、取引先では絞らず受注日・発注日で絞る
+  def order_date_filter = { "orderDateFrom" => (Date.current - 1).iso8601, "orderDateTo" => Date.current.iso8601 }
+
+  def sales_orders_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "DESC" }, "filter" => order_date_filter }
+
+  def purchase_orders_variables = { "orderBy" => { "field" => "ORDER_NO", "direction" => "ASC" }, "filter" => order_date_filter }
+
+  def shipment_requests_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "ASC" } }
+
+  def stocks_variables = { "orderBy" => { "field" => "AVAILABLE", "direction" => "ASC" }, "filter" => { "belowSafetyStock" => true } }
+
+  def stock_movements_variables = { "filter" => { "types" => [ "INBOUND" ] } }
+
+  # factory の品目コードは ITEM-<連番>
+  def items_variables = { "orderBy" => { "field" => "CODE", "direction" => "DESC" }, "filter" => { "keyword" => "item-" } }
 
   # 経路 3 の出荷は発注ごとに 1 件（分納しない。data-model.md の shipments.shipment_request_id 一意）
   def seed_buyer_purchase_orders
@@ -297,6 +318,37 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     expect(self.class.nested_connections("{ orders { edges { node { items { edges { node { code } } } } } } }", schema))
       .to eq([ "orders.edges.node.items" ])
     expect(self.class.nested_connections("{ orders { nodes { code: __typename } } }", schema)).to eq([])
+  end
+
+  # 画面の問い合わせの一覧の選択を totalCount だけにした問い合わせ。path は操作から一覧のコネクションまでの道
+  def self.total_count_only(text, path)
+    narrow = lambda do |node, rest|
+      next node.merge(selections: [ GraphQL::Language::Nodes::Field.new(name: "totalCount") ]) if rest.empty?
+
+      node.merge(selections: node.selections.map { _1.name == rest.first ? narrow.call(_1, rest.drop(1)) : _1 })
+    end
+    document = GraphQL.parse(text)
+    document.merge(definitions: [ narrow.call(document.definitions.sole, path) ]).to_query_string
+  end
+
+  # 件数だけを選ぶ問い合わせ（画面のタブの件数）は、ページの行も値への写しも読まず、件数の 1 つの SQL だけを流す
+  # （docs/architecture/graphql-schema.md「ページングと N+1」）。親を 2 件にし、件数が数えた値であることも確かめる。
+  # 視点の直下の一覧に限る。取引先を選んでから引くカタログは、取引先を選ぶ SQL が加わる
+  SCREENS.select { |_name, screen| screen[:list].size == 3 && screen[:list].last == "nodes" }.each do |name, screen|
+    it "#{name} の一覧の totalCount だけを選ぶと、SQL は件数の 1 つだけ" do
+      seed(name, 2)
+      view, field = screen[:list]
+      text = self.class.total_count_only(SCREENS_DIR.join("#{name.underscore}.graphql").read, [ view, field ])
+      variables = { "first" => PAGE_SIZE, **(screen[:variables] ? send(screen[:variables]) : {}) }
+      actor = actor_for(screen[:actor])
+      result = nil
+      count = Tenancy.with_tenant(actor.tenant_id) do
+        Current.set(actor:) { count_sql { result = FactoryOpsSchema.execute(text, variables:, context: { current_user: actor }) } }
+      end
+
+      expect(result.to_h).to eq("data" => { view => { field => { "totalCount" => 2 } } })
+      expect(count).to eq(1)
+    end
   end
 
   SCREENS.each do |name, screen|

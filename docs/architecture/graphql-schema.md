@@ -87,7 +87,7 @@ type BuyerView {
   suppliers: [SupplierPartnership!]!
   "経路 2 の取引先を 1 社選ぶ。取引関係の無い相手・失効した相手・存在しないテナントは区別せず null"
   supplier(supplierTenantId: ID!): SupplierPartnership
-  purchaseOrders(first: Int, after: String): PurchaseOrderConnection!
+  purchaseOrders(first: Int, after: String, orderBy: PurchaseOrderOrder, filter: PurchaseOrderFilter): PurchaseOrderConnection!
   purchaseOrder(id: ID!): PurchaseOrder
   receivedInvoices(first: Int, after: String): ReceivedInvoiceConnection!
   receivedInvoice(id: ID!): ReceivedInvoice
@@ -208,13 +208,14 @@ type ReceivedInvoiceLine {
 ```graphql
 type SupplierView {
   partnerships: [Partnership!]!
-  items(first: Int, after: String): ItemConnection!
+  items(first: Int, after: String, orderBy: ItemOrder, filter: ItemFilter): ItemConnection!
+  item(id: ID!): Item
   partMappings(customerTenantId: ID, first: Int, after: String): PartMappingConnection!
-  salesOrders(first: Int, after: String): SalesOrderConnection!
+  salesOrders(first: Int, after: String, orderBy: SalesOrderOrder, filter: SalesOrderFilter): SalesOrderConnection!
   salesOrder(id: ID!): SalesOrder
-  stocks(first: Int, after: String): StockConnection!
-  stockMovements(itemId: ID, first: Int, after: String): StockMovementConnection!
-  shipmentRequests(first: Int, after: String): ShipmentRequestConnection!
+  stocks(first: Int, after: String, orderBy: StockOrder, filter: StockFilter): StockConnection!
+  stockMovements(itemId: ID, first: Int, after: String, filter: StockMovementFilter): StockMovementConnection!
+  shipmentRequests(first: Int, after: String, orderBy: ShipmentRequestOrder): ShipmentRequestConnection!
   billingTerms: [BillingTerm!]!
   "未請求の請求対象明細"
   billableItems(customerTenantId: ID, first: Int, after: String): BillableItemConnection!
@@ -411,7 +412,7 @@ ID は、主キーの UUIDv7 をそのまま `ID` 型で返す。型名を埋め
 
 汎用の `node(id:)`・`nodes(ids:)` は置かない。相手テナントは、イベントで渡った出荷実績 ID・請求書 ID を持っているので、型を問わない入口は相手のデータへ届く穴になる（`../adr/004-GraphQLの型を視点ごとに分けnodeを置かない.md`）。スキーマの `object_from_id` は実装せず、呼ばれたら例外にする。これで、graphql-ruby の `node` フィールドと、引数の `loads:`（ID から自動でオブジェクトを読み込む機能）の両方が使えなくなる。
 
-ID でレコードを引く入口は、視点の下に型ごとに置く（`buyer.purchaseOrder(id:)`・`supplier.salesOrder(id:)` など）。mutation も ID を引数で受け取り、公開 API に操作者と一緒に渡す。どちらも公開 API の scope を通るので、見えない ID は存在しない ID と同じ扱いになる。クエリでは `null` を返し、mutation ではユーザーエラー `NOT_FOUND` を返す。存在するが見えない、という区別を返さない。
+ID でレコードを引く入口は、視点の下に型ごとに置く（`buyer.purchaseOrder(id:)`・`supplier.salesOrder(id:)`・`supplier.item(id:)` など）。mutation も ID を引数で受け取り、公開 API に操作者と一緒に渡す。どちらも公開 API の scope を通るので、見えない ID は存在しない ID と同じ扱いになる。クエリでは `null` を返し、mutation ではユーザーエラー `NOT_FOUND` を返す。存在するが見えない、という区別を返さない。
 
 相手テナントを指す引数も、テナントが存在するかどうかを明かさない。
 
@@ -501,7 +502,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 
 規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。公開 API は役割を確かめないので、GraphQL を通らない入口（ジョブ・rake タスク・シード）から `admin` に限る操作の公開 API を呼ぶ人は、呼ぶ前に同じ規則を評価する。取り込みのジョブが、チャンクごとに `Imports::ImportPolicy#start?` を評価し直してから単価の改定の予約を呼ぶのがその形である。シードと E2E の世界を作る `DemoWorld` は、`admin` に限る操作を `DemoWorld::Operations`（`lib/demo_world/operations.rb`）からだけ呼ぶ。`Operations` は mutation の基底クラスと同じく、対象を公開 API で引いてから同じ規則を操作者で評価し、拒否なら公開 API を呼ばずに例外で止まる。`spec/scenarios/demo_world_spec.rb` が、`member` の操作者ではどの操作も止まることと、`DemoWorld` が `Operations` の外から `admin` に限る公開 API を呼ばないことを確かめる。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、読み取りと mutation のすべての行に許す役割を持ち、全ペルソナの `member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`admin` に限る読み取りは、`member` に返す結果を行ごとに持ち（`viewer.auditLogs` は `FORBIDDEN`、`viewer.partnerCode` は `null`）、どのペルソナの `member` にもその結果になることを確かめる。`member` に許す行は、どのペルソナの `member` にも `admin` と同じ結果になり、mutation が値を返さないときは何も書かないことを確かめる。役割を問わない読み取りの規則に誤って `user.admin?` を足すと、`member` の結果が `FORBIDDEN` に変わって落ちる。入力で許す役割が変わる mutation は、行列に変種ごとの行（`Mutation.startImport` と `Mutation.startImport#stocks`）を持つ。
 
-自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。
+自社テナントの取引用コード（`viewer.partnerCode`）も、`admin` にだけ返し、`member` には空を返す。取引用コードを知った者は、受注側として取引関係を結べるからである。自社テナントの ID と名前は、`viewer.tenant`（`Tenant`）が役割を問わずに返す。`Tenant` は取引用コードを持たないので、`viewer.tenant` から取引用コードは届かない。
 
 ### 監査ログ
 
@@ -558,6 +559,8 @@ mutation の実装者は、認可の宣言と並べて、監査の宣言を必�
 ```graphql
 type Viewer {
   # ユーザーのフィールドに加えて
+  "自社テナント。取引用コードは含めない"
+  tenant: Tenant!
   "admin だけ。新しいものから"
   auditLogs(first: Int, after: String, filter: AuditLogFilter): AuditLogConnection!
 }
@@ -604,7 +607,7 @@ type AuditLog {
 | フィールド | 呼ぶ公開 API |
 |---|---|
 | `supplier.partnerships` | `Partnerships::Directory.for_supplier` |
-| `supplier.items`・`Item` | `Sales::Catalog` |
+| `supplier.items`・`supplier.item`・`Item` | `Sales::Catalog` |
 | `supplier.partMappings` | `Sales::PartMappings` |
 | `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
 | `SalesOrder.cancellationReviews` | `Sales::CancellationReviews.for_sales_orders`（受注 ID をまとめて渡す） |
@@ -622,6 +625,7 @@ type AuditLog {
 | `Item.unitPrice`・`Item.prices` | `Sales::Catalog`（今日の単価を `Sales::ItemPrices.price_at` で引いて品目の値に載せる）・`Sales::ItemPrices.history` |
 | `BillableItem.priceExplanation` | `Sales::ItemPrices.explain`（ルートパッケージが、請求対象明細の受注明細 ID と請求書の発行時刻を渡す） |
 | `supplier.imports`・`supplier.import`・`Import.rowErrors` | `Imports::Runs` |
+| `viewer.tenant` | `Partnerships::Directory.tenants` |
 | `viewer.auditLogs` | `Platform::AuditLogs`（「監査ログ」） |
 | `AuditLog.actorName`・`AuditLog.counterparty` | `Partnerships::Directory.user_names`・`tenants` |
 
@@ -650,7 +654,7 @@ type SalesOrderStatusCount {
 集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。今日は、ほかの業務の日付と同じく、アプリの時刻帯（`config.time_zone` の `Asia/Tokyo`）の `Date.current` で決める（`context-map.md`「検収と請求の流れ」）。リゾルバに時刻帯を直に書かない。
 
 - **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。
-- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。在庫は品目コードを持たないので、品目コードでの並べ替えと 100 件の上限は、ルートパッケージが `Sales::Catalog.items_for` で引いたコードで行う。
+- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。条件は在庫のモデルの scope（`Inventory::Stock.below_safety_stock`）の 1 つにあり、在庫の一覧の `filter: { belowSafetyStock: true }` も同じ scope で絞る。集計の数と、そこから飛ぶ一覧の件数を合わせるためである。在庫は品目コードを持たないので、品目コードでの並べ替えと 100 件の上限は、ルートパッケージが `Sales::Catalog.items_for` で引いたコードで行う。
 - **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。
 - **未請求の合計**：税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税額を出さず、税抜きの合計だけを返す。
 
@@ -794,9 +798,63 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）と、監査ログの絞り込み（`AuditLogFilter`）だけである。画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え・絞り込みの引数と件数（`totalCount`）は、M39・M40 で入力型と一緒に足す（OI-07）。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。M39 までは、件数の総数（`totalCount`）を返さない。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つで、一覧の表（同じパッケージの表）の列か、その列から計算する値に限る。取引先の名前や品目のコードのような別のコンテキストの値で並べるには、相手の表を結合するか相手の公開 API から並びを受け取ることになり、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである（OI-144）。状況での絞り込みは、導出した値なので、列の絞り込みとは別に足す（`../implementation-plan.md` M40）。
 
-公開 API は、操作者・件数・カーソルを受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無を `Page`（`packs/platform`）で返す。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
+| 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） |
+|---|---|---|
+| `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE` | `customerTenantId`、`orderDateFrom`・`orderDateTo` |
+| `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON` | `supplierTenantId`、`orderDateFrom`・`orderDateTo` |
+| `supplier.shipmentRequests` | `DUE_DATE` | — |
+| `supplier.stocks` | `ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock` |
+| `supplier.stockMovements` | — | `types` |
+| `supplier.items` | `CODE`・`NAME` | `keyword` |
+
+- 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。
+- 受注日と発注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す。
+- `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ scope で絞る（「読み取りの一覧」の安全在庫）。偽か省いたときは絞らない。
+- `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。
+- `types` の空の配列は 0 件を返し、省くか `null` なら絞らない。
+
+```graphql
+"どのコネクションも、nodes・edges・pageInfo と並べて持つ"
+type SalesOrderConnection {
+  nodes: [SalesOrder!]!
+  edges: [SalesOrderEdge!]!
+  pageInfo: PageInfo!
+  "絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える"
+  totalCount: Int!
+}
+
+"どちらの向きでも、並べ替えの列の値の無い行を最後に置く"
+enum OrderDirection { ASC DESC }
+
+input SalesOrderOrder { field: SalesOrderOrderField!, direction: OrderDirection! }
+enum SalesOrderOrderField { ORDER_NO ORDER_DATE DUE_DATE }
+input SalesOrderFilter { customerTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date }
+
+input PurchaseOrderOrder { field: PurchaseOrderOrderField!, direction: OrderDirection! }
+enum PurchaseOrderOrderField { ORDER_NO ORDER_DATE DESIRED_DELIVERY_ON }
+input PurchaseOrderFilter { supplierTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date }
+
+input ShipmentRequestOrder { field: ShipmentRequestOrderField!, direction: OrderDirection! }
+enum ShipmentRequestOrderField { DUE_DATE }
+
+input StockOrder { field: StockOrderField!, direction: OrderDirection! }
+enum StockOrderField { ON_HAND ALLOCATED AVAILABLE SAFETY_STOCK }
+input StockFilter { belowSafetyStock: Boolean }
+
+input StockMovementFilter { types: [StockMovementType!] }
+
+input ItemOrder { field: ItemOrderField!, direction: OrderDirection! }
+enum ItemOrderField { CODE NAME }
+input ItemFilter { keyword: String }
+```
+
+`orderBy` を省いた一覧は、主キーの UUIDv7 で作成順の新しいものから並べ、主キーをカーソルにする。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。取り込みの失敗した行（`Import.rowErrors`）は、行番号の昇順に並べ、行番号をカーソルにする。
+
+`orderBy` を渡した一覧は「列の値、主キー」の組で並べ、主キーを列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、向きによらず最後に置く。そのため、カーソルの値が空なら後ろは「値が空で主キーが後のもの」だけになり、値があれば後ろは「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、並べ替えの列の名前・向き・列の値・主キーを JSON にして Base64 で包んだ不透明な文字列である。形の誤ったカーソルと、別の並べ替え（列か向きの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
+
+公開 API は、操作者・件数・カーソル（並べ替えと絞り込みを持つ一覧は、それも）を受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無・件数を `Page`（`packs/platform`）で返す。公開 API は scope と絞り込みを掛けた relation を `Page.of` に渡し、`Page` はページの行と件数を同じ relation から引く。ページと件数で scope と絞り込みを別々に書くと、片方だけ scope が抜けても単体の spec では気づきにくいからである。`Page` は、行と件数を初めて読まれたときに引く。`totalCount` だけを選ぶ問い合わせ（画面のタブの件数）は、件数の 1 つの SQL だけを流し、ページの行も値への写しも読まない。`Page` を作った `Tenancy.with_tenant` の外で行か件数を読むと、`Tenancy::MissingTenant` にする。テナントの設定の無い接続では、RLS が行を隠して空のページを黙って返すからである。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
 
 明細・権限付与・取引関係・請求条件のように、親ごとの件数が小さい集まりは、コネクションにせずリストで返す。
 
@@ -818,7 +876,7 @@ N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 
-クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの要素（`nodes`・`edges` の下）の複雑度を `first` の値の倍で数え、`first` を省くと 1 ページの件数の既定（20）の倍で数える。`pageInfo` のような要素でない選択は掛け算にしない（graphql 2.6.11 の [`GraphQL::Schema::Field#calculate_complexity`](https://github.com/rmosolgo/graphql-ruby/blob/v2.6.11/lib/graphql/schema/field.rb)。`first` が無いときの件数は `default_page_size || query.schema.default_page_size || max_page_size || query.schema.default_max_page_size`）。リストで返す明細と一覧は掛け算にならない。そのため、リストの要素の下のコネクション（`buyer.suppliers` の下の `catalog`）は複雑度では止まらず、画面の問い合わせの規則（一覧の中にコネクションを入れ子にしない）が止める。
+クエリには次の上限を設ける（`decisions.md` 6 章）。複雑度の上限は、1 ページの一覧を画面に必要なフィールドで取る問い合わせが通り、コネクションを入れ子にして件数が掛け算になる問い合わせが通らない値にする。graphql-ruby は、コネクションの要素（`nodes`・`edges` の下）の複雑度を `first` の値の倍で数え、`first` を省くと 1 ページの件数の既定（20）の倍で数える。`pageInfo`・`totalCount` のような要素でない選択は掛け算にしない（graphql 2.6.11 の [`GraphQL::Schema::Field#calculate_complexity`](https://github.com/rmosolgo/graphql-ruby/blob/v2.6.11/lib/graphql/schema/field.rb)。`first` が無いときの件数は `default_page_size || query.schema.default_page_size || max_page_size || query.schema.default_max_page_size`）。リストで返す明細と一覧は掛け算にならない。そのため、リストの要素の下のコネクション（`buyer.suppliers` の下の `catalog`）は複雑度では止まらず、画面の問い合わせの規則（一覧の中にコネクションを入れ子にしない）が止める。
 
 | 上限 | 値 | 決め方 |
 |---|---|---|
