@@ -68,7 +68,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作り、公開の配置（M41）で終える。フロントエンドの前に、画面が一覧を 1 ページずつ読むための API（M39・M40）を足す。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。 M42・M43 は、サイクル 05 の改善の探索（`plans/cycle-05/improvement.md`）で採用した変更で、節を M41 の後に置き、サイクル 06 で実装する。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -113,6 +113,8 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M40 | 状況での絞り込み | 状況を 1 つの SQL の式で導出し、一覧の表示・絞り込み・件数とダッシュボードの件数が同じ式を読む |
 | M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる |
 | M41 | Raspberry Pi の k3s への配置 | マニフェストが Secret を持たず、所有ロールの資格情報とデモの世界の許可が、作り直しとマイグレーションの工程にだけ渡る |
+| M42 | CI のランナーの版を固定し、公開の配置のイメージを arm64 で組み立てる | CI のジョブが OS の版を明示し、テストの落ちた commit のイメージが GHCR に置かれない |
+| M43 | 公開の配置の作り直しを、本番の環境でだけ動かす | 本番の環境の外では、作り直しが DB にも Kubernetes の API にも触れずに止まる |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -142,6 +144,8 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M40 | M39 | 状況の絞り込みを、M39 の入力型・件数・ページの土台に足す |
 | M33 | M32・M40 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る |
 | M41 | M33 | 画面のイメージを `frontend/` から作り、作り直しで M32 の `DemoWorld` を流す |
+| M42 | M41 | `images` のジョブと `image_inputs` の条件が M41 とサイクル 05 の再発防止にある |
+| M43 | M41 | 作り直しの `DemoReset` が M41 にある |
 
 ---
 
@@ -1921,10 +1925,69 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 **作者が実機で確かめること**：作るもの 9 の手順 1〜6。結果（測ったメモリ、公開の URL で確かめたこと、流用元のデモが動くこと）を、作者が PR か台帳に書く。実機の確かめは M41 の完了条件に入れず、作者が結果を書くまで公開しない。
 
-**サイクル 05 の逸脱検査から送った確かめ**：CI の `images` のジョブの、キャッシュが効いた後の時間を測り、`adr/009`「見直す条件」の 20 分を超えるかを確かめる（OI-180）。超えれば、改善の探索の裁定（IB-93）に従ってランナーを移す。
+**サイクル 05 の逸脱検査から送った確かめ**：CI の `images` のジョブの、キャッシュが効いた後の時間を測った（OI-180）。5 分で `adr/009`「見直す条件」の 20 分を下回ったが、キャッシュが空のときは超えるので、ランナーを移すことは M42 で行う。
+
+**公開に伴う作者の判断**：public にしたリポジトリに利用条件のファイル（LICENSE）を置くかを、作者が決める（OI-181）。置くなら、作者が決めた条件のファイルを根に置く。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
 **実装する文書の節**：`adr/009`、`config/database.yml` の `production`、`architecture/data-model.md`「RLS」・「監査ログ（`platform`）」、`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」・「監査ログ」・「1 回のリクエストがたどる道」、`guides/config.md`「ジョブ」・「環境ごとの設定」、流用元の `deploy/README.md`・`deploy/preflight.sh`・`deploy/daily-reset-cronjob.yaml`・`docs/plans/cycle-01-t34-release-runbook.md`
 
 **文書に残すこと**：本番の環境でデモの世界を作れる条件（`DEMO_WORLD_ENABLED`）を、いま「本番の環境では呼べない」「本番の環境では動かない」と書く 3 か所に書く（`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の操作者のいない入口の段落と「監査ログ」の `DemoWorld` の段落、`architecture/data-model.md`「RLS」の `Partnerships::Onboarding`）。`architecture/data-model.md`「監査ログ（`platform`）」に、公開の配置は保存期間と「表を落とす DDL はレビューで止める」の対象外で、毎日 DB ごと作り直すことと、そう言える条件を書く。`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1 に、`SHARED_DEMO_ACCOUNTS` のときのログアウトを書く。`guides/config.md`「環境ごとの設定」に `DEMO_WORLD_ENABLED`・`NOTIFICATIONS_PROVIDER`・`SHARED_DEMO_ACCOUNTS`・`DB_HOST`・`assume_ssl` を、「ジョブ」に配置では async のモードで動かすことと接続プールの決め方を書く。`README.md` の「構成」に `deploy/` を足し、`deploy/README.md` を指す。実機で測った値で作るもの 8 を直したら、`adr/009` の「確認した事項」に書く。
+
+## M42 CI のランナーの版を固定し、公開の配置のイメージを arm64 で組み立てる
+
+**目的**：CI のジョブは `ubuntu-latest` で動き、GitHub が日程で OS の版を上げる（2026-10-19 から Ubuntu 26 へ移る）。版を上げる時期を、CI が通ることを確かめてから人が決める形にする（IB-94）。`images` のジョブは、amd64 のランナーの QEMU の上で arm64 のイメージを組み立て、キャッシュが空のときに 20 分を超えた（PR #60 で 25 分 59 秒、main への push で 35 分 21 秒）。キャッシュが効けば 5 分で終わるが、Dependabot が `Gemfile.lock` と `package-lock.json` を毎週更新するたびにキャッシュが外れる。`adr/009`「見直す条件」が決めた移り先の arm64 の GitHub ホストのランナーへ移す（IB-93）。あわせて、main への push で、テストの落ちた commit のイメージを GHCR に置かない（IB-91）。サイクル 05 の改善の探索で採用した（`plans/cycle-05/improvement.md`）。業務の振る舞いは変えない。
+
+**作るもの**
+
+1. 版の固定：amd64 のジョブの `runs-on` を `ubuntu-24.04` にし、`images` を `ubuntu-24.04-arm` にする。`ubuntu-latest` が残っていないことを `spec/platform/ci_checks_spec.rb` が確かめる。版を上げる時期（GitHub のランナーの廃止の告知か、Ubuntu の保守の終わりの前）を `guides/config.md`「CI の工程」に書く
+2. arm64 の組み立て：`images` から QEMU のステップを外し、arm64 のランナーで 2 つのイメージを組み立て、Rails のイメージを本番の環境で起こす。マニフェストの照合（kubectl と kubeconform）は、arm64 のランナーに kubectl があるかを確かめてから、amd64 のジョブに分けるか、arm64 の kubeconform を sha256 で確かめて取るかを決める
+3. 公開の条件：main への push の GHCR への push を、`test`・`e2e`・`frontend` が成功したときだけ行う。いまの `images` の `if:` は `!cancelled()` を含むので、`needs` を足すだけでは失敗のときも走る。成功を `needs.<ジョブ>.result == 'success'` で明示する。PR の `images` をテストの終わりまで待たせないために、組み立てと確かめは `images` に残し、push だけを別のジョブに分けるかを、ワークフロー全体の時間で決める
+
+**判断**：push を別のジョブに分けるか、`images` 全体をテストの後に並べるか
+
+- **既定の推奨**：push だけを別のジョブ（`needs: [images, test, e2e, frontend]`、main への push だけ）に分け、同じキャッシュから組み立て直して push する。PR の待ち時間は `images` とテストの長い方のままになる
+- **比べた案**：`images` 全体に `needs` を足す案は、ジョブが 1 つで済むが、PR でも `images` がテストを待ち、ワークフロー全体の時間が和になる
+- **裏返る条件**：キャッシュが当たっても、組み立て直しに数分かかる → `images` 全体をテストの後に並べる
+- **撤退コスト**：小さい。ワークフローの変更だけで、イメージの中身は変えない
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/platform/ci_checks_spec.rb   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、`ci_checks_spec.rb` の、`runs-on` に `ubuntu-latest` が残っていないことを確かめる example である。ほかに、PR の CI で次を確かめ、証跡に時間を書く。
+
+- `images` のジョブが、キャッシュが空のとき（キャッシュの `scope` を一時に変えて空にする）とキャッシュが効くときの両方で、10 分の内に終わる（`guides/config.md`「CI の工程」の予算）。ワークフロー全体の時間も書く
+- push の条件は、テストのジョブが失敗・skip・cancel のときに push のステップが走らないことを、式と、手で落とした実行の記録で確かめる（`guides/config.md`「CI の工程」の配線を変えたときの手順）
+
+**範囲外**：`image_inputs` の条件を外すこと（予算に収まった値を見て、別に決める）、2 つのイメージの push を 1 つの単位にすること、GHCR のパッケージの可視性
+
+**実装する文書の節**：`adr/009` 決定 6・「見直す条件」、`guides/config.md`「CI の工程」、`guides/bin.md`「CI が使うもの」
+
+**文書に残すこと**：`adr/009` の QEMU の記述と「見直す条件」を、arm64 のランナーで組み立てる形と、移った後の見直す条件に書き直す。`guides/config.md`「CI の工程」の `images` の時間の記述と、版を上げる時期を書く。`guides/bin.md`「CI が使うもの」の表を、分けたジョブに合わせる。
+
+## M43 公開の配置の作り直しを、本番の環境でだけ動かす
+
+**目的**：毎日の作り直し（`bin/rails demo:reset`、`lib/demo_reset.rb`）は、入口で `Platform::DemoWorldGate.open?` を見る。門は本番の環境の外では常に開くので、手元で流すと、所有ロールで保守用の DB に接続してロックを取り、ServiceAccount の場所が無いことの例外で止まる。開発の DB を消す前に止まるのは、処理の順に頼っている（IB-90）。作り直しの入口に、本番の環境であることも求める。サイクル 05 の改善の探索で採用した（`plans/cycle-05/improvement.md`）。シードの公開 API の門（`DemoWorldGate`）の意味は変えない。
+
+**作るもの**
+
+1. `DemoReset#run` の入口で、本番の環境で `DEMO_WORLD_ENABLED=1` のときだけ進み、それ以外は `Refused` で止まる。条件は `lib/tasks/demo.rake` ではなく `DemoReset#run` に置く（spec が `DemoReset` を直に呼ぶ）。`Refused` の文言を 2 つの条件に合わせる
+2. `spec/platform/demo_reset_spec.rb` の、作り直し・排他・戻しの example の準備に、本番の環境と `DEMO_WORLD_ENABLED=1` を与える
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/platform/demo_reset_spec.rb   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、開発とテストの環境では `DEMO_WORLD_ENABLED=1` でも `Refused` で止まり、ロック（`PG.connect`）・ServiceAccount・Kubernetes の API・DB のタスク・シードのどれも呼ばないことを確かめる example である。本番の環境の条件だけを外すと、この example が落ちることを壊して落ちる記録に残す。
+
+**範囲外**：`DemoWorldGate` の意味、`bin/rails demo:reset` を `guides/bin.md`「bin/rails で流す運用のタスク」に載せること
+
+**実装する文書の節**：`adr/009` 決定 3・4、`deploy/README.md`「作り直しが途中で止まったとき」
+
+**文書に残すこと**：`lib/demo_reset.rb` の冒頭のコメントの 1 を、本番の環境の条件に合わせる。

@@ -62,6 +62,7 @@
 | 検査 | RED | 壊し方と落ちたもの |
 |---|---|---|
 | `spec/platform/logging_spec.rb`「TEST_DATABASE で別の DB を使うプロセスの Rails.event は、log/events.log ではなく DB ごとのファイルに書く」 | 直す前に流し、子のプロセスの `spec.other_process` の行が `log/events.log` に入って、期待の不一致で落ちた（1 example, 1 failure） | `Platform::Logging.events_log_path` が `TEST_DATABASE` を見ずに `log/events.log` を返す形にすると、同じ example が落ちる（28 examples, 1 failure）。戻すと 28 examples, 0 failures |
+| `spec/platform/logging_spec.rb`「ログのファイルは、TEST_DATABASE があれば DB の名前を含み、無いか空なら log/events.log になる」 | 上の子のプロセスの example は計測の外で分岐を通るので、`bin/ci` の分岐の網羅率の警告が `logging.rb` の分岐を 1 件挙げた。この example を足して警告を消した（実装の後に書いたので、壊して落ちる記録で RED に代える） | 空の文字列を DB の名前として扱う形（`nil?` で分ける）にすると落ちる（29 examples, 1 failure）。戻すと 29 examples, 0 failures |
 | `spec/platform/ci_checks_spec.rb`「image_inputs の pattern は、Dockerfile・無視の一覧・Dockerfile が名指しで写すファイル・マニフェストに当たる」 | `pattern` を直す前に流し、`got: ["frontend/Dockerfile.dockerignore"]` で落ちた | `pattern` から `db/seeds/demo_accounts.json` を外すとそのファイルが、`deploy/` を外すとマニフェストが `got:` に並んで落ちる。戻すと 4 examples, 0 failures |
 | `bin/setup` の、応える DB をそのまま使う形 | 直す前に worktree で `bin/setup --skip-server` を流し、`Bind for 0.0.0.0:5433 failed: port is already allocated` で落ちた | 直した後は同じ worktree で終了コード 0 で、compose のコンテナを作らない。直す前の形が上の RED である。直す前の形が作ったコンテナとボリュームとネットワーク（worktree の名前のもの）は消した |
 | `image_inputs` の判定 | — | サイクル 05 の各マイルストーンの範囲に同じ `pattern` を当てると、M38（`99936b6..ef7f95d`）・M39・M40 は当たらず `images` を流さない。M33（`971e6dc..488645a`）と M41（`488645a..7bbe572`）は `.dockerignore`・`config/database.yml`・ワークフローに当たって流す |

@@ -1,9 +1,12 @@
 require "rails_helper"
 require "open3"
+require_relative "../support/env_helpers"
 
 # ログの出口と書式（docs/guides/config.md「ログ」）。テストの環境は、本番と同じ Platform::Logging.configure! を通る。
 # 1 行のログは 1 件の JSON で、イベントごとに決めた項目だけを書き、値を文字列のまま書くフレームワークの経路を通さない
 RSpec.describe "ログの出口と書式" do
+  include EnvHelpers
+
   describe "構成" do
     it "文脈のミドルウェアは要求 ID を付けた後にあり、要求の開始と例外を文字列で書くミドルウェアは無い" do
       middlewares = Rails.application.middleware.map(&:klass)
@@ -109,6 +112,14 @@ RSpec.describe "ログの出口と書式" do
       expect(File.read(separate).lines.map { JSON.parse(_1)["name"] }).to eq(%w[spec.other_process])
     ensure
       FileUtils.rm_f(separate)
+    end
+
+    it "ログのファイルは、TEST_DATABASE があれば DB の名前を含み、無いか空なら log/events.log になる" do
+      root = Pathname("/app")
+
+      with_env("TEST_DATABASE" => "factory_ops_e2e") { expect(Platform::Logging.events_log_path(root)).to eq(Pathname("/app/log/events.factory_ops_e2e.log")) }
+      with_env("TEST_DATABASE" => "") { expect(Platform::Logging.events_log_path(root)).to eq(Pathname("/app/log/events.log")) }
+      with_env("TEST_DATABASE" => nil) { expect(Platform::Logging.events_log_path(root)).to eq(Pathname("/app/log/events.log")) }
     end
 
     it "ジョブの引数をログに書かない" do
