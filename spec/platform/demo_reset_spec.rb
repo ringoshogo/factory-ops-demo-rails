@@ -75,10 +75,11 @@ RSpec.describe DemoReset do
   def production! = allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
 
   describe "入口" do
-    it "本番の環境で DEMO_WORLD_ENABLED が無いか 1 でなければ、Kubernetes の API も DB のタスクも呼ばずに例外で止まる" do
+    it "本番の環境で DEMO_WORLD_ENABLED が無いか 1 でなければ、ロックも Kubernetes の API も DB のタスクも触らずに例外で止まる" do
       production!
       stub_all_scales
       stub_pods([])
+      allow(PG).to receive(:connect).and_call_original
       expect(DemoReset::Kubernetes).not_to receive(:from_service_account)
 
       [ nil, "true" ].each do |value|
@@ -87,16 +88,48 @@ RSpec.describe DemoReset do
         end
       end
 
+      expect(PG).not_to have_received(:connect)
       expect(a_request(:any, /kubernetes\.test/)).not_to have_been_made
       expect(events).to eq([])
 
-      # 対照：同じ準備で 1 を渡せば、API とコマンドを呼ぶ
+      # 対照：同じ準備で 1 を渡せば、ロックを取り、API とコマンドを呼ぶ
       with_env("DEMO_WORLD_ENABLED" => "1") { reset }
+      expect(PG).to have_received(:connect)
       expect(events).to include(:database, [ :scale, "web", 0 ])
+    end
+
+    # 門（Platform::DemoWorldGate）は本番の環境の外では常に開くので、作り直しは本番の環境であることを自分で求める
+    it "開発とテストの環境では、DEMO_WORLD_ENABLED=1 でも、ロックも Kubernetes の API も DB のタスクもシードも触らずに止まる" do
+      stub_all_scales
+      stub_pods([])
+      allow(PG).to receive(:connect).and_call_original
+      allow(DemoReset::Kubernetes).to receive(:from_service_account).and_call_original
+
+      with_env("DEMO_WORLD_ENABLED" => "1") do
+        %w[development test].each do |environment|
+          allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new(environment))
+          expect { described_class.new(out:, run_command:).run }.to raise_error(DemoReset::Refused, /本番の環境/)
+        end
+      end
+
+      expect(PG).not_to have_received(:connect)
+      expect(DemoReset::Kubernetes).not_to have_received(:from_service_account)
+      expect(a_request(:any, /kubernetes\.test/)).not_to have_been_made
+      expect(events).to eq([])
+
+      # 対照：同じ準備で本番の環境なら、ロックを取り、API とコマンドとシードを呼ぶ
+      production!
+      with_env("DEMO_WORLD_ENABLED" => "1") { reset }
+      expect(PG).to have_received(:connect)
+      expect(events).to include([ :scale, "web", 0 ], :database, a_collection_starting_with(:demo_world))
     end
   end
 
   describe "作り直し" do
+    # 入口を通る条件を与える。与えないと、どの example も入口で止まり、確かめたい振る舞いに届かない
+    before { production! }
+    around { |example| with_env("DEMO_WORLD_ENABLED" => "1") { example.run } }
+
     it "Web とワーカーを 0 にし、Pod の一覧が空になってから DB を作り直して世界を作り、1 に戻す" do
       stub_all_scales
       stub_pods(%w[web-1 jobs-1], %w[jobs-1], [])
@@ -263,7 +296,7 @@ RSpec.describe DemoReset do
       expect(described_class).to receive(:run)
       Rake::Task["demo:reset"].execute
 
-      allow(described_class).to receive(:run).and_raise(DemoReset::Refused, "本番の環境では DEMO_WORLD_ENABLED=1 のときだけ動く")
+      allow(described_class).to receive(:run).and_raise(DemoReset::Refused, "本番の環境で DEMO_WORLD_ENABLED=1 を渡したときだけ動く")
       expect { Rake::Task["demo:reset"].execute }.to raise_error(SystemExit).and output(/DEMO_WORLD_ENABLED/).to_stderr
     end
   end

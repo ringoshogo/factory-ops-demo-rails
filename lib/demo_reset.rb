@@ -1,5 +1,5 @@
 # 公開の配置の毎日の作り直し（docs/adr/009 決定 3、deploy/README.md）。CronJob の daily-reset が bin/rails demo:reset で流す。
-# 1. 本番の環境で DEMO_WORLD_ENABLED=1 が無ければ、Kubernetes の API も DB も触らずに止まる（Platform::DemoWorldGate）。
+# 1. 本番の環境で DEMO_WORLD_ENABLED=1 を渡したときのほかは、ロックも Kubernetes の API も DB も触らずに止まる。
 #    ほかの作り直し（定時のものと手で流したもの）が動いていれば、何もせずに止まる
 # 2. web と jobs の Deployment を 0 にし、両方の Pod のうち終わっていないものが無くなるまで待つ。Deployment の status.replicas は
 #    終了中の Pod を数えないので、Pod の一覧で待つ。消す DB に接続を残さず、DemoWorld がその場で流すジョブを bin/jobs に同時に流させない
@@ -35,7 +35,9 @@ class DemoReset
   end
 
   def run
-    raise Refused, "本番の環境では DEMO_WORLD_ENABLED=1 のときだけ動く" unless Platform::DemoWorldGate.open?
+    # 門（Platform::DemoWorldGate）は、シードと spec のために本番の環境の外では常に開く。作り直しは DB を消すので、
+    # 本番の環境であることも入口で求め、手元で流したときに開発の DB を消す手前で止まるのを、後ろの処理の順に頼らない
+    raise Refused, "本番の環境で DEMO_WORLD_ENABLED=1 を渡したときだけ動く" unless Rails.env.production? && Platform::DemoWorldGate.open?
 
     with_lock do
       @kubernetes ||= Kubernetes.from_service_account

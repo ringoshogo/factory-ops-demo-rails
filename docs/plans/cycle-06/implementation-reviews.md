@@ -135,3 +135,80 @@ bin/check-open-items --due M42                      # 通る
 ### 残件の処理
 
 引当先が M42 の行は、着手の前と PR の前に台帳を読んだ。どちらの時点でも、OI-184 のほかには無かった。M42 で決めたことは OI-184 に judgment で積んだ。実装レビューの違和感は IB-100 に、CI で 1 回だけ起きた `next build` の落ち方は IB-101 に積んだ。
+
+## M43 公開の配置の作り直しを、本番の環境でだけ動かす
+
+`m43-reset-production-only`（base は `main`、PR #75）。M42 の先端 `4dc35fb` から切った。M42 の PR #74 が未マージなので、PR の差分には M42 も含まれる。M43 の差分は `4dc35fb..` である。
+
+Codex も Claude も Go だった。どちらの系統も、`4dc35fb..8881593` の diff を `8881593` の版で読んだ。Claude は `spec/platform/demo_reset_spec.rb` を手元で流し、`DemoReset#run` を差し替える変異を読み込ませて検出力を確かめた。Codex はファイルを変えず、`git grep` で入口の条件の記述を数えた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Low 1） | 出していない（High が無かった） |
+| Claude | Go（Low 1） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘（R1） |
+| 参照の維持 | 指摘（R1） | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Low | Claude | R1：本番の環境で `DEMO_WORLD_ENABLED` が無いか 1 でないときの example が、ロック（`PG.connect`）を見ていない。門の条件だけを `with_lock` のブロックの先頭へ動かす変異が、16 examples, 0 failures で通った | その example に、止まったときに `PG.connect` を呼ばないことと、対照で呼ぶことを足した。同じ変異で、その example が `expected: 0 times ... received: 1 time` で落ちることを確かめた（下の壊して落ちる記録の最後の行） | この節を載せた commit |
+| Low | Codex | R1：`handoff.md` が、レビューの結果を証跡に書く前の版で「M42・M43 は実装レビューまで終え」と書いている | この節を載せた commit で、レビューの結果と `handoff.md` の PR の番号を同時に書いた | この節を載せた commit |
+
+違和感は次のように扱った。
+
+- Claude 1：`adr/009` 決定 3 と M41 の作るもの 3 の最後の段落が「DB を消す工程は `DEMO_WORLD_ENABLED` を渡した作り直しだけ」と書き、M43 で直した `data-model.md` と言い方がそろわない → どちらも公開の配置（本番の環境）の中のことを言う文で誤りではないので直さず、IB-102 に積んだ
+- Claude 2：`handoff.md` の記述がレビューに先行している → Codex R1 と同じ。上の表のとおり直した
+- Codex：なし
+
+### 実装の記録
+
+#### 計画との違い
+
+- `Refused` の文言は、2 つの条件を 1 つの文（「本番の環境で DEMO_WORLD_ENABLED=1 を渡したときだけ動く」）にまとめ、どちらの条件で止まったかを分けなかった。どちらも、作者が本番の環境の作り直しの Job に変数を渡し直せば済む同じ対処になるからである。
+- 「文書に残すこと」の `lib/demo_reset.rb` の冒頭のコメントのほかに、入口の条件を前の形（`DEMO_WORLD_ENABLED=1` だけ）で書いていた 2 か所を直した。`architecture/data-model.md`「監査ログ」の公開の配置の例外と、`implementation-plan.md` の M41 の作るもの 3 の手順 1 である。`adr/009` 決定 3・4 と `deploy/README.md` は、本番の環境の配置の振る舞いだけを書いており、変わらない。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：`spec/platform/demo_reset_spec.rb` の「入口」に、開発とテストの環境で `DEMO_WORLD_ENABLED=1` を渡しても止まることを確かめる example を足し、`lib/demo_reset.rb` を変える前に流した（16 examples, 1 failure）。いまの門は開発とテストで開くので、入口を通って所有ロールでロックを取り、ServiceAccount の場所が無いことで落ちた（IB-90 の、処理の順に頼った止まり方そのもの）。
+
+```
+expected DemoReset::Refused with message matching /本番の環境/, got #<KeyError: key not found: "KUBERNETES_SERVICE_HOST">
+  # ./lib/demo_reset/kubernetes.rb:17:in 'DemoReset::Kubernetes.from_service_account'
+  # ./lib/demo_reset.rb:41:in 'block in DemoReset#run'
+  # ./lib/demo_reset.rb:65:in 'DemoReset#with_lock'
+```
+
+この example は、開発とテストの環境の両方で止まることと、`PG.connect`・`Kubernetes.from_service_account`・Kubernetes の API・DB のタスク・シード（`DemoWorld.build`）のどれも呼ばないことを確かめ、同じ準備で本番の環境に替えれば、ロックを取り、API・DB のタスク・シードを呼ぶことを対照にする。
+
+実装を 1 か所ずつ壊し、`bundle exec rspec spec/platform/demo_reset_spec.rb` を流して、ファイルの複製から戻した。
+
+| 壊したもの | 落ちたもの |
+|---|---|
+| 入口の条件から、本番の環境の条件（`Rails.env.production? &&`）だけを外す | 1（上の example。RED と同じ `KeyError`） |
+| 入口の条件から、門（`Platform::DemoWorldGate.open?`）だけを外す | 1（「入口」の、本番の環境で `DEMO_WORLD_ENABLED` が無いか 1 でなければ止まる example） |
+| spec の「作り直し」の準備から、本番の環境（`production!`）を外す | 11（「作り直し」のすべて） |
+| spec の「作り直し」の準備から、`DEMO_WORLD_ENABLED=1` を外す | 11（同上） |
+| 入口を本番の環境の条件だけにし、門の条件を `with_lock` のブロックの先頭（`from_service_account` の前）へ動かす（実装レビューの Claude R1 の直しの後） | 1（「入口」の、本番の環境で `DEMO_WORLD_ENABLED` が無いか 1 でなければ止まる example。`expect(PG).not_to have_received(:connect)` が `received: 1 time`） |
+
+3・4 行目は、計画の作るもの 2 の準備が、どれも入口を通るために要ることを確かめた。最後の行は、門で止まるときもロックを取らないことを確かめた。
+
+#### 手元で流したもの
+
+`4dc35fb` に M43 の変更を載せた作業ツリーで、Ruby 3.4.11・PostgreSQL 18 で流した。
+
+```sh
+bundle exec rspec spec/platform/demo_reset_spec.rb   # 16 examples, 0 failures
+bin/ci                                               # すべての工程が通った。rspec は 2863 examples, 0 failures
+```
+
+分岐の網羅率の警告は 0 件だった。実装レビューの直しの後も、この節と台帳の直しを載せた作業ツリーで `bin/ci` を流し、すべての工程が通った（rspec は 2863 examples, 0 failures、分岐の網羅率の警告 0 件）。
+
+### 残件の処理
+
+引当先が M43 の行は、着手の前に台帳を読んだ時点で無かった（`bin/check-open-items --due M43` が通る）。IB-90 は計画どおり `DemoReset#run` に条件を置き、`DemoWorldGate` の意味は変えていない。実装レビューの違和感は IB-102 に積んだ。
