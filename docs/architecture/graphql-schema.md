@@ -794,7 +794,7 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）と、監査ログの絞り込み（`AuditLogFilter`）だけである。画面の検索のための絞り込みの引数は、画面（`../implementation-plan.md` M33）で検索の項目が決まってから、入力型と一緒に足す。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。件数の総数（`totalCount`）は返さない。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）と、監査ログの絞り込み（`AuditLogFilter`）だけである。画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え・絞り込みの引数と件数（`totalCount`）は、M39・M40 で入力型と一緒に足す（OI-07）。カーソルは主キーの UUIDv7 で、作成順の新しいものから並べる。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。M39 までは、件数の総数（`totalCount`）を返さない。
 
 公開 API は、操作者・件数・カーソルを受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無を `Page`（`packs/platform`）で返す。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
 
