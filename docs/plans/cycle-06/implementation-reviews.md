@@ -217,6 +217,37 @@ bin/ci                                               # すべての工程が通�
 
 `m44-dependency-updates`（base は `main`、PR #76）。M43 の先端 `56b529f` から切った。M42 の PR #74 と M43 の PR #75 が未マージなので、PR の差分には M42・M43 も含まれる。M44 の差分は `56b529f..` である。
 
+Codex も Claude も Go だった。どちらの系統も、`56b529f..afdf731` の diff を `afdf731` の版で読んだ。Claude は `spec/platform/dependency_updates_spec.rb` と `npm ls --all` を手元で流し、`package-lock.json` の版と GitHub の Dependabot の文書を照らした。Codex は Rails を起こさずに commit のファイルを読んで spec の条件を評価する形で、組のまとまりへの変異を確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Medium 2・Low 1） | 出していない（High が無かった） |
+| Claude | Go（Medium 1・Low 2） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R2） | 指摘（R2・R3） |
+| 参照の維持 | 指摘（R3） | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | R1：完了条件の「M44 の PR の CI で `frontend`・`e2e`・`images` が通る」が、証跡で確かめられていない。action の主版の上げは手元で確かめる手段が無い | PR #76 の `afdf731` の run（38366504749）で、`frontend`・`e2e`・`images` を含むすべてのジョブが通った（`publish` は PR では skip）ことを「手元で流したもの」の後に書いた。`actions/upload-artifact` は `e2e` が落ちたときにだけ動くので、この run では動いていない | この節を載せた commit |
+| Medium | Codex | R2：組のまとまりの example が `patterns` と位置だけを見る。組のまとまりに `update-types: [minor, patch]` を足すか、`exclude-patterns` に `react-dom` を足しても 10 examples, 0 failures で通る | 組のまとまりが `update-types` を持たず、組の依存を `exclude-patterns` に持たないことを同じ example に足した。2 つの変異で落ちることを壊して落ちる記録に足した。`guides/config.md` と計画の作るもの 4 にも書いた | `7f92b56` |
+| Low | Claude | R2：Codex R2 の前者と同じ | 同上 | `7f92b56` |
+| Low | Claude | R3：`@types/node` の範囲は先頭の数だけで主版を読み、`>=22` のような範囲も通る | `@types/node` の範囲が 1 つの主版に収まる形（`^`・`~` か記号なし）であることを足した。`>=22` で落ちることを壊して落ちる記録に足した。計画の作るもの 3 と `guides/config.md` にも書いた | `7f92b56` |
+| Low | Codex | R3：`guides/config.md` の Dependabot の段落が、外部の仕様（最初に当たったまとまりに入る、`update-types` を省くと主版も含む）に依存するのに原文を引いていない | GitHub の文書（Dependabot options reference の `groups` と `ignore`）へのリンクを足した | `7f92b56` |
+
+違和感は次のように扱った。
+
+- Claude 1：`ci.yml` の `actions/setup-node` の直前のコメントが `engines` の値（`^22.12`）を書き写していて、spec の外で古くなりうる → 値を外し、正本を指す形にした（`7f92b56`）
+- Claude 2：IB-104 の「`npm ci` は peer の範囲の外を ERESOLVE で止めないことがあり」が、計画の完了条件の段落（組の依存の不一致は `npm ci` が止める）と、直接の依存の組と入れ子の依存の違いで読み分けにくい → IB-104 の言い方を、直接の依存の組と入れ子の依存に書き分けた（`7f92b56`）
+- Claude 3：`groups` が `applies-to` を省き、セキュリティの更新はまとめずに 1 本ずつ開くことに `guides/config.md` が触れていない → IB-105 に積んだ
+- Codex 1：CI が `npm ls --all` を流さない → IB-104 と同じで、新しくは積んでいない
+- Codex 2：Codex の確かめは Rails を起こさない形で、通常の spec の実行ではない → 確かめ方の注記で、成果物への観察ではないので、ここに書くだけにした
+
 ### 実装の記録
 
 #### 取り込んだ更新と、取り込まなかった更新
@@ -262,6 +293,9 @@ GREEN の後に 1 か所ずつ壊し、`bundle exec rspec spec/platform/dependen
 | bundler と npm の小版と修正版のまとまりの `update-types` に `major` を足す | 1（`update-types` の example） |
 | npm の組のまとまりを、小版と修正版のまとまりの後ろへ動かす | 1（組のまとまりの位置の example） |
 | `cn` を `exclude-patterns` から外す | 1（0 系の依存の example） |
+| 組のまとまりに `update-types: [ minor, patch ]` を足す（実装レビューの Codex R2 の直しの後） | 1（組のまとまりの example） |
+| 組のまとまりに `exclude-patterns: [ react-dom ]` を足す（同上） | 1（同上） |
+| `@types/node` の範囲を `>=22` にする（実装レビューの Claude R3 の直しの後） | 1（`@types/node` の example） |
 
 `npm ls --all` が組の依存の不一致を捕まえることは、`npm install --legacy-peer-deps --save-exact react-dom@19.3.0` で `react` を 19.2.8 のままにした木で確かめた。`npm ls --all` が `npm error code ELSPROBLEMS` と `npm error invalid: react@19.2.8 ...`（`"^19.3.0" from node_modules/react-dom`）で、終了コード 1 で終わった。`package.json` と `package-lock.json` を戻して `npm ci` を流し直した後は、0 で終わった。
 
@@ -280,6 +314,10 @@ bin/check-commit-refs
 
 分岐の網羅率の警告は 0 件だった。
 
+PR #76 の CI は、`afdf731` の run（38366504749）で、`frontend`・`e2e`・`images`・`test`・`lint`・`scan_ruby`・`manifests`・`image_inputs` が通り、`publish` は PR なので skip された。上げた 4 つの action のうち、`actions/checkout`・`actions/cache`（`lint` の RuboCop のキャッシュ）・`actions/setup-node` はこの run で動いた。`actions/upload-artifact` は `e2e` が落ちたときにだけ動くステップで、この run では動いていない。
+
+実装レビューの直し（`7f92b56`）の後に、`bundle exec rspec spec/platform/dependency_updates_spec.rb spec/platform/ci_checks_spec.rb` と `bin/ci` を流し直した。spec は 18 examples, 0 failures、`bin/ci` はすべての工程が通り、rspec は 2873 examples, 0 failures、分岐の網羅率の警告は 0 件だった。
+
 ### 残件の処理
 
-引当先が M44 の行は、着手の前に台帳を読んだ時点で無かった。OI-163（画面の Node を 22 系にした判断）は、`engines` を `^22.12` にして主版を 1 つに決め、spec で 4 か所をそろえたので、内容は変わらない。IB-99 は計画どおり `typescript` 7 の PR を開いたままにした。実装で積んだのは OI-185・IB-103・IB-104 である。
+引当先が M44 の行は、着手の前に台帳を読んだ時点で無かった。OI-163（画面の Node を 22 系にした判断）は、`engines` を `^22.12` にして主版を 1 つに決め、spec で 4 か所をそろえたので、内容は変わらない。IB-99 は計画どおり `typescript` 7 の PR を開いたままにした。実装で積んだのは OI-185・IB-103・IB-104 で、実装レビューの違和感は IB-105 に積んだ。
