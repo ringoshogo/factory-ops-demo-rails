@@ -12,7 +12,7 @@ web・jobs・frontend  Rails・Solid Queue のワーカー・Next が動く。�
 daily-reset          毎日、web と jobs を 0 にして DB ごと作り直し、シードの世界を作って 1 に戻す
 ```
 
-リポジトリが確かめるのは、マニフェストの規則（`spec/platform/deploy_manifests_spec.rb`）、作り直しの順（`spec/platform/demo_reset_spec.rb`）、イメージが組み立てられて本番の環境を読み込めること（CI の `images` のジョブ）までである。メモリ・CronJob の時刻・Tunnel は実機でしか確かめられないので、作者が「作者の手順」で確かめる。作者が結果を PR か台帳に書くまで、公開しない。
+リポジトリが確かめるのは、マニフェストの規則（`spec/platform/deploy_manifests_spec.rb`）、作り直しの順（`spec/platform/demo_reset_spec.rb`）、イメージが組み立てられて本番の環境を読み込めること（CI の `images` のジョブ）と、テストの通った main の commit のイメージだけが GHCR に置かれること（CI の `publish` のジョブ）までである。メモリ・CronJob の時刻・Tunnel は実機でしか確かめられないので、作者が「作者の手順」で確かめる。作者が結果を PR か台帳に書くまで、公開しない。
 
 ## 置くもの
 
@@ -55,7 +55,7 @@ Secret はリポジトリに置かない。作者が「作者の手順」1 で�
 
 ## 作者の手順
 
-作者は、次の 1〜6 をこの順に行う。コマンドは手元の Mac から `ssh raspi` で Raspberry Pi の `kubectl` を呼ぶ形で書く（流用元と同じ）。`<SHA>` は、CI の `images` のジョブが GHCR に置いた main の commit の SHA である。
+作者は、次の 1〜6 をこの順に行う。コマンドは手元の Mac から `ssh raspi` で Raspberry Pi の `kubectl` を呼ぶ形で書く（流用元と同じ）。`<SHA>` は、CI の `publish` のジョブが GHCR に置いた main の commit の SHA である。
 
 ### 1. 名前空間と Secret を作る
 

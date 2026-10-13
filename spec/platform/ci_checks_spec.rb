@@ -8,8 +8,9 @@ require "yaml"
 RSpec.describe "CI と手元で流す検査" do
   def self.bin_commands(text) = text.scan(%r{(?<![\w/.-])bin/[a-z][a-z-]*}).uniq.sort
 
+  def self.workflow = YAML.load_file(Rails.root.join(".github/workflows/ci.yml"))
+
   def self.workflow_commands
-    workflow = YAML.load_file(Rails.root.join(".github/workflows/ci.yml"))
     bin_commands(workflow.fetch("jobs").values.flat_map { _1.fetch("steps") }.filter_map { _1["run"] }.join("\n"))
   end
 
@@ -43,6 +44,44 @@ RSpec.describe "CI と手元で流す検査" do
       copied.reject { _1 == "." || _1.end_with?("/", "*") }
 
     expect(inputs.uniq.reject { pattern.match?(_1) }).to eq([])
+  end
+
+  # ubuntu-latest は GitHub が日程で OS の版を上げ、CI が通るかを確かめないまま版が変わる（docs/guides/config.md「CI の工程」）。
+  # 版を上げる PR で spec を書き換えずに済むよう、名前は版の形で照らす。公開の配置は arm64 で動くので、
+  # イメージを組み立てる 2 つのジョブだけが arm64 のランナーで動く
+  it "どのジョブの runs-on も版の数字を含み、arm64 のランナーで動くのはイメージを組み立てるジョブだけ" do
+    runners = self.class.workflow.fetch("jobs").transform_values { _1["runs-on"] }
+
+    expect(runners.reject { |_, runner| runner.to_s.match?(/\Aubuntu-\d{2}\.\d{2}(-arm)?\z/) }).to eq({})
+    expect(runners.select { |_, runner| runner.to_s.end_with?("-arm") }.keys.sort).to eq(%w[images publish])
+  end
+
+  # テストの落ちた commit のイメージを GHCR に置かないため、push は全ジョブの成功を待つ publish にだけ置く。
+  # 権限を書かないジョブの権限はリポジトリの設定で決まるので、最上位を読み取りだけにする
+  it "イメージを push するジョブと packages: write を持つジョブは publish だけで、最上位の権限は読み取りだけ" do
+    jobs = self.class.workflow.fetch("jobs")
+    pushes = jobs.select do |_, job|
+      job.fetch("steps").any? { _1["run"].to_s.include?("docker push") || _1.dig("with", "push").to_s == "true" }
+    end
+
+    expect(pushes.keys).to eq(%w[publish])
+    expect(jobs.select { |_, job| job.dig("permissions", "packages") == "write" }.keys).to eq(%w[publish])
+    expect(self.class.workflow["permissions"]).to eq("contents" => "read")
+  end
+
+  # publish の if: は needs の結果だけを見て、ジョブの名前を並べない。needs に無いジョブが落ちても push するので、
+  # 期待するジョブは publish の needs からではなく、ワークフローの jobs から集める。image_inputs は push では skip される
+  it "publish の needs は、image_inputs のほかのすべてのジョブを含む" do
+    jobs = self.class.workflow.fetch("jobs")
+
+    expect(jobs.keys - %w[image_inputs publish] - Array(jobs.dig("publish", "needs"))).to eq([])
+  end
+
+  # publish はジョブの段の if: で needs の skipped を見ないので、push で skip されたジョブは push を止めない
+  # （docs/guides/config.md「CI の工程」）。ジョブの段の if: は、PR でだけ流す image_inputs と、push では必ず流れる
+  # images と、publish 自身にだけ書く
+  it "ジョブの段の if: を持つのは image_inputs・images・publish だけ" do
+    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys.sort).to eq(%w[image_inputs images publish])
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do

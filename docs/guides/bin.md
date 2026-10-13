@@ -66,7 +66,7 @@
 
 ## CI が使うもの
 
-GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、次のジョブで各スクリプトとコマンドを直接呼ぶ。`frontend`・`e2e`・`image_inputs`・`images` は `bin/` の検査を呼ばない。
+GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、次のジョブで各スクリプトとコマンドを直接呼ぶ。`frontend`・`e2e`・`image_inputs`・`manifests`・`images`・`publish` は `bin/` の検査を呼ばない。
 
 | ジョブ | 流すもの |
 |---|---|
@@ -76,7 +76,9 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、次の
 | `frontend` | `npm ci`、`npm run codegen:check`・`lint`・`typecheck`・`test:unit`（README「画面」） |
 | `e2e` | `test` と同じ PostgreSQL 18 とロールの準備、`npx playwright install --with-deps chromium`、`npm run test:e2e`。落ちたら `frontend/test-results/` を残す |
 | `image_inputs` | PR でだけ流れ、PR がイメージに入るものを変えたかを判定する（[config.md「CI の工程」](config.md#ci-の工程)） |
-| `images` | `kubectl kustomize deploy` を kubeconform で照らし、2 つのイメージを arm64 で組み立て、Rails のイメージを本番の環境で起こす。main への push では毎回流れて SHA のタグで GHCR に push し、PR では `image_inputs` が変えたと判定したときだけ流れる |
+| `manifests` | `kubectl kustomize deploy` を kubeconform で照らす。PR と main への push の両方で流れる |
+| `images` | arm64 のランナーで 2 つのイメージを組み立て、Rails のイメージを本番の環境で起こす。GHCR には push しない。main への push では毎回流れ、PR では `image_inputs` が変えたと判定したときだけ流れる |
+| `publish` | main への push で、`image_inputs` のほかのすべてのジョブが成功したときだけ流れ、`images` と同じキャッシュから 2 つのイメージを組み立て直して、SHA のタグで GHCR に push する（[config.md「CI の工程」](config.md#ci-の工程)） |
 
 `test` のジョブは `bin/setup` を流さない。サービスのコンテナには初期化スクリプトを渡せないので、ロールはワークフローが psql で作る。
 
