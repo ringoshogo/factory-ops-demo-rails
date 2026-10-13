@@ -2125,7 +2125,7 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 **公開に伴う作者の判断**：public にしたリポジトリに利用条件のファイル（LICENSE）を置くかを、作者が決める（OI-181）。作者は 2026-10-14 に置かないと決めた。
 
-**残り（サイクル 06）**：M41 は実装レビューまで終え、作者を待つ 6 行と作者の実機の手順だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-13 に OI-145〜OI-149 をどれも既定のままと決め、2026-10-14 に OI-181 も既定のまま（LICENSE を置かない）と決めた。取りまとめ役は、2026-10-13 に Raspberry Pi に SSH で読むだけのコマンドを流して機種とメモリを確かめ（OI-147 の結果の欄）、Pi 4・スワップ無し・SD カードに合わせてプローブの時間切れを明示することにした（OI-182・OI-183）。残るのは、下のプローブの直しと、作者の実機の手順である。「値の差し替え」の行は、答えが来たら次の場所の値だけを替える。
+**残り（サイクル 06）**：M41 は実装レビューまで終え、作者を待つ 6 行と作者の実機の手順だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-13 に OI-145〜OI-149 をどれも既定のままと決め、2026-10-14 に OI-181 も既定のまま（LICENSE を置かない）と決めた。取りまとめ役は、2026-10-13 に Raspberry Pi に SSH で読むだけのコマンドを流して機種とメモリを確かめ（OI-147 の結果の欄）、Pi 4・スワップ無し・SD カードに合わせてプローブの時間切れを明示することにした（OI-182・OI-183）。残るのは、下のプローブの直しと、作者の実機の手順である。表の作者の判断はどれも既定のままと決まり、替える値は無い。
 
 | ID | 種類 | 既定（いまのマニフェスト） | 答えと、替える場所 |
 |---|---|---|---|
@@ -2137,7 +2137,7 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 | OI-181 | 値の差し替え（決まった） | LICENSE を置かない | 既定のまま。替えるものは無い |
 | — | 実機の確かめ | — | 作者が作るもの 9 の手順 1〜6（`deploy/README.md`「作者の手順」）を流し、結果を PR か台帳に書く。M41 の完了条件には入れず、結果が書かれるまで公開しない |
 
-プローブの直し（OI-182）：`deploy/` のすべての readiness・liveness・startup のプローブに `timeoutSeconds: 5` を書く。既定の 1 秒では、Pi 4 で 5 万行の取り込みを流す間に、`frontend` の `/` の描画、`web` の `/up`、`postgres` の `pg_isready` が時間切れになり、liveness が続けて落ちてコンテナが作り直されうるからである。`deploy_manifests_spec.rb` に、すべてのプローブが `timeoutSeconds` を明示することを確かめる example を足す。いまはどのプローブも書いていないので、期待の不一致で落ちる。作者の手順 4 の取り込みの確かめで、Pod の再起動の回数（`kubectl get pods` の `RESTARTS`）も見る。
+プローブの直し（OI-182）：`deploy/` のすべての readiness・liveness・startup のプローブに `timeoutSeconds: 5` を書く。既定の 1 秒では、Pi 4 で 5 万行の取り込みを流す間に、`frontend` の `/` の描画、`web` の `/up`、`postgres` の `pg_isready` が時間切れになり、liveness が続けて落ちてコンテナが作り直されうるからである（Kubernetes の Probe の API は `timeoutSeconds` の既定を 1 秒とする）。`pg_isready` は自分でも既定の 3 秒で接続を諦めるので、`-t 4` を渡して kubelet の時間切れより少し短く待たせる。`deploy_manifests_spec.rb` に、すべてのプローブが 1 秒より長い `timeoutSeconds` を明示し、`pg_isready` の `-t` がそれより短いことを確かめる example を足す。直す前のマニフェストはどのプローブも書いていないので、期待の不一致で落ちる。作者の手順 4 の取り込みの確かめで、Pod の再起動の回数（`kubectl get pods` の `RESTARTS`）も見る。
 
 残りの完了条件：
 
