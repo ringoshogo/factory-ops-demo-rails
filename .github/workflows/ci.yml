@@ -250,7 +250,7 @@ jobs:
       # 落ちたときに、各テストのトレースと画面を残す
       - name: Upload Playwright results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results
           path: frontend/test-results/
