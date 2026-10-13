@@ -264,8 +264,8 @@ jobs:
           retention-days: 7
 
   # PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・このワークフロー）を変えたかを決める。
-  # images のジョブは、依存が変わって GitHub Actions のキャッシュが外れると、PR の CI の時間の予算
-  # （docs/guides/config.md「CI の工程」）を超えうるので、それ以外の PR では流さない。アプリのコードを本番の環境で読み込めることは、test のジョブが eager_load で確かめる
+  # それ以外の PR では images のジョブを流さない。images はイメージに入るものだけを確かめ、依存が変わって
+  # GitHub Actions のキャッシュが外れると数分延びるからである（docs/guides/config.md「CI の工程」）。アプリのコードを本番の環境で読み込めることは、test のジョブが eager_load で確かめる
   image_inputs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04

@@ -65,7 +65,8 @@ M33 までで、デモは手元（`bin/rails server` と `next start`）で動�
 - 実機で測ったメモリが同居できる量に収まらない → ワーカーを Web の Puma の中で動かす（Solid Queue の Puma のプラグイン）か、配置先を分ける。
 - SD カードの読み書きの失敗が出るか、取り込みが画面で分かるほど遅れる → PostgreSQL の PVC を USB の SSD に移す。
 - 訪問者の書き込みでデモが壊れる日が続く → 壊す操作を公開の配置で止めるか、訪問者ごとのデータの分離（流用元の形）を作る。
-- `images` のジョブが 20 分を超える → arm64 の GitHub ホストのランナーに移す。arm64 のランナー（`ubuntu-24.04-arm`）は public のリポジトリで使える（GitHub の changelog「arm64 hosted runners for public repositories are now generally available」、2025-08-07）。リポジトリは 2026-10-13 に public になった。
+- リポジトリを private に戻すか、GitHub が public のリポジトリに arm64 のランナーを出さなくなる → amd64 のランナーの QEMU の上の組み立てに戻し、`images` は `image_inputs` の条件で絞ったままにする。キャッシュが空のときの `images` は、QEMU の上で 25〜35 分（M41）、arm64 のランナーで 4 分 10 秒（M42）だった。arm64 のランナー（`ubuntu-24.04-arm`）は public のリポジトリで使える（GitHub の changelog「arm64 hosted runners for public repositories are now generally available」、2025-08-07）。リポジトリは 2026-10-13 に public になった。
+- `publish` の組み立て直しが、キャッシュが当たっても数分かかる → `publish` を分けず、`images` 全体をテストのジョブの後に並べる。M42 で測った組み立て直しは 37 秒だった。
 - async のモードで、取り込みを流す間に、発注の登録から受注の確定までが画面で分かるほど遅れる（作者が実機の手順で測る。この配置はメトリクスを集めない） → fork のモードに戻し、メモリの見積もりを直す。
 
 ## 代替案
