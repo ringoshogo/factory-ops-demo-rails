@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 外部へのメールの登録口（docs/adr/007 決定 4・5）。確実な送信は送信記録とジョブを業務と同じトランザクションで確定させ、
 # 撃ちっぱなしは記録を作らずにコミットの後に登録する
@@ -121,6 +122,28 @@ RSpec.describe Notifications::Email do
       end
       expect(jobs("Notifications::CriticalDeliveryJob").map { _1.arguments.dig("arguments", 0) }).to eq([ failed.id ])
       expect(Tenancy.with_tenant(tenant) { accepted.reload.failed_at }).to eq(at)
+    end
+
+    # 操作者のいない入口（rake タスク）の公開 API なので、所有の条件を RLS に任せない。送信記録を FOR UPDATE で引くので、
+    # SELECT だけを開いても RLS の UPDATE のポリシーが他社の行を除き、条件の抜けが見えない（docs/guides/testing.md「行列テストとの分担」）
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社の失敗した送信記録を送り直さず、変えない" do
+        theirs = Tenancy.with_tenant(FactoryBot.create(:tenant).id) do
+          FactoryBot.create(:email_delivery, failed_at: at, failure_reason: "http_503")
+        end
+        mine = Tenancy.with_tenant(tenant) { FactoryBot.create(:email_delivery, failed_at: at, failure_reason: "http_503") }
+
+        Tenancy.with_tenant(tenant) do
+          cross_read!
+          # 対照：開いた後は、他社の送信記録が見え、自社の送信記録は送り直す
+          before = reread(theirs)
+          expect(described_class.redeliver_failed(since: at - 1.day)).to eq(1)
+          expect(mine.reload.failed_at).to be_nil
+          expect(reread(theirs)).to eq(before)
+        end
+      end
     end
   end
 end

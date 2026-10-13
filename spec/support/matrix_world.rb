@@ -29,7 +29,7 @@ class MatrixWorld
   # 行列の spec のファイルごとに、世界を 1 回だけ作って全 example で使い回す（docs/guides/testing.md「行列テストとの分担」）。
   # example ごとに作ると、表の数に比例する世界を表の数に比例する example ぶん作り、時間が表の数の 2 乗で伸びる。
   # 各 example は、rspec-rails が世界と同じ接続の上に開くセーブポイントの中で動き、終わりに巻き戻る。
-  # cross_read: true は、世界を開く前に RLS の SELECT を開くポリシーを足し、世界を閉じた後に外す（MatrixCrossRead.share）。
+  # cross_read: true は、世界を開く前に RLS の SELECT と UPDATE を開くポリシーを足し、世界を閉じた後に外す（MatrixCrossRead.share）。
   # 世界のトランザクションが表のロックを持つ間は足し外しが待ち合うので、ポリシーのフックを世界のフックより先に登録して順を固定する。
   # rspec は before(:context) が失敗しても after(:context) を走らせるので、世界を開く途中の失敗でもポリシーは外れる
   def self.share_per_file(group, cross_read: false)

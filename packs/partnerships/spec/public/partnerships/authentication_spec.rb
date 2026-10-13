@@ -32,14 +32,13 @@ end
 # セッションからの操作者の復元・ジョブの操作者・セッションの失効は、操作者のいない入口の公開 API なので、開いたテナントの
 # ユーザーだけを、所有の条件を RLS に任せずに引く（docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
 RSpec.describe Partnerships::Authentication, "の操作者のいない入口" do
-  include_context "RLS の SELECT を開く"
+  include_context "RLS の SELECT と UPDATE を開く"
 
   let(:tenant) { FactoryBot.create(:tenant) }
   let(:other) { FactoryBot.create(:tenant) }
   let!(:admin) { Tenancy.with_tenant(tenant.id) { FactoryBot.create(:user, :admin) } }
   let!(:stranger) { Tenancy.with_tenant(other.id) { FactoryBot.create(:user, :admin) } }
 
-  # セッションの失効（revoke_sessions）は UPDATE で、SELECT を開いても RLS の UPDATE のポリシーが他社の行を除くので、ここでは確かめない
   it "RLS の SELECT を開いても、他社のユーザーを操作者にしない" do
     Tenancy.with_tenant(tenant.id) do
       cross_read!
@@ -48,6 +47,20 @@ RSpec.describe Partnerships::Authentication, "の操作者のいない入口" do
       expect(described_class.actor(admin.id, session_version: 0)&.user_id).to eq(admin.id)
 
       expect([ described_class.actor(stranger.id, session_version: 0), described_class.acting_user(stranger.id) ]).to eq([ nil, nil ])
+    end
+  end
+
+  # セッションの失効は UPDATE なので、SELECT だけを開いても RLS の UPDATE のポリシーが他社の行を除き、条件の抜けが見えない
+  it "RLS の SELECT と UPDATE を開いても、他社のユーザーのセッションを失効させない" do
+    Tenancy.with_tenant(tenant.id) do
+      cross_read!
+      # 対照：開いた後は、他社のユーザーが見え、自社のユーザーのセッションは失効させる
+      before = reread(stranger)
+      expect(described_class.revoke_sessions(admin.id, session_version: 0)).to eq(1)
+      expect(admin.reload.session_version).to eq(1)
+
+      expect(described_class.revoke_sessions(stranger.id, session_version: 0)).to eq(0)
+      expect(reread(stranger)).to eq(before)
     end
   end
 

@@ -158,7 +158,7 @@ RSpec.describe Imports::Runs do
     # 操作者のいない入口（rake タスク）の公開 API なので、所有の条件を RLS に任せない
     # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
     describe "RLS の SELECT を開いたとき" do
-      include_context "RLS の SELECT を開く"
+      include_context "RLS の SELECT と UPDATE を開く"
 
       it "他社の終わっていない取り込みには登録しない" do
         theirs = tenancy(other) { FactoryBot.create(:import) }

@@ -125,7 +125,7 @@ RSpec.describe MatrixWorld do
     expect(tenant_setting).to be_blank
   end
 
-  describe "RLS の SELECT を開く補助（cross_read: true）" do
+  describe "RLS の SELECT と UPDATE を開く補助（cross_read: true）" do
     # ダッシュボードの 4 つの集計。どれも自社の行を数える公開 API で、scope を外すと他社の行も数える
     def dashboard(world)
       actor = Partnerships::Actor.new(user_id: nil, tenant_id: world.tenants[:supplier], name: "", email: "", role: "admin",
@@ -242,7 +242,7 @@ RSpec.describe MatrixWorld do
       MatrixCrossRead.with_policies do
         results = run_inner_group(cross_read: true) { it("走らない") { nil } }
 
-        expect(results.first.last).to include("matrix_cross_read のポリシーがすでにある")
+        expect(results.first.last).to include("matrix_cross_read か matrix_cross_update のポリシーがすでにある")
         expect(cross_read_policies).to eq(MatrixWorld.tenant_tables.size)
       end
     end

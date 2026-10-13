@@ -1,0 +1,154 @@
+# サイクル 5 のマイルストーンの実装レビュー
+
+マイルストーンの PR をマージする作者が、レビューの指摘がどう片付いたかを確かめるために読む。担当者は、PR の実装レビューを受けたら、そのマイルストーンの節に、各系統の判定と、指摘ごとの対応と、直した commit を書く。指摘を直さずに残すときは、残す理由を対応の列に書く。
+
+レビューは 2 系統で行う。Codex は差分とリポジトリを読み、手元でコマンドを流して確かめる。Claude は差分を設計文書と突き合わせる。判定は Go（そのままマージしてよい）・Conditional Go（指摘を直せばマージしてよい）・No-Go のどれかである（`../../guides/dev-cycle.md`「判定の形」）。
+
+## M38 RLS の UPDATE のポリシーが隠す所有の条件を、単体で捕まえる
+
+PR #56（`m38-update-policy`、base は `main`）。PR #55（`cycle-05-plan`）が未マージなので、その commit も差分に見える。M38 の差分は `99936b6..` である。
+
+Codex は Go、Claude は Conditional Go で、Medium の M38-1（出荷停止の解除の upsert が届く形なのに、届かない形に数えている）を直せば Go とした。どちらの系統も、`99936b6..ff2a08e` の diff を `ff2a08e` の版で読んだ。Codex は read-only のサンドボックスでテストを流さず、依頼に書いた実行結果を前提にした。Claude は `ff2a08e` を `git archive` で展開したコピーで、所有の条件と文脈の基盤を壊して確かめた。Critical・High が無かったので、読み直しは回していない。指摘は `2439379` で直した。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go |
+| Claude | Conditional Go |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（M38-2） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘（M38-1） |
+| テストの検出力 | 指摘（R1・R2） | 指摘（M38-1） |
+| 参照の維持 | 指摘（R3） | 指摘（M38-3） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Claude | M38-1：`Fulfillment::SalesEventReceiver` の出荷停止の解除（`release_hold`）は `ON CONFLICT DO UPDATE` で、テナントをまたぐ審査 ID の一意索引が他社の行に導くのに、`testing.md` は「冪等キーにグローバルな一意索引がある受け手」として届かない形に数えている。他社の行への書き込みを止めているのは RLS だけである | 更新の `WHERE` に所有の条件を書き、他社の行に当たったら `RecordNotFound` で失敗させた（OI-152）。文脈の describe に、他社の同じ審査 ID の停止を置いて解除を渡す example を足した。`testing.md` の届かない形から解除を外し、`ON CONFLICT DO UPDATE` の書き方を書いた | `2439379` |
+| Medium | Codex | R1：出荷取消の example は自社の停止を用意せず、停止を解除する `update_all` を消しても通る。安全在庫は成功の返り値だけ、セッションの失効は件数だけで、自社の行の書き込みを確かめていない | 出荷取消の example で、審査 ID を空にしたまま自社の停止を置き、解除されることを確かめた。安全在庫とセッションの失効は、自社の行を読み直して値を確かめた | `2439379` |
+| Medium | Codex | R2：重なりの失敗の 2 つの example は両方のポリシーを全表に置いてから足し直すので、最初の SELECT のポリシーで失敗し、UPDATE のポリシーの重なりと、足しかけたポリシーの巻き戻しを確かめない | 最後の表に UPDATE のポリシーだけを置いてから足す example を足した。失敗した後に、足しかけた 2 つのポリシーが残らず、置いたポリシーが残ることを確かめる。失敗の経路の数え方を、2 つの名前ごとの数にそろえた（Claude の違和感 2 も同じ直し） | `2439379` |
+| Low | Claude | M38-2：完了条件の行列の 2 ファイルの時間が、変える前と後で記録されていない | 下の「確かめたこと」に書いた | この記録と同じ commit |
+| Low | Claude・Codex | M38-3・R3：M40 の節・依存の表・`spec/support/matrix_world.rb` のコメント・`matrix_world_spec.rb` の describe に、文脈の古い名前と SELECT だけを開く説明が残る | 4 か所を直した。`git grep '「RLS の SELECT を開く」'` の残りは、サイクル 04 の記録と、M38 の節の目的（直す前の形の説明）だけである | `2439379` |
+
+違和感は次のように扱った。
+
+- Claude 1：集める対象の境界が書かれていない（パッケージの中のジョブが ID だけで行をロックして書く） → 下の「集めた箇所」の表の後に外した理由を書き、操作者のいる mutation の公開 API の同じ形とあわせて IB-71 に積んだ
+- Claude 2：失敗の経路のガードが SELECT のポリシーの数しか数えない → R2 の直しで、2 つの名前ごとの数にした
+- Claude 3：各 example の対照の注記が SELECT の側だけを言う → 他社の行が UPDATE の対象に入ることは、`cross_read_spec.rb` のポリシーの形の確かめが持つ。注記は直さない
+- Claude 4：`runs_spec.rb`・`authentication_spec.rb`・`recipients_spec.rb` の読み取りの example の名前が「RLS の SELECT を開いても」のまま → 読み取りの確かめなので名前どおりである。直さない
+- Codex 1：単価の移行の example は、所有ロールで個別の列を読み、全属性を比べない → 例ごとのトランザクションを使わない spec で、他社の明細は所有の列と書く列（`priced_on`）で足りる。直さない
+- Codex 2：行列の 2 ファイルの時間が無い → M38-2 と同じ
+- 実装者：worktree では `bin/ci` の Setup の工程が落ちる（下の「確かめたこと」） → IB-72 に積んだ
+
+### 実装の記録
+
+#### 試作と分かれ目
+
+作るもの 1 の試作を、別名の DB（`factory_ops_demo_rails_test_m38proto`）で、所有ロールで作った一時の表に `owner_write` と同じポリシー・SELECT のポリシー・UPDATE のポリシー（`WITH CHECK (false)`）を置き、アプリのロールの psql で流した。所有の移し替えは通るが、同じ接続で読み直すと所有の列の変化が見えるので、対照で捕まえられる。判断の裏返る条件には当たらなかったので、既定の推奨（UPDATE のポリシーを開く形）で進めた。試作の DB は消した。
+
+| 流した文（自社のテナントの設定で、他社の行に） | 設定が `off` | 設定が `on` |
+|---|---|---|
+| 所有の列を変えない UPDATE | 0 行 | RLS の違反（`WITH CHECK`） |
+| 所有の列を自社に書き換える UPDATE | 0 行 | 通る。同じ接続で読み直すと所有の列が自社に変わっている |
+| 所有の列を書き換える `INSERT ... ON CONFLICT DO UPDATE` | RLS の違反（`USING`） | 通る。読み直すと所有の列が自社に変わっている |
+| 所有の列を変えない `INSERT ... ON CONFLICT DO UPDATE` | — | RLS の違反（`WITH CHECK`） |
+| `SELECT ... FOR UPDATE` | 0 行 | 他社の行をロックする |
+| DELETE | — | 0 行 |
+| 他社の名義の INSERT | — | RLS の違反 |
+| 自社の行の UPDATE／自社の行を他社の名義にする UPDATE | — | 通る／RLS の違反 |
+
+#### 集めた箇所
+
+操作者のいない入口の公開 API は、`graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の入口の種類（ジョブ・rake タスク・イベントの受け手・認証）から、rake タスクとジョブと認証が呼ぶ公開 API をたどって集め、サイクル 04 の M32 の一覧と照らした。イベントの受け手は配送表（`Contracts::Subscriptions::TABLE`）の 7 つである。計画が名指しした `Inventory::Stocks.set_safety_stock`（シードの準備の公開 API で、GraphQL の入口が無い）も入れた。その中で UPDATE・`update_all`・FOR UPDATE・`ON CONFLICT DO UPDATE` で行を引く箇所に、example を足した。
+
+| 箇所 | 引き方 | example（spec） |
+|---|---|---|
+| `Notifications::Email.redeliver_failed` | FOR UPDATE と `update!` | `email_spec.rb`「他社の失敗した送信記録を送り直さず、変えない」 |
+| `Partnerships::Authentication.revoke_sessions` | `update_all` | `authentication_spec.rb`「RLS の SELECT と UPDATE を開いても、他社のユーザーのセッションを失効させない」 |
+| `Inventory::Stocks.set_safety_stock` | scope と FOR UPDATE | `stocks_spec.rb`「他社の品目は NOT_FOUND で、他社の在庫を書かない」 |
+| `Sales::ItemPrices.backfill` の明細 | UPDATE | `item_prices_backfill_spec.rb`（既存の example を UPDATE も開く形の名前にした） |
+| `Imports::Files.purge_abandoned` | FOR UPDATE と `update_all` | `purge_abandoned_files_job_spec.rb`「他社の置いたままのファイルを数えず、変えない」（OI-151） |
+| `Sales::FulfillmentEventReceiver` の出荷計上 | FOR UPDATE と `update!` | `fulfillment_event_receiver_spec.rb`「他社の受注は見つからず、書かない」 |
+| `Sales::PurchasingEventReceiver` の取消依頼 | FOR UPDATE と審査の INSERT | `purchasing_event_receiver_spec.rb`「他社の受注は見つからず、審査を作らない」 |
+| `Sales::PurchasingEventReceiver` の検収完了 | FOR UPDATE と記録の INSERT と `update!` | 同「他社の出荷済の受注は見つからず、検収を記録せず、受注を書かない」 |
+| `Purchasing::SupplierEventReceiver.handle` | FOR UPDATE と `update!`（どの種類も同じ 1 か所で引く） | `supplier_event_receiver_spec.rb`「他社の発注は見つからず、書かない」 |
+| `Fulfillment::SalesEventReceiver` の出荷取消の出荷依頼 | FOR UPDATE と `update!` | `sales_event_receiver_spec.rb`「出荷取消は、他社の受注の出荷依頼と出荷停止を書かない」（OI-150） |
+| `Fulfillment::SalesEventReceiver` の出荷取消の出荷停止 | `update_all` | 同上 |
+| `Fulfillment::SalesEventReceiver` の出荷停止の解除（`release_hold`） | `ON CONFLICT DO UPDATE` | 同「出荷停止解除は、他社の同じ審査 ID の出荷停止を書かずに失敗する」（実装レビューの M38-1 で足した、OI-152） |
+
+届かない形として example を足さなかったもの：出荷依頼の作成と出荷停止の記録（`Fulfillment::SalesEventReceiver`）、受注の連結（`Sales::PurchaseOrderTranslator`）、請求対象の記録（`Billing::SalesEventReceiver`）、受領請求書の記録（`Purchasing::BillingEventReceiver`）は、冪等キーにグローバルな一意索引があり、キーが重なれば書かずに飛ばす。出荷停止の受け手が出荷依頼をロックする箇所は、ロックだけで書かない。どれも `testing.md`「行列テストとの分担」に書いた。読むだけの公開 API（通知の宛先・認証の操作者・取り込みの再登録）は、M32 で足した SELECT を開く example のままである。
+
+パッケージの中のジョブ（`Notifications::CriticalDeliveryJob#perform`・`Notifications::ProcessInboxJob#apply`・`Imports::Chunk.locked`）は、ID だけで行をロックして書き、所有の条件を RLS に任せる。規則は操作者のいない入口から呼ぶ公開 API に掛かり、これらは公開 API でないので、集める対象に入れなかった（IB-71）。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：
+
+- 計画が最初に落とすとした `spec/matrix/cross_read_spec.rb` の `pg_policies` の確かめは、UPDATE のポリシーを足す前に、`got: [["matrix_cross_read", "PERMISSIVE", "SELECT", "(current_setting('app.matrix_cross_read'::text, true) = 'on'::text)", nil, 40]]` で落ちた（`matrix_cross_update` の行が無い）。文脈の名前を変える前は、名前の無い文脈の読み込みの失敗だったので数えず、名前だけを変えてから流し直した
+- 実装レビューの M38-1 で足した出荷停止の解除の example は、所有の条件を書く前に `expected ActiveRecord::RecordNotFound, got #<ActiveRecord::StatementInvalid:"PG::InsufficientPrivilege: ERROR:  new row violates row-level security policy for table \"shipping_holds\"">` で落ちた
+
+ほかの example は実装の後に書いたので、次の壊して落ちる記録で RED に代える。壊したファイルは複製から戻し、壊すときと戻すときに更新時刻を進めた。壊した箇所を確かめる spec のファイルだけを流した。ポリシーが残る壊し方の後は、補助の `remove!` で外し、`pg_policies` の `matrix_cross_%` が 0 行に戻ったことを確かめた。
+
+所有の条件（`ff2a08e` の上で 1 つずつ外す。出荷停止の解除だけは `2439379` の上）：
+
+| 壊したもの | 落ちた example | UPDATE のポリシーを足さない補助で同じ壊し方 |
+|---|---|---|
+| `redeliver_failed` の `owner_tenant_id` | 1（`PG::InsufficientPrivilege`） | 0 failures |
+| `revoke_sessions` の `own_users` を `User` に | 1（同上） | 0 failures |
+| `set_safety_stock` の scope | 1（同上） | 0 failures |
+| `backfill` の明細の `l.owner_tenant_id = $2` | 1（同上） | 0 failures |
+| `purge_abandoned` の候補の `owner_tenant_id` | 1（同上） | 0 failures |
+| 出荷計上の受注の `owner_tenant_id` | 1（`expected RecordNotFound, got StatementInvalid`） | 0 failures |
+| 取消依頼の受注の `owner_tenant_id` | 1（同上） | 0 failures |
+| 検収完了の受注の `owner_tenant_id` | 1（同上） | 0 failures |
+| 購買の受け手の発注の `owner_tenant_id` | 1（同上） | 0 failures |
+| 出荷取消の出荷依頼の `own_requests` を `ShipmentRequest` に | 1（`PG::InsufficientPrivilege`） | 0 failures |
+| 出荷取消の出荷停止の `owner_tenant_id` | 1（同上） | 0 failures |
+| 出荷停止の解除の `WHERE` の所有の条件 | 1（`expected RecordNotFound, got StatementInvalid`） | — |
+| 出荷停止の解除の、当たらなかったときの `raise` | 1（`expected RecordNotFound but nothing was raised`） | — |
+| 出荷停止の受け手のロックの `own_requests`（届かない形） | 0 failures | — |
+
+対照（自社の行の書き込みと、所有の移し替え）：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| `revoke_sessions` を他社の行を自社の名義に書き換える形にし、他社の件数の期待を外す | 1：`reread` の比べで、`owner_tenant_id` と `session_version` が変わる |
+| 出荷取消の受注ごとの出荷停止の `update_all` を消す（`2439379` の上） | 1：自社の停止が解除されない |
+| 文脈の `cross_read!` を何もしない形にする（Claude のコピー、`ff2a08e`） | 完了条件の 2 つ目のコマンドで 12：足した 11 か所と既存の SELECT の example。`reread` が他社の行を引けない |
+
+補助：
+
+| 壊したもの | 落ちた example |
+|---|---|
+| UPDATE のポリシーから `WITH CHECK (false)` を外す | 1：`cross_read_spec.rb` の `pg_policies` の形（`with_check` が `nil`） |
+| `remove!` が UPDATE のポリシーを外さない | 4：`cross_read_spec.rb` の 3 件と、`tenant_enforcement_spec.rb` のポリシーの集合 |
+| `add!` を 1 つのトランザクションにしない（`2439379` の上） | 1：最後の表の UPDATE のポリシーだけが先にある example（`got: {"matrix_cross_read" => 39, "matrix_cross_update" => 40}`） |
+
+### 確かめたこと
+
+`2439379` で、Ruby 3.4.11 で M38 の完了条件と共通の完了条件を流した。この worktree では `bin/ci` の Setup の工程（`bin/setup` の `docker compose up`）が、compose のプロジェクト名が元の作業ツリーと違うので 5433 で別のコンテナを作ろうとして落ちる（`ff2a08e` で `bin/ci` を流して確かめた。ほかの工程はすべて通った）。そのため `2439379` では、`config/ci.rb` の Setup のほかの工程を同じコマンドで 1 つずつ流した。
+
+```sh
+bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb   # 1320 examples, 0 failures
+bundle exec rspec <完了条件の 2 つ目のコマンド>                    # 104 examples, 0 failures
+bin/ci の Setup のほかの工程                                       # すべて通る（rspec は 2628 examples, 0 failures、brakeman は警告 0）。2 分 30 秒
+BASE_REF=origin/main bin/check-branch-coverage                     # 一覧は空
+bin/check-open-items --due M38                                     # 終了コード 0
+bundle exec rspec --tag concurrency                                # 2 回続けて 61 examples, 0 failures
+```
+
+試作と完了条件のあとに、`pg_policies` の `matrix_cross_%` が 0 行であることを確かめた。分岐の網羅率の警告は 0 件で、example を足した件数も 0 件である。
+
+行列の spec の時間（手元、`bundle exec rspec <ファイル>` を 2 回ずつ。変える前は `99936b6` を `git archive` で展開したコピーで流した）：
+
+| ファイル | 変える前（`99936b6`） | 変えた後（`2439379`） |
+|---|---|---|
+| `spec/matrix/graphql_matrix_spec.rb` | 491 examples、7.26 秒・8.18 秒 | 491 examples、7.99 秒・7.37 秒 |
+| `spec/matrix/table_matrix_spec.rb` | 804 examples、8.42 秒・7.52 秒 | 804 examples、7.44 秒・7.35 秒 |
+
+2 ファイルを合わせて約 15 秒で、変える前と変わらない。IB-50 の調べ直す条件（合わせて 30 秒を超える）には当たらない。
+
+### 残件の処理
+
+引当先が M38 の行は、着手の前と PR の前に台帳を読み、無かった。実装で決めたことは OI-150・OI-151 に、実装レビューの M38-1 の直しで決めたことは OI-152 に judgment で積んだ。違和感は IB-71・IB-72 に積んだ。範囲外の IB-59（操作者のいない入口の `Tenancy.require_tenant!` が `TenantRecord` の `default_scope` に隠れること）は扱っていない。

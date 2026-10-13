@@ -137,7 +137,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M30 | M18・M28・M29 | 値の出どころが M18 の構造化イベントで、外部の呼び出しと取り込みの値も測る |
 | M31 | M30 | SLO と警報を M30 のメトリクスで書く |
 | M32 | M31 まで | シードが単価の履歴と取り込みも含む |
-| M38 | M32 | 操作者のいない入口の規則と、共有の文脈「RLS の SELECT を開く」が M32 にある |
+| M38 | M32 | 操作者のいない入口の規則と、M38 が UPDATE にも広げる共有の文脈が M32 にある |
 | M39 | M37・M38 | 一覧の件数と絞り込みの scope の抜けを、M37 の RLS を開いた 2 回目の比較で捕まえる。行列の補助と共有の文脈を M38 が変えた後に、行列の行を足す |
 | M40 | M39 | 状況の絞り込みを、M39 の入力型・件数・ページの土台に足す |
 | M33 | M32・M40 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る |
@@ -1538,10 +1538,10 @@ bin/rails db:reset && bin/rails db:seed   # 2 回目の db:seed も通り、行�
 
 ```sh
 bundle exec rspec spec/matrix spec/db/tenant_enforcement_spec.rb   # 0 failures
-bundle exec rspec packs/notifications/spec/public/notifications/email_spec.rb packs/partnerships/spec/public/partnerships/authentication_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb packs/sales/spec/public/sales/item_prices_backfill_spec.rb packs/*/spec/public/*/*_event_receiver_spec.rb   # 0 failures。作るもの 3 で集めた箇所の spec
+bundle exec rspec packs/notifications/spec/public/notifications/email_spec.rb packs/partnerships/spec/public/partnerships/authentication_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb packs/sales/spec/public/sales/item_prices_backfill_spec.rb packs/imports/spec/jobs/imports/purge_abandoned_files_job_spec.rb packs/*/spec/public/*/*_event_receiver_spec.rb   # 0 failures。作るもの 3 で集めた箇所の spec
 ```
 
-2 つ目のコマンドは、操作者のいない入口の公開 API（`Notifications::Email.redeliver_failed`・`Partnerships::Authentication.revoke_sessions`・`Inventory::Stocks.set_safety_stock`・`Sales::ItemPrices.backfill`）と、イベントの受け手の spec である。作るもの 3 で集めた箇所がほかの spec にあれば、そのパスをこのコマンドに足し、集めた一覧を証跡の「実装の記録」に書く。
+2 つ目のコマンドは、操作者のいない入口の公開 API（`Notifications::Email.redeliver_failed`・`Partnerships::Authentication.revoke_sessions`・`Inventory::Stocks.set_safety_stock`・`Sales::ItemPrices.backfill`・`Imports::Files.purge_abandoned`）と、イベントの受け手の spec である。作るもの 3 で集めた箇所がほかの spec にあれば、そのパスをこのコマンドに足し、集めた一覧を証跡の「実装の記録」に書く。
 
 期待の不一致で最初に落とすのは、`spec/matrix/cross_read_spec.rb` の、足している間の `pg_policies` の確かめ（UPDATE のポリシーが無い）である。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す（`guides/dev-cycle.md`「テストから書く」）。
 
@@ -1632,7 +1632,7 @@ bin/check-schema-compat   # 破壊的な変更 0 件
 
 2. 絞り込み：`SalesOrderFilter`・`PurchaseOrderFilter` に `statuses: [<状況の enum>!]` を足し、出荷依頼に `ShipmentRequestFilter`（`statuses: [ShipmentRequestStatus!]`）を足す。省くか null なら絞らず、空の配列なら 0 件を返す。M39 の列の絞り込みと同時に渡せば、両方に当たる行に絞る。件数（`totalCount`）は同じ条件で数える。取消の依頼中・審査中（`cancellationPending`・`cancellationReviewPending`）は状況ではないので、絞り込みに入れない（`architecture/graphql-schema.md`「状況の enum」）。
 3. ダッシュボードの件数：`Sales::SalesOrders.count_by_status` を、同じ式で `GROUP BY` して数える形にする。いまは全件を読んで Ruby で数えている。0 件の状況も返す形は変えない。
-4. 行列テスト：M39 で足した 3 つの一覧の変種の行（`#filter`）に、`statuses` を足す。世界には、絞る状況に当たる行と当たらない行を持たせる。引当数量の副問い合わせから scope を外しても、行列の 2 回目の比較では捕まらない。他社の引当は他社の受注明細を指し、自社の受注明細には結ばれないので、RLS を開いて他社の引当が見えても状況は変わらないからである。捕まえるには他社の名義で自社の受注明細を指す引当が要るが、公開 API とイベントでは作れない。そこで、`allocation_spec.rb` に、共有の文脈「RLS の SELECT を開く」（M38 で UPDATE も開く）で他社の引当を見えるようにしてから副問い合わせを流し、他社の行が入らないことを確かめる example を足す。同じ example で、scope を掛けなければ他社の行が入ることを先に確かめる（対照）（`guides/testing.md`「行列テストとの分担」）。
+4. 行列テスト：M39 で足した 3 つの一覧の変種の行（`#filter`）に、`statuses` を足す。世界には、絞る状況に当たる行と当たらない行を持たせる。引当数量の副問い合わせから scope を外しても、行列の 2 回目の比較では捕まらない。他社の引当は他社の受注明細を指し、自社の受注明細には結ばれないので、RLS を開いて他社の引当が見えても状況は変わらないからである。捕まえるには他社の名義で自社の受注明細を指す引当が要るが、公開 API とイベントでは作れない。そこで、`allocation_spec.rb` に、共有の文脈「RLS の SELECT と UPDATE を開く」（M38）で他社の引当を見えるようにしてから副問い合わせを流し、他社の行が入らないことを確かめる example を足す。同じ example で、scope を掛けなければ他社の行が入ることを先に確かめる（対照）（`guides/testing.md`「行列テストとの分担」）。
 5. クエリ数の予算：受注・発注・出荷依頼の画面の問い合わせに渡す `$filter` に、予算の spec が作る親がすべて当たる状況の集まりを足す。
 
 テナントの境界：書き込みは足さない。式は、公開 API の scope を掛けた relation に列を足すだけで、RLS と policy は変えない。在庫の副問い合わせは在庫の policy の scope を掛けた後に SQL の文字列にするので、受け取る受注のパッケージは条件を外せない。所有の条件を RLS に任せない（`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。コンテキストの境界：受注はすでに在庫の公開 API（`Inventory::Allocation`）に依存しているので、依存の向きは変わらない。受注のパッケージは在庫のモデルも relation も受け取らず、在庫の表の名前と列を書かない（列の名前は値が持つ）。

@@ -7,7 +7,7 @@ require_relative "../support/cross_read"
 # （docs/architecture/graphql-schema.md「役割による制限」）。流したジョブは Solid Queue のワーカーと同じ順で後始末し、
 # 実行待ちの行と同時実行の制御のセマフォを残さない（solid_queue 1.7.0 の app/models/solid_queue/claimed_execution.rb の finalize）
 RSpec.describe DemoWorld do
-  include_context "RLS の SELECT を開く"
+  include_context "RLS の SELECT と UPDATE を開く"
 
   def namespace = "w#{SecureRandom.hex(3)}"
 

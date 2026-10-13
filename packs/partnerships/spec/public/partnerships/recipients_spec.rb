@@ -4,7 +4,7 @@ require_relative "../../../../../spec/support/cross_read"
 # 通知の宛先。操作者のいない入口の公開 API なので、開いたテナントのユーザーだけを、所有の条件を RLS に任せずに引く
 # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
 RSpec.describe Partnerships::Recipients do
-  include_context "RLS の SELECT を開く"
+  include_context "RLS の SELECT と UPDATE を開く"
 
   let!(:tenant) { FactoryBot.create(:tenant).id }
   let!(:other) { FactoryBot.create(:tenant).id }

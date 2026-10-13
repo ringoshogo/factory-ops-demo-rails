@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # ダッシュボードの安全在庫。有効在庫（現在庫 - 引当）が安全在庫より小さい在庫だけを返し、等しい在庫は返さない
 # （docs/architecture/data-model.md「在庫（`inventory`）」、docs/architecture/graphql-schema.md「読み取りの一覧」）
@@ -69,6 +70,26 @@ RSpec.describe Inventory::Stocks do
       # 対照：他社の設定の生 SQL は他社の在庫を読み、値は元のままである
       expect(safety_stock_seen_by(other, theirs.item_id)).to eq(3)
       expect(safety_stock_seen_by(supplier, theirs.item_id)).to be_nil
+    end
+
+    # 在庫の行を FOR UPDATE で引くので、SELECT だけを開いても RLS の UPDATE のポリシーが他社の行を除き、scope の抜けが見えない
+    # （docs/guides/testing.md「行列テストとの分担」）
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社の品目は NOT_FOUND で、他社の在庫を書かない" do
+        Tenancy.with_tenant(supplier.id) do
+          cross_read!
+          # 対照：開いた後は、他社の在庫が見え、自社の在庫は変える
+          before = reread(theirs)
+          expect(described_class.set_safety_stock(actor, item_id: own.item_id, safety_stock: 12)).to be_success
+          expect(own.reload.safety_stock).to eq(12)
+
+          result = described_class.set_safety_stock(actor, item_id: theirs.item_id, safety_stock: 99)
+          expect(failures(result)).to eq([ [ :not_found, [ :item_id ] ] ])
+          expect(reread(theirs)).to eq(before)
+        end
+      end
     end
 
     it "在庫の行の無い品目は NOT_FOUND で、行を作らない" do

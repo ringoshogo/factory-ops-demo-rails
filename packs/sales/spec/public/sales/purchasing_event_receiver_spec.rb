@@ -71,6 +71,29 @@ RSpec.describe Sales::PurchasingEventReceiver do
     expect(reviews).to be_empty
   end
 
+  # イベントの受け手は操作者のいない入口なので、所有の条件を RLS に任せない。受注を FOR UPDATE で引くので、SELECT だけを開いても
+  # RLS の UPDATE のポリシーが他社の受注を除き、条件の抜けが見えない（docs/guides/testing.md「行列テストとの分担」）
+  describe "RLS の SELECT と UPDATE を開いたとき" do
+    include_context "RLS の SELECT と UPDATE を開く"
+
+    it "他社の受注は見つからず、審査を作らない" do
+      theirs = Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:sales_order, customer_tenant_id: buyer.id) }
+
+      Tenancy.with_tenant(supplier.id) do
+        cross_read!
+        # 対照：開いた後は、他社の受注が見え、自社の受注には審査を作る
+        before = reread(theirs)
+        described_class.handle(event)
+        expect(order.cancellation_reviews.count).to eq(1)
+
+        expect { described_class.handle(event.with(cancellation_request_id: SecureRandom.uuid, purchase_order_id: theirs.source_purchase_order_id)) }
+          .to raise_error(ActiveRecord::RecordNotFound)
+        expect(reread(theirs)).to eq(before)
+        expect(Sales::CancellationReview.where(sales_order_id: theirs.id)).to be_empty
+      end
+    end
+  end
+
   it "配送表に無い種類のイベントは、審査を書かずに ArgumentError で失敗する" do
     unexpected = Contracts::PartMatchPending.new(purchase_order_id: order.source_purchase_order_id, buyer_tenant_id: buyer.id,
       supplier_tenant_id: supplier.id)
@@ -129,10 +152,33 @@ RSpec.describe Sales::PurchasingEventReceiver do
       expect(shipped_order_value.status).to eq(:shipped)
     end
 
-    # イベントの受け手は操作者のいない入口なので、冪等キーの有無も所有の条件を RLS に任せずに読む
+    # イベントの受け手は操作者のいない入口なので、冪等キーの有無も、FOR UPDATE で引く受注も、所有の条件を RLS に任せずに読む
     # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
-    describe "RLS の SELECT を開いたとき" do
-      include_context "RLS の SELECT を開く"
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社の出荷済の受注は見つからず、検収を記録せず、受注を書かない" do
+        theirs = Tenancy.with_tenant(FactoryBot.create(:tenant).id) do
+          FactoryBot.create(:sales_order, customer_tenant_id: buyer.id, shipped_at: Time.current).tap do |order|
+            FactoryBot.create(:sales_order_line, :matched, sales_order: order)
+          end
+        end
+        their_line = Tenancy.with_tenant(theirs.owner_tenant_id) { theirs.lines.sole }
+
+        Tenancy.with_tenant(supplier.id) do
+          cross_read!
+          # 対照：開いた後は、他社の受注が見え、自社の受注は検収済にする
+          before = reread(theirs)
+          described_class.handle(inspected)
+          expect(shipped_order.reload.inspected_at).to be_present
+
+          their_event = inspected.with(shipment_id: SecureRandom.uuid, purchase_order_id: theirs.source_purchase_order_id,
+            lines: [ { "purchase_order_line_id" => their_line.source_purchase_order_line_id, "accepted_quantity" => 1 } ])
+          expect { described_class.handle(their_event) }.to raise_error(ActiveRecord::RecordNotFound)
+          expect(reread(theirs)).to eq(before)
+          expect(Sales::InspectionRecord.where(sales_order_line_id: their_line.id)).to be_empty
+        end
+      end
 
       it "他社に同じ出荷実績 ID の検収の記録があっても、自社の検収を記録する" do
         Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:inspection_record, shipment_id:) }

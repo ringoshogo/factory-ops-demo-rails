@@ -9,7 +9,7 @@ require_relative "../../../../../spec/support/cross_read"
 RSpec.describe "Sales::ItemPrices.backfill" do
   include ConcurrencyHelpers
   include ActiveSupport::Testing::TimeHelpers
-  include_context "RLS の SELECT を開く"
+  include_context "RLS の SELECT と UPDATE を開く"
 
   self.use_transactional_tests = false
 
@@ -114,8 +114,9 @@ RSpec.describe "Sales::ItemPrices.backfill" do
   end
 
   # 操作者のいない入口（rake タスク）の公開 API なので、所有の条件を RLS に任せない
-  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
-  it "RLS の SELECT を開いても、他社の品目と明細を数えず、触れない" do
+  # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。
+  # 明細を埋めるのは UPDATE なので、SELECT だけを開いても RLS の UPDATE のポリシーが他社の明細を除き、条件の抜けが見えない
+  it "RLS の SELECT と UPDATE を開いても、他社の品目と明細を数えず、触れない" do
     mine = legacy_rows(tenant.id, unit_price: 150)
     theirs = legacy_rows(other.id, unit_price: 300)
 
@@ -129,6 +130,7 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     expect(result).to eq(items: 1, lines: 1)
     expect(price_rows(tenant.id).map(&:first)).to eq([ mine[:item].id ])
     expect([ price_rows(other.id), priced_on(theirs[:line].id) ]).to eq([ [], nil ])
+    expect(owner.select_value("SELECT owner_tenant_id FROM sales_order_lines WHERE id = #{owner.quote(theirs[:line].id)}")).to eq(other.id)
   end
 
   # 列を消すマイグレーションを、所有ロールのトランザクションの中で流し、ブロックの後に巻き戻す。
