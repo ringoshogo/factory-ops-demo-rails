@@ -135,3 +135,53 @@ bin/check-open-items --due M42                      # 通る
 ### 残件の処理
 
 引当先が M42 の行は、着手の前と PR の前に台帳を読んだ。どちらの時点でも、OI-184 のほかには無かった。M42 で決めたことは OI-184 に judgment で積んだ。実装レビューの違和感は IB-100 に、CI で 1 回だけ起きた `next build` の落ち方は IB-101 に積んだ。
+
+## M43 公開の配置の作り直しを、本番の環境でだけ動かす
+
+`m43-reset-production-only`（base は `main`）。M42 の先端 `4dc35fb` から切った。M42 の PR #74 が未マージなので、PR の差分には M42 も含まれる。M43 の差分は `4dc35fb..` である。
+
+### 実装の記録
+
+#### 計画との違い
+
+- `Refused` の文言は、2 つの条件を 1 つの文（「本番の環境で DEMO_WORLD_ENABLED=1 を渡したときだけ動く」）にまとめ、どちらの条件で止まったかを分けなかった。どちらも、作者が本番の環境の作り直しの Job に変数を渡し直せば済む同じ対処になるからである。
+- 「文書に残すこと」の `lib/demo_reset.rb` の冒頭のコメントのほかに、入口の条件を前の形（`DEMO_WORLD_ENABLED=1` だけ）で書いていた 2 か所を直した。`architecture/data-model.md`「監査ログ」の公開の配置の例外と、`implementation-plan.md` の M41 の作るもの 3 の手順 1 である。`adr/009` 決定 3・4 と `deploy/README.md` は、本番の環境の配置の振る舞いだけを書いており、変わらない。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：`spec/platform/demo_reset_spec.rb` の「入口」に、開発とテストの環境で `DEMO_WORLD_ENABLED=1` を渡しても止まることを確かめる example を足し、`lib/demo_reset.rb` を変える前に流した（16 examples, 1 failure）。いまの門は開発とテストで開くので、入口を通って所有ロールでロックを取り、ServiceAccount の場所が無いことで落ちた（IB-90 の、処理の順に頼った止まり方そのもの）。
+
+```
+expected DemoReset::Refused with message matching /本番の環境/, got #<KeyError: key not found: "KUBERNETES_SERVICE_HOST">
+  # ./lib/demo_reset/kubernetes.rb:17:in 'DemoReset::Kubernetes.from_service_account'
+  # ./lib/demo_reset.rb:41:in 'block in DemoReset#run'
+  # ./lib/demo_reset.rb:65:in 'DemoReset#with_lock'
+```
+
+この example は、開発とテストの環境の両方で止まることと、`PG.connect`・`Kubernetes.from_service_account`・Kubernetes の API・DB のタスク・シード（`DemoWorld.build`）のどれも呼ばないことを確かめ、同じ準備で本番の環境に替えれば、ロックを取り、API・DB のタスク・シードを呼ぶことを対照にする。
+
+実装を 1 か所ずつ壊し、`bundle exec rspec spec/platform/demo_reset_spec.rb` を流して、ファイルの複製から戻した。
+
+| 壊したもの | 落ちたもの |
+|---|---|
+| 入口の条件から、本番の環境の条件（`Rails.env.production? &&`）だけを外す | 1（上の example。RED と同じ `KeyError`） |
+| 入口の条件から、門（`Platform::DemoWorldGate.open?`）だけを外す | 1（「入口」の、本番の環境で `DEMO_WORLD_ENABLED` が無いか 1 でなければ止まる example） |
+| spec の「作り直し」の準備から、本番の環境（`production!`）を外す | 11（「作り直し」のすべて） |
+| spec の「作り直し」の準備から、`DEMO_WORLD_ENABLED=1` を外す | 11（同上） |
+
+後ろの 2 つは、計画の作るもの 2 の準備が、どれも入口を通るために要ることを確かめた。
+
+#### 手元で流したもの
+
+`4dc35fb` に M43 の変更を載せた作業ツリーで、Ruby 3.4.11・PostgreSQL 18 で流した。
+
+```sh
+bundle exec rspec spec/platform/demo_reset_spec.rb   # 16 examples, 0 failures
+bin/ci                                               # すべての工程が通った。rspec は 2863 examples, 0 failures
+```
+
+分岐の網羅率の警告は 0 件だった。
+
+### 残件の処理
+
+引当先が M43 の行は、着手の前に台帳を読んだ時点で無かった（`bin/check-open-items --due M43` が通る）。IB-90 は計画どおり `DemoReset#run` に条件を置き、`DemoWorldGate` の意味は変えていない。
