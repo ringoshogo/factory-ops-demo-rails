@@ -28,8 +28,4 @@ RSpec.describe EnvHelpers do
     with_env(name => nil) { expect(ENV).not_to have_key(name) }
     expect(ENV[name]).to eq("before")
   end
-
-  it "M42 の確かめのためにわざと落とす" do
-    expect(1).to eq(2)
-  end
 end
