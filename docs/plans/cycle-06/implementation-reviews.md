@@ -446,3 +446,85 @@ bin/check-commit-refs
 ### 残件の処理
 
 着手の前に台帳を読み、引当先が M45 の行は OI-186・OI-188・OI-190（どれも `judgment`）だった。OI-188 は判断のとおり、発注の合計にも受注と同じ規則を当て、発注一覧に「発注合計」の列を足した。OI-186・OI-190 は判断のとおり、問いに無かった列を足さず、名前を DB の照合順序のまま並べた。どれも作者の確認を待つ `judgment` のままにした。OI-179（作者の判断）は、合計の式と `totalAmount` と画面の 1 つの関数で反映した。実装で決めたことを OI-191 に積んだ。
+
+## M46 在庫を、品目のコードと名前で並べ、検索する
+
+`m46-stock-item-sort`（base は `main`）。M45 のブランチ `m45-list-sort` の先端 `46aa4ed` から切った。計画の PR #78 と M45 の PR #79 が未マージなので、PR の差分にはそれらの commit も含まれる。M46 の差分は `46aa4ed..` である。
+
+### 実装の記録
+
+#### 計画との違い
+
+- 作り直しのタスク（`read_models:rebuild`）は、`sales:backfill_item_prices` と違い、数が 0 のテナントの行も出す。一致の spec が、世界のテナントごとに 0 であることをタスクの出力から読むからである。テストの DB には、ほかの spec が残したテナントもあるので、spec は世界のテナントの行だけを読む
+- `put` の戻り値は、足した数と書き直した数を持つ値（`Inventory::ItemLabels::Counts`）にした。タスクがテナントの数を足し合わせるので、足し算を持たせた
+- 競合テスト `item_labels_rebuild_lock_spec.rb` は、`spec/support/concurrency.rb` の `in_thread`・`blocked_on_lock?` に加えて、作り直しのスレッドだけを品目を読んだ後、写しを書く前で止めるため、`Inventory::ItemLabels.put` を `and_wrap_original` で包んだ。作り直しを `hold_open` で開いたままにすると、作り直しが書いた写しの行ロックで保存が待つので、`FOR SHARE` を外しても保存が作り直しの後に写しを書き、落ちない
+- 入口の行列の在庫の変種の行は `"SupplierView.stocks#keyword"` にした。いまの `"SupplierView.stocks#filter"`（有効在庫で並べ、安全在庫で絞る）を残し、品目名で並べて `keyword` で絞る行を足した
+- E2E は、画面の問い合わせの変数（`filter.keyword`）をブラウザから見られないので、URL の `q` と、当たる在庫の行と件数を確かめる。URL の値を `filter.keyword` に写すことは、`frontend/lib/supplier-master-lists.test.ts` が確かめる
+- `spec/db/lock_sites_spec.rb` の表に `Sales::Catalog.rebuild_item_labels` を足し、`Sales::Catalog.save` を、競合テストを持たない理由から `item_labels_rebuild_lock_spec.rb` に替えた。保存の行ロックが、作り直しを待たせる側になったからである。`packs/inventory/spec/models/inventory/stock_spec.rb` の一括の書き込みの検査に、在庫の行ではなく写しを書く `ItemLabels.put` の `upsert_all` を足した
+- 写しを読む受注とルートの spec は、写しのモデルが在庫のパッケージの外に出ない（packwerk の `enforce_privacy`）ので、SQL で読む
+- 公開の配置で作り直しを待たずに写しを埋める手順を、`deploy/README.md` に `kubectl exec` で `bin/rails read_models:rebuild` を流す形で書いた
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）は、計画が名指しした次の 2 つである。どちらも実装の前に流した。
+
+`spec/requests/inventory_spec.rb` の、`filter: { keyword: "六角" }` で在庫の一覧を読む example（`46aa4ed` の作業ツリー）。`keyword` を足す前は引数の検証のエラーで `stocks` が無い。同じ example の対照（絞らなければ 3 件とも返る）は通った。
+
+```
+Failure/Error: expect(stocks(filter: { keyword: "六角" })).to eq([ %w[B-1 N-2], 2 ])
+
+  expected: [["B-1", "N-2"], 2]
+       got: nil
+```
+
+`frontend/e2e/list-pagination.spec.ts` の、在庫の画面で品目名の一部を検索する example（API の変更だけを入れ、画面を変える前）。API の `StockOrderField` に値を足すと、在庫の画面の `sortColumns` が型検査で落ちて `next build` が通らないので、見出しの文字に `ITEM_CODE`・`ITEM_NAME` を足すことだけをした。最初の版は検索の欄の `fill` が時間切れで落ちたので、欄が見えることを先に確かめる形に書き直して流し直した。
+
+```
+Error: expect(locator).toBeVisible() failed
+Locator: getByRole('searchbox', { name: '検索' })
+Error: element(s) not found
+```
+
+ほかの spec は実装の後に書いた。GREEN の後に 1 か所ずつ壊し、ファイルの複製から戻した。
+
+| 壊したもの | 流した spec | 落ちたもの |
+|---|---|---|
+| `Sales::Catalog.bulk_upsert` から `Inventory::ItemLabels.put` の呼び出しを外す | `read_model_copies_spec.rb`・`catalog_bulk_upsert_spec.rb` | 4（一致の spec の 3 つ。世界の取り込みが写しを書かないので、世界を作った後の作り直しから 0 でない。取り込みの単体の写しの example） |
+| `Sales::Catalog.save` から `put` の呼び出しを外す | `read_model_copies_spec.rb`・`catalog_spec.rb` | 4（一致の spec の 3 つと、保存の写しの example） |
+| `put` の一意索引と `ON CONFLICT` の対象を品目 ID だけにする（テストの DB の索引を所有ロールで張り替えて流し、元に戻した） | `item_labels_spec.rb` | 2（他社の名義で同じ品目 ID の写しがあるときの `put` の 2 つ。開かないときも開いたときも RLS の例外） |
+| 在庫の一覧で写しを結ぶ条件から所有テナントを外す | `item_labels_spec.rb`・`spec/matrix/graphql_matrix_spec.rb` | 1（`item_labels_spec.rb` の一覧の example だけ。入口の行列の 600 を超える example は落ちない） |
+| `rebuild_item_labels` が品目を読む条件から所有テナントを外す | `catalog_spec.rb` | 1（RLS を開いたときの作り直しの example） |
+| `rebuild_item_labels` の `FOR SHARE` を外す | `item_labels_rebuild_lock_spec.rb` | 1（写しが「古い名前」のまま残る） |
+| 在庫の `keyword` で `Keyword` を通さずに LIKE を組む | `stocks_spec.rb` | 2（`%` と `_` の example と、全角の空白を除く example） |
+| `put` の `IS DISTINCT FROM` の条件を外す（値の同じ写しも書き直す） | `item_labels_spec.rb`・`read_model_copies_spec.rb`・`catalog_spec.rb` | 5（`put` の数の example、一致の spec の 3 つ、作り直しの数の example） |
+| `StockFilter` の `keyword` の長さの検証を外す | `spec/requests/inventory_spec.rb` | 1（100 文字ちょうどと 101 文字の example） |
+| `Keyword::MAX_LENGTH` を 99 にする | `spec/requests/inventory_spec.rb`・`spec/requests/catalog_spec.rb` | 2（在庫と品目の 100 文字ちょうどの example） |
+| `Keyword` の `sanitize_sql_like` を外す | `keyword_spec.rb`・`catalog_spec.rb`・`stocks_spec.rb` | 3（3 つの `%` と `_` の example） |
+| `Keyword` の前後の空白の除き方を外す | `keyword_spec.rb` | 1 |
+| `Keyword` の LIKE を大文字と小文字を区別する形にする | `keyword_spec.rb` | 1 |
+| 在庫の `ITEM_NAME` の列を写しのコードにする | `stocks_spec.rb`・`spec/requests/inventory_spec.rb` | 2（品目名で並べる 2 つの example） |
+| 画面の `stockListVariables` で `keyword` を送らない | `frontend/lib/supplier-master-lists.test.ts` | 1 |
+
+写しを結ぶ条件から所有テナントを外しても入口の行列が落ちないのは、計画の作るもの 7 のとおりで、品目 ID が UUIDv7 で他社の品目と重ならないからである。`item_labels_spec.rb` の一覧の example が、他社の名義で自社の在庫の品目 ID を指す写しを factory で作って捕まえる。
+
+#### 手元で流したもの
+
+`45d7161` で、Ruby 3.4.11・PostgreSQL 18・Node 22.23.3 で流した。
+
+```sh
+bundle exec rspec packs/platform/spec/models/keyword_spec.rb packs/sales/spec/public/sales/catalog_spec.rb packs/sales/spec/public/sales/catalog_bulk_upsert_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb packs/inventory/spec/public/inventory/item_labels_spec.rb   # 42 examples, 0 failures
+bundle exec rspec spec/scenarios/read_model_copies_spec.rb packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb spec/matrix spec/requests/inventory_spec.rb spec/requests/catalog_spec.rb spec/graphql/query_budget_spec.rb   # 1562 examples, 0 failures
+bin/check-schema-compat   # 落とす変更は無い
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 通った。test:unit は 139 tests
+bin/ci   # すべての工程が通った。rspec は 2977 examples, 0 failures
+bin/check-open-items --due M46
+bin/check-commit-refs
+```
+
+E2E（`cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e`）は、画面と E2E の変更を入れた作業ツリーで流し、67 passed、25 skipped（`E2E_SCREENSHOTS` が無いときに飛ばすスクリーンショット）だった。その後の変更は spec と文書だけで、画面は変えていない。
+
+分岐の網羅率の警告は 0 件だった。`bin/ci` は既定の DB で流した。はじめの `bin/ci` は、`spec/db/lock_sites_spec.rb` と在庫の一括の書き込みの検査（上の「計画との違い」）、packwerk（受注とルートの spec が写しのモデルを参照した）、`bin/check-structure`（`db/structure.sql` が未 commit だった）で落ち、直して commit した後に通った。
+
+### 残件の処理
+
+着手の前に台帳を読み、引当先が M46 の行は OI-189（`decided`。作者の判断で、品目の保存と取り込みが同じトランザクションで在庫の公開 API を呼んで写す）だった。判断のとおり、`Sales::Catalog.save`・`bulk_upsert` が `Inventory::ItemLabels.put` を呼ぶ形で作った。OI-190（名前を DB の照合順序のまま並べる、`judgment`）は、品目の名前も同じく照合順序のまま並べた。
