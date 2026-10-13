@@ -330,8 +330,8 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.API_IMAGE }}
           load: true
-          cache-from: type=gha,scope=api-m42-cold
-          cache-to: type=gha,scope=api-m42-cold,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
 
       # 本番の環境（eager_load）で全コードを読み込めることを、arm64 のイメージのまま確かめる。DB には繋がない
       - name: Boot API image in production
@@ -347,8 +347,8 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.FRONTEND_IMAGE }}
           load: true
-          cache-from: type=gha,scope=frontend-m42-cold
-          cache-to: type=gha,scope=frontend-m42-cold,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
   # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
@@ -381,7 +381,7 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.API_IMAGE }}
           load: true
-          cache-from: type=gha,scope=api-m42-cold
+          cache-from: type=gha,scope=api
 
       - name: Build frontend image
         uses: docker/build-push-action@v7
@@ -391,7 +391,7 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.FRONTEND_IMAGE }}
           load: true
-          cache-from: type=gha,scope=frontend-m42-cold
+          cache-from: type=gha,scope=frontend
 
       - name: Log in to GHCR
         if: github.ref == 'refs/heads/main'
