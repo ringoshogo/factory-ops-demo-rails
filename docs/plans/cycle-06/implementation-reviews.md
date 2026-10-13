@@ -321,3 +321,91 @@ PR #76 の CI は、`afdf731` の run（38366504749）で、`frontend`・`e2e`�
 ### 残件の処理
 
 引当先が M44 の行は、着手の前に台帳を読んだ時点で無かった。OI-163（画面の Node を 22 系にした判断）は、`engines` を `^22.12` にして主版を 1 つに決め、spec で 4 か所をそろえたので、内容は変わらない。IB-99 は計画どおり `typescript` 7 の PR を開いたままにした。実装で積んだのは OI-185・IB-103・IB-104 で、実装レビューの違和感は IB-105 に積んだ。
+
+## M45 受注・発注・出荷依頼を、取引先の名前と合計と状況で並べる
+
+`m45-list-sort`（base は `main`）。計画の PR #78（`cycle-06-decisions`）の先端 `2daa00b` から切った。#78 が未マージなので、PR の差分には計画の commit も含まれる。M45 の差分は `2daa00b..` である。
+
+### 実装の記録
+
+#### 計画との違い
+
+- 取引先の名前は、計画の作るもの 1 の「外部結合し、名前の列で並べる」ではなく、副問い合わせから伝票の相手のテナント ID の行の名前を行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べた。`Page` は並べ替えの式 1 つを受け取り、ページと件数を同じ relation から引く。外部結合では名前で並べるときだけ relation に結合を足すことになり、結ぶ条件を書き誤ると伝票の行と件数が黙って増える。スカラーの副問い合わせでは、2 行以上が当たると SQL のエラーになる。OI-191 に積み、計画の作るもの 1・6、`adr/010` 決定 2、`architecture/graphql-schema.md`「ページングと N+1」をこの形に書いた。作るもの 6 の行列の行は、結ぶ条件を外すと SQL のエラーで落ちる（下の壊して落ちる記録）
+- カーソルの合計の値は、計画の「整数に戻す」ではなく `BigDecimal` に戻した。Active Record は `bigint` を超える `Integer` を比べる値にすると `IntegerOutOf64BitRange` を投げ（`ActiveRecord.raise_int_wider_than_64bit`）、`bigint` を超える和の次のページが 500 になるからである。受け付ける形（`\A\d{1,31}\z`）は計画のとおりである
+- 発注一覧に「発注合計」の列と、取引先・状況の並べ替えの矢印を足すと、1024px で表がパネルから 19px はみ出し、`e2e/layout.spec.ts` の `/buyer/purchase-orders` が落ちた。列の最小幅を決めていたのは、折り返さない希望納期のセル（「10月16日 あと2日」）だった。`DueDate` を、表のセルの中でだけ日付と文言の間の空白で折り返せるようにした（`frontend/components/date-text.tsx`）。日付と文言の中では折り返さず、かんばんのカードでは 1 行のままにする
+- 画面の合計の表示を 1 つの関数（`totalAmountText`）にしたので、受注一覧と発注一覧の合計のセルも、受注詳細とかんばんのカードと同じく「円」を付けて出す。受注詳細の明細ごとの金額（単価 × 数量）は、単価のある明細だけで計算し、0 として足す形を消した
+- 状況の位置を返す式（`array_position`）は、3 つの状況のモジュールで同じ形なので、`Page::Sort.rank` に 1 つで置いた
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）は、計画が名指しした次の 3 つである。どれも実装の前に流した。
+
+`packs/sales/spec/public/sales/sales_orders_spec.rb` の、照合待ちの明細を含む受注の `to_h` が `total_amount: nil` を持つ example（`2daa00b` の作業ツリー、platform の変更だけを入れた状態）。
+
+```
+expected {cancellation_review_pending: false, customer_tenant_id: "...", due_... "SO-F00001", owner_tenant_id: "...", status: :awaiting_part_match} to include {total_amount: nil}
+```
+
+`spec/requests/purchase_orders_spec.rb` の、`orderBy: { field: SUPPLIER_NAME, direction: ASC }` で発注の一覧を読む example。列を足す前は引数の検証のエラーで `nodes` が無い。最初の版は `nodes` に `map` を呼んで `NoMethodError` で落ちたので、RED に数えず、`nodes` を期待と比べる形に書き直して流し直した。
+
+```
+expected: [{"orderNo" => "PO-000002", "supplier" => {"name" => "あおば製作所"}}, {"orderNo" => "PO-000001", ...}, {"orderNo" => "PO-000003", ...}]
+     got: nil
+```
+
+`frontend/e2e/list-pagination.spec.ts` の、受注一覧を取引先の名前と受注合計で並べ、照合待ちの受注が一覧・詳細・かんばんのカードのどれでも「照合待ち」と出る example（API の変更だけを入れ、画面を変える前）。最初の版は `getByRole("button", { name: "取引先" })` が絞り込みの「取引先」のボタンに当たり、URL の期待の不一致で落ちた。見出しの中のボタンに絞って流し直した。
+
+```
+Error: expect(locator).toBeVisible() failed
+Locator: getByRole('columnheader', { name: '取引先' }).getByRole('button')
+Error: element(s) not found
+```
+
+ほかの spec は実装の後に書いた。GREEN の後に 1 か所ずつ壊し、ファイルの複製から戻した。
+
+| 壊したもの | 流した spec | 落ちたもの |
+|---|---|---|
+| 受注の合計の式の「単価の無い明細があれば空」を `false` にする | `sales_orders_spec.rb` | 2（`total_amount: nil` の example と、合計で並べて照合待ちが末尾に来る example） |
+| 受注の合計の式の `numeric` への変換を外す | `sales_orders_spec.rb` | 2（`bigint` を超える和の example が SQL のエラーで、合計で並べる example も同じ） |
+| 発注の合計の式の「単価の写しの無い明細があれば空」を `false` にする | `purchase_orders_spec.rb`（購買の単体） | 1（合計で並べる example）。最初は単価の写しの無い明細だけの発注で確かめていて、和がもともと空になるので 0 failures だった。写しの有る明細と無い明細を混ぜた発注に直した |
+| 発注の合計の式の `numeric` への変換を外す | `spec/requests/purchase_orders_spec.rb` | 1（`bigint` を超える `totalAmount` の example） |
+| 発注の値への写しで合計を `to_f` にする | `spec/requests/purchase_orders_spec.rb` | 1（同上。10 進の文字列が期待と一致しない） |
+| 受注の値への写しで合計を `to_f` にする | `sales_orders_spec.rb` | 1（`bigint` を超える和を整数で持つ example） |
+| カーソルの合計を整数の文字列にせずに書く | `page_spec.rb`・`sales_orders_spec.rb` | 2（`bigint` を超える和をカーソルで往復させる 2 つの example） |
+| カーソルを読むときの桁の確かめを外す | `page_spec.rb` | 1（31 桁を超える値・負の値・小数のカーソルを拒む example） |
+| 受注の `SORT_ORDER` から品番照合待ちを外す | 受注の状況の単体・`sales_orders_spec.rb` | 2（`ALL` と同じ集まりの example と、状況で並べる example） |
+| 発注の `SORT_ORDER` から受注側で確認中を外す | 発注の状況の単体 | 1（`ALL` と同じ集まりの example） |
+| 出荷依頼の `SORT_ORDER` から出荷停止中を外す | 出荷依頼の状況の単体 | 1（同上） |
+| 発注の `SORT_ORDER` の受注済を先頭へ動かす | `purchase_orders_spec.rb`（購買の単体） | 1（状況で並べる example） |
+| 出荷依頼の `SORT_ORDER` の出荷指示済を先頭へ動かす | `shipment_requests_spec.rb` | 1（状況で並べる example） |
+| `Page::Sort.rank` の一覧を逆にする | `page_spec.rb` | 1（位置で並べる example） |
+| 名前の副問い合わせに取引用コードを足す | `directory_spec.rb` | 1（列が ID と名前だけの example） |
+| `tenant_names_sql` の操作者の確かめを外す | `directory_spec.rb` | 1（操作者でなければ引数の誤りにする example） |
+| `SqlSubquery#lookup` の結ぶ条件を外す | `directory_spec.rb` | 1（行ごとに名前を 1 つ引く example） |
+| 同上 | `spec/matrix/graphql_matrix_spec.rb -e orderByName` | 30（3 つの `#orderByName` の行の、全ペルソナの admin と member） |
+| 受注・発注・出荷依頼の名前の副問い合わせを、相手のテナント ID でなく所有テナントの ID で引く | 3 つの公開 API の単体と `spec/requests/purchase_orders_spec.rb` | 受注 1・発注 2・出荷依頼 1（名前で並べる example） |
+| 画面の `totalAmountText` で、空の合計を 0 円にする | `frontend/lib/format.test.ts` | 1（空の合計の example） |
+
+`DueDate` を表のセルの中で折り返せるようにする前は、上の「計画との違い」のとおり `e2e/layout.spec.ts` の `/buyer/purchase-orders` が落ちた（`表の幅がパネルの中に収まる (表 707.25 / パネル 688)`）。直した後は通った。
+
+#### 手元で流したもの
+
+`8831090` の作業ツリーで、Ruby 3.4.11・PostgreSQL 18・Node 22.23.3 で流した。
+
+```sh
+bundle exec rspec packs/platform/spec/models/page_spec.rb packs/partnerships/spec/public/partnerships/directory_spec.rb   # 0 failures
+bundle exec rspec packs/sales/spec/public/sales/sales_orders_spec.rb packs/sales/spec/models/sales/sales_order_status_spec.rb packs/purchasing/spec/public/purchasing/purchase_orders_spec.rb packs/purchasing/spec/models/purchasing/purchase_order_status_spec.rb packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb packs/fulfillment/spec/models/fulfillment/shipment_request_status_spec.rb   # 0 failures
+bundle exec rspec spec/matrix spec/requests/purchase_orders_spec.rb spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb   # 0 failures
+bin/check-schema-compat   # 破壊的な変更 0 件
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 通った。test:unit は 138 tests
+cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 66 passed、25 skipped（E2E_SCREENSHOTS が無いときに飛ばすスクリーンショット）
+bin/ci   # すべての工程が通った。rspec は 2920 examples, 0 failures
+bin/check-open-items --due M45
+bin/check-commit-refs
+```
+
+分岐の網羅率の警告は 0 件だった。`bin/ci` は、はじめ `TEST_DATABASE` を渡して流し、`spec/platform/logging_spec.rb` の 1 件が `log/events.log` が無いことで落ちた。この example は既定の DB のプロセスが書いた `log/events.log` を読むので、別の DB に向けた worktree の初めての実行では落ちる。ほかに rspec を流しているプロセスが無いことを確かめてから、`TEST_DATABASE` を渡さずに流し直して通った。
+
+### 残件の処理
+
+着手の前に台帳を読み、引当先が M45 の行は OI-186・OI-188・OI-190（どれも `judgment`）だった。OI-188 は判断のとおり、発注の合計にも受注と同じ規則を当て、発注一覧に「発注合計」の列を足した。OI-186・OI-190 は判断のとおり、問いに無かった列を足さず、名前を DB の照合順序のまま並べた。どれも作者の確認を待つ `judgment` のままにした。OI-179（作者の判断）は、合計の式と `totalAmount` と画面の 1 つの関数で反映した。実装で決めたことを OI-191 に積んだ。
