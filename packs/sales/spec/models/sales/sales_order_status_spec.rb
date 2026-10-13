@@ -65,6 +65,23 @@ RSpec.describe Sales::SalesOrderStatus do
     expect(list(nil)).to eq([ [ [ shipped.id, :shipped ], [ received.id, :received ], [ cancelled.id, :cancelled ] ], 3 ])
   end
 
+  # 期待する順は docs/architecture/graphql-schema.md「状況の enum」の「状況で並べる順」の表から書き写す
+  it "状況で並べると、業務の進み順に並び、DESC はその逆になる" do
+    orders = {
+      cancelled: order(cancelled_at: now), inspected: order(inspected_at: now, shipped_at: now), shipped: order(shipped_at: now),
+      awaiting_part_match: order(unmatched: 1), allocated: order(allocated: [ 2 ]), partially_allocated: order(allocated: [ 1 ]),
+      received: order(allocated: [ 0 ])
+    }
+    sorted = lambda do |direction|
+      Sales::SalesOrders.list(actor, first: 100, after: nil, order_by: { field: :status, direction: }).values.map(&:status)
+    end
+
+    expected = %i[awaiting_part_match received partially_allocated allocated shipped inspected cancelled]
+    expect(orders.keys).to match_array(expected)
+    expect(sorted.call(:asc)).to eq(expected)
+    expect(sorted.call(:desc)).to eq(expected.reverse)
+  end
+
   # 片方にだけ状況を足すと、足した状況の順位が空になり、状況で並べたときに黙って最後に並ぶ
   it "状況で並べる順（SORT_ORDER）は、導出の優先順（ALL）と同じ状況の集まりを持つ" do
     expect(described_class::SORT_ORDER).to match_array(described_class::ALL)

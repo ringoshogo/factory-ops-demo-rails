@@ -1700,7 +1700,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
    | `buyer.purchaseOrders` | `SUPPLIER_NAME`・`TOTAL_AMOUNT`・`STATUS` | 同上 |
    | `supplier.shipmentRequests` | `CUSTOMER_NAME`・`STATUS` | 名前の副問い合わせの名前・状況の順位 |
 
-   `Page::Sort` の型に、合計のための `:decimal` を足す。カーソルには和を整数の 10 進の文字列（`to_i.to_s`）で書き、読むときは `\A\d{1,31}\z` に当たる文字列だけを整数に戻し、ほかは形の誤ったカーソルにする。状況の順位は `:integer` である。
+   `Page::Sort` の型に、合計のための `:decimal` を足す。カーソルには和を整数の 10 進の文字列（`to_i.to_s`）で書き、読むときは `\A\d{1,31}\z` に当たる文字列だけを、`numeric` で比べるために `BigDecimal` に戻し、ほかは形の誤ったカーソルにする（Active Record は `bigint` を超える `Integer` を比べる値にできない）。状況の順位は `:integer` である。
 5. 画面：API の `<型>OrderField` に値を足すと、生成した型が変わり、見出しを作る `sortColumns`（`frontend/components/columns.tsx`）が足した値の見出しの文字を求めて型検査が落ちるので、画面を同じマイルストーンで直す。
    - 受注一覧（画面 5）の取引先・状況・受注合計、発注一覧（画面 19）の取引先・状況、出荷依頼（画面 9）の取引先・状況の見出しを、並べ替えの対象にする。URL の値を変数に写す関数（`frontend/lib/sales-order-list.ts`・`purchase-order-list.ts`・`shipment-request-list.ts`）の列の一覧にも足す。
    - 発注一覧に、受注一覧と同じく合計の列（「発注合計」）を足す（OI-188）。

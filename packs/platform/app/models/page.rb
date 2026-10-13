@@ -106,6 +106,8 @@ class Page
     in [ :integer, Integer ] if INTEGER.cover?(value) then value
     in [ :date, String ] if DATE.cover?(date = Date.iso8601(value)) then date
     # Integer で比べると、Active Record が bigint を超える整数を引数の誤りにするので、numeric の BigDecimal で比べる
+    # （activerecord 8.1 の ActiveRecord.raise_int_wider_than_64bit の既定は true で、
+    # connection_adapters/postgresql/quoting.rb の check_int_in_range が IntegerOutOf64BitRange を投げる）
     in [ :decimal, String ] if value.match?(DECIMAL) then BigDecimal(value)
     end
   end
