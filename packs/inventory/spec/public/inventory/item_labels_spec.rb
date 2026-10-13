@@ -32,6 +32,12 @@ RSpec.describe Inventory::ItemLabels do
       expect(put([])).to eq(described_class::Counts.new(inserted: 0, updated: 0))
     end
 
+    it "足した数と書き直した数を、それぞれ足し合わせる" do
+      sum = described_class::Counts.new(inserted: 1, updated: 2) + described_class::Counts.new(inserted: 3, updated: 5)
+
+      expect(sum).to eq(described_class::Counts.new(inserted: 4, updated: 7))
+    end
+
     it "テナントの設定の外では例外にし、何も書かない" do
       expect { described_class.put([ { item_id: bolt, code: "B-1", name: "ボルト" } ]) }.to raise_error(Tenancy::MissingTenant)
       expect(labels_of(supplier)).to be_empty

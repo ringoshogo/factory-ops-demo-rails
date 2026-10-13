@@ -96,11 +96,14 @@ module Sales
     # 操作者のいない入口なので、テナントの設定を求め、所有テナントを明示して読む。品目の表には公開した品目を取引先に見せる
     # SELECT のポリシーがあるので、所有の条件を RLS に任せられない。
     # 品目を FOR SHARE で読み、写しを書き終えるまで save と bulk_upsert の行ロックを待たせる。待たせないと、ここが古い名前を
-    # 読んだ後に保存が新しい名前と写しを書き、ここが古い名前で写しを上書きする。ロックは bulk_upsert と同じ品目コードの順に取る
+    # 読んだ後に保存が新しい名前と写しを書き、ここが古い名前で写しを上書きする。
+    # ロックは bulk_upsert と同じ品目コードの順に取り、並んでも行き詰まらないようにする。bulk_upsert は Ruby の文字列の比べ方
+    # （バイトの順）で並べるので、DB の照合順序（en_US.utf8 では a-1 が B-1 より前）ではなく、バイトの順の照合順序 "C" で並べる
     def self.rebuild_item_labels
       Tenancy.require_tenant!
       Item.transaction(requires_new: true) do
-        items = Item.where(owner_tenant_id: Current.tenant_id).order(:code).lock("FOR SHARE").pluck(:id, :code, :name)
+        items = Item.where(owner_tenant_id: Current.tenant_id).order(Arel.sql('items.code COLLATE "C"')).lock("FOR SHARE")
+          .pluck(:id, :code, :name)
         Inventory::ItemLabels.put(items.map { label(*_1) })
       end
     end

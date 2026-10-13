@@ -66,16 +66,24 @@ RSpec.describe Inventory::Stock do
       %i[update_all update_counters increment_counter decrement_counter upsert upsert_all insert insert! insert_all insert_all!]
     end
 
-    # source の中で一括の書き込みを呼ぶ箇所を、[囲むメソッドの名前, 呼ぶメソッドの名前] の配列で返す
+    # source の中で一括の書き込みを呼ぶ箇所を、[囲むメソッドの名前, 書き込み先の定数, 呼ぶメソッドの名前] の配列で返す。
+    # 書き込み先は、呼び出しの連なり（Stock.where(...).update_all）をたどった先頭の定数の名前で、self への呼び出しは nil にする。
+    # 書き込み先まで比べないと、写しの表への書き込みを在庫の行への書き込みに替えても検査が通る
     def bulk_write_calls(source)
       calls = []
       visit = lambda do |node, method_name|
         method_name = node.name if node.is_a?(Prism::DefNode)
-        calls << [ method_name, node.name ] if node.is_a?(Prism::CallNode) && bulk_writes.include?(node.name)
+        calls << [ method_name, target_of(node), node.name ] if node.is_a?(Prism::CallNode) && bulk_writes.include?(node.name)
         node.compact_child_nodes.each { visit.call(_1, method_name) }
       end
       visit.call(Prism.parse(source).value, nil)
       calls
+    end
+
+    def target_of(call)
+      node = call.receiver
+      node = node.receiver while node.is_a?(Prism::CallNode)
+      node.full_name if node.is_a?(Prism::ConstantReadNode) || node.is_a?(Prism::ConstantPathNode)
     end
 
     it "在庫のパッケージのコードは、lock_for の insert_all と品目の写しの upsert_all のほかに一括の書き込みを呼ばない" do
@@ -84,7 +92,20 @@ RSpec.describe Inventory::Stock do
         bulk_write_calls(File.read(path)).map { [ path.delete_prefix("#{root}/"), *_1 ] }
       end
 
-      expect(found).to eq([ [ "models/inventory/stock.rb", :lock_for, :insert_all ], [ "public/inventory/item_labels.rb", :put, :upsert_all ] ])
+      expect(found).to eq([
+        [ "models/inventory/stock.rb", :lock_for, nil, :insert_all ], [ "public/inventory/item_labels.rb", :put, "ItemLabel", :upsert_all ]
+      ])
+    end
+
+    it "検査は、呼び出しの連なりの先頭の定数を書き込み先として拾う" do
+      source = <<~RUBY
+        def put(rows)
+          ItemLabel.upsert_all(rows)
+          Inventory::Stock.where(item_id: rows).upsert_all(rows)
+        end
+      RUBY
+
+      expect(bulk_write_calls(source)).to eq([ [ :put, "ItemLabel", :upsert_all ], [ :put, "Inventory::Stock", :upsert_all ] ])
     end
 
     it "検査は、文字列の補間を引数に含む呼び出しを拾い、コメントの中の語を拾わない" do
@@ -95,7 +116,7 @@ RSpec.describe Inventory::Stock do
         # Stock.insert_all([])
       RUBY
 
-      expect(bulk_write_calls(source)).to eq([ [ :reset, :update_all ] ])
+      expect(bulk_write_calls(source)).to eq([ [ :reset, "Stock", :update_all ] ])
     end
   end
 
