@@ -197,7 +197,7 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 - 問い合わせの深さと複雑度の上限：同じく `app/graphql/factory_ops_schema.rb`
 - スキーマの破壊的変更：`schema.graphql` を commit し、CI の lint のジョブで `bin/check-schema-compat` が非推奨を経ない削除を落とす
 - 一覧：すべての一覧が件数（`totalCount`）を持ち、画面の一覧は並べ替え（`orderBy`）と絞り込み（`filter`・`statuses`）をサーバーで行う。件数とページは同じ scope と絞り込みの relation から引く（`packs/platform/app/models/page.rb`、[`architecture/graphql-schema.md`](architecture/graphql-schema.md)「ページングと N+1」）。画面は 1 ページずつ読み、`schema.graphql` と画面の問い合わせから作った型で検査する（`frontend/graphql/`、`npm run codegen:check`）
-- 別のコンテキストの値での並べ替え：相手の表を直に結合せず、取引先の名前は取引関係の公開 API が返す副問い合わせから伝票の行ごとに 1 つ引き（`packs/platform/app/models/sql_subquery.rb`）、在庫の品目は在庫に写した表を結ぶ。結ぶ条件を誤って 2 行以上が当たると、行と件数を黙って増やさずに SQL のエラーになる。合計金額と状況は同じパッケージの SQL の式で並べ、状況は業務の進み順の位置で並べる（`packs/platform/app/models/page.rb`）
+- 別のコンテキストの値での並べ替え：相手の表を直に結合せず、取引先の名前は取引関係の公開 API が返す副問い合わせから伝票の行ごとに 1 つ引く（`packs/platform/app/models/sql_subquery.rb`）ので、結ぶ条件を誤って 2 行以上が当たると、行と件数を黙って増やさずに SQL のエラーになる。在庫の品目は在庫に写した表を所有テナントと品目 ID の組で結び、その組の一意索引が 1 行に限る。合計金額と状況は同じパッケージの SQL の式で並べ、状況は業務の進み順の位置で並べる（`packs/platform/app/models/page.rb`）
 
 **どう確かめられるか**
 

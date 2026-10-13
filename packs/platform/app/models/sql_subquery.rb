@@ -1,5 +1,5 @@
 # 公開 API が、別のコンテキストの SQL の中へ値を渡すときの副問い合わせ（docs/adr/010-状況の導出をSQLの式1つにする.md）。
-# 操作者の scope を掛けた relation を SQL の文字列にしたものと、その列の名前だけを持つ。relation を渡すと、受け取る側が
+# 操作者の scope を掛けた relation（所有テナントの無い表は、scope の代わりに返す列を絞った relation）を SQL の文字列にしたものと、その列の名前だけを持つ。relation を渡すと、受け取る側が
 # unscope・rewhere・update_all を呼べ、scope と書き込みの入口がコンテキストの境界を越えるからである。
 # 受け取る側は、条件を足さずに副問い合わせとして結ぶだけにする
 SqlSubquery = Data.define(:sql, :columns) do
