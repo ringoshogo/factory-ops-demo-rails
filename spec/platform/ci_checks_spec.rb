@@ -77,6 +77,13 @@ RSpec.describe "CI と手元で流す検査" do
     expect(jobs.keys - %w[image_inputs publish] - Array(jobs.dig("publish", "needs"))).to eq([])
   end
 
+  # publish はジョブの段の if: で needs の skipped を見ないので、push で skip されたジョブは push を止めない
+  # （docs/guides/config.md「CI の工程」）。ジョブの段の if: は、PR でだけ流す image_inputs と、push では必ず流れる
+  # images と、publish 自身にだけ書く
+  it "ジョブの段の if: を持つのは image_inputs・images・publish だけ" do
+    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys.sort).to eq(%w[image_inputs images publish])
+  end
+
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do
     text = "BASE_REF=origin/main bin/check-branch-coverage\nbin/rails db:test:prepare && bin/packwerk check\n./bin/thrust ./bin/rails server\n"
 

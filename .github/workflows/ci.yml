@@ -355,8 +355,9 @@ jobs:
   # ジョブの if: は、ジョブの名前を並べずに needs.*.result で決める。名前を並べると、needs に足したジョブを
   # if: に足し忘れたときに、そのジョブが落ちても push する。!cancelled() を書くのは、状態の関数が無いと GitHub が
   # 暗黙の success() を足し、push では skip される image_inputs から依存の連なりで publish も skip されるからである。
-  # needs.*.result に skipped が無いことは条件にしない。ジョブの段の if: では、needs の先で skip された image_inputs が
-  # skipped として見え、push のたびに publish が skip される（ステップの段の同じ式は真になる）。
+  # needs.*.result に skipped が無いことはジョブの段の条件にせず、最初のステップで確かめる。ジョブの段の if: では、
+  # needs の先で skip された image_inputs が skipped として見え、push のたびに publish が skip される。ステップの段では
+  # 直接の needs だけが見えるので、needs のジョブが skip されたときは、組み立てる前に publish を落とす。
   # ログインと push のステップの if: は、main 以外のブランチへの push で publish が走っても GHCR に何も置かないためで、
   # ワークフローの契機を一時に広げて publish の条件を確かめるときにも、この if: でステップが skip される
   publish:
@@ -370,6 +371,12 @@ jobs:
       API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
       FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
     steps:
+      - name: Fail if a needed job was skipped
+        if: contains(needs.*.result, 'skipped')
+        run: |
+          echo "::error::publish の needs のジョブが skip された。確かめていない commit のイメージを置かないので落とす"
+          exit 1
+
       - name: Checkout code
         uses: actions/checkout@v6
 
