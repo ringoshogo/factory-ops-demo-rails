@@ -27,6 +27,24 @@ RSpec.describe "CI と手元で流す検査" do
     expect(self.class.workflow_commands - self.class.bin_commands(Rails.root.join("config/ci.rb").read)).to eq([])
   end
 
+  # images のジョブは、PR がイメージに入るものを変えたときだけ流れる（docs/guides/config.md「CI の工程」）。
+  # 判定の pattern から漏れたファイルだけを変えた PR は、イメージを組み立てて確かめないまま通る。
+  # 対象は Dockerfile とその無視の一覧、Dockerfile が名指しで写すファイル、マニフェストで、ディレクトリごとに写す
+  # アプリのコードと画面は test と e2e のジョブが確かめるので含めない
+  it "image_inputs の pattern は、Dockerfile・無視の一覧・Dockerfile が名指しで写すファイル・マニフェストに当たる" do
+    run = YAML.load_file(Rails.root.join(".github/workflows/ci.yml")).dig("jobs", "image_inputs", "steps").filter_map { _1["run"] }.join
+    pattern = Regexp.new(run[/pattern='([^']+)'/, 1] || raise("image_inputs のジョブに pattern が無い"))
+    tracked = IO.popen(%w[git ls-files], chdir: Rails.root, &:read).lines(chomp: true)
+    dockerfiles = tracked.grep(%r{(\A|/)Dockerfile\z})
+    copied = dockerfiles.flat_map do |file|
+      Rails.root.join(file).read.scan(/^COPY (?!.*--from)(.+) \S+$/).flatten.flat_map(&:split).reject { _1.start_with?("--") }
+    end
+    inputs = dockerfiles + tracked.grep(/(\A|\/)(\.dockerignore|Dockerfile\.dockerignore)\z/) + tracked.grep(%r{\Adeploy/}) +
+      copied.reject { _1 == "." || _1.end_with?("/", "*") }
+
+    expect(inputs.uniq.reject { pattern.match?(_1) }).to eq([])
+  end
+
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do
     text = "BASE_REF=origin/main bin/check-branch-coverage\nbin/rails db:test:prepare && bin/packwerk check\n./bin/thrust ./bin/rails server\n"
 

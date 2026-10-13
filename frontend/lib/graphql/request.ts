@@ -80,7 +80,8 @@ export async function createSession(email: string, password: string): Promise<Lo
 
 /**
  * Rails の DELETE /session を呼び、ユーザーのセッションの世代を進める。Cookie のセッションはサーバーに残らないので、
- * ブラウザの Cookie を消すだけでは、写し取られた Cookie が使えるまま残る。届かなくても、呼んだ側は Cookie を消す。
+ * ブラウザの Cookie を消すだけでは、写し取られた Cookie が使えるまま残る。共有のデモのアカウントの配置
+ * （SHARED_DEMO_ACCOUNTS=1）では、Rails は世代を進めず、ほかの訪問者のセッションを切らない。届かなくても、呼んだ側は Cookie を消す。
  */
 export async function destroySession(): Promise<void> {
   const session = (await cookies()).get(SESSION_COOKIE)?.value;

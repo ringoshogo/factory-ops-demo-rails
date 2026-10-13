@@ -21,7 +21,7 @@
 
 状態列を持つと、非同期のイベントが想定外の順で届いたときに遷移表から外れる。時刻列は、出来事が起きたかどうかだけを記録するので、届く順に左右されない。
 
-導出は、各コンテキストの状況のモジュール（`Sales::SalesOrderStatus`・`Purchasing::PurchaseOrderStatus`・`Fulfillment::ShipmentRequestStatus`）が返す、下の表と同じ優先順の SQL の `CASE` 式 1 つで行う。公開 API は一覧・1 件の行と一緒にこの式の値を読み、状況での絞り込み（`WHERE`）と状況ごとの件数（`GROUP BY`）も同じ式で行う。受注の取消の可否も、ロックした受注の状況をこの式で読む。表示・絞り込み・件数が別々に導出すると、ダッシュボードの数と、そこから飛ぶ一覧の件数が食い違うからである（`../adr/010-状況の導出をSQLの式1つにする.md`）。式の中で子の行を読む副問い合わせは、親の行と同じ所有テナントの行だけを読む。受注明細・入荷・検収・出荷指示・出荷実績は、所有テナントと親の組の外部キーがそれを守る。出荷停止は受注の ID を参照するだけなので、式が所有テナントを出荷依頼にそろえる。
+導出は、各コンテキストの状況のモジュール（`Sales::SalesOrderStatus`・`Purchasing::PurchaseOrderStatus`・`Fulfillment::ShipmentRequestStatus`）が返す、下の表と同じ優先順の SQL の `CASE` 式 1 つで行う。公開 API は一覧・1 件の行と一緒にこの式の値を読み、状況での絞り込み（`WHERE`）と状況ごとの件数（`GROUP BY`）も同じ式で行う。受注の取消は、取消の前に「出荷可能」を出していたかを、ロックした受注の状況をこの式で読んで決める（取消できるかは時刻列で決め、CHECK 制約があるので式で決めるのと同じになる）。表示・絞り込み・件数が別々に導出すると、ダッシュボードの数と、そこから飛ぶ一覧の件数が食い違うからである（`../adr/010-状況の導出をSQLの式1つにする.md`）。式の中で子の行を読む副問い合わせは、親の行と同じ所有テナントの行だけを読む。受注明細・入荷・検収・出荷指示・出荷実績は、所有テナントと親の組の外部キーがそれを守る。出荷停止は受注の ID を参照するだけなので、式が所有テナントを出荷依頼にそろえる。
 
 **受注（受注側）の状況**は、受注の時刻列と明細、在庫の引当から導出する。
 
@@ -68,7 +68,7 @@
 | テーブル | 主な列 | 制約 |
 |---|---|---|
 | `tenants` | `code`・`name`・`partner_code`（取引用コード） | `code`・`partner_code` 一意。`partner_code` は推測できない無作為の値で、受注側が取引関係を結ぶ相手の指定に使う。テナント列を持たない（取引先の名前の表示に使う） |
-| `users` | `owner_tenant_id`・`email`・`name`・`role`（`admin` / `member`）・`password_digest`（bcrypt）・`session_version`（セッションの世代） | `email` 一意。小文字に揃えて保存する。`session_version` はログアウトで進み、`password_digest` を書き換えるとトリガーが進める。世代の違うセッションは拒まれる（`graphql-schema.md`「1 回のリクエストがたどる道」1） |
+| `users` | `owner_tenant_id`・`email`・`name`・`role`（`admin` / `member`）・`password_digest`（bcrypt）・`session_version`（セッションの世代） | `email` 一意。小文字に揃えて保存する。`session_version` はログアウトで進み（共有のデモのアカウントの配置の `SHARED_DEMO_ACCOUNTS=1` では進まない。`graphql-schema.md`「1 回のリクエストがたどる道」1）、`password_digest` を書き換えるとトリガーが進める。世代の違うセッションは拒まれる（`graphql-schema.md`「1 回のリクエストがたどる道」1） |
 | `partnerships` | `owner_tenant_id`（受注側）・`buyer_tenant_id`（発注側）・`status`（`active` / `revoked`）・`revoked_at` | 有効な関係（`status = 'active'`）の中で `(owner_tenant_id, buyer_tenant_id)` 一意。自分自身との関係は不可。`status` と `revoked_at` は一致する |
 | `partnership_grants` | `partnership_id`・`permission`（`view_catalog` / `place_orders` / `view_shipments`） | `(partnership_id, permission)` 一意。取引関係と同じ所有テナント |
 
@@ -331,14 +331,14 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 
 ## RLS
 
-DB ロールは 2 つに分ける。どちらも `docker/initdb/01_roles.sql` が作る（compose はボリュームの初回作成時に、`bin/setup` と CI は psql で流す）。
+DB ロールは 2 つに分ける。開発・テスト・CI では、どちらも `docker/initdb/01_roles.sql` が作る（compose はボリュームの初回作成時に、`bin/setup` と CI は psql で流す）。公開の配置（`deploy/`）では、`postgres` の ConfigMap の初期化のスクリプトが、Secret のパスワードで同じ属性のロールを作る（`deploy/README.md`「Secret」）。
 
 | ロール | 役割 | 属性 |
 |---|---|---|
-| `factory_owner`（所有ロール） | テーブルの所有者。DB の作成、マイグレーション、`structure.sql` の読み込みを行う | `CREATEDB`・`BYPASSRLS`。`BYPASSRLS` は、ログインの前のユーザー検索の関数（下記）が `FORCE` の表を引くのに要る |
+| `factory_owner`（所有ロール） | テーブルの所有者。DB の作成、マイグレーション、`structure.sql` の読み込みを行う。公開の配置では、毎日の作り直しで DB を消して作り直す | `CREATEDB`・`BYPASSRLS`。`BYPASSRLS` は、ログインの前のユーザー検索の関数（下記）が `FORCE` の表を引くのに要る |
 | `factory_app`（アプリのロール） | アプリ・テスト・ワーカーはすべてこのロールで接続する | テーブルの所有者でも `BYPASSRLS` でもスーパーユーザーでもない一般ロール。所有者とスーパーユーザーは RLS を迂回するので、このロールで動かないテストは RLS を検証しない |
 
-`config/database.yml` は、同じ DB に 2 つの設定を置く。アプリが使う `primary` はアプリのロールで接続し、`database_tasks: false` にする。DB のタスクは所有ロールの `owner` だけが行う。`db:rollback` と `db:migrate:up`・`down`・`redo` は設定ごとに回らず `primary` の接続でマイグレーションを流すので、`lib/tasks/db_roles.rake` が所有ロールの接続に切り替える。本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。デプロイの担当者は、所有ロールの資格情報（`DB_OWNER_USER`・`DB_OWNER_PASSWORD`）をマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。`BYPASSRLS` の資格情報を持つプロセスは、RLS の外で全テナントを読み書きできるからである。そのため、コンテナの起動（`bin/docker-entrypoint`）は `db:prepare` を流さない。資格情報の無いプロセスで DB のタスクを流すと、rake タスクが止まる。
+`config/database.yml` は、同じ DB に 2 つの設定を置く。アプリが使う `primary` はアプリのロールで接続し、`database_tasks: false` にする。DB のタスクは所有ロールの `owner` だけが行う。`db:rollback` と `db:migrate:up`・`down`・`redo` は設定ごとに回らず `primary` の接続でマイグレーションを流すので、`lib/tasks/db_roles.rake` が所有ロールの接続に切り替える。本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。デプロイの担当者は、所有ロールの資格情報（`DB_OWNER_USER`・`DB_OWNER_PASSWORD`）をマイグレーションの工程（公開の配置では、毎日の作り直しの工程も。`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3・4）にだけ渡し、Web とワーカーのプロセスには渡さない。`BYPASSRLS` の資格情報を持つプロセスは、RLS の外で全テナントを読み書きできるからである。そのため、コンテナの起動（`bin/docker-entrypoint`）は `db:prepare` を流さない。資格情報の無いプロセスで DB のタスクを流すと、rake タスクが止まる。
 
 アプリのロールへの権限は、表を作るタスク（`db:migrate`・`db:schema:load`・`db:test:load_schema`・`db:prepare` など）の後に、同じ rake ファイルの `db:grant_app_role` が付与する。Rails の pg_dump は権限を落とす（`--no-privileges`）ので、権限を `structure.sql` に載せても、テスト DB には再現されない。付与するのは全テーブルの `SELECT`・`INSERT`・`UPDATE`・`DELETE` と連番の `USAGE`・`SELECT` で、`schema_migrations`・`ar_internal_metadata` は `SELECT` だけ、`tenants` は `SELECT`・`INSERT` だけにする。`tenants` は RLS を付けない表なので、`UPDATE`・`DELETE` を許すと、他社の名前や取引用コードを書き換えられる。テナントの名前の変更と削除は、所有ロールで行う。アプリのロールで `tenants` へ追加する入口は、シードと E2E の世界の準備のための `Partnerships::Onboarding.register` だけである。テナントと、その `admin`・`member` のユーザーを 1 つのトランザクションで作り、ユーザーは作ったテナントの `Tenancy.with_tenant` の中で書く。本番の環境では、デモの世界を作る許可（`DEMO_WORLD_ENABLED=1`）を渡したプロセスでだけ呼べる。条件は `Platform::DemoWorldGate` の 1 か所にあり、`DemoWorld` と `Inventory::Stocks.set_safety_stock` も同じ条件を読む。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）。サインアップの入口は無い。`audit_logs` も `SELECT`・`INSERT` だけにする。監査ログを追記だけにするためである。
 

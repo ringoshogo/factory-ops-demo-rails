@@ -18,6 +18,13 @@ module Platform
       raise ArgumentError, "Platform::Logging: 本番のログの水準は info 以上にする（いまは #{label}。RAILS_LOG_LEVEL と config.log_level を確かめる）"
     end
 
+    # 開発とテストで Rails.event を書くファイル。TEST_DATABASE で別の DB に向けたプロセス（E2E の Rails、並べて流す rspec）は
+    # DB ごとのファイルに書く。同じファイルに書くと、ログの spec が読む末尾にほかのプロセスの行が混ざる
+    def self.events_log_path(root)
+      database = ENV["TEST_DATABASE"]
+      root.join("log", database.present? ? "events.#{database}.log" : "events.log")
+    end
+
     def self.configure!(config, io)
       config.logger = build(io)
       config.log_tags = []

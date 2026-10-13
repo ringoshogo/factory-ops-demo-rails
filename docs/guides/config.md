@@ -85,7 +85,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 | 入口 | 立てたとき | 理由 |
 |---|---|---|
 | `POST /graphql`・`POST /imports/files` | 503 | 業務の表を読み書きする |
-| `POST /session`・`DELETE /session` | 止めない | ログインはメールアドレスでユーザーを引く認証の関数だけを通り、ログアウトは自分のセッションの世代を進めるだけで、業務の表を読み書きしない。ログアウトを止めると、利用者が漏れたセッションを無効にできない |
+| `POST /session`・`DELETE /session` | 止めない | ログインはメールアドレスでユーザーを引く認証の関数だけを通り、ログアウトは自分のセッションの世代を進める（`SHARED_DEMO_ACCOUNTS=1` では進めない）だけで、業務の表を読み書きしない。ログアウトを止めると、利用者が漏れたセッションを無効にできない |
 | `POST /webhooks/sendgrid/events` | 止めない | 受信の表に書くだけで、止めると配信結果を失う |
 | `GET /up` | 止めない | 死活監視が、止めた Web をプロセスの障害と取り違えて起動し直す |
 
@@ -154,7 +154,7 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 
 ログの出口は 2 つある。
 
-- **`Rails.event`**：Rails 8.1 は、コントローラ・ジョブの計装を構造化イベント（`action_controller.request_started`・`active_job.completed` など）として `Rails.event` に出す。イベントをログに書く購読者は付属しないので、`initializers/event_log.rb` が `Platform::JsonLogSubscriber`（`packs/platform/lib/platform/`）を登録する。購読者は 1 件のイベントを `name`・`payload`・`tags`・`context`・`timestamp` の 1 行にし、本番では標準出力に、開発とテストでは `log/events.log` に書く。
+- **`Rails.event`**：Rails 8.1 は、コントローラ・ジョブの計装を構造化イベント（`action_controller.request_started`・`active_job.completed` など）として `Rails.event` に出す。イベントをログに書く購読者は付属しないので、`initializers/event_log.rb` が `Platform::JsonLogSubscriber`（`packs/platform/lib/platform/`）を登録する。購読者は 1 件のイベントを `name`・`payload`・`tags`・`context`・`timestamp` の 1 行にし、本番では標準出力に、開発とテストでは `log/events.log` に書く。`TEST_DATABASE` で別の DB に向けたプロセス（E2E の Rails、並べて流す rspec）は、DB ごとのファイル（`log/events.<DB の名前>.log`）に書く。同じファイルに書くと、ログの spec（`spec/platform/logging_spec.rb`）が読む末尾にほかのプロセスの行が混ざる。
 - **`Rails.logger`**：本番とテストでは、`Platform::JsonLogFormatter` を付けたロガーにし、残る文字列の行も JSON にして、同じ文脈を `context` に入れる。ロガーは `ActiveSupport::TaggedLogging` で包まない。TaggedLogging はタグを文字列としてメッセージに混ぜてから書式に渡すので、要求 ID などはタグにせず、文脈から `context` の項目に入れる。
 
 ### イベントごとに書く項目
@@ -350,7 +350,11 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 | Alerts | — | `bin/check-alerts` | 警報の規則の式と、テストの系列での発火と不発火を、Prometheus のイメージの promtool で確かめる（[../slo.md](../slo.md)） |
 
-画面（`frontend/`）の検査は `bin/ci` の工程に無く、`.github/workflows/ci.yml` の `frontend` のジョブ（`npm run codegen:check`・`lint`・`typecheck`・`test:unit`）と `e2e` のジョブ（`npm run test:e2e`）が流す。手元では `README.md`「画面」の手順で流す。
+画面（`frontend/`）の検査は `bin/ci` の工程に無く、`.github/workflows/ci.yml` の `frontend` のジョブ（`npm run codegen:check`・`lint`・`typecheck`・`test:unit`）と `e2e` のジョブ（`npm run test:e2e`）が流す。手元では `README.md`「画面」の手順で流す。公開の配置のマニフェストの照合とイメージの組み立て（`images` のジョブ）も `bin/ci` に無く、手元では `kubectl kustomize deploy` と `deploy/README.md` の手順で確かめる。
+
+CI のジョブを足すか重くする人は、PR の CI が最も長いジョブで 10 分の内に終わるようにする。PR の CI の時間は、担当が結果を待って次へ進むまでの時間だからである。予算を超えるジョブは、確かめる対象を変えた PR と main への push でだけ流す。`images` のジョブは、`image_inputs` のジョブが「PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・ワークフロー）を変えた」と判定したときと、main への push でだけ流れる。イメージに入るものの置き場を足した人は、ワークフローの `pattern` も直す。Dockerfile とその無視の一覧、Dockerfile が名指しで写すファイル、マニフェストが `pattern` に当たることは `spec/platform/ci_checks_spec.rb` が確かめる。ディレクトリごとに写すアプリのコードと画面は、`test` のジョブ（`eager_load`）と `e2e` のジョブ（`next build`）が確かめるので、`pattern` に入れない。それでも漏れた変更は、main への push で確かめる。
+
+> `images` のジョブは、QEMU の上で arm64 のイメージを組み立てると、キャッシュが空のときに 25〜35 分かかった（サイクル 05、`adr/009`「見直す条件」の 20 分を超えた）。
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 

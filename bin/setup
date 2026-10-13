@@ -25,9 +25,15 @@ FileUtils.chdir APP_ROOT do
   abort "pg_dump 18 以上が必要です（README「開発環境」）。現在: #{pg_dump_major}" if pg_dump_major < 18
 
   puts "\n== Starting database =="
-  system! "docker compose up -d --wait db"
-  # 初期化スクリプトはボリュームの初回作成時にしか流れないので、既存のボリュームにもロールを作る
-  system! "docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/01_roles.sql"
+  db_host = ENV.fetch("DB_HOST", "localhost")
+  db_port = ENV.fetch("DB_PORT", "5433")
+  # compose のプロジェクト名は作業ツリーのディレクトリ名で決まる。git worktree から compose を起こすと、
+  # 元の作業ツリーのコンテナが使う 5433 に別のコンテナを起こそうとして落ちるので、すでに応える DB はそのまま使う
+  system! "docker compose up -d --wait db" unless system("pg_isready", "-q", "-h", db_host, "-p", db_port)
+  # 初期化スクリプトはボリュームの初回作成時にしか流れないので、既存のボリュームにもロールを作る。
+  # docker compose exec はプロジェクト名の違う worktree からコンテナに届かないので、CI と同じく psql で接続して流す
+  system!({ "PGPASSWORD" => "postgres" }, "psql", "-h", db_host, "-p", db_port, "-U", "postgres",
+          "-q", "-v", "ON_ERROR_STOP=1", "-f", "docker/initdb/01_roles.sql")
 
   puts "\n== Preparing database =="
   system! "bin/rails db:prepare"
