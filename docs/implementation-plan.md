@@ -1830,14 +1830,14 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 
 作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。サイクル 05 の逸脱検査が、画面が決めた 2 つの振る舞い（取消依頼のボタンを出す発注の状況、品番照合待ちを含む受注の合計金額）を作者に確かめる行にした（OI-178・OI-179）。作者の答えが既定と違えば、画面を直す。M33 は、OI-144・OI-177〜OI-179 が片付くまで終えない。
 
-**残り（サイクル 06）**：M33 は実装レビューまで終え、作者を待つ 4 行だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。取りまとめ役は、作者の答えを台帳の結果の欄に書いてから、行の種類ごとに次のとおり進める。「答えで作るものが変わる」行は、答えが来るまで着手しない。答えが既定と違えば、取りまとめ役が作るものと完了条件をこの表の下に書き、その差分を計画レビューの 2 系統に通してから実装者に渡す。「値の差し替え」の行は、既定で作ってあるか既定で作り、答えが来たら値だけを替える。
+**残り（サイクル 06）**：M33 は実装レビューまで終え、作者を待つ 4 行だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。取りまとめ役は、作者の答えを台帳の結果の欄に書いてから、行の種類ごとに次のとおり進める。「答えで作るものが変わる」行は、答えが来るまで着手しない。答えが既定と違えば、取りまとめ役が作るものと完了条件をこの表の下に書き、その差分を計画レビューの 2 系統に通してから実装者に渡す。差分の計画レビューでは、M33 の残りが 1 回の作業に収まるかと、サイクルのマイルストーンの数の上限も見直す（IB-67）。「値の差し替え」の行は、既定で作ってあるか既定で作り、答えが来たら値だけを替える。
 
 | ID | 種類 | 既定 | 既定のままなら | 既定と違えば |
 |---|---|---|---|---|
 | OI-144 | 答えで作るものが変わる | 並べ替えは一覧の表の列に限る（M39 の判断） | 作るものは無い | 並べたい値を一覧の表に写す列を、M39 の判断の (a) で足す。パッケージの表とマイグレーション・`orderBy` の列の enum・入口の行列と S1 の行・画面の見出しが変わる |
-| OI-177 | 答えで作るものが変わる | —（作者が指摘を出すまで、直すものが無い） | — | 指摘ごとに、直す画面と、直したことを確かめる E2E か単体のテストを書く。指摘が API に及べば、上の差分の計画レビューに通す |
+| OI-177 | 答えで作るものが変わる | —（作者が指摘を出すまで、直すものが無い） | — | 取りまとめ役が、指摘を台帳の結果の欄に写すときに、指摘ごとに画面だけで済むか API に及ぶかを書く。画面だけの指摘は、直す画面と、直したことを確かめる E2E か単体のテストをこの表の下に書いて直す。API に及ぶ指摘だけを、上の差分の計画レビューに通す |
 | OI-178 | 値の差し替え | `SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED`・`INBOUND` で出し、`INSPECTED`・`CANCELLED`・`SUPPLIER_CANCELLED` で隠す | 下の既定の作りだけで終える | 下の関数の集合を答えの状況に替え、単体の期待を替える |
-| OI-179 | 答えで作るものが変わる | —（ダッシュボードは単価の無い明細があれば合計を出さず、受注一覧と受注詳細は 0 として一部の合計を出す。既定が 1 つに決まらない） | — | 答えの形（出さない／一部を出す）を `frontend/lib/` の 1 つの関数にし、ダッシュボード・受注一覧・受注詳細がそれを呼ぶ。単体（`frontend/lib/*.test.ts`）で、単価の無い明細を含む受注と含まない受注の両方を確かめる |
+| OI-179 | 答えで作るものが変わる | —（ダッシュボードは単価の無い明細があれば合計を出さず、受注一覧と受注詳細は 0 として一部の合計を出す。既定が 1 つに決まらない） | — （作るもの（1 つの関数と 3 つの画面の呼び出し）の形はどちらの答えでも同じだが、既定を置くと、いま動いている 2 つの画面のどちらかの表示を、作者の答えの前に取りまとめ役が変えることになる。値の差し替えとして既定で作ることはせず、答えを待つ） | 答えの形（出さない／一部を出す）を `frontend/lib/` の 1 つの関数にし、ダッシュボード・受注一覧・受注詳細がそれを呼ぶ。単体（`frontend/lib/*.test.ts`）で、単価の無い明細を含む受注と含まない受注の両方を確かめる |
 
 OI-178 の既定の作り：取消依頼のボタンを出す状況の集合を、`frontend/components/purchase-order-detail.tsx` の `CANCELLABLE` から `frontend/lib/purchase-order-flow.ts` の関数（`canRequestCancellation`）へ移し、`frontend/lib/purchase-order-flow.test.ts` が `PurchaseOrderStatus` のすべての値（codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める `frontend/lib/statuses.ts` の `PURCHASE_ORDER_STATUS` の鍵から集める）について、出すか隠すかを確かめる。受注側の `frontend/lib/sales-order-flow.ts` と同じ置き方にする。書いた時点で通るので、集合から 1 つの状況を外すと落ちることを、壊して落ちる記録に残す。
 
@@ -1958,9 +1958,9 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 |---|---|---|---|
 | OI-145 | 値の差し替え | `factory-ops-rails.hayatec.dev` | `deploy/kustomization.yaml` の `public-site` の `host` の 1 か所（Ingress の `host` と `web` の `FRONTEND_ORIGIN` へ `replacements` が写す）。`deploy/README.md`「作者の手順」の Tunnel の公開のホスト名 |
 | OI-146 | 値の差し替え | 日本時間の 4:30（`schedule: "30 4 * * *"`）、`startingDeadlineSeconds: 21600` | `deploy/daily-reset.yaml` の `schedule` と `startingDeadlineSeconds` |
-| OI-147 | 値の差し替え。4GB の機種なら答えで作るものが変わる | 8GB の機種とみなし、作るもの 8 の表のまま | 8GB 以上なら、表は替えず、作者の手順 4 で測った値で requests と limits を直す。4GB なら、limits を下げるか、ジョブのワーカーを Web の Puma の中で動かす（`adr/009`「見直す条件」）。後者は作るものが変わる |
+| OI-147 | 値の差し替え。4GB の機種なら答えで作るものが変わりうる | 8GB の機種とみなし、作るもの 8 の表のまま | 8GB 以上なら、表は替えず、作者の手順 4 で測った値で requests と limits を直す。4GB なら、まず作者の手順 4 で測った値で limits を下げ、常に動く 4 つのコンテナの limits の和と流用元と k3s の分が、`free -h` の総量に収まるかを見る。収まらなければ、ジョブのワーカーを Web の Puma の中で動かす形（`adr/009`「見直す条件」）に移り、取りまとめ役が作るものをこの表の下に書いて計画レビューに通す |
 | OI-148 | 答えで作るものが変わる | すべての操作を許し、毎日の作り直しで戻す（作るものは無い） | 既定のままなら作るものは無い。止める操作を作者が選んだら、公開の配置でだけその操作を止める仕組み（どの入口で止めるか、止めたときのエラー、画面のボタン）を足す |
-| OI-149 | 値の差し替え | `web` にだけ `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めない（作るもの 7） | いまのまま全セッションを切るなら、`deploy/web.yaml` から変数を外し、作るもの 2 の環境変数の表の行と `deploy_manifests_spec.rb` の期待から外す。使わなくなる `config.x.shared_demo_accounts` と `SessionsController#destroy` の分岐と、それを確かめる `sessions_spec.rb`・`production_boot_spec.rb` の example と、変数を書いた文書の文（`git grep SHARED_DEMO_ACCOUNTS` で集める）も消す |
+| OI-149 | 値の差し替え | `web` にだけ `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めない（作るもの 7） | いまのまま全セッションを切るなら、`deploy/web.yaml` から変数を外し、作るもの 2 の環境変数の表の行と `deploy_manifests_spec.rb` の期待から外す。使わなくなる `config.x.shared_demo_accounts` と `SessionsController#destroy` の分岐と、それを確かめる `sessions_spec.rb`・`production_boot_spec.rb` の example と、変数を書いた文書の文（`git grep SHARED_DEMO_ACCOUNTS` で集める）も消す。消す変更は、作るものの形を変えないので差分の計画レビューには出さず、実装レビューに通す |
 | OI-181 | 値の差し替え | LICENSE を置かない | 置くなら、作者が選んだ条件の `LICENSE` を根に置き、`README.md` の冒頭から指す |
 | — | 実機の確かめ | — | 作者が作るもの 9 の手順 1〜6（`deploy/README.md`「作者の手順」）を流し、結果を PR か台帳に書く。M41 の完了条件には入れず、結果が書かれるまで公開しない |
 
@@ -1985,9 +1985,9 @@ bin/check-open-items --due M41
 
 **作るもの**
 
-1. 版の固定：amd64 のジョブ（`scan_ruby`・`lint`・`test`・`frontend`・`e2e`・`image_inputs` と、作るもの 2 で分ける `manifests`）の `runs-on` を `ubuntu-24.04` にし、arm64 のジョブ（`images` と、作るもの 3 で分ける `publish`）を `ubuntu-24.04-arm` にする。`spec/platform/ci_checks_spec.rb` が、どのジョブの `runs-on` も `ubuntu-latest` でなく、版の数字を含む名前（`ubuntu-24.04` か `ubuntu-24.04-arm` の形）であることを確かめる。版を上げる時期（GitHub のランナーの廃止の告知か、Ubuntu の保守の終わりの前）を `guides/config.md`「CI の工程」に書く
+1. 版の固定：amd64 のジョブ（`scan_ruby`・`lint`・`test`・`frontend`・`e2e`・`image_inputs` と、作るもの 2 で分ける `manifests`）の `runs-on` を `ubuntu-24.04` にし、arm64 のジョブ（`images` と、作るもの 3 で分ける `publish`）を `ubuntu-24.04-arm` にする。`spec/platform/ci_checks_spec.rb` が、どのジョブの `runs-on` も版の数字を含む名前（`/\Aubuntu-\d{2}\.\d{2}(-arm)?\z/`）で、`ubuntu-latest` でないことと、`images` と `publish` が `-arm` を持つことを確かめる。2 つの名前との完全一致にしないのは、版を上げる PR で spec を書き換えずに済ませるためである。版を上げる時期（GitHub のランナーの廃止の告知か、Ubuntu の保守の終わりの前）を `guides/config.md`「CI の工程」に書く
 2. arm64 の組み立て：`images` を `ubuntu-24.04-arm` で動かし、QEMU のステップを外す。buildx は GitHub Actions のキャッシュ（`type=gha`）に要るので残す。Rails のイメージを本番の環境で起こす確かめは、`images` に残す。マニフェストの照合（`kubectl kustomize` と kubeconform）は、amd64 のジョブ `manifests` に分け、いまのステップ（amd64 の kubeconform をリリースの sha256 と比べてから展開する）をそのまま移す。arm64 のランナーのイメージに kubectl があるかに頼らないためである。`manifests` は 1 分で終わるので、契機を絞らずに PR と main への push の両方で流す
-3. 公開の条件：GHCR への push を、`images` から別のジョブ `publish`（`ubuntu-24.04-arm`、main への push でだけ流す）に分ける。`publish` は、`needs` にワークフローのほかのすべてのジョブ（`image_inputs` と自分を除く）を持ち、どれも成功したときだけ、`images` と同じキャッシュの `scope` から 2 つのイメージを組み立て直して push する。`images` は組み立てと確かめだけにし、`packages: write` を持たない。`publish` の `if:` は、状態の関数 `!cancelled()` と、`needs` の各ジョブの `result == 'success'` を `&&` で並べる。状態の関数を書かないと GitHub は暗黙の `success()` を足し、push では `image_inputs` が skip されるので、その先の `publish` も skip されうる。担当者は、この振る舞いを GitHub の文書（ワークフローの構文の `jobs.<job_id>.needs` と、式の状態の関数）の原文で確かめ、引いた箇所を判断に書く。`ci_checks_spec.rb` は、イメージを push するジョブ（`docker push` か `push: true` を持つ）と `packages: write` を持つジョブが `publish` だけであることと、`publish` の `needs` が、ワークフローの `jobs` から集めたジョブ（`image_inputs` と `publish` を除く）をすべて含むことを確かめる。期待するジョブの集合を `publish` の `needs` からではなくワークフローの `jobs` から集めるのは、`needs` に足し忘れたジョブを検査が写し取らないためである
+3. 公開の条件：GHCR への push を、`images` から別のジョブ `publish`（`ubuntu-24.04-arm`、main への push でだけ流す）に分ける。`publish` は、`needs` にワークフローのほかのすべてのジョブ（`image_inputs` と自分を除く）を持ち、どれも成功したときだけ、`images` と同じキャッシュの `scope` から 2 つのイメージを組み立て直して push する。`images` は組み立てと確かめだけにし、`packages: write` を持たない。ワークフローの最上位に `permissions: contents: read` を置き、`packages: write` は `publish` のジョブにだけ書く。権限を書かないジョブの権限は、リポジトリの設定で決まるからである。`publish` の `if:` は、ジョブの名前を並べずに `github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped')` にする。ジョブの名前を `if:` に並べると、`needs` に足したジョブを `if:` に足し忘れたときに、そのジョブが落ちても push する。名前に頼らない式なら、`needs` が全ジョブを持つこと（下の spec が守る）だけで条件が閉じる。状態の関数 `!cancelled()` を書くのは、書かないと GitHub が暗黙の `success()` を足し、push では `image_inputs` が skip されるので、その先の `publish` も skip されうるからである（GitHub の文書の、ワークフローの構文の `jobs.<job_id>.needs`「If a job fails or is skipped, all jobs that need it are skipped unless the jobs use a conditional expression that causes the job to continue.」と、式の状態の関数「A default status check of `success()` is applied unless you include one of these functions.」）。`ci_checks_spec.rb` は、イメージを push するジョブ（`docker push` か `push: true` を持つ）と `packages: write` を持つジョブが `publish` だけで、最上位の権限に `packages: write` が無いことと、`publish` の `needs` が、ワークフローの `jobs` から集めたジョブ（`image_inputs` と `publish` を除く）をすべて含むことを確かめる。期待するジョブの集合を `publish` の `needs` からではなくワークフローの `jobs` から集めるのは、`needs` に足し忘れたジョブを検査が写し取らないためである
 
 **判断**：push を別のジョブに分けるか、`images` 全体をテストの後に並べるか
 
@@ -2006,14 +2006,15 @@ bundle exec rspec spec/platform/ci_checks_spec.rb   # 0 failures
 
 ほかに、M42 の PR の CI で次を確かめ、証跡に実行の URL と時間を書く。
 
-- `images` のジョブの時間を、キャッシュが空のとき（キャッシュの `scope` を一時の名前に替えた commit）とキャッシュが効くとき（元に戻した commit の 2 回目）の 2 回測り、ワークフロー全体の時間と一緒に書く。予算（`guides/config.md`「CI の工程」の 10 分）を超えても M42 は終えられる。`images` は `image_inputs` が絞った PR でだけ流れるからである。超えたかどうかと測った値を、`adr/009`「見直す条件」の書き直しと、IB-93 の効き目の判定の材料にする
-- `publish` の条件は、main への push でしか流れないので、PR の上で一時の commit で確かめて戻す。一時の commit では、`publish` の契機に `pull_request` を足し、push のステップを `echo` に替える。すべてのジョブが成功した実行で `publish` が走ること、`test` をわざと落とした実行で `publish` が skip されることを見る（`guides/config.md`「CI の工程」の配線を変えたときの手順）。M42 をマージした後の最初の main への push で、`publish` が走って 2 つのイメージが GHCR に置かれたことを、取りまとめ役が次のマイルストーンの着手の前に確かめる
+- `images` のジョブの時間を、キャッシュが空のとき（キャッシュの `scope` を一時の名前に替えた commit）とキャッシュが効くとき（元に戻した commit の 2 回目）の 2 回測り、ワークフロー全体の時間と一緒に書く。予算（`guides/config.md`「CI の工程」の 10 分）を超えても M42 は終えられる。`images` は `image_inputs` が絞った PR でだけ流れるからである。IB-93 の効き目（キャッシュが空でも 10 分の内）は、サイクル 06 の改善の探索がこの値で判定し、超えていれば、`image_inputs` の条件を残すことを IB-93 の判定の記録に書く。`adr/009`「見直す条件」は、測った値で書き直す
+- `publish` の条件は、main への push でしか流れないので、M42 のブランチへの push で確かめてから戻す（`guides/config.md`「CI の工程」の配線を変えたときの手順）。一時の commit で、ワークフローの `on.push.branches` に M42 のブランチを足し、GHCR へのログインと push のステップを `echo` に替える。ブランチへの push は `github.event_name == 'push'` で流れ、main への push と同じく `image_inputs` が skip されるので、確かめたい経路を通る。PR の契機に `publish` を足す形では、`image_inputs` が流れて成功するので、この経路を通らない。見るのは 3 回である。すべてのジョブが成功した push で `publish` が走る。`test` をわざと落とした push で `publish` が skip される。`if:` から `!cancelled()` を外した push で、すべて成功しても `publish` が skip される（状態の関数が要る根拠）。一時の commit の間は、push のステップが無いので `ci_checks_spec.rb` の `publish` の example が落ちてよい。戻した後の commit で通す
+- M42 をマージした後の最初の main への push で、`publish` が走って 2 つのイメージが GHCR に置かれたことは、PR を積み重ねる間はマージを待てないので、取りまとめ役がサイクル 06 の振り返りで確かめて証跡に書く。作者は、`deploy/README.md`「作者の手順」の適用の前に、適用する SHA の 2 つのイメージが GHCR にあることを確かめる（いまの手順のまま）
 
 **範囲外**：`image_inputs` の条件を外すこと（予算に収まった値を見て、別に決める）、2 つのイメージの push を 1 つの単位にすること、GHCR のパッケージの可視性、`Dockerfile` の bootsnap の `-j 1`（Rails の生成のまま。手元で QEMU の上で組み立てる人のために残す）
 
 **実装する文書の節**：`adr/009` 決定 6・「結果」・「見直す条件」、`guides/config.md`「CI の工程」、`guides/bin.md`「CI が使うもの」、GitHub の文書の `jobs.<job_id>.needs` と状態の関数
 
-**文書に残すこと**：`adr/009` の QEMU の記述（決定 6、「結果」の「QEMU の上の組み立ては遅い」）と「見直す条件」を、arm64 のランナーで組み立てる形と、移った後の見直す条件に書き直す。`guides/config.md`「CI の工程」の `images` の時間の引用と、版を上げる時期を書く。`guides/bin.md`「CI が使うもの」の表に `manifests` と `publish` を足し、`images` の行を直す。`.github/workflows/ci.yml` の `image_inputs` と `images` のコメント（「20 分を超え」「amd64 なので QEMU の上で」）を直す。本書の M41 の作るもの 1 の、QEMU と GHCR への push を書いた文を、M42 の後の形に合わせる。
+**文書に残すこと**：`adr/009` の QEMU の記述（決定 6、「結果」の「QEMU の上の組み立ては遅い」）と「見直す条件」を、arm64 のランナーで組み立てる形と、移った後の見直す条件に書き直す。`guides/config.md`「CI の工程」の `images` の時間の引用と、版を上げる時期を書く。`guides/bin.md`「CI が使うもの」の表に `manifests` と `publish` を足し、`images` の行を直す。`.github/workflows/ci.yml` の `image_inputs` と `images` のコメント（「20 分を超え」「amd64 なので QEMU の上で」）を直す。`deploy/README.md` の、イメージを確かめるジョブと GHCR に置くジョブを `images` と書いた 2 か所を `images` と `publish` に、`guides/config.md`「CI の工程」の、マニフェストの照合を `images` のジョブとした文を `manifests` に直す。ほかに残る前の形は、`git grep` で「`images` のジョブ」と「QEMU」を数えて直す。本書の M41 の作るもの 1 の、QEMU と GHCR への push を書いた文を、M42 の後の形に合わせる。
 
 ## M43 公開の配置の作り直しを、本番の環境でだけ動かす
 
@@ -2044,7 +2045,7 @@ bundle exec rspec spec/platform/demo_reset_spec.rb   # 0 failures
 
 **作るもの**
 
-1. 取り込む更新：Dependabot の PR はマージせず、同じ版を M44 のブランチで入れる（`npm install <依存>@<版>` と `uses:` の書き換え）。作者が M44 をマージすると、Dependabot は main で済んだ更新の PR を自分で閉じる。開いた PR の扱いは次のとおりである。
+1. 取り込む更新：Dependabot の PR はマージせず、同じ版を M44 のブランチで入れる（`npm install <依存>@<版>` と `uses:` の書き換え）。作者が M44 をマージすると、Dependabot は main で済んだ更新の PR を自分で閉じる。表は 2026-10-13 に開いていた PR の写しである。担当者は着手の時点で開いている PR を読み直し、版が進んだ PR は進んだ版で取り込む。表に無い新しい PR は、`groups` を入れた後の Dependabot に任せる。開いた PR の扱いは次のとおりである。
 
    | PR | 更新 | 扱い | 理由 |
    |---|---|---|---|
@@ -2052,13 +2053,14 @@ bundle exec rspec spec/platform/demo_reset_spec.rb   # 0 failures
    | #62・#69 | `react`・`react-dom` 19.3.0 | 組で取り込む | `react-dom` 19.3.0 は peer に `react` ^19.3.0 を求め、1 本ずつでは `npm ci` が ERESOLVE で落ちる（#69 の CI）。`package.json` は 2 つを同じ版に固定している |
    | #61 | `graphql` 17 | 取り込む | 主版の上げ。codegen の生成物が変わらないことを `npm run codegen:check` で確かめる |
    | #70 | `eslint` 10 | 取り込む | 主版の上げ。`eslint-config-next` の peer の範囲を `npm ls` で確かめる |
-   | #67・#68・#71 | `@base-ui/react` 1.9・`cn` 0.4・`lucide-react` 1.54 | 取り込む | `cn` は 0 系の小版の上げで、semver では破壊的な変更を含みうるので、主版の上げと同じく commit を分ける |
-   | #66 | `typescript` 7 | 取り込まない | #66 の CI の `frontend` が「typescript-eslint does not support TS 7.0」で落ちた。`typescript-eslint` の peer の範囲が 7 を含むまで 5 系に置く |
+   | #67・#68・#71 | `@base-ui/react` 1.9・`cn` 0.4・`lucide-react` 1.54 | 取り込む | `cn` は 0 系の小版の上げで、semver では 0 系の小版の上げが破壊的な変更を含みうるので、主版の上げと同じく commit を分ける |
+   | #66 | `typescript` 7 | 取り込まない | #66 の CI は `npm ci` を通った後、`npm run lint` が「typescript-eslint does not support TS 7.0」で落ちた。`typescript-eslint` が実行の時に TS 7 を受け付けないので、5 系に置く。`ignore` にはしない。Dependabot が #66 を開いたまま新しい版に替え続け、`typescript-eslint` が TS 7 を受け付ける版を出せば #66 の CI が通るので、それが上げる時機の知らせになる |
    | #65 | `@types/node` 26 | 取り込まない | 画面の Node は 22 系である（OI-163）。型定義の主版を実行の主版より上げると、22 に無い API が型検査を通る |
 
    主版の上げ（`graphql`・`eslint`・`cn`）と組の上げ（`react`・`react-dom`）は、1 つずつ commit を分け、各 commit で画面の検査（完了条件の 2 行目）を流す。落ちた更新は、その commit を外して取り込まない行に移し、理由を証跡に書く
-2. Dependabot のまとめ方（`.github/dependabot.yml`）：3 つのエコシステム（bundler・github-actions・npm）のそれぞれに `groups` を置く。bundler と npm は、小版と修正版（`update-types: [minor, patch]`）を 1 本の PR にまとめ、主版の上げはまとめずに 1 本ずつ開かせて個別に確かめる。npm は、組で上げる依存のまとまり（`react`・`react-dom`・`@types/react`・`@types/react-dom`）を、小版と修正版のまとまりより先に置く。github-actions は、主版を含めてすべてを 1 本にまとめる（変えるのはワークフローの 1 ファイルで、その PR の CI がそのまま確かめる）。`@types/node` と `typescript` の主版の上げを `ignore` にし、理由を `dependabot.yml` のコメントに書く
-3. Node の主版をそろえる検査：画面の Node の主版は `frontend/package.json` の `engines` を正本にする。`spec/platform/dependency_updates_spec.rb` が、`.github/workflows/ci.yml` の `actions/setup-node` を使うすべてのステップの `node-version`、`frontend/Dockerfile` の `NODE_VERSION`、`frontend/package.json` の `@types/node` の範囲が、同じ主版であることを確かめる。比べる先をワークフローから集めるときは、`actions/setup-node` を使うステップをすべて拾う。1 つだけを読むと、もう 1 つがずれても通る。同じ spec が、`dependabot.yml` のどのエコシステムも `groups` を持つことと、`@types/node` の主版の上げが `ignore` にあることを確かめる
+2. Dependabot のまとめ方（`.github/dependabot.yml`）：3 つのエコシステム（bundler・github-actions・npm）のそれぞれに `groups` を置く。bundler と npm は、小版と修正版（`update-types: [minor, patch]`）を 1 本の PR にまとめ、主版の上げはまとめずに 1 本ずつ開かせて個別に確かめる。npm は、組で上げる依存のまとまり（`react`・`react-dom`・`@types/react`・`@types/react-dom`。`update-types` を絞らず、主版の上げも組で開く）を、小版と修正版のまとまりより先に置く。Dependabot は、依存を最初に当たったまとまりに入れるからである。0 系の依存（いまは `cn`・`class-variance-authority`）は、小版と修正版のまとまりの `exclude-patterns` に入れ、主版の上げと同じく 1 本ずつ開かせる。0 系の小版の上げは破壊的な変更を含みうるからである。github-actions は、主版を含めてすべて（`patterns: ["*"]`）を 1 本にまとめる（変えるのはワークフローの 1 ファイルで、その PR の CI がそのまま確かめる）。`@types/node` の主版の上げを `ignore` にし、理由（画面の Node の主版に合わせる）を `dependabot.yml` のコメントに書く
+3. Node の主版をそろえる検査：画面の Node の主版は `frontend/package.json` の `engines` を正本にし、`engines` をいまの `>=22.12` から 1 つの主版に収まる `^22.12` に直す。`>=22.12` は 24 系も許すので、主版を 1 つに決めない。`spec/platform/dependency_updates_spec.rb` が、`engines` が `^<主版>.<小版>` の形であることと、`.github/workflows/ci.yml` の `actions/setup-node` を使うすべてのステップの `node-version`、`frontend/Dockerfile` の `NODE_VERSION`、`frontend/package.json` の `@types/node` の範囲が、`engines` と同じ主版であることを確かめる。比べる先をワークフローから集めるときは、`actions/setup-node` を使うステップをすべて拾い、`node-version` を持たないステップ（`node-version-file` に替えたものを含む）があれば落とす。1 つだけを読むと、もう 1 つがずれても通る。`node-version` は整数でも文字列でも、先頭の数を主版として読む
+4. Dependabot の設定の検査：同じ spec が、`dependabot.yml` について次を確かめる。どのエコシステムも `groups` を持つ。bundler と npm の小版と修正版のまとまりの `update-types` が `minor` と `patch` だけである（主版を含めない）。npm の組の依存のまとまりが、組の 4 つを `patterns` に持ち、小版と修正版のまとまりより先にある。0 系の依存が小版と修正版のまとまりの `exclude-patterns` にある。0 系の依存は、`frontend/package.json` の範囲から集め、`dependabot.yml` からは集めない。github-actions のまとまりが `*` を持つ。`@types/node` の主版の上げが `ignore` にある
 
 **判断**：Dependabot の更新を、どの単位で 1 本の PR にするか
 
@@ -2075,14 +2077,16 @@ cd frontend && npm ci && npm ls --all > /dev/null && npm run codegen:check && np
 cd frontend && npm run test:e2e
 ```
 
-`npm ls --all` は、peer の範囲に合わない依存があると失敗で終わる。期待の不一致で最初に落とすのは、`dependency_updates_spec.rb` の、`dependabot.yml` のどのエコシステムも `groups` を持つことを確かめる example である（いまは無い）。Node の主版をそろえる example は書いた時点で通るので、`frontend/Dockerfile` の `NODE_VERSION` と、2 つ目の `actions/setup-node` の `node-version` を、それぞれ複製から 24 に替えると落ちることを、壊して落ちる記録に残す。
+`npm ls --all` は、範囲に合わない依存があると `ELSPROBLEMS` で失敗で終わる（npm の `lib/commands/ls.js`）。組の依存の不一致はふつう先の `npm ci` が ERESOLVE で止めるので、`npm ls` が捕まえるものがあることを、`npm install --legacy-peer-deps react-dom@<新しい版>` で `react` を古い版のままにした木で `npm ls --all` が失敗で終わることで 1 回確かめ、壊して落ちる記録に残す。
+
+期待の不一致で最初に落とすのは、`dependency_updates_spec.rb` の、`dependabot.yml` のどのエコシステムも `groups` を持つことを確かめる example である（いまは無い）。`fetch("groups")` のように鍵が無いことで例外になる書き方をせず、`expect(updates).to all(include("groups"))` のように期待の不一致で落ちる形で書く。`engines` の形の example も、いまの `>=22.12` で落ちる。Node の主版をそろえる example は、`engines` を直した後は通るので、`frontend/Dockerfile` の `NODE_VERSION` と、2 つ目の `actions/setup-node` の `node-version` を、それぞれ複製から 24 に替えると落ちることを、壊して落ちる記録に残す。Dependabot の設定の example は、小版と修正版のまとまりに `major` を足す、組のまとまりを後ろへ動かす、`cn` を `exclude-patterns` から外す、の 3 つで落ちることを記録に残す。
 
 ほかに、M44 の PR の CI で `frontend`・`e2e`・`images` が通ることを確かめる。`package-lock.json` と `ci.yml` を変えるので、`images` も流れる。
 
-**作者の手順**：M44 をマージした後、Dependabot に閉じられずに残った PR（取り込まなかった #65・#66 を含む）を閉じる。
+**作者の手順**：M44 をマージするまで、Dependabot の PR をマージしない。M42 と M44 が同じ `ci.yml` と `package-lock.json` を変えるので、先にマージすると載せ直しになる。M44 をマージした後、Dependabot に閉じられずに残った PR（取り込まなかった #65 を含む。`groups` を入れた直後の Dependabot の実行は、1 本ずつの PR を閉じて、まとめた PR を開き直すことがある）を、その時点の一覧を見て閉じる。#66 は、上げる時機の知らせとして開いたままにする。
 
 **範囲外**：画面の Node の主版を上げること（上げるときは、この spec が 4 か所をそろえさせる）、`Dockerfile` と `frontend/Dockerfile` のベースのイメージの更新を Dependabot に載せること、Ruby の gem の更新（いま開いている PR は無い。まとめ方だけを決める）
 
 **実装する文書の節**：GitHub の文書の Dependabot の設定（`groups`・`ignore`）、`guides/config.md`「CI の工程」、`README.md`「画面」
 
-**文書に残すこと**：`guides/config.md`「CI の工程」に、Dependabot の更新のまとめ方と、`ignore` にした主版の上げとその理由と、Node の主版の正本が `engines` であることを書く。`README.md`「画面」の Node の版の文を、正本と spec に合わせる。
+**文書に残すこと**：`guides/config.md`「CI の工程」に、Dependabot の更新のまとめ方と、`ignore` にした主版の上げとその理由と、TypeScript の主版を上げる時機の知らせ方と、Node の主版の正本が `engines` であることを書く。`README.md`「画面」の Node の版の文と、`frontend/Dockerfile` の `NODE_VERSION` の直前のコメント（CI と同じ系にする理由）を、正本と spec に合わせる。
