@@ -35,8 +35,12 @@ RSpec.describe "依存の更新" do
       expect(self.class.major(node_version)).to eq(self.class.engines_major)
     end
 
-    it "@types/node の範囲が、engines と同じ主版である" do
-      expect(self.class.major(self.class.package.dig("devDependencies", "@types/node"))).to eq(self.class.engines_major)
+    # >=22 のように主版を 1 つに決めない範囲は、先頭の数がそろっていても、npm install が上の主版を入れうる
+    it "@types/node の範囲が、engines と同じ 1 つの主版に収まる" do
+      range = self.class.package.dig("devDependencies", "@types/node")
+
+      expect(range).to match(/\A[\^~]?\d+(\.\d+)*\z/)
+      expect(self.class.major(range)).to eq(self.class.engines_major)
     end
   end
 
@@ -64,8 +68,9 @@ RSpec.describe "依存の更新" do
       expect(update_types).to eq("bundler" => %w[minor patch], "npm" => %w[minor patch])
     end
 
-    # Dependabot は、依存を最初に当たったまとまりに入れる
-    it "npm の組の依存のまとまりは、組の 4 つを patterns に持ち、小版と修正版のまとまりより先にある" do
+    # Dependabot は、依存を最初に当たったまとまりに入れる。update-types を絞るか組の依存を除くと、
+    # 外れた更新が 1 本ずつ開き、組が分かれる
+    it "npm の組の依存のまとまりは、組の 4 つを主版も含めて持ち、小版と修正版のまとまりより先にある" do
       groups = self.class.ecosystem("npm").fetch("groups", {}).to_a
       paired_index = groups.index { |_, group| (self.class.paired - Array(group["patterns"])).empty? }
       catch_all_index = groups.index { |_, group| Array(group["patterns"]).include?("*") }
@@ -73,6 +78,8 @@ RSpec.describe "依存の更新" do
       expect(paired_index).not_to be_nil
       expect(catch_all_index).not_to be_nil
       expect(paired_index).to be < catch_all_index
+      expect(groups[paired_index].last).not_to include("update-types")
+      expect(self.class.paired & Array(groups[paired_index].last["exclude-patterns"])).to eq([])
     end
 
     # 0 系の小版の上げは破壊的な変更を含みうるので、主版の上げと同じく 1 本ずつ開かせる。
