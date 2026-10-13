@@ -326,6 +326,35 @@ PR #76 の CI は、`afdf731` の run（38366504749）で、`frontend`・`e2e`�
 
 `m45-list-sort`（base は `main`）。計画の PR #78（`cycle-06-decisions`）の先端 `2daa00b` から切った。#78 が未マージなので、PR の差分には計画の commit も含まれる。M45 の差分は `2daa00b..` である。
 
+Codex も Claude も Go だった。どちらの系統も、`2daa00b..8bf31e6` の diff を `8bf31e6` の版で読んだ。実装者が 2 系統へ同じ依頼を渡した。Claude は spec を流さず、`git grep` で `field: :status` と `SORT_ORDER` を引いて検出力を見た。Codex は spec を流さず、`Page#decode` をメモリ上で呼んでカーソルの受け付けと拒否を確かめ、`SORT_ORDER` の順位をメモリ上で入れ替えて比較が変わらないことを確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Medium 1・Low 1） | 出していない（High が無かった） |
+| Claude | Go（Medium 1・Low 2） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R2） | 指摘（R3） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし（文書の言い回しは R2） |
+| テストの検出力 | 指摘（R1） | 指摘（R1） |
+| 参照の維持 | 指摘（R2） | 指摘（R2・R3） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | R1：状況で並べる順（`SORT_ORDER`）の大半の順を、どの spec も確かめていない。状況のモジュールの単体は `ALL` と同じ集まりであることだけを見、公開 API の spec は状況の一部しか並べない。受注の一部引当と引当済、発注の入荷予定と検収済、出荷依頼の出荷停止中と出荷済を入れ替えても落ちない | 3 つの状況のモジュールの単体に、全状況の行を 1 件ずつ作って `STATUS` で並べ、`graphql-schema.md`「状況の enum」の表から書き写した順（`DESC` はその逆）に並ぶことを確かめる example を足した。レビューが挙げた入れ替えで落ちることを、壊して落ちる記録に足した | `0fb56c1` |
+| Low | Codex・Claude | R2：`graphql-schema.md`「1 回のリクエストがたどる道」3 が、テナントの名前の副問い合わせも「scope を掛けた後」の例に含めている。`adr/010` 決定 2 の見出しも同じ | 3 の括弧からテナントの名前を外し、所有テナントの無い表の値は scope を掛けずに返す列を絞る、という文を分けて足した。決定 2 の見出しに「所有テナントの無い表は、返す列を絞って」を足した | `0fb56c1` |
+| Low | Codex・Claude | R2（Codex）・R3（Claude）：計画の作るもの 4 がカーソルの合計を「整数に戻し」と書いたまま。`data-model.md`「状態は保存せず、時刻列から導出する」の、状況の式を読む使い方に並べ替えが無い | 作るもの 4 を「`numeric` で比べるために `BigDecimal` に戻し」に直し、理由を添えた。`data-model.md` に、並べ替えも同じ式の値を読み、順は優先順でなく業務の進み順であることを足した。「整数に戻し」は `git grep` で計画・設計文書・コードに 0 件 | `0fb56c1` |
+
+違和感は次のように扱った。
+
+- Codex 1・Claude 1：明細が 0 件の受注と発注は、合計が空になり「照合待ち」「確定待ち」と出る。入口からは作れない → IB-108 に積んだ
+- Codex 2：別の DB の worktree で `logging_spec.rb` が落ちたのは既存の依存で、M45 はテストの基盤を変えていない → `TEST_DATABASE` を渡した worktree で `bin/ci` を流せないこととして IB-110 に積んだ
+- Claude 2：E2E の受注一覧の example が、世界の受注が 1 ページに収まり得意先が 2 社であることに依る → IB-109 に積んだ
+- Claude 3：`page.rb` の `BigDecimal` の理由が、Active Record の既定値の原文を引いていない → activerecord 8.1 の `ActiveRecord.raise_int_wider_than_64bit` と `check_int_in_range` を引いた（`0fb56c1`）
+- Claude 4：M45 の差分は 788 行の追加で、IB-107 の「分けた後も大きい」に当たる → `2daa00b..0fb56c1` で 58 ファイル・845 行の追加と 132 行の削除、生成物（`schema.graphql`・`frontend/lib/graphql/generated.ts`）と `docs/` を除くと 49 ファイル・636 行の追加と 104 行の削除だった。IB-107 の判定の材料として、ここに書くだけにした
+
 ### 実装の記録
 
 #### 計画との違い
@@ -385,6 +414,12 @@ Error: element(s) not found
 | 同上 | `spec/matrix/graphql_matrix_spec.rb -e orderByName` | 30（3 つの `#orderByName` の行の、全ペルソナの admin と member） |
 | 受注・発注・出荷依頼の名前の副問い合わせを、相手のテナント ID でなく所有テナントの ID で引く | 3 つの公開 API の単体と `spec/requests/purchase_orders_spec.rb` | 受注 1・発注 2・出荷依頼 1（名前で並べる example） |
 | 画面の `totalAmountText` で、空の合計を 0 円にする | `frontend/lib/format.test.ts` | 1（空の合計の example） |
+| 受注の `SORT_ORDER` の一部引当と引当済を入れ替える（実装レビューの R1 の直しの後） | 受注の状況の単体 | 1（全状況を状況で並べる example） |
+| 受注の `SORT_ORDER` の検収済と取消済を入れ替える（同上） | 同上 | 1（同上） |
+| 受注の `SORT_ORDER` から最後の取消済を外す（同上） | 同上 | 2（同上と、`ALL` と同じ集まりの example。位置の無い状況は `DESC` でも最後に残るので、逆順の期待と食い違う） |
+| 発注の `SORT_ORDER` の入荷予定と検収済を入れ替える（同上） | 発注の状況の単体 | 1（同上） |
+| 発注の `SORT_ORDER` の取消済みと受注側により取消を入れ替える（同上） | 同上 | 1（同上） |
+| 出荷依頼の `SORT_ORDER` の出荷停止中と出荷済を入れ替える（同上） | 出荷依頼の状況の単体 | 1（同上） |
 
 `DueDate` を表のセルの中で折り返せるようにする前は、上の「計画との違い」のとおり `e2e/layout.spec.ts` の `/buyer/purchase-orders` が落ちた（`表の幅がパネルの中に収まる (表 707.25 / パネル 688)`）。直した後は通った。
 
@@ -403,6 +438,8 @@ bin/ci   # すべての工程が通った。rspec は 2920 examples, 0 failures
 bin/check-open-items --due M45
 bin/check-commit-refs
 ```
+
+実装レビューの直し（`0fb56c1`）の後に、完了条件の rspec の 3 行・`bin/check-schema-compat`・`bin/check-open-items --due M45`・`bin/check-commit-refs` と `bin/ci` を流し直した。rspec の 3 行は 19・38・1546 examples でどれも 0 failures、`bin/ci` はすべての工程が通り、rspec は 2923 examples, 0 failures、分岐の網羅率の警告は 0 件だった。直しは画面を変えていないので、画面の検査と E2E は流し直していない。
 
 分岐の網羅率の警告は 0 件だった。`bin/ci` は、はじめ `TEST_DATABASE` を渡して流し、`spec/platform/logging_spec.rb` の 1 件が `log/events.log` が無いことで落ちた。この example は既定の DB のプロセスが書いた `log/events.log` を読むので、別の DB に向けた worktree の初めての実行では落ちる。ほかに rspec を流しているプロセスが無いことを確かめてから、`TEST_DATABASE` を渡さずに流し直して通った。
 
