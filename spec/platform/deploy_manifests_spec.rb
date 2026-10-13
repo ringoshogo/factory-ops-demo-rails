@@ -113,6 +113,18 @@ RSpec.describe "公開の配置のマニフェスト" do
     end
   end
 
+  # 既定の 1 秒では、Pi 4 で取り込みを流す間にプローブが時間切れになり、liveness が続けて落ちてコンテナが作り直されうる
+  it "すべてのプローブが、時間切れ（timeoutSeconds）を明示する" do
+    probes = workloads.flat_map do |document|
+      containers(document).flat_map do |container|
+        %w[startupProbe readinessProbe livenessProbe].filter_map { |kind| [ document.dig("metadata", "name"), kind, container[kind] ] if container[kind] }
+      end
+    end
+
+    expect(probes.map(&:first).uniq.sort).to eq(%w[frontend postgres web])
+    probes.each { |name, kind, probe| expect(probe["timeoutSeconds"]).to be_present, "#{name} の #{kind} が timeoutSeconds を書いていない" }
+  end
+
   it "イメージはタグを固定し、latest を使わない。タグの無いイメージは kustomization.yaml の images でタグを決める" do
     images = kustomization.fetch("images").to_h { [ _1.fetch("name"), _1.fetch("newTag") ] }
 
