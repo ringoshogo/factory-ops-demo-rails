@@ -310,7 +310,7 @@ jobs:
   # GHCR には置かない（publish のジョブが置く）。main への push では毎回流すので、PR で流さなかった変更も main で確かめる
   images:
     needs: image_inputs
-    if: ${{ !cancelled() && needs.image_inputs.outputs.changed == 'true' }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || needs.image_inputs.outputs.changed == 'true') }}
     runs-on: ubuntu-24.04-arm
     env:
       API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
