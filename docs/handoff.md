@@ -91,7 +91,7 @@
 - DB は `docker compose up -d --wait`（PostgreSQL 18、ポート 5433）
 - rspec の全件は手元で約 2 分かかる。テストを並行して流すときは、別名の一時 DB を使う
 - 画面（`frontend/`）は Node 22 系で動かす。手元の E2E はホストの Chrome で流す（`README.md`「画面」）
-- GitHub の操作（push・PR）は、`GH_TOKEN=$(gh auth token -u ringoshogo)` を付けて個人アカウントで行う。gh の既定は仕事用の `ringo-shg` で、そのままでは push できない。`gh auth switch` は gh の既定のアカウントを変えてしまうので使わない
+- GitHub の操作（push・PR）は、`GH_TOKEN=$(gh auth token -u ringoshogo)` を付けて個人アカウントで行う。gh の既定のアカウントは別のアカウントで、そのままでは push できない。`gh auth switch` は gh の既定のアカウントを変えてしまうので使わない
 
 ## リポジトリの状態
 
