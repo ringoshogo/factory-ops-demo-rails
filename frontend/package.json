@@ -14,7 +14,7 @@
     "test:e2e": "next build && playwright test"
   },
   "dependencies": {
-    "@base-ui/react": "^1.8.0",
+    "@base-ui/react": "^1.9.0",
     "@graphql-typed-document-node/core": "^3.2.0",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.2.6",
