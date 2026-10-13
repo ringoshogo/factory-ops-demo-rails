@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -31,7 +31,7 @@ jobs:
     steps:
       # 台帳と証跡の SHA が HEAD の祖先かを確かめ、スキーマの互換の基準を取るので、履歴をすべて取る
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -112,7 +112,7 @@ jobs:
 
       # 分岐の網羅率の警告が、基準の ref との分岐点からの差分を取るので、履歴をすべて取る
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -161,7 +161,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Node は 22 系にする。frontend/package.json の engines（22.12 以上）を満たす
       - name: Set up Node
@@ -216,7 +216,7 @@ jobs:
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -266,7 +266,7 @@ jobs:
       changed: ${{ steps.diff.outputs.changed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -297,7 +297,7 @@ jobs:
       FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Kustomize の置き換えを描き、Kubernetes の型と照らす。ubuntu のランナーには kubectl が入っている。
       # kubeconform は取ったファイルを、リリースの sha256 と比べてから展開する
