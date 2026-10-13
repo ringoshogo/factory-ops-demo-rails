@@ -120,6 +120,8 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M42 | CI のランナーの版を固定し、公開の配置のイメージを arm64 で組み立てる | CI のジョブが OS の版を明示し、テストの落ちた commit のイメージが GHCR に置かれない |
 | M43 | 公開の配置の作り直しを、本番の環境でだけ動かす | 本番の環境の外では、作り直しが DB にも Kubernetes の API にも触れずに止まる |
 | M44 | 依存の更新を取り込み、Dependabot の更新をまとめる | 画面の Node の主版が、CI・画面のイメージ・`engines`・型定義でそろい、Dependabot の設定がどのエコシステムでも更新をまとめる |
+| M48 | CI で依存の木を確かめ、イメージの組み立てを PR のたびに流す | 入れ子の依存の peer の範囲から外れた更新の PR が CI で落ち、イメージの組み立てが条件の保守なしに PR ごとに確かめられる |
+| M49 | 品目コードの列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする | 品目コードの並びが Ruby の比べ方と列の定義でそろい、コードの順で取るロックが照合順序を知らずに書いても食い違わない |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -155,6 +157,8 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M42 | M41 | `images` のジョブと `image_inputs` の条件が M41 とサイクル 05 の再発防止にある |
 | M43 | M41 | 作り直しの `DemoReset` が M41 にある |
 | M44 | M42 | 版を上げる `uses:` の行が、M42 が分けたジョブを含む。`package-lock.json` と `ci.yml` を変える PR で流れる `images` のジョブが、M42 で arm64 のランナーに移っている |
+| M48 | M44 | `npm ls --all` を、M44 で取り込んだ依存の木と `groups` でまとめた PR に当てる。`image_inputs` と `publish` の形が M42 にある |
+| M49 | M46 | 照合順序を決める `item_labels.code` と作り直しの式が M46 にある |
 
 ---
 
@@ -2004,7 +2008,7 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 
 作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。サイクル 05 の逸脱検査が、画面が決めた 2 つの振る舞い（取消依頼のボタンを出す発注の状況、品番照合待ちを含む受注の合計金額）を作者に確かめる行にした（OI-178・OI-179）。作者の答えが既定と違えば、画面を直す。M33 は、OI-144・OI-177〜OI-179 が片付くまで終えない。
 
-**残り（サイクル 07）**：M33 は実装レビューまで終え、作者を待つ 4 行（OI-144・OI-177〜OI-179）だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-14 に OI-144・OI-178・OI-179 に答えた。OI-144 と OI-179 の答えは API に及ぶので、取りまとめ役は、API とそれを使う画面の変更を M45〜M47 として起こし、サイクル 06 の計画レビューに通した（`plans/cycle-06/plan-review.md`）。M33 の残りに残るのは、OI-178 の画面の直しと、作者の画面の指摘を待つ OI-177 である。サイクル 06 のマイルストーンを上限の 6 つに収めるため、残りは M47 と一緒にサイクル 07 へ移した。サイクル 07 の計画レビューで、サイクル 06 の末で変わった正本に合わせて節を見直す。
+**残り（サイクル 07）**：M33 は実装レビューまで終え、作者を待つ 4 行（OI-144・OI-177〜OI-179）だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-14 に OI-144・OI-178・OI-179 に答えた。OI-144 と OI-179 の答えは API に及ぶので、取りまとめ役は、API とそれを使う画面の変更を M45〜M47 として起こし、サイクル 06 の計画レビューに通した（`plans/cycle-06/plan-review.md`）。M33 の残りに残るのは、OI-178 の画面の直しと、作者の画面の指摘を待つ OI-177 と、サイクル 06 の逸脱検査で作者に渡した OI-192（取消済の伝票の合計の表示）である。サイクル 06 のマイルストーンを上限の 6 つに収めるため、残りは M47 と一緒にサイクル 07 へ移した。サイクル 07 の計画レビューで、サイクル 06 の末で変わった正本に合わせて節を見直す。
 
 | ID | 作者の答え | 作るもの |
 |---|---|---|
@@ -2012,8 +2016,9 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 | OI-177 | （作者が画面を動かした後に指摘を出す） | 取りまとめ役が、指摘を台帳の結果の欄に写すときに、指摘ごとに画面だけで済むか API に及ぶかを書く。画面だけの指摘は、直す画面と、直したことを確かめる E2E か単体のテストをこの節の下に書いて直す。API に及ぶ指摘は、作るものと完了条件をこの節の下に書き、差分を計画レビューの 2 系統に通してから実装者に渡す |
 | OI-178 | 出荷の前（`SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED`）だけボタンを出す | 下の取消依頼のボタン |
 | OI-179 | 照合待ちの明細を含む受注は、どの画面でも合計を出さず、照合待ちであることを出す | M45（合計の式と、画面の 1 つの関数） |
+| OI-192 | （作者の答えを待つ。既定はいまの画面のまま、取消済の伝票にも「照合待ち」「確定待ち」を出す） | 答えが既定と違えば、`frontend/lib/format.ts` の `totalAmountText` に状況を渡し、`format.test.ts` と E2E の期待を直す。明細の無い伝票の空の表示（IB-108）を同じ分岐で扱うかは、差分の計画レビューで決める |
 
-取消依頼のボタン（OI-178）：取消依頼のボタンを出す状況の集合を、`frontend/components/purchase-order-detail.tsx` の `CANCELLABLE` から `frontend/lib/purchase-order-flow.ts` の関数（`canRequestCancellation`）へ移し、集合を `SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED` にする。`frontend/lib/purchase-order-flow.test.ts` が、`PurchaseOrderStatus` のすべての値（codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める `frontend/lib/statuses.ts` の `PURCHASE_ORDER_STATUS` の鍵から集める）について、出すか隠すかを確かめる。受注側の `frontend/lib/sales-order-flow.ts` と同じ置き方にする。期待の不一致で最初に落とすのは、この単体の、`INBOUND` の発注でボタンを隠すことを確かめる example である（いまの画面は `INBOUND` で出す）。集合から `ACCEPTED` を外すと落ちることを、壊して落ちる記録に残す。
+取消依頼のボタン（OI-178）：取消依頼のボタンを出す状況の集合を、`frontend/components/purchase-order-detail.tsx` の `CANCELLABLE` から `frontend/lib/purchase-order-flow.ts` の関数（`canRequestCancellation`）へ移し、集合を `SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED` にする。`frontend/lib/purchase-order-flow.test.ts` が、`PurchaseOrderStatus` のすべての値（codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める `frontend/lib/statuses.ts` の `PURCHASE_ORDER_STATUS` の鍵から集める）について、出すか隠すかを確かめる。受注側の `frontend/lib/sales-order-flow.ts` と同じ置き方にする。`frontend/e2e/admin-only.spec.ts` は `INBOUND` の発注でボタンが出ることを期待しているので、その期待も直し、出荷の前の発注でボタンが出ることを別に確かめる（サイクル 06 の逸脱検査 D3）。期待の不一致で最初に落とすのは、この単体の、`INBOUND` の発注でボタンを隠すことを確かめる example である（いまの画面は `INBOUND` で出す）。集合から `ACCEPTED` を外すと落ちることを、壊して落ちる記録に残す。
 
 残りの完了条件：
 
@@ -2149,6 +2154,8 @@ bin/check-open-items --due M41
 
 マニフェストを替えたら、CI のマニフェストの照合（M42 の後は `manifests` のジョブ）が通ることも確かめる。作者が答えないまま、ほかのマイルストーンを終えたら、取りまとめ役は M41 の残りを次のサイクルへ移す。
 
+**残り（サイクル 07）**：プローブの直しは、サイクル 06 で実装レビューまで終えた（`plans/cycle-06/implementation-reviews.md`「M41 の残り：公開の配置のプローブの時間切れを明示する」）。残る作者の実機の手順（作るもの 9 の手順 1〜6）だけをサイクル 07 へ移した。作者が結果を PR か台帳に書いたら、取りまとめ役は、測った値でプローブの時間と requests と limits を直すか（OI-182）、PVC を移すか（OI-183）を確かめ、直すものがあれば差分をこの節の下に書いて実装レビューに通す。
+
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
 **実装する文書の節**：`adr/009`、`config/database.yml` の `production`、`architecture/data-model.md`「RLS」・「監査ログ（`platform`）」、`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」・「監査ログ」・「1 回のリクエストがたどる道」、`guides/config.md`「ジョブ」・「環境ごとの設定」、流用元の `deploy/README.md`・`deploy/preflight.sh`・`deploy/daily-reset-cronjob.yaml`・`docs/plans/cycle-01-t34-release-runbook.md`
@@ -2266,3 +2273,76 @@ cd frontend && npm run test:e2e
 **実装する文書の節**：GitHub の文書の Dependabot の設定（`groups`・`ignore`）、`guides/config.md`「CI の工程」、`README.md`「画面」
 
 **文書に残すこと**：`guides/config.md`「CI の工程」に、Dependabot の更新のまとめ方と、`ignore` にした主版の上げとその理由と、TypeScript の主版の PR を開いたままにすることと、Node の主版の正本が `engines` であることを書く。`README.md`「画面」の Node の版の文と、`frontend/Dockerfile` の `NODE_VERSION` の直前のコメント（CI と同じ系にする理由）を、正本と spec に合わせる。
+
+## M48 CI で依存の木を確かめ、イメージの組み立てを PR のたびに流す
+
+**目的**：2 つの CI の直しを 1 つにまとめる。1 つ目は、CI の `frontend` のジョブが `npm ls --all` を流さず、入れ子の依存の peer の範囲から外れた更新の PR が緑に見えることである。M44 で、`eslint` 10 の PR（#70）は CI がすべて通ったが、`npm ls --all` が `ELSPROBLEMS` で落ちた（IB-104）。2 つ目は、`images` を PR のたびに流さない条件（`image_inputs`）が、M42 で arm64 のランナーに移した後は要らなくなったことである。`images` はキャッシュが空でも 4 分 10 秒で、`test` のジョブより短く、public のリポジトリの標準のランナーは利用の枠を使わない。条件を外すと、`image_inputs` のジョブ・`pattern` の保守の規則と spec・push で skip されるジョブのための回り道が消える（IB-113）。どちらもサイクル 06 の改善の探索で採用した（`plans/cycle-06/improvement.md`）。あわせて、壊して落ちる記録の壊し方の型を広げる規則の変更（IB-17）を、このマイルストーンで試す。業務の振る舞いは変えない。
+
+**作るもの**
+
+1. `frontend` のジョブ：`npm ci` の後に `npm ls --all` のステップを足す。`spec/platform/ci_checks_spec.rb` に、`frontend` のジョブが `npm ci` の後に `npm ls --all` を流すことを確かめる example を足す
+2. `image_inputs` を外す：`image_inputs` のジョブと、`images` の `needs`・ジョブの段の `if:` を外し、`images` を PR と main への push のたびに流す。`ci_checks_spec.rb` の `pattern` の example を消し、「`publish` の `needs` は `image_inputs` のほかのすべてのジョブを含む」と「ジョブの段の `if:` を持つのは `image_inputs`・`images`・`publish` だけ」の example を、外した後の形（`publish` の `needs` はほかのすべてのジョブ、ジョブの段の `if:` を持つのは `publish` だけ）に直す
+3. `publish` の `skipped` の守り：いまは `publish` の最初のステップで、直接の `needs` に skip されたジョブがあれば落とす（OI-184）。`image_inputs` が無くなれば、ジョブの段の `if:` に `!contains(needs.*.result, 'skipped')` を戻せる見込みだが、確かめていない。マイルストーンの中で、M42 と同じくブランチへの push で確かめ、戻せたら戻して最初のステップを消す。確かめられなければ、最初のステップに残す。どちらにしたかを OI-184 の結果か新しい `judgment` に書く
+4. 壊し方の型の試行（IB-17）：このマイルストーンで足すか直す example のそれぞれについて、壊して落ちる記録に、「消す・外す」のほかに、キーや要素を残したまま「値を替える・順を入れ替える・書き込み先を替える・条件や要素を足す」壊し方を 1 つ以上流した行を書く。規則の文は、試行が効いてから `guides/dev-cycle.md`「テストから書く」と実装レビューの観点 4 に書く
+
+**判断**：PR で `images` を流す条件を外すか
+
+- **既定の推奨**：外す。arm64 のランナーで `images` は PR の CI の予算（10 分）の内に収まり、`test` と並んで流れるのでワークフロー全体は延びない。条件の保守（イメージに入るものの置き場を足した人が `pattern` を直す規則と spec）と、push で skip されるジョブのための回り道が消える。サイクル 05 の逸脱検査 D10（`pattern` の漏れ）の種類の欠陥が起きなくなる
+- **比べた案**：(a) いまのまま、イメージに入るものを変えた PR でだけ流す。PR の CI の時間は少し短いが、条件の保守が残る
+- **裏返る条件**：リポジトリを private に戻す。`images` が PR の CI の予算を超える → 条件を戻す
+- **撤退コスト**：小さい。ワークフローと spec の変更だけで、M42 の形に戻せる
+
+**完了条件**
+
+```sh
+bundle exec rspec spec/platform/ci_checks_spec.rb spec/platform/dependency_updates_spec.rb   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、`ci_checks_spec.rb` の、`frontend` のジョブが `npm ci` の後に `npm ls --all` を流すことを確かめる example である。ステップを外す・`npm ci` より前に動かす・`npm ls` の引数から `--all` を外す、の 3 つで落ちることを壊して落ちる記録に残す（作るもの 4 の型）。
+
+ほかに、次を PR の CI と証跡で確かめる。
+
+- M48 の PR の CI で、`images` が流れ、ワークフロー全体（実行が始まってから終わるまで）が 10 分の内に終わる。キャッシュが空のときの時間も、M42 と同じく `scope` を替えた一時の commit で 1 回測る
+- 組の依存をずらした一時の commit（M44 の壊して落ちる記録と同じ、`npm install --legacy-peer-deps` で `react` を古い版のままにした木）を PR に push し、`frontend` のジョブが `npm ls --all` のステップで落ちることを見てから戻す
+- 作るもの 3 の確かめを、M42 と同じくブランチへの push で行い、`test` だけを落とした push で `publish` が流れないことを見る。一時の契機を戻した commit で `on.push.branches` が `[ main ]` だけであることを証跡に書く
+- マージした後の最初の main への push で `publish` が流れ、2 つのイメージを置くことは、取りまとめ役がサイクル 07 の振り返りで確かめる
+
+**範囲外**：`publish` の組み立ての形、画面の書体の取り方（IB-101）
+
+**実装する文書の節**：`guides/config.md`「CI の工程」、`adr/009`「見直す条件」、`guides/bin.md`「CI が使うもの」
+
+**文書に残すこと**：`guides/config.md`「CI の工程」の、予算を超えるジョブの段落と `image_inputs` の文、`publish` の条件の段落、`frontend` のジョブの一覧に `npm ls --all`。`adr/009`「見直す条件」の「private に戻したら `images` は `image_inputs` の条件で絞ったままにする」を、戻すときは条件も戻すと書き直す。`guides/bin.md`「CI が使うもの」の表から `image_inputs` を消す。「`image_inputs`」を `git grep` で数え、計画の M42 の節と証跡のほかに残らないようにする。
+
+## M49 品目コードの列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする
+
+**目的**：2 つの小さい直しを 1 つにまとめる。1 つ目は、文字列の照合順序を決めた記録が無く、DB の既定（公式の `postgres` のイメージが initdb する `en_US.utf8`）のままであることである。M46 で、品目の写しの作り直しが品目を DB の照合順序の `ORDER BY code` で読んでロックし、取り込みは Ruby のバイトの順でロックするので、`B-1` と `a-1` のように順が逆になるコードで行き詰まりうる形を、計画も実装も通した（実装レビューの High）。いまは作り直しの式に `COLLATE "C"` を書いて直してあるが、次にコードの順でロックする箇所を書く人が照合順序を知らなければ、同じ形がまた出る。品目コードの列そのものの照合順序を、Ruby の文字列の比べ方と同じ順に決める（IB-77）。2 つ目は、`TEST_DATABASE` を渡した worktree で `bin/ci` を流すと、`spec/platform/logging_spec.rb` の 1 件が、既定の DB のプロセスが書く `log/events.log` を固定で読んで落ちることである（IB-110）。どちらもサイクル 06 の改善の探索で採用した（`plans/cycle-06/improvement.md`）。名前の列（品目名・取引先の名前）の照合順序は、作者の確認を待つ OI-190 に関わるので触らない。
+
+**作るもの**
+
+1. マイグレーション 1 本で、`items.code` と `item_labels.code` の照合順序を、下の判断で決めたものにする。`(owner_tenant_id, code)` の一意索引が作り直される。`db/structure.sql` を書き直す
+2. 作り直し（`Sales::Catalog.rebuild_item_labels`）の式から照合順序の指定を外し、列の順で読む。コメントを、列の照合順序が Ruby の比べ方と同じ順にすることに直す
+3. spec：2 つの列の照合順序が決めたものであることを `pg_attribute` と `pg_collation` から確かめる example。作り直しの式から照合順序の指定を外しても `packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb` の `B-1`・`a-1` の example が通ることと、列の照合順序を DB の既定に戻すと同じ example が落ちることを、壊して落ちる記録に残す。品目コードの検索（`Keyword` の ILIKE）が、ASCII 以外の文字を含むコードの大文字と小文字を、変える前と同じに扱うことを確かめる example を足す
+4. `spec/platform/logging_spec.rb` の別の DB の子のプロセスの example が、親のファイルを `Platform::Logging.events_log_path(Rails.root)`（自分のプロセスのログ）から読む
+
+**判断**：品目コードの列の照合順序を何にするか
+
+- **既定の推奨**：`pg_c_utf8`（PostgreSQL 17 からの builtin の照合順序）。コードポイントの順で並べ、UTF-8 ではバイトの順と同じになるので、Ruby の `String#<=>` の順とそろう。大文字と小文字の対応に Unicode の単純な対応を使うので、品目コードの ILIKE の検索が ASCII 以外の文字でも大文字と小文字を区別しない（PostgreSQL 18 の文書「Collation Support」）。どちらの対応も、マイグレーションの後に作るもの 3 の example で確かめる
+- **比べた案**：(a) `"C"`。バイトの順で並べるが、ASCII の A〜Z しか文字として扱わず、ASCII 以外の文字を含むコードの ILIKE が大文字と小文字を区別するようになる。品目コードに形の検証は無く、取り込みの CSV で任意の文字が入りうる。(b) DB の既定を変える（initdb の引数）。名前の並びも変え（OI-190）、既存のボリュームは initdb をやり直さないと変わらない。(c) いまのまま、ロックの順だけを式で決めて記録する
+- **裏返る条件**：`pg_c_utf8` の ILIKE が、作るもの 3 の example で変える前と違う結果になる → `"C"` にし、品目コードの形を ASCII に限る検証を足すかを計画レビューに戻す
+- **撤退コスト**：小さい。照合順序を戻すマイグレーション 1 本で、データは変わらない
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb packs/sales/spec/public/sales/catalog_spec.rb packs/inventory/spec/public/inventory/item_labels_spec.rb spec/requests/catalog_spec.rb spec/requests/inventory_spec.rb   # 0 failures
+TEST_DATABASE=factory_ops_m49 bundle exec rspec spec/platform/logging_spec.rb   # log/events.log の無い worktree で 0 failures
+TEST_DATABASE=factory_ops_m49 bin/ci
+```
+
+期待の不一致で最初に落とすのは、2 つの列の照合順序を確かめる example（いまは DB の既定）と、`log/events.log` の無い worktree で `TEST_DATABASE` を渡して流した `logging_spec.rb` の別の DB の example（いまは `Errno::ENOENT` で落ちるので、親のファイルを読む前にファイルがあることを期待として確かめる形にして、期待の不一致で落とす）である。`Platform::Logging.events_log_path` が `TEST_DATABASE` を見ない形に壊すと、直した example が落ちることを壊して落ちる記録に残す。
+
+**範囲外**：名前の列の照合順序（OI-190）、伝票番号の列
+
+**実装する文書の節**：`architecture/data-model.md`「在庫（`inventory`）」「受注（`sales`）」、`adr/011` 決定 1、`guides/config.md`「ログの出口：Rails.event と Rails.logger」
+
+**文書に残すこと**：`architecture/data-model.md` に、DB の既定の照合順序を前提にしていることと、文字列のキーで行ロックの順を決める列は Ruby の比べ方と同じ順の照合順序を列に持たせることを書く。`adr/011` 決定 1 と `showcase.md`「4. 整合性の設計」の「照合順序 `"C"`」を、列の照合順序の文に直す。「`COLLATE \"C\"`」と「照合順序 `\"C\"`」を `git grep` で数え、証跡のほかに残らないようにする。
