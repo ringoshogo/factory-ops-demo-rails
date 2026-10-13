@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ main, m42-ci-publish ]
 
 # 権限を書かないジョブの権限はリポジトリの設定で決まるので、最上位を読み取りだけにし、
 # GHCR へ書く packages: write は publish のジョブにだけ書く
@@ -310,7 +310,7 @@ jobs:
   # GHCR には置かない（publish のジョブが置く）。main への push では毎回流すので、PR で流さなかった変更も main で確かめる
   images:
     needs: image_inputs
-    if: ${{ !cancelled() && (github.event_name == 'push' || needs.image_inputs.outputs.changed == 'true') }}
+    if: ${{ !cancelled() && needs.image_inputs.outputs.changed == 'true' }}
     runs-on: ubuntu-24.04-arm
     env:
       API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
