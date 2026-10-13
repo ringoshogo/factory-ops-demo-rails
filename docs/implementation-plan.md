@@ -147,7 +147,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M39 | M37・M38 | 一覧の件数と絞り込みの scope の抜けを、M37 の RLS を開いた 2 回目の比較で捕まえる。行列の補助と共有の文脈を M38 が変えた後に、行列の行を足す |
 | M40 | M39 | 状況の絞り込みを、M39 の入力型・件数・ページの土台に足す |
 | M45 | M40・M44 | 状況で並べる順位を M40 の状況の式から作る。積み重ねた PR の最上段の M44 のブランチから切る |
-| M46 | M45 | 在庫の一覧の列を、M45 で `:decimal` を足した `Page::Sort` に足す |
+| M46 | M45 | M45 が書き直す `architecture/graphql-schema.md`「ページングと N+1」の、別のコンテキストの値で並べる形に、在庫の列を足す。積み重ねた PR の M45 のブランチから切る |
 | M47 | M46 | 2 つ目からの列に、M45・M46 で足した列も使う |
 | M33 | M32・M40・M47 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る。残り（サイクル 07）は、M45〜M47 が直した画面の上で、作者の指摘を直す |
 | M41 | M33 | 画面のイメージを `frontend/` から作り、作り直しで M32 の `DemoWorld` を流す |
@@ -1689,7 +1689,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
 
 **作るもの**
 
-1. 取引先の名前の副問い合わせ：取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が、テナントの ID と名前の副問い合わせを `SqlSubquery` で返す。取引用コードは含めない。テナントの表は RLS の無い表で、名前は取引の相手にすでに見せている値（`Partnerships::Directory.tenants`）なので、操作者の scope は掛けない。受注・購買・出荷の一覧は、それを伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）で外部結合し、名前の列で並べる。受注・購買・出荷はどれも取引関係に依存しているので、依存の向きは変わらない。テナントの名前を変える入口は無い（`Partnerships::Onboarding.register` が作るだけ）ので、名前で並べた並びと、画面に出す名前（`Partnerships::Directory.tenants`）は食い違わない（判断「取引先の名前を、写すか、副問い合わせで結ぶか」）。
+1. 取引先の名前の副問い合わせ：取引関係の公開 API `Partnerships::Directory.tenant_names_sql(actor)` が、テナントの ID と名前の副問い合わせを `SqlSubquery` で返す。取引用コードは含めない。`Partnerships::Directory.tenants` と同じく、操作者を受け取って `Partnerships::Actor` でなければ例外にするが、scope は掛けない。テナントの表は RLS も所有テナントも無い表で、名前は取引の相手にすでに見せている値であり、結ぶ側の伝票の相手のテナント ID で 1 行に絞られるからである。`packs/partnerships/spec/public/partnerships/directory_spec.rb` が、副問い合わせの列が ID と名前だけであることと、結ぶとテナントごとに 1 行になることを確かめる。受注・購買・出荷の一覧は、それを伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）で外部結合し、名前の列で並べる。受注・購買・出荷はどれも取引関係に依存しているので、依存の向きは変わらない。テナントの名前を変える入口は無い（`Partnerships::Onboarding.register` が作るだけ）ので、名前で並べた並びと、画面に出す名前（`Partnerships::Directory.tenants`）は食い違わない（判断「取引先の名前を、写すか、副問い合わせで結ぶか」）。
 2. 合計金額の式（OI-179）：`Sales::SalesOrderAmount.expression`・`Purchasing::PurchaseOrderAmount.expression` が、明細の数量と単価の積の和を返す SQL の式を返す。単価の無い明細（受注は照合の前、発注は受注確定の前。発注は OI-188）が 1 つでもあれば空にする。和は `numeric` で計算する。単価は `bigint` の上限まで入りうる（`architecture/graphql-schema.md`「mutation の一覧」の上限）ので、`bigint` のままでは積が桁あふれで SQL のエラーになるからである。和は整数で、明細の件数の上限（100）・数量の上限（`integer`）・単価の上限（`bigint`）の積を超えない（31 桁に収まる）。公開 API の一覧・1 件・ID ごとの取得は、状況と同じく行と一緒にこの式を読み、値（`SalesOrderValue`・`PurchaseOrderValue`）の `total_amount` に Ruby の `Integer`（空は `nil`）で持たせる。GraphQL に `SalesOrder.totalAmount`・`PurchaseOrder.totalAmount`（`BigInt`、税抜。空は単価の無い明細を含むこと）を足す。graphql-ruby の `BigInt` は整数を 10 進の文字列で返すので、`bigint` の上限を超える和もそのまま届く。
 3. 状況の順位：状況のモジュールに、業務の進み順の一覧（`SORT_ORDER`）を足す。導出の優先順（`ALL`）とは別の一覧で、順は次のとおりである。受注は品番照合待ち・受注済・一部引当・引当済・出荷済・検収済・取消済、発注は送信済み・受注側で確認中・受注済・入荷予定・検収済・取消済み・受注側により取消、出荷依頼は出荷待ち・出荷指示済・出荷停止中・出荷済・取消済。状況で並べるときは、M40 の状況の式の値の、この一覧での位置（`array_position`）で並べる。状況を表に保存しない（判断「状況と合計を、表に持つか、式で並べるか」）。状況のモジュールの単体が、`SORT_ORDER` と `ALL` が同じ状況の集まりであることを確かめる。片方にだけ状況を足すと、足した状況の順位が空になり、黙って最後に並ぶからである。
 4. 並べ替えの列：次の列を `<型>OrderField` に足す。合計の空の行は、M39 の値の無い行と同じく向きによらず最後に置くので、照合待ちを含む伝票は、金額で並べると末尾にまとまる（OI-179）。
@@ -1738,15 +1738,16 @@ cd frontend && npm run test:e2e
 期待の不一致で最初に落とすのは、次の 3 つである。`sales_orders_spec.rb` の、照合待ちの明細を含む受注と照合済みの受注を作り、一覧の値の `to_h` が、前者で `total_amount: nil`、後者で数量と単価の積の和を持つことを確かめる example。`spec/requests/purchase_orders_spec.rb` の、`orderBy: { field: SUPPLIER_NAME, direction: ASC }` で発注の一覧を読み、取引先の名前の順に並ぶことを確かめる example（列を足す前は引数の検証のエラーが返り、期待した並びと食い違う）。`frontend/e2e/list-pagination.spec.ts` の、受注一覧の取引先の見出しを押すと URL の `sort` と `orderBy` が変わり取引先の名前の順に並ぶことと、受注合計で並べると照合待ちの受注が末尾に並び、同じ受注が受注一覧・受注詳細・かんばんのカードのどれでも「照合待ち」と出ることを確かめる example。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
 
 - 合計の式から「単価の無い明細があれば空」の条件を外すと、上の `sales_orders_spec.rb` の example と、合計で並べて照合待ちの受注が末尾に来ることを確かめる example が落ちる。`numeric` への変換を外すと、単価が `bigint` の上限に近い明細を持つ受注の example が SQL のエラーで落ちる
+- 値への写しで合計を `Integer` 以外（`Float` など）にすると、`spec/requests/purchase_orders_spec.rb` の、`bigint` の上限を超える合計を持つ発注の `totalAmount` が、期待した 10 進の文字列と一致することを確かめる example が落ちる
 - カーソルの合計を整数の文字列にせずに書くか、読むときの桁の確かめを外すと、`page_spec.rb` の、`bigint` の上限を超える和をカーソルで往復させる example か、32 桁の和を持つ偽のカーソルを拒む example が落ちる
 - `SORT_ORDER` から状況を 1 つ外すと、状況のモジュールの単体の、`ALL` と同じ集まりであることの example が落ちる
 - 画面の合計の関数で、空の合計を 0 として扱うと、その単体（`frontend/lib/*.test.ts`）が落ちる
 
-**範囲外**：在庫の品目のコードと名前での並べ替えと検索（M46）、複数の列での並べ替え（M47）、作者の判断（OI-144）の問いに挙げた値に入っていない列（OI-186）、名前の読みの順（五十音）での並べ替え（DB の照合順序のまま並べる）。
+**範囲外**：在庫の品目のコードと名前での並べ替えと検索（M46）、複数の列での並べ替え（M47）、作者の判断（OI-144）の問いに挙げた値に入っていない列（OI-186）、名前の読みの順（五十音）での並べ替え（DB の照合順序のまま並べる。OI-190）。
 
 **実装する文書の節**：`architecture/graphql-schema.md`「1 回のリクエストがたどる道」3・「ページングと N+1」・「状況の enum」、`architecture/data-model.md`「状態は保存せず、時刻列から導出する」、`adr/010`
 
-**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」の、並べ替えの列を一覧の表に限る文と OI-144 の参照を、別のコンテキストの値は相手の公開 API の副問い合わせか写しの表（M46）で並べる形に書き直し、足した列と `totalAmount` を SDL に書く。同じ文書の「状況の enum」に、状況で並べる順（`SORT_ORDER`）を書く。同じ文書の「1 回のリクエストがたどる道」3 の副問い合わせの例に、取引先の名前を足す。`adr/010` の決定 2 に、名前の副問い合わせを足し、取引先の名前の判断の比べた案と裏返る条件を書く。
+**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」の、並べ替えの列を一覧の表に限る文と OI-144 の参照を、別のコンテキストの値は相手の公開 API の副問い合わせか写しの表（M46）で並べる形に書き直し、足した列と `totalAmount` を SDL に書く。同じ文書の「状況の enum」に、状況で並べる順（`SORT_ORDER`）を書く。同じ文書の「1 回のリクエストがたどる道」3 の副問い合わせの例に、取引先の名前を足す。`adr/010` の決定 2 に、名前の副問い合わせを足し、所有テナントの無い表だけを読むので scope を掛けず、ID と名前だけを返すことと、取引先の名前の判断の比べた案と裏返る条件を書く。
 
 ## M46 在庫を、品目のコードと名前で並べ、検索する
 
@@ -1755,13 +1756,14 @@ cd frontend && npm run test:e2e
 **作るもの**
 
 1. 品目の写し：在庫のパッケージに `item_labels`（所有テナント・品目 ID・品目コード・品目名。所有テナントと品目 ID の組を一意にする）を置く。外部キーは張らない（判断「写しの抜けを、何で守るか」）。
-2. 写しを書く入口：品目のコードか名前を書く受注の公開 API は `Sales::Catalog.save` と `Sales::Catalog.bulk_upsert` の 2 つで、ほかの経路（`saveItem` の mutation・品目の CSV の取り込みの `Imports::Applying`・シードと E2E の世界の `DemoWorld`）はどれもこの 2 つを呼ぶ。2 つは、品目を書くのと同じトランザクションで、足す在庫の公開 API `Inventory::ItemLabels.put(labels)` を呼び、書いた品目の写しを upsert する（判断「品目のコードと名前を、在庫へどう写すか」）。`put` は操作者を取らず、テナントの設定を求め（`Tenancy.require_tenant!`）、所有テナントを `Current` のテナントで明示して書き、更新の `WHERE` にも所有テナントを書き、件数だけを返す（`architecture/graphql-schema.md`「認可」の操作者のいない入口の公開 API と同じ形）。作り直しのタスクも同じものを呼ぶからである。受注は在庫の公開 API にすでに依存しているので、依存の向きは変わらない。
-3. 作り直し：`bin/rails read_models:rebuild`（`lib/tasks/read_models.rake`）が、テナントを 1 つずつ `Tenancy.with_tenant` で回り、受注の公開 API `Sales::Catalog.rebuild_item_labels` を呼ぶ。`rebuild_item_labels` は、テナントの設定を求め、自社の品目を品目コードの順に `FOR SHARE` で読み、同じトランザクションで `Inventory::ItemLabels.put` を呼ぶ。`save` は品目の行を `FOR UPDATE` で、`bulk_upsert` は品目コードの順に upsert で行ロックを取るので、作り直しが古い名前を読んでから、保存が新しい名前と写しを書き、作り直しが古い名前で写しを上書きする順は起きない。ロックの順を品目コードの順にそろえ、`bulk_upsert` と待ち合っても行き詰まらないようにする。`put` が足した数と書き直した数を返し、タスクはテナントごとと合計を 1 行ずつ出す（`sales:backfill_item_prices` と同じ形）。もう一度流しても行は増えない。
+2. 写しを書く入口：品目のコードか名前を書く受注の公開 API は `Sales::Catalog.save` と `Sales::Catalog.bulk_upsert` の 2 つで、ほかの経路（`saveItem` の mutation・品目の CSV の取り込みの `Imports::Applying`・シードと E2E の世界の `DemoWorld`）はどれもこの 2 つを呼ぶ。2 つは、品目を書くのと同じトランザクションで、足す在庫の公開 API `Inventory::ItemLabels.put(labels)` を呼び、書いた品目の写しを upsert する（判断「品目のコードと名前を、在庫へどう写すか」）。`put` は操作者を取らず、テナントの設定を求め（`Tenancy.require_tenant!`）、所有テナントを `Current` のテナントで明示して書き、件数だけを返す（`architecture/graphql-schema.md`「認可」の操作者のいない入口の公開 API と同じ形）。衝突の対象は所有テナントと品目 ID の組の一意索引なので、他社の写しには当たらない。値の同じ写しは書き直さず（`DO UPDATE ... WHERE (code, name) IS DISTINCT FROM ...`）、足した数と書き直した数の組（足した行は `xmax = 0`、`Sales::Catalog.bulk_upsert` と同じ形）を返す。作り直しのタスクも同じものを呼ぶからである。受注は在庫の公開 API にすでに依存しているので、依存の向きは変わらない。
+3. 作り直し：`bin/rails read_models:rebuild`（`lib/tasks/read_models.rake`）が、テナントを 1 つずつ `Tenancy.with_tenant` で回り、受注の公開 API `Sales::Catalog.rebuild_item_labels` を呼ぶ。`rebuild_item_labels` は、テナントの設定を求め、所有テナントを `Current.tenant_id` で明示して自社の品目を品目コードの順に `FOR SHARE` で読み、同じトランザクションで `Inventory::ItemLabels.put` を呼び、件数だけを返す。品目の表には公開した品目を取引先に見せる SELECT のポリシーがあるので、所有の条件を RLS に任せない。`save` は品目の行を `FOR UPDATE` で、`bulk_upsert` は品目コードの順に upsert で行ロックを取るので、作り直しが古い名前を読んでから、保存が新しい名前と写しを書き、作り直しが古い名前で写しを上書きする順は起きない。ロックの順を品目コードの順にそろえ、`bulk_upsert` と待ち合っても行き詰まらないようにする。`put` が足した数と書き直した数を返し、タスクはテナントごとと合計を 1 行ずつ出す（`sales:backfill_item_prices` と同じ形）。もう一度流しても行は増えない。
 4. 一覧と検索：`supplier.stocks` の `StockOrderField` に `ITEM_CODE`・`ITEM_NAME` を足し、`StockFilter` に `keyword: String` を足す。一覧は品目の写しを所有テナントと品目 ID の組で外部結合し、写しのコードと名前で並べ、絞る。写しの無い在庫の行は、品目のコードと名前で並べると最後に置かれ（M39 の値の無い行）、`keyword` には当たらない。`keyword` の規則は品目の `keyword`（M39、OI-156）と同じである。前後の空白の除き方・`%` と `_` の扱い・空の文字列・100 文字の上限を 2 か所に書かないため、いま `Sales::Catalog` にある検索の語の正規化と LIKE の型を `packs/platform` の `Keyword` に移し、受注と在庫の両方がそれを使う。上限の検証は、GraphQL の 2 つの入力型が同じ定数を読む。
 5. 画面：在庫（画面 8）の品目コード・品目名の見出しを並べ替えの対象にし、URL の値を変数に写す関数（`frontend/lib/supplier-master-lists.ts` の在庫の列の一覧）に足す。在庫の画面に、品目の画面と同じ検索の欄を置き、URL の値 `q` を `filter.keyword` に写す。`below=1` の切り替えと同時に渡せば、両方に当たる在庫に絞る。在庫の画面の問い合わせ（`SupplierStocks`）の予算の表の変数に、品目名で並べる `$orderBy` と、予算の世界の品目がすべて当たる `keyword` を足す。
 6. 写しの一致の守り：写しを保つ経路と作り直しが同じ答えを出すことを、`spec/scenarios/read_model_copies_spec.rb` が確かめる。`DemoWorld.build(variant: :e2e)` で世界を作り、`bin/rails read_models:rebuild` を流して、どのテナントも足した数と書き直した数が 0 であることを確かめる。続けて、品目の名前を `saveItem` と品目の CSV の取り込みで変え、もう一度流して 0 であることを確かめる。同じ example で、写しの行を 1 つ消し、別の写しの名前を書き換えてから流すと、足した数と書き直した数がそれぞれ 1 になることを先に確かめる（対照）。作り直しが何も比べていなくても、0 は返るからである。
 7. 所有の条件の守り：`packs/inventory/spec/public/inventory/item_labels_spec.rb` が、共有の文脈「RLS の SELECT と UPDATE を開く」（`guides/testing.md`「行列テストとの分担」）で、次の 2 つを確かめる。どちらも、開いた後に他社の写しが見えることと、自社の行は読み書きすることを、同じ example で先に確かめる（対照）。
    - `put` が、他社の名義で同じ品目 ID の写しがあっても、`cross_read!` の後に他社の行を所有の列を含めて変えない（文脈の `reread`）
+   - `Sales::Catalog.rebuild_item_labels`（`packs/sales/spec/public/sales/catalog_spec.rb`）が、`cross_read!` の後に他社の品目が見えても、自社の品目だけを読んで写す
    - 在庫の一覧が、他社の名義で自社の在庫の品目 ID を指す写しを factory で作っても、`cross_read!` の後に並びと `keyword` の検索にそれを使わない。品目 ID は UUIDv7 で他社の品目と重ならないので、写しを結ぶ条件から所有テナントを外しても入口の行列では捕まらず、この単体だけが捕まえる（状況の式が子の行を読む副問い合わせと同じ形）
 8. 行列テスト：`item_labels` を、表の行列の期待値（`spec/matrix/table_expectations.rb`）に所有者だけが読む表として足す。入口の行列に、在庫を品目名で並べ、`keyword` で絞る変種の行を足し、`MatrixWorld#add_filter_rows` に `keyword` に当たる在庫と当たらない在庫を足す。
 9. 既存の DB：表を足すマイグレーションは、写しを埋めない（データの移行をマイグレーションに入れない。`adr/001` 決定 4）。開発の DB は、マイグレーションの後に作り直しのタスクを流す。公開の配置は、イメージを替えたときの migrate の Job が表を足し、毎日の作り直しが空の DB からシードで写しを作る。それまでの間は、在庫の品目のコードと名前での並べ替えと検索が当たらない。作り直しを待たずに埋めるときは、作者が作り直しのタスクを流す。
@@ -1796,7 +1798,7 @@ cd frontend && npm run test:e2e
 期待の不一致で最初に落とすのは、`spec/requests/inventory_spec.rb` の、`filter: { keyword: <品目名の一部> }` で在庫の一覧を読み、当たる品目の在庫だけが返ることを確かめる example（`keyword` を足す前は引数の検証のエラーが返り、期待した行と食い違う）と、`frontend/e2e/list-pagination.spec.ts` の、在庫の画面の検索の欄に品目名の一部を入れると URL の `q` と `filter.keyword` が変わり、当たる在庫だけが出て `totalCount` と件数が合うことを確かめる example である。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
 
 - `Sales::Catalog.bulk_upsert` から `Inventory::ItemLabels.put` の呼び出しを外すと、`read_model_copies_spec.rb` の取り込みの後の example が落ちる（作り直しが 1 以上を返す）。`save` から外すと、同じ spec の `saveItem` の後の example が落ちる
-- `put` の一意索引の衝突の更新の `WHERE` から所有テナントを外すと、`item_labels_spec.rb` の `put` の example が落ちる。在庫の一覧で写しを結ぶ条件から所有テナントを外すと、同じ spec の一覧の example が落ちる
+- `put` の一意索引と `ON CONFLICT` の対象から所有テナントを外す（品目 ID だけにする）と、`item_labels_spec.rb` の `put` の example が落ちる。在庫の一覧で写しを結ぶ条件から所有テナントを外すと、同じ spec の一覧の example が落ちる。`rebuild_item_labels` が品目を読む条件から所有テナントを外すと、`catalog_spec.rb` の作り直しの example が落ちる
 - `rebuild_item_labels` の `FOR SHARE` を外すと、競合テスト `packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb` の、作り直しが品目を読んだ後に別の接続で `save` を進める example（`spec/support/concurrency.rb` の補助で順を決める）が、古い名前の写しを残して落ちる
 - 在庫の `keyword` で `Keyword` を通さずに LIKE を組むと、`stocks_spec.rb` の `%` を含む `keyword` の example が落ちる
 
@@ -1804,7 +1806,7 @@ cd frontend && npm run test:e2e
 
 **実装する文書の節**：`architecture/data-model.md`「在庫（`inventory`）」、`architecture/context-map.md`「コンテキスト間の関係」・「テナントと所有」、`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」・「ページングと N+1」、`guides/testing.md`「行列テストとの分担」
 
-**文書に残すこと**：`architecture/data-model.md`「在庫（`inventory`）」の表に `item_labels` を足し、一覧を並べ・絞るための品目の写しで、元は受注の品目であること、外部キーを張らないことを書く。`architecture/context-map.md`「コンテキスト間の関係」の受注 → 在庫の行に品目の写しを、同期と非同期の使い分けに同じテナントの中の写しも同期にすることを、「テナントと所有」の在庫の行に写しの表を書く。`architecture/graphql-schema.md`「認可」の操作者のいない入口の一覧に `Inventory::ItemLabels.put` を、「ページングと N+1」に在庫の列と `keyword` を書く。`guides/testing.md`「行列テストとの分担」の、入口の行列で捕まらない所有の条件の例に、品目の写しの結び方を足す。`README.md`「開発環境」と `deploy/README.md` に、既存の DB で作り直しのタスクを流すことを書く。2 つの判断の比べた案と裏返る条件は ADR（`adr/011`）に書く。複数のコンテキストにまたがり、案を比べたからである（`guides/dev-cycle.md`「書く前の振り分け」）。
+**文書に残すこと**：`architecture/data-model.md`「在庫（`inventory`）」の表に `item_labels` を足し、一覧を並べ・絞るための品目の写しで、元は受注の品目であること、外部キーを張らないことを書く。`architecture/context-map.md`「コンテキスト間の関係」の受注 → 在庫の行に品目の写しを、同期と非同期の使い分けに同じテナントの中の写しも同期にすることを、「テナントと所有」の在庫の行に写しの表を書く。`architecture/graphql-schema.md`「認可」の操作者のいない入口の一覧に `Inventory::ItemLabels.put` と `Sales::Catalog.rebuild_item_labels` を、「ページングと N+1」に在庫の列と `keyword` を書く。`guides/testing.md`「行列テストとの分担」の、入口の行列で捕まらない所有の条件の例に、品目の写しの結び方を足す。`README.md`「開発環境」と `deploy/README.md` に、既存の DB で作り直しのタスクを流すことを書く。2 つの判断の比べた案と裏返る条件は ADR（`adr/011`）に書く。複数のコンテキストにまたがり、案を比べたからである（`guides/dev-cycle.md`「書く前の振り分け」）。
 
 ## M47 複数の列で並べる
 
