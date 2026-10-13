@@ -1898,7 +1898,7 @@ bin/check-open-items --due M33
    PostgreSQL の `max_connections` は、`web` の 3 と `jobs` の 20 に、`migrate`・`daily-reset`・手の作業の分を足して 40 にする。
 
    Secret はリポジトリに置かず、作者が `kubectl create secret` で入れる（流用元と同じ）。マニフェストが参照する Secret の名前とキーは `deploy/README.md` の表に書き、`deploy/preflight.sh` が、マニフェストの `secretKeyRef` と `imagePullSecrets` から集めた名前とキーが名前空間にあることを確かめる（流用元の `deploy/preflight.sh` の形。集める正本はマニフェスト）。
-3. 毎日の作り直し（`adr/009` 決定 3）：CronJob `daily-reset` が、毎日 OI-146 の時刻（`timeZone: Asia/Tokyo`）に、Rails のイメージで `bin/rails demo:reset` を流す。`concurrencyPolicy: Forbid` にし、`startingDeadlineSeconds` を置いて、Raspberry Pi が止まっていて時刻を過ぎても、起動の後に決めた時間の内なら流す。Job は `backoffLimit: 0`（作り直しを途中から繰り返して DB を何度も消さない）と `activeDeadlineSeconds: 1800` を持つ。`demo:reset`（`lib/tasks/demo.rake`）は次の順に進む。
+3. 毎日の作り直し（`adr/009` 決定 3）：CronJob `daily-reset` が、毎日 OI-146 の時刻（`timeZone: Asia/Tokyo`）に、Rails のイメージで `bin/rails demo:reset` を流す。`concurrencyPolicy: Forbid` にし、`startingDeadlineSeconds` を置いて、Raspberry Pi が止まっていて時刻を過ぎても、起動の後に決めた時間の内なら流す。決めた時間を過ぎて起動した日の作り直しは飛ばされ、次の日の時刻に流れる。作者は、飛ばされた日に手で流してもよい（作るもの 9 の手順 3 と同じ流し方）。Job は `backoffLimit: 0`（作り直しを途中から繰り返して DB を何度も消さない）と `activeDeadlineSeconds: 1800` を持つ。`demo:reset`（`lib/tasks/demo.rake`）は次の順に進む。
    1. 本番の環境では、作るもの 4 の条件を満たさなければ、Kubernetes の API も DB も触らずに例外で止まる。ほかの作り直しが動いていても、何もせずに止まる。CronJob の `concurrencyPolicy: Forbid` は手で作った Job（作者の手順 3）を止めないので、所有ロールで保守用の DB（`postgres`）に接続してアドバイザリロックを取り、作り直しを直列にする。業務の DB は作り直しで消えるので、ロックをそこに置かない
    2. Kubernetes の API で `web` と `jobs` の Deployment を 0 にし、両方のラベルの Pod のうち終わっていないもの（phase が `Succeeded`・`Failed` でないもの）が無くなるまで待つ（上限 5 分。超えたら手順 5 へ進んで例外で終える）。Deployment の `status.replicas` は終了中の Pod を数えないので、Pod の一覧で待つ。追い出された Pod は `Failed` のまま一覧に残るが、コンテナは動いていない。DB を消す間に接続が残らないようにし、シードがその場で流すジョブを `bin/jobs` が同時に流さないようにする（OI-143 と同じ理由）
    3. 自分の接続を切ってから（`connection_handler.clear_all_connections!`。activerecord 8.1.4 では各プールの `disconnect!`）、所有ロールで DB を消して作り直し（`db:drop`・`db:prepare`）、アプリのロールに権限を付ける（`db:grant_app_role`）。この 3 つは子のプロセス（`bin/rails db:drop db:prepare db:grant_app_role`）で流す。rails 8.1 の `db:prepare` は、同じプロセスで既に接続を確かめた設定を初期化済みと見なし、作り直した DB に構造を読み込まずに終わるからである（`lib/tasks/e2e.rake` と同じ理由）。Rails は本番の環境の DB を消すタスクを `ActiveRecord::ProtectedEnvironmentError` で止め、`DISABLE_DATABASE_ENVIRONMENT_CHECK` があれば確かめを飛ばす（activerecord 8.1.4 の `lib/active_record/tasks/database_tasks.rb` の `check_protected_environments!`）。`demo:reset` は、手順 1 の条件を満たしたときにだけ、この変数を子のプロセスにだけ渡し、自分のプロセスには立てない
@@ -1909,7 +1909,7 @@ bin/check-open-items --due M33
 4. 本番の環境でデモの世界を許す条件（`adr/009` 決定 4）：いまは、`DemoWorld`・`Partnerships::Onboarding`・`Inventory::Stocks.set_safety_stock` の 3 つが、本番の環境で `ProductionEnvironment` を上げて止まる（`git grep ProductionEnvironment` で集めた一覧。この一覧を正本にする）。環境変数 `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ、本番の環境でも動くようにする。条件は `packs/platform` の 1 か所に置き、3 つがそれを読む。この変数は `daily-reset` にだけ渡し、`web`・`jobs`・`migrate` には渡さない。
 5. メールを送らない：公開の配置のアカウントのメールアドレスは実在しないので、メールを外へ送らない。本番の環境の通知の送り先（`config.x.notifications.provider`）を環境変数 `NOTIFICATIONS_PROVIDER` で `file_system` に替えられるようにし、`sendgrid`（省いたとき）と `file_system` のほかの値は起動で落とす。配置では `file_system` を渡し、書き出す先（`tmp/mails`）を `emptyDir` にする。`emptyDir` は Pod と一緒に消え、作り直しが毎日 `web` と `jobs` の Pod を作り直すので、溜まるのは 1 日分である。大きさの上限（`sizeLimit`）を超えると kubelet が Pod を追い出すので、上限は 1 日分のメールより十分に大きくする。
 6. セッションの Cookie を書く：本番の環境のセッションの Cookie は `Secure` で（`config/application.rb` の `session_store`）、actionpack 8.1.4 は `request.ssl?` が偽の応答に `Secure` の Cookie を書かない（`lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`）。Next は Rails を http で呼ぶので、このままではログインの応答に `Set-Cookie` が無く、M33 の認証が Cookie を写せない。本番の環境で `config.assume_ssl = true` にする。TLS は Cloudflare で終わり、Rails には Next からしか届かないからである（`adr/009` 決定 2）。Rails はこのとき `ActionDispatch::AssumeSSL` をミドルウェアに足すので、本番の環境のミドルウェアの並びを許した一覧と比べる `spec/platform/logging_spec.rb`（`adr/008`）の一覧に足す。
-7. 共有のアカウントのログアウト：OI-149 の既定のとおり、公開の配置ではログアウトでセッションの世代を進めない。`SHARED_DEMO_ACCOUNTS=1` を渡した `web` では、`DELETE /session` は Cookie を消すだけにする。世代を進めると、同じアカウントでログインしているほかの訪問者のセッションがすべて切れるからである（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1）。このとき、ログアウトの前に写し取られた Cookie は使えるままになる（`SessionsController#destroy` が世代を進める理由）。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。作者が OI-149 で既定を変えれば、この項を直す。
+7. 共有のアカウントのログアウト：OI-149 の既定のとおり、公開の配置ではログアウトでセッションの世代を進めない。`SHARED_DEMO_ACCOUNTS=1` を渡した `web` では、`DELETE /session` は Cookie を消すだけにする。世代を進めると、同じアカウントでログインしているほかの訪問者のセッションがすべて切れるからである（`architecture/graphql-schema.md`「1 回のリクエストがたどる道」1）。このとき、ログアウトの前に写し取られた Cookie は使えるままになる（`SessionsController#destroy` が世代を進める理由）。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。作者は 2026-10-13 に既定のままと決めた（OI-149）。
 8. 資源の見積もり：各コンテナに、次の requests と limits を書く。値は arm64 の実機で測っていない見積もりで、作者が実機で測って直す（作者の手順 4）。
 
    | コンテナ | requests（CPU・メモリ） | limits（CPU・メモリ） | なぜこの値か |
@@ -1920,7 +1920,7 @@ bin/check-open-items --due M33
    | `postgres` | 100m・256Mi | 1000m・512Mi | 流用元の PostgreSQL と同じ上限。`shared_buffers` は既定の 128MB で、接続ごとのメモリが `max_connections` の 40 まで増える |
    | `migrate`・`daily-reset` | 100m・256Mi | 1000m・768Mi | Rails を読み込み、作り直しはシードの間にイベントのジョブをその場で流す。毎日の数分だけ動き、作り直しの間は `web` と `jobs` が止まっている |
 
-   常に動く 4 つのコンテナの limits の和は約 1.9GiB になる。流用元の limits の和（約 0.9GiB、Job を含む）と k3s 自身を足すと、3GiB 前後になる。Raspberry Pi のメモリが 4GB なら余裕が小さいので、作者に機種とメモリを確かめる（OI-147）。CPU の limits は、1 つのコンテナが流用元のデモの分まで使い切らないための上限で、コア数を超えない。
+   常に動く 4 つのコンテナの limits の和は約 1.9GiB になる。流用元の limits の和（約 0.9GiB、Job を含む）と k3s 自身を足すと、3GiB 前後になる。Raspberry Pi は Pi 4 Model B の 8GB の機種で、総量は 7.6Gi、スワップは無い（OI-147）。いまのノードの使用（流用元を含む）に本デモの limits の和を足しても総量に収まる。スワップが無いので、limits を超えたコンテナはスワップに逃げずに OOM で殺され、Deployment が作り直す（OI-182）。CPU の limits は、1 つのコンテナが流用元のデモの分まで使い切らないための上限で、コア数を超えない。
 9. 作者の手順（`deploy/README.md`）：作者が実機で行うことを、この順に書く。コマンドは、その実行にだけ効く形（`ssh` の先のコマンド、引数）で書き、ホストの全体の設定を変えるコマンドを書かない（`guides/dev-cycle.md`「文書の置き場と、書く前の振り分け」）。
    1. 名前空間と Secret を作る（値はその場で生成し、どこにも書き残さない）。GHCR の読み取りの Secret は、流用元の `ghcr-pull-secret` と同じ作り方で、この名前空間に作る
    2. `deploy/preflight.sh` で Secret がそろったことを確かめ、イメージのタグを main の SHA にして適用し、`migrate` の完了を見てから `web` が ready になるのを待つ
@@ -1952,17 +1952,19 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 **公開に伴う作者の判断**：public にしたリポジトリに利用条件のファイル（LICENSE）を置くかを、作者が決める（OI-181）。置くなら、作者が決めた条件のファイルを根に置く。
 
-**残り（サイクル 06）**：M41 は実装レビューまで終え、作者を待つ 6 行と作者の実機の手順だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。マニフェストはどの行も既定で作ってある。取りまとめ役は、作者の答えを台帳の結果の欄に書いてから、行の種類ごとに次のとおり進める。「値の差し替え」の行は、答えが来たら次の場所の値だけを替える。「答えで作るものが変わる」行は、答えが既定と違えば、取りまとめ役が作るものと完了条件をこの表の下に書き、その差分を計画レビューの 2 系統に通してから実装者に渡す。
+**残り（サイクル 06）**：M41 は実装レビューまで終え、作者を待つ 6 行と作者の実機の手順だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-13 に OI-145〜OI-149 をどれも既定のままと決めた。取りまとめ役は、同じ日に Raspberry Pi に SSH で読むだけのコマンドを流して機種とメモリを確かめ（OI-147 の結果の欄）、Pi 4・スワップ無し・SD カードに合わせてプローブの時間切れを明示することにした（OI-182・OI-183）。残るのは、下のプローブの直しと、作者を待つ OI-181 と、作者の実機の手順である。「値の差し替え」の行は、答えが来たら次の場所の値だけを替える。
 
-| ID | 種類 | 既定（いまのマニフェスト） | 答えで替える場所 |
+| ID | 種類 | 既定（いまのマニフェスト） | 答えと、替える場所 |
 |---|---|---|---|
-| OI-145 | 値の差し替え | `factory-ops-rails.hayatec.dev` | `deploy/kustomization.yaml` の `public-site` の `host` の 1 か所（Ingress の `host` と `web` の `FRONTEND_ORIGIN` へ `replacements` が写す）。`deploy/README.md`「作者の手順」の Tunnel の公開のホスト名 |
-| OI-146 | 値の差し替え | 日本時間の 4:30（`schedule: "30 4 * * *"`）、`startingDeadlineSeconds: 21600` | `deploy/daily-reset.yaml` の `schedule` と `startingDeadlineSeconds` |
-| OI-147 | 値の差し替え。4GB の機種なら答えで作るものが変わりうる | 8GB の機種とみなし、作るもの 8 の表のまま | 8GB 以上なら、表は替えず、作者の手順 4 で測った値で requests と limits を直す。4GB なら、まず作者の手順 4 で測った値で limits を下げ、常に動く 4 つのコンテナの limits の和と流用元と k3s の分が、`free -h` の総量に収まるかを見る。収まらなければ、ジョブのワーカーを Web の Puma の中で動かす形（`adr/009`「見直す条件」）に移り、取りまとめ役が作るものをこの表の下に書いて計画レビューに通す |
-| OI-148 | 答えで作るものが変わる | すべての操作を許し、毎日の作り直しで戻す（作るものは無い） | 既定のままなら作るものは無い。止める操作を作者が選んだら、公開の配置でだけその操作を止める仕組み（どの入口で止めるか、止めたときのエラー、画面のボタン）を足す |
-| OI-149 | 値の差し替え | `web` にだけ `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めない（作るもの 7） | いまのまま全セッションを切るなら、`deploy/web.yaml` から変数を外し、作るもの 2 の環境変数の表の行と `deploy_manifests_spec.rb` の期待から外す。使わなくなる `config.x.shared_demo_accounts` と `SessionsController#destroy` の分岐と、それを確かめる `sessions_spec.rb`・`production_boot_spec.rb` の example と、変数を書いた文書の文（`git grep SHARED_DEMO_ACCOUNTS` で集める）も消す。消す変更は、作るものの形を変えないので差分の計画レビューには出さず、実装レビューに通す |
+| OI-145 | 値の差し替え（決まった） | `factory-ops-rails.hayatec.dev` | 既定のまま。替えるものは無い。名前空間 `factory-ops-rails` は、流用元の `factory-ops` とぶつからない |
+| OI-146 | 値の差し替え（決まった） | 日本時間の 4:30（`schedule: "30 4 * * *"`）、`startingDeadlineSeconds: 21600` | 既定のまま。作者は Raspberry Pi を時々夜に止めるので、飛ばされた日の扱い（次の日の時刻に流れる、手で流してもよい）を作るもの 3 と `deploy/README.md`「作り直しが飛ばされた日」に書く |
+| OI-147 | 値の差し替え（決まった） | 8GB の機種とみなし、作るもの 8 の表のまま | 既定のまま。Pi 4 Model B の 8GB（総量 7.6Gi、スワップ無し）で、作るもの 8 の表は替えない。作者の手順 4 で測った値で requests と limits を直す |
+| OI-148 | 答えで作るものが変わる（決まった） | すべての操作を許し、毎日の作り直しで戻す（作るものは無い） | 既定のまま。作るものは無い |
+| OI-149 | 値の差し替え（決まった） | `web` にだけ `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めない（作るもの 7） | 既定のまま。替えるものは無い |
 | OI-181 | 値の差し替え | LICENSE を置かない | 置くなら、作者が選んだ条件の `LICENSE` を根に置き、`README.md` の冒頭から指す |
 | — | 実機の確かめ | — | 作者が作るもの 9 の手順 1〜6（`deploy/README.md`「作者の手順」）を流し、結果を PR か台帳に書く。M41 の完了条件には入れず、結果が書かれるまで公開しない |
+
+プローブの直し（OI-182）：`deploy/` のすべての readiness・liveness・startup のプローブに `timeoutSeconds: 5` を書く。既定の 1 秒では、Pi 4 で 5 万行の取り込みを流す間に、`frontend` の `/` の描画、`web` の `/up`、`postgres` の `pg_isready` が時間切れになり、liveness が続けて落ちてコンテナが作り直されうるからである。`deploy_manifests_spec.rb` に、すべてのプローブが `timeoutSeconds` を明示することを確かめる example を足す。いまはどのプローブも書いていないので、期待の不一致で落ちる。作者の手順 4 の取り込みの確かめで、Pod の再起動の回数（`kubectl get pods` の `RESTARTS`）も見る。
 
 残りの完了条件：
 
