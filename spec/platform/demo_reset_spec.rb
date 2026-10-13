@@ -75,10 +75,11 @@ RSpec.describe DemoReset do
   def production! = allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
 
   describe "入口" do
-    it "本番の環境で DEMO_WORLD_ENABLED が無いか 1 でなければ、Kubernetes の API も DB のタスクも呼ばずに例外で止まる" do
+    it "本番の環境で DEMO_WORLD_ENABLED が無いか 1 でなければ、ロックも Kubernetes の API も DB のタスクも触らずに例外で止まる" do
       production!
       stub_all_scales
       stub_pods([])
+      allow(PG).to receive(:connect).and_call_original
       expect(DemoReset::Kubernetes).not_to receive(:from_service_account)
 
       [ nil, "true" ].each do |value|
@@ -87,11 +88,13 @@ RSpec.describe DemoReset do
         end
       end
 
+      expect(PG).not_to have_received(:connect)
       expect(a_request(:any, /kubernetes\.test/)).not_to have_been_made
       expect(events).to eq([])
 
-      # 対照：同じ準備で 1 を渡せば、API とコマンドを呼ぶ
+      # 対照：同じ準備で 1 を渡せば、ロックを取り、API とコマンドを呼ぶ
       with_env("DEMO_WORLD_ENABLED" => "1") { reset }
+      expect(PG).to have_received(:connect)
       expect(events).to include(:database, [ :scale, "web", 0 ])
     end
 
