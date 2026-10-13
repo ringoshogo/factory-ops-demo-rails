@@ -451,6 +451,35 @@ bin/check-commit-refs
 
 `m46-stock-item-sort`（base は `main`）。M45 のブランチ `m45-list-sort` の先端 `46aa4ed` から切った。計画の PR #78 と M45 の PR #79 が未マージなので、PR の差分にはそれらの commit も含まれる。M46 の差分は `46aa4ed..` である。
 
+Codex は No-Go、Claude は Go だった。どちらの系統も、`46aa4ed..c75775b` の diff を `c75775b` の版で読んだ。実装者が 2 系統へ同じ依頼を渡した。Claude は spec を流さず、`git show` と `git grep` で読み、DB の照合順序を `compose.yaml` と IB-77 の記述から判断した。Codex は DB への接続を実行の環境に拒まれ、spec の補助をメモリ上で呼んで検出力を確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。両系統が同じ問題（作り直しと取り込みの品目のロックの順の食い違い）を挙げ、Codex は High、Claude は Medium にした。High があるので、重大度から表に照らして No-Go とし、直した `1c2a94b` を Codex の読み直しに出した。読み直しは、前の 3 つの指摘がどれも解消し、新しい指摘が無く、Go だった。Claude は Go だったので、読み直しに出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | No-Go（High 1・Medium 2） | `1c2a94b` で Go（R1〜R3 が解消、新しい指摘なし） |
+| Claude | Go（Medium 1・Low 1） | 出していない（High が無かった） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘（R1） | 指摘（R1） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R2・R3） | 指摘（R1・R2） |
+| 参照の維持 | 指摘（R1） | 指摘（R1） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High（Codex）・Medium（Claude） | Codex・Claude | R1：`bulk_upsert` は Ruby の `sort_by`（バイトの順）で品目をロックし、`rebuild_item_labels` は DB の照合順序（`en_US.utf8`）の `ORDER BY code` で `FOR SHARE` を取る。`B-1` と `a-1` のように 2 つの順が逆になる品目コードで、取り込みと作り直しが行き詰まりうる。計画の作るもの 3 の「行き詰まらない」とコメントの「同じ品目コードの順」が成り立たない | 作り直しを `items.code COLLATE "C"` で並べ、バイトの順にそろえた。`item_labels_rebuild_lock_spec.rb` に、`a-1` を保存が持つ間に作り直しを始め、作り直しが `B-1` を先に取ることを、`B-1` の保存が作り直しを待つことで確かめる example を足した。計画の作るもの 3、`adr/011` 決定 1、コメントにロックの順と理由を書いた | `1c2a94b` |
+| Medium | Codex | R2：競合テストの `read.pop` に期限が無く、`put` の包みを外すか作り直しが `put` の前に失敗すると、待ち続けて後始末に届かない | `ConcurrencyHelpers::WAIT_SECONDS` の期限を付け、期限を過ぎたら例外にした。包みを外すと、その example が期限で落ち、後の example は通ることを確かめた | `1c2a94b` |
+| Medium | Codex | R3：在庫のパッケージの一括の書き込みの検査が、ファイル・囲むメソッド・呼ぶメソッドしか比べず、`ItemLabels.put` の `upsert_all` を `Stock.upsert_all` に替えても通る | 呼び出しの連なりの先頭の定数を書き込み先として比べるようにし、拾い方を確かめる example を足した | `1c2a94b` |
+| Low | Claude | R2：作り直しのタスクの合計の行と `Counts#+` を確かめる spec が無い | `item_labels_spec.rb` に `Counts#+` の単体を足した。合計の行は、テストの DB にほかの spec が残したテナントの数も含むので、一致の spec では確かめない | `1c2a94b` |
+
+違和感は次のように扱った。
+
+- Claude 1：`StockFilterType`・`ItemFilterType` の説明が上限の値を文字列で持つ → 説明を `Keyword::MAX_LENGTH` から書くようにした（`1c2a94b`）。`schema.graphql` は変わらない
+- Claude 2：在庫の検索の E2E が、世界の品目名と初期在庫に依る → IB-111 に積んだ
+- Claude 3・Codex 1：差分の大きさ → `46aa4ed..c75775b` で 42 ファイル・997 行の追加と 60 行の削除。IB-107 の判定の材料として、ここに書くだけにした
+- Claude 4：写しの無い在庫が一覧に出ないことは、在庫の行を作る経路が品目を経ることに依る → `adjustStock` は `Sales::Catalog.item` で品目を引いて見えない品目を `NOT_FOUND` にし、在庫の取り込みは品目コードから品目 ID を引くので、どの入口も品目のある在庫しか作らない。`adr/011` の見直す条件に、品目を経ない在庫の経路を書いてあるので、台帳には積んでいない
+
 ### 実装の記録
 
 #### 計画との違い
@@ -505,6 +534,14 @@ Error: element(s) not found
 | 在庫の `ITEM_NAME` の列を写しのコードにする | `stocks_spec.rb`・`spec/requests/inventory_spec.rb` | 2（品目名で並べる 2 つの example） |
 | 画面の `stockListVariables` で `keyword` を送らない | `frontend/lib/supplier-master-lists.test.ts` | 1 |
 
+実装レビューの直し（`1c2a94b`）の後に、次も壊して戻した。
+
+| 壊したもの | 流した spec | 落ちたもの |
+|---|---|---|
+| 作り直しの `COLLATE "C"` を外す（DB の照合順序の `ORDER BY code` に戻す） | `item_labels_rebuild_lock_spec.rb` | 1（作り直しのロックの順の example。`B-1` の保存が作り直しを待たない） |
+| 競合テストの `put` の包みで止めない | 同上 | 1（読み終わりの待ちが期限で例外になる。後の example は通った） |
+| `ItemLabels.put` の書き込み先を `Stock` にする | `packs/inventory/spec/models/inventory/stock_spec.rb` | 1（一括の書き込みの検査） |
+
 写しを結ぶ条件から所有テナントを外しても入口の行列が落ちないのは、計画の作るもの 7 のとおりで、品目 ID が UUIDv7 で他社の品目と重ならないからである。`item_labels_spec.rb` の一覧の example が、他社の名義で自社の在庫の品目 ID を指す写しを factory で作って捕まえる。
 
 #### 手元で流したもの
@@ -522,6 +559,8 @@ bin/check-commit-refs
 ```
 
 E2E（`cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e`）は、画面と E2E の変更を入れた作業ツリーで流し、67 passed、25 skipped（`E2E_SCREENSHOTS` が無いときに飛ばすスクリーンショット）だった。その後の変更は spec と文書だけで、画面は変えていない。
+
+実装レビューの直し（`1c2a94b`）の後に、完了条件の rspec の 2 行・`bin/check-open-items --due M46`・`bin/check-commit-refs` と `bin/ci` を流し直した。rspec の 2 行は 43・1563 examples でどちらも 0 failures、`bin/ci` はすべての工程が通り、rspec は 2980 examples, 0 failures、分岐の網羅率の警告は 0 件だった。直しは画面を変えていないので、画面の検査と E2E は流し直していない。
 
 分岐の網羅率の警告は 0 件だった。`bin/ci` は既定の DB で流した。はじめの `bin/ci` は、`spec/db/lock_sites_spec.rb` と在庫の一括の書き込みの検査（上の「計画との違い」）、packwerk（受注とルートの spec が写しのモデルを参照した）、`bin/check-structure`（`db/structure.sql` が未 commit だった）で落ち、直して commit した後に通った。
 
