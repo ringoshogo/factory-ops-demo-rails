@@ -50,7 +50,9 @@ RSpec.describe "ログの出口と書式" do
           ActiveRecord::StructuredEventSubscriber
         ])
         expect(production.fetch("event_subscribers")).to eq(%w[Platform::JsonLogSubscriber Platform::MetricsSubscriber])
+        # AssumeSSL は要求を https として扱う印を env に書くだけで、ログを書かない（config/environments/production.rb の assume_ssl）
         expect(production.fetch("middlewares")).to eq(%w[
+          ActionDispatch::AssumeSSL
           Rack::Sendfile
           ActionDispatch::Static
           ActionDispatch::Executor

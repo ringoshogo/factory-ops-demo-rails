@@ -48,15 +48,20 @@ test:
 
 # 本番の owner は、DB_OWNER_USER を渡したプロセスにだけ置く。所有ロールは BYPASSRLS を持つので、
 # 資格情報はマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。
+# 接続先は開発と同じく DB_HOST と DB_PORT で決める。公開の配置では Service の postgres を指す（deploy/README.md）
+production_host: &production_host
+  host: <%= ENV["DB_HOST"] %>
+  port: <%= ENV.fetch("DB_PORT") { 5432 } %>
+
 production:
   primary:
-    <<: [*default, *app]
+    <<: [*default, *app, *production_host]
     database: factory_ops_demo_rails_production
     username: <%= ENV["DB_APP_USER"] %>
     password: <%= ENV["DB_APP_PASSWORD"] %>
 <% if ENV["DB_OWNER_USER"].present? %>
   owner:
-    <<: [*default, *owner]
+    <<: [*default, *owner, *production_host]
     database: factory_ops_demo_rails_production
     username: <%= ENV["DB_OWNER_USER"] %>
     password: <%= ENV["DB_OWNER_PASSWORD"] %>

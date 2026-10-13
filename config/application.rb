@@ -69,6 +69,10 @@ module FactoryOpsDemoRails
     # 他サイトからの送信を拒む（ImportFilesController）。開発では Rails の 3000 番と別のポートで Next を動かす
     config.x.frontend_origin = ENV.fetch("FRONTEND_ORIGIN", "http://localhost:3001")
 
+    # 公開の配置のように、全員がログインの画面に並ぶ同じアカウントを使うときだけ 1 を渡す。ログアウトでセッションの世代を
+    # 進めない（SessionsController#destroy）
+    config.x.shared_demo_accounts = ENV["SHARED_DEMO_ACCOUNTS"] == "1"
+
     # 通知のメールの差出人。送信先（provider）は環境ごとに決め、決めない環境は起動時に例外にする（Notifications::Provider）
     config.x.notifications.from = "notifications@factory-ops.example"
   end

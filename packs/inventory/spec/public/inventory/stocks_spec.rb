@@ -1,9 +1,12 @@
 require "rails_helper"
 require_relative "../../../../../spec/support/cross_read"
+require_relative "../../../../../spec/support/env_helpers"
 
 # ダッシュボードの安全在庫。有効在庫（現在庫 - 引当）が安全在庫より小さい在庫だけを返し、等しい在庫は返さない
 # （docs/architecture/data-model.md「在庫（`inventory`）」、docs/architecture/graphql-schema.md「読み取りの一覧」）
 RSpec.describe Inventory::Stocks do
+  include EnvHelpers
+
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:other) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
@@ -108,11 +111,16 @@ RSpec.describe Inventory::Stocks do
       expect(safety_stock_seen_by(supplier, own.item_id)).to eq(2_147_483_647)
     end
 
-    it "本番の環境では、何も書かずに例外にする" do
+    it "本番の環境では、DEMO_WORLD_ENABLED が無いか 1 でなければ何も書かずに例外にし、1 なら書く" do
       allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production"))
 
-      expect { set(own.item_id, 12) }.to raise_error(Inventory::Stocks::ProductionEnvironment)
+      [ nil, "true" ].each do |value|
+        with_env("DEMO_WORLD_ENABLED" => value) { expect { set(own.item_id, 12) }.to raise_error(Inventory::Stocks::ProductionEnvironment) }
+      end
       expect(safety_stock_seen_by(supplier, own.item_id)).to eq(3)
+
+      with_env("DEMO_WORLD_ENABLED" => "1") { expect(set(own.item_id, 12)).to be_success }
+      expect(safety_stock_seen_by(supplier, own.item_id)).to eq(12)
     end
   end
 

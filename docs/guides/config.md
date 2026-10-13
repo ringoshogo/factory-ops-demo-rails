@@ -136,11 +136,13 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 - **`queue.yml`**：ワーカーをキューごとに分け、`events`（3 スレッド）・`external_mail`（2）・`imports`（1）・`default`（2）の 4 つにする。重い取り込みが、イベントの配送とメールを待たせないためである（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 7）。SendGrid への同時の送信の上限は、設定ではなく送信のジョブの `limits_concurrency` に書く。`bin/jobs` が読み、`spec/jobs/queue_config_spec.rb` が、どのジョブもワーカーのあるキューに載ることを確かめる。
 - **`recurring.yml`**：開発と本番で、Webhook の受信の未処理を毎分拾うジョブと、処理を終えた行を毎日消すジョブと、置いてから 24 時間を過ぎても取り込みを始めないファイルの中身を毎時消すジョブ（`Imports::PurgeAbandonedFilesJob`。[data-model.md「取り込み（`imports`）」](../architecture/data-model.md#取り込みimports)）を流す。本番だけは、生成のままの、終わったジョブの行を毎時消すタスクも流す。
 
-通知のメールの送信先は、環境ごとに `config.x.notifications.provider` で選ぶ。本番は SendGrid（API キーと Webhook の署名の公開鍵は credentials）、開発は `tmp/mails/` に 1 通 1 ファイルで書くもの、テストはメモリに積むもので、テストと開発は外部へ送らない。`initializers/notifications.rb` が起動時に送信先を作り、本番以外で SendGrid を選んで sandbox mode を外した設定を例外にする。テストは、これとは別に WebMock で外部への HTTP を止める（`spec/spec_helper.rb`）。
+通知のメールの送信先は、環境ごとに `config.x.notifications.provider` で選ぶ。本番は SendGrid（API キーと Webhook の署名の公開鍵は credentials）で、公開の配置だけは `NOTIFICATIONS_PROVIDER=file_system` でファイルに替える（[環境ごとの設定](#環境ごとの設定)）。開発は `tmp/mails/` に 1 通 1 ファイルで書くもの、テストはメモリに積むもので、テストと開発は外部へ送らない。`initializers/notifications.rb` が起動時に送信先を作り、本番以外で SendGrid を選んで sandbox mode を外した設定を例外にする。テストは、これとは別に WebMock で外部への HTTP を止める（`spec/spec_helper.rb`）。
 
 取り込みのジョブ（`Imports::RunJob`）は、`ApplicationJob` の `tenant_transaction :per_chunk` を宣言し、実行全体を 1 つの `Tenancy.with_tenant` で包まずに、チャンクごとにテナントのトランザクションを開いて閉じる。同時実行の上限（テナントごとに 1 つ、`duration` は 1 時間）は、ジョブのクラスの `limits_concurrency` に書く。プロセスが強制終了して失敗になった取り込みのジョブは、運用者が rake タスク `imports:reenqueue`（`IMPORT_ID` と `TENANT_ID` に失敗したジョブの引数の値を渡す）で登録し直す（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 5 の A-4）。
 
 ワーカーのメトリクスの exporter は、`bin/jobs` の supervisor が worker を fork する前に 1 つだけ立てる（[メトリクス](#メトリクス)）。
+
+公開の配置（`deploy/jobs.yaml`）では、`SOLID_QUEUE_SUPERVISOR_MODE=async` で、ワーカー・ディスパッチャ・スケジューラを 1 つのプロセスのスレッドで動かす。fork のモードの 7 つのプロセスがそれぞれ Rails を抱えると、同居する Raspberry Pi のメモリに収まらないからである（[ADR 009](../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md) 決定 5）。キューごとのワーカーの分け方は `queue.yml` のままで、async のモードは `processes` を無視する。全ワーカーが 1 つの接続プールを分け合うので、プールの大きさ（`RAILS_MAX_THREADS`）は、`queue.yml` のワーカーごとのスレッドに、ワーカーごとのポーリングと心拍の 2 つを足した和に、ディスパッチャ・スケジューラ・スーパーバイザの分の 4 つを足した数以上にする（solid_queue 1.7.0 の README「Fork vs. async mode」）。`spec/platform/deploy_manifests_spec.rb` が `queue.yml` からこの数を計算してマニフェストの値と比べるので、ワーカーかスレッドを足した人は、マニフェストの値も直す。
 
 ジョブを登録する時機（コミットの後か、トランザクションの中か）は設定ではなく、`ApplicationJob`（`packs/platform`）・`Contracts::EventJob`（`packs/contracts`）と、`ExternalEffectJob` のサブクラス（`packs/notifications` の送信のジョブ。書かなければ読み込みで例外になる）の `enqueue_after_transaction_commit` で決める（[ADR 007](../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md) 決定 4）。
 
@@ -317,10 +319,20 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 
 ## 環境ごとの設定
 
-`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）と、通知のメールの送信先（`config.x.notifications.*`。[ジョブ](#ジョブ)）を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）と、本番の SMTP の生成時のコメントを消したほかは生成のままである。本番のメールは SMTP ではなく SendGrid の API へ送るからである。本デモの読み方で知っておくとよいのは次の 2 つ。
+`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）と、通知のメールの送信先（`config.x.notifications.*`。[ジョブ](#ジョブ)）と、本番の `assume_ssl` を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）と、本番の SMTP の生成時のコメントを消したほかは生成のままである。本番のメールは SMTP ではなく SendGrid の API へ送るからである。本デモの読み方で知っておくとよいのは次の 3 つ。
 
 - **`test.rb` の `eager_load = ENV["CI"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。
 - **`production.rb` に Solid Queue の `connects_to` が無い**：[ジョブ](#ジョブ) のとおり、意図して書いていない。
+- **`production.rb` の `assume_ssl = true`**：本番の環境の要求を https として扱う。TLS は前段（公開の配置では Cloudflare）で終わり、Rails には Next のサーバーから http で届く。actionpack 8.1.4 は `request.ssl?` が偽の応答に `Secure` の Cookie を書かない（`lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`）ので、このままではログインの応答にセッションの Cookie が無い。Rails はこのとき `ActionDispatch::AssumeSSL` をミドルウェアの先頭に足すので、`spec/platform/logging_spec.rb` の許した一覧にも入れてある（[ADR 009](../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md) 決定 2）。
+
+本番の環境は、公開の配置（`deploy/`）が渡す次の環境変数で振る舞いを変える。どれも、渡さなければいまの本番の振る舞いのままになる。`spec/platform/production_boot_spec.rb` が、子のプロセスで本番の環境を起こして確かめる。
+
+| 環境変数 | 読む場所 | 効き目 | 渡さないとき |
+|---|---|---|---|
+| `DB_HOST`・`DB_PORT` | `database.yml` の `production` | 2 つのロールの接続先 | ホストを持たず、ポートは 5432 |
+| `NOTIFICATIONS_PROVIDER` | `production.rb` | `file_system` なら通知のメールを `tmp/mails/` に書き、外へ送らない。公開の配置のアカウントのメールアドレスは実在しないからである。`sendgrid` と `file_system` のほかの値は、打ち間違いで黙って SendGrid に送らないように起動で落とす | SendGrid |
+| `SHARED_DEMO_ACCOUNTS` | `application.rb` | `1` ならログアウトでセッションの世代を進めない（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道)1） | 世代を進める |
+| `DEMO_WORLD_ENABLED` | `Platform::DemoWorldGate` | `1` なら本番の環境でもデモの世界を作る公開 API を呼べる。公開の配置は毎日の作り直しにだけ渡す（[data-model.md「RLS」](../architecture/data-model.md#rls)） | 呼ぶと例外 |
 
 ## CI の工程
 

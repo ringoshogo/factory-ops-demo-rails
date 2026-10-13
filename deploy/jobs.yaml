@@ -1,0 +1,73 @@
+# Solid Queue のワーカー・ディスパッチャ・スケジューラを、async のモードで 1 つのプロセスのスレッドにする（docs/adr/009 決定 5）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jobs
+  labels:
+    app: jobs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # 新旧の Pod を同時に置くと、Raspberry Pi のメモリに Rails の 1 プロセス分が上乗せになる
+  selector:
+    matchLabels:
+      app: jobs
+  template:
+    metadata:
+      labels:
+        app: jobs # 作り直し（lib/demo_reset.rb）が、このラベルで Pod が無くなるのを待つ
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: jobs
+          image: ghcr.io/ringoshogo/factory-ops-demo-rails/api
+          args: ["bin/jobs"]
+          env:
+            - name: RAILS_ENV
+              value: production
+            - name: SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: rails-credentials
+                  key: secret-key-base
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_APP_USER
+              value: factory_app
+            - name: DB_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: app-password
+            # async のモードでは全ワーカーが 1 つの接続プールを分け合う。config/queue.yml のスレッドの和 8 に、4 つのワーカーの
+            # ポーリングと心拍の 2 つずつと、ディスパッチャ・スケジューラ・スーパーバイザの分を足す（solid_queue 1.7.0 の README
+            # 「Fork vs. async mode」）
+            - name: RAILS_MAX_THREADS
+              value: "20"
+            - name: NOTIFICATIONS_PROVIDER
+              value: file_system
+            - name: SOLID_QUEUE_SUPERVISOR_MODE
+              value: async
+          # 見積もりで、実機で測っていない（deploy/README.md「作者の手順」4）。fork のモードでは、スーパーバイザ・ワーカー 4 つ・
+          # ディスパッチャ・スケジューラの 7 プロセスがそれぞれ Rails を抱え、1GiB を超えうる
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          volumeMounts:
+            - name: mails
+              mountPath: /rails/tmp/mails
+      volumes:
+        # 送らないメールの書き出し先（deploy/web.yaml と同じ）
+        - name: mails
+          emptyDir:
+            sizeLimit: 256Mi

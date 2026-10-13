@@ -3,7 +3,8 @@ module Partnerships
   # テナントがまだ無いので操作者を取らず、テナントの設定の外で呼ぶ。操作者のいない入口の規則のうち、Tenancy.require_tenant! だけを
   # 通さない例外で、ユーザーは作ったテナントの Tenancy.with_tenant の中で書く
   # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」、docs/architecture/data-model.md「RLS」）。
-  # 本番の環境では呼べない。本番のテナントとユーザーを、デモの手元の値で作らないためである
+  # 本番の環境では、DEMO_WORLD_ENABLED=1 を渡したプロセスでだけ呼べる（Platform::DemoWorldGate）。本番のテナントとユーザーを、
+  # デモの手元の値で作らないためである
   module Onboarding
     class ProductionEnvironment < StandardError; end
 
@@ -34,7 +35,7 @@ module Partnerships
     end
 
     def self.refuse_production!
-      raise ProductionEnvironment, "Partnerships::Onboarding は本番の環境では呼べない" if Rails.env.production?
+      raise ProductionEnvironment, "Partnerships::Onboarding は本番の環境では DEMO_WORLD_ENABLED=1 のときだけ呼べる" unless Platform::DemoWorldGate.open?
     end
     private_class_method :refuse_production!
   end

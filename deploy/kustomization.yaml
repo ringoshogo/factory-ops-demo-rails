@@ -1,0 +1,53 @@
+# 公開の配置（docs/adr/009）。環境が 1 つなので、base と overlays に分けず、1 つの kustomization.yaml に並べる。
+# 適用の手順と Secret の入れ方は deploy/README.md にある
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 同じ k3s の流用元の factory-ops と分ける
+namespace: factory-ops-rails
+
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - migrate-job.yaml
+  - web.yaml
+  - jobs.yaml
+  - frontend.yaml
+  - daily-reset.yaml
+
+# タグは適用のたびに main の git の SHA に差し替える（deploy/README.md「作者の手順」2）。latest を使わない
+images:
+  - name: ghcr.io/ringoshogo/factory-ops-demo-rails/api
+    newTag: REPLACE_WITH_GIT_SHA
+  - name: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend
+    newTag: REPLACE_WITH_GIT_SHA
+
+# 公開の画面のホスト名。作者が決める値で、Ingress の host と、Rails が取り込みのファイルの Origin と比べる
+# FRONTEND_ORIGIN の 2 か所に入るので、ここにだけ書き、下の replacements で写す
+configMapGenerator:
+  - name: public-site
+    literals:
+      - host=factory-ops-rails.hayatec.dev
+    options:
+      disableNameSuffixHash: true
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: public-site
+      fieldPath: data.host
+    targets:
+      - select:
+          kind: Ingress
+          name: frontend
+        fieldPaths:
+          - spec.rules.0.host
+      - select:
+          kind: Deployment
+          name: web
+        fieldPaths:
+          - spec.template.spec.containers.[name=web].env.[name=FRONTEND_ORIGIN].value
+        # https://<ホスト名> の // の後ろだけを差し替える
+        options:
+          delimiter: "//"
+          index: 1

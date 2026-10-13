@@ -1,0 +1,106 @@
+# Rails の Web。外へは出さず、Next のサーバーだけが Service の web を呼ぶ（docs/adr/009 決定 2）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # 新旧の Pod を同時に置くと、Raspberry Pi のメモリに Rails の 1 プロセス分が上乗せになる
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web # 作り直し（lib/demo_reset.rb）が、このラベルで Pod が無くなるのを待つ
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: web
+          image: ghcr.io/ringoshogo/factory-ops-demo-rails/api
+          # Thruster を通さない。ブラウザから届かないので、圧縮と静的なファイルの配信が要らない
+          args: ["bin/rails", "server"]
+          ports:
+            - containerPort: 3000
+          env:
+            - name: RAILS_ENV
+              value: production
+            - name: SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: rails-credentials
+                  key: secret-key-base
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_APP_USER
+              value: factory_app
+            - name: DB_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: app-password
+            # Puma の単一のモードのスレッドと接続プール。WEB_CONCURRENCY は設定せず、ワーカーのプロセスを fork しない
+            - name: RAILS_MAX_THREADS
+              value: "3"
+            # ホスト名は kustomization.yaml の public-site から入る
+            - name: FRONTEND_ORIGIN
+              value: https://PUBLIC_HOST
+            - name: NOTIFICATIONS_PROVIDER
+              value: file_system
+            - name: SHARED_DEMO_ACCOUNTS
+              value: "1"
+          # 見積もりで、実機で測っていない（deploy/README.md「作者の手順」4）。全コードを読み込んだ Rails の 1 プロセスは、
+          # jemalloc で 200〜300MiB を見込む
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          # /up は DB に触れずに、アプリが起動したかだけを返す。Raspberry Pi で全コードを読み込む間は落とさない
+          startupProbe:
+            httpGet:
+              path: /up
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /up
+              port: 3000
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /up
+              port: 3000
+            periodSeconds: 20
+          volumeMounts:
+            - name: mails
+              mountPath: /rails/tmp/mails
+      volumes:
+        # 送らないメールの書き出し先。Pod と一緒に消え、作り直しが毎日 Pod を作り直すので、溜まるのは 1 日分である。
+        # 上限を超えると kubelet が Pod を追い出すので、1 日分のメールより十分に大きくする
+        - name: mails
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 3000
+      targetPort: 3000

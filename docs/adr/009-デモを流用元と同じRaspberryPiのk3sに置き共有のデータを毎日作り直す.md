@@ -91,5 +91,6 @@ M33 までで、デモは手元（`bin/rails server` と `next start`）で動�
 - Solid Queue 1.7.0 の README「Fork vs. async mode」：`bin/jobs --mode async` か `SOLID_QUEUE_SUPERVISOR_MODE=async` で、ワーカー・ディスパッチャ・スケジューラをスーパーバイザと同じプロセスのスレッドで動かす。async のモードでは `processes` の設定を無視する。同じ README の接続の数の段落は、async のモードではプロセスの中のワーカーの要るものを足し合わせるとする。
 - actionpack 8.1.4 の `lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`：`request.ssl?` が偽なら、`Secure` の Cookie を書かない。
 - activerecord 8.1.4 の `lib/active_record/tasks/database_tasks.rb` の `check_protected_environments!`：`DISABLE_DATABASE_ENVIRONMENT_CHECK` があれば、本番の環境の DB を消すタスクの確かめを飛ばす。
+- activerecord 8.1.4 の `db:prepare` は、同じプロセスで既に接続を確かめた設定を初期化済みと見なし、作り直した DB に構造を読み込まない（E2E の準備で起きた。`lib/tasks/e2e.rake`）。作り直しは DB のタスクを子のプロセスで流し、`DISABLE_DATABASE_ENVIRONMENT_CHECK` も子のプロセスにだけ渡す（`lib/demo_reset.rb`）。
 - PostgreSQL 18 の公式イメージは、データを `/var/lib/postgresql/18/docker` に置く（本リポジトリの `compose.yaml` のコメント）。
 - 流用元（`958de71`）の `deploy/`：名前空間 `factory-ops`、Traefik の Ingress、`local-path` の PVC、Secret を手で入れる運用、`ghcr-pull-secret`、`timeZone: Asia/Tokyo` と `concurrencyPolicy: Forbid` の CronJob。

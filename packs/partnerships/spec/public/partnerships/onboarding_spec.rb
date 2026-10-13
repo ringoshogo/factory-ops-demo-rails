@@ -1,8 +1,12 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/env_helpers"
 
-# シードと E2E の世界の準備のためのテナントとユーザーの作成。ユーザーは作ったテナントの中でだけ書き、本番の環境では呼べない
+# シードと E2E の世界の準備のためのテナントとユーザーの作成。ユーザーは作ったテナントの中でだけ書き、本番の環境では
+# DEMO_WORLD_ENABLED=1 を渡したプロセスでだけ呼べる
 # （docs/architecture/data-model.md「RLS」、docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
 RSpec.describe Partnerships::Onboarding do
+  include EnvHelpers
+
   let!(:other) { FactoryBot.create(:tenant) }
   let!(:stranger) { Tenancy.with_tenant(other.id) { FactoryBot.create(:user) } }
   let(:code) { "onboarding-#{SecureRandom.hex(4)}" }
@@ -60,12 +64,25 @@ RSpec.describe Partnerships::Onboarding do
   describe "本番の環境" do
     before { allow(Rails).to receive(:env).and_return(ActiveSupport::EnvironmentInquirer.new("production")) }
 
-    it "テナントを作らず、引きもせずに例外にする" do
-      expect { register }.to raise_error(Partnerships::Onboarding::ProductionEnvironment)
-      expect { described_class.tenant_id(code: other.code) }.to raise_error(Partnerships::Onboarding::ProductionEnvironment)
+    it "DEMO_WORLD_ENABLED が無いか 1 でなければ、テナントを作らず、引きもせずに例外にする" do
+      [ nil, "true" ].each do |value|
+        with_env("DEMO_WORLD_ENABLED" => value) do
+          expect { register }.to raise_error(Partnerships::Onboarding::ProductionEnvironment)
+          expect { described_class.tenant_id(code: other.code) }.to raise_error(Partnerships::Onboarding::ProductionEnvironment)
+        end
+      end
 
       allow(Rails).to receive(:env).and_call_original
       expect(described_class.tenant_id(code:)).to be_nil
+    end
+
+    it "DEMO_WORLD_ENABLED=1 なら、テナントを作って引ける" do
+      with_env("DEMO_WORLD_ENABLED" => "1") do
+        tenant_id = register
+
+        expect(described_class.tenant_id(code:)).to eq(tenant_id)
+        expect(emails_seen_by(tenant_id)).to eq(users.map { _1[:email] }.sort)
+      end
     end
   end
 end

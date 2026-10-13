@@ -19,8 +19,9 @@ Rails.application.configure do
   # Enable serving of images, stylesheets, and JavaScripts from an asset server.
   # config.asset_host = "http://assets.example.com"
 
-  # Assume all access to the app is happening through a SSL-terminating reverse proxy.
-  # config.assume_ssl = true
+  # TLS は前段（公開の配置では Cloudflare）で終わり、Rails には Next のサーバーから http で届く。http の要求のままでは
+  # actionpack が Secure のセッションの Cookie を応答に書かず、ログインできないので、要求を https として扱う（docs/adr/009 決定 2）
+  config.assume_ssl = true
 
   # Force all access to the app over SSL, use Strict-Transport-Security, and use secure cookies.
   # config.force_ssl = true
@@ -56,7 +57,13 @@ Rails.application.configure do
 
   # 通知のメールは SMTP ではなく、Notifications::Mailer の配送の方法から SendGrid の API へ送る（docs/adr/007 決定 5）。
   # API キーと Webhook の署名の公開鍵は credentials に置き、リポジトリとログに書かない
-  config.x.notifications.provider = :sendgrid
+  # 公開の配置のアカウントのメールアドレスは実在しないので、NOTIFICATIONS_PROVIDER=file_system で送り先をファイルに替える。
+  # 打ち間違いで黙って SendGrid に送らないように、2 つのほかの値は起動で落とす（docs/guides/config.md「環境ごとの設定」）
+  notifications_provider = ENV.fetch("NOTIFICATIONS_PROVIDER", "sendgrid")
+  unless %w[sendgrid file_system].include?(notifications_provider)
+    raise ArgumentError, "NOTIFICATIONS_PROVIDER は sendgrid か file_system にする: #{notifications_provider.inspect}"
+  end
+  config.x.notifications.provider = notifications_provider.to_sym
   config.x.notifications.sendgrid_sandbox = false
   config.x.notifications.sendgrid_api_key = Rails.application.credentials.dig(:sendgrid, :api_key)
   config.x.notifications.sendgrid_webhook_public_key = Rails.application.credentials.dig(:sendgrid, :webhook_public_key)

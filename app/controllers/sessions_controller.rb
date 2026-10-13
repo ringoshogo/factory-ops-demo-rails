@@ -12,9 +12,11 @@ class SessionsController < ApplicationController
     head :no_content
   end
 
-  # Cookie のセッションはサーバーに残らないので、消すだけでは写した Cookie が使える。ユーザーの世代を進めて無効にする
+  # Cookie のセッションはサーバーに残らないので、消すだけでは写した Cookie が使える。ユーザーの世代を進めて無効にする。
+  # 共有のデモのアカウントの配置では、世代を進めると同じアカウントのほかの訪問者が全員切れるので、Cookie を消すだけにする
+  # （docs/architecture/graphql-schema.md「1 回のリクエストがたどる道」1）
   def destroy
-    if session[:tenant_id].present? && session[:user_id].present?
+    if !Rails.configuration.x.shared_demo_accounts && session[:tenant_id].present? && session[:user_id].present?
       Tenancy.with_tenant(session[:tenant_id]) do
         Partnerships::Authentication.revoke_sessions(session[:user_id], session_version: session[:session_version])
       end
