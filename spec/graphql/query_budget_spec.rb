@@ -216,9 +216,13 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
     as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item).id) }
   end
 
-  # 安全在庫の絞り込みに当てるため、安全在庫を割った在庫にする
+  # 安全在庫の絞り込みに当てるため、安全在庫を割った在庫にする。品目の検索に当てるため、品目の写しを品目の保存と同じ値で足す
   def seed_supplier_stocks
-    as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item).id, on_hand: 0, safety_stock: 1) }
+    as_supplier do
+      item = FactoryBot.create(:item)
+      FactoryBot.create(:item_label, item_id: item.id, code: item.code, name: item.name)
+      FactoryBot.create(:stock, item_id: item.id, on_hand: 0, safety_stock: 1)
+    end
   end
 
   def seed_supplier_stock_movements
@@ -397,7 +401,9 @@ RSpec.describe "画面の問い合わせのクエリ数の予算" do
 
   def shipment_requests_variables = { "orderBy" => { "field" => "DUE_DATE", "direction" => "ASC" }, "filter" => { "statuses" => %w[INSTRUCTED READY] } }
 
-  def stocks_variables = { "orderBy" => { "field" => "AVAILABLE", "direction" => "ASC" }, "filter" => { "belowSafetyStock" => true } }
+  def stocks_variables
+    { "orderBy" => { "field" => "ITEM_NAME", "direction" => "ASC" }, "filter" => { "belowSafetyStock" => true, "keyword" => "item-" } }
+  end
 
   def stock_movements_variables = { "filter" => { "types" => [ "INBOUND" ] } }
 

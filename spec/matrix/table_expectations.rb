@@ -49,6 +49,8 @@ module MatrixExpectations
     "stocks" => OWNER_ONLY,
     "allocations" => OWNER_ONLY,
     "stock_movements" => OWNER_ONLY,
+    # 品目の写しは、在庫の一覧のために受注側が自社の品目から写す
+    "item_labels" => OWNER_ONLY,
     # 出荷は受注側だけが所有する。出荷依頼・出荷停止・出荷指示は相手から読めない
     "shipment_requests" => OWNER_ONLY,
     "shipment_request_lines" => OWNER_ONLY,

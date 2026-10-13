@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { TextLink } from "@/components/app-link";
 import { ColumnHeads, sortColumns, type Column } from "@/components/columns";
 import { DateText } from "@/components/date-text";
-import { FilterBar } from "@/components/filter-bar";
+import { FilterBar, SearchForm } from "@/components/filter-bar";
 import { FilterMenu } from "@/components/filter-menu";
 import { LinkTabs } from "@/components/link-tabs";
 import { ListError } from "@/components/list-error";
@@ -20,15 +20,29 @@ import { patchHref } from "@/lib/query";
 import { STOCK_MOVEMENT_TYPE } from "@/lib/statuses";
 import { STOCK_MOVEMENT_TYPES, stockListVariables, stockMovementVariables } from "@/lib/supplier-master-lists";
 
-// 並べ替えの見出しは API の orderBy の field から作る。品目のコードと名前は在庫の表に無いので並べ替えの対象にしない
+// 並べ替えの見出しは API の orderBy の field から作る。品目のコードと名前は、API が在庫に写した品目の写しで並べる
 const SORT = sortColumns<StockOrderField>(
-  { ON_HAND: "現在庫", ALLOCATED: "引当", AVAILABLE: "有効在庫", SAFETY_STOCK: "安全在庫" },
-  { ON_HAND: { numeric: true }, ALLOCATED: { numeric: true }, AVAILABLE: { numeric: true }, SAFETY_STOCK: { numeric: true } },
+  {
+    ITEM_CODE: "品目コード",
+    ITEM_NAME: "品目名",
+    ON_HAND: "現在庫",
+    ALLOCATED: "引当",
+    AVAILABLE: "有効在庫",
+    SAFETY_STOCK: "安全在庫",
+  },
+  {
+    ITEM_CODE: { truncate: true },
+    ITEM_NAME: { truncate: true },
+    ON_HAND: { numeric: true },
+    ALLOCATED: { numeric: true },
+    AVAILABLE: { numeric: true },
+    SAFETY_STOCK: { numeric: true },
+  },
 );
 
 const COLUMNS: Column<StockOrderField>[] = [
-  { key: "code", label: "品目コード", truncate: true },
-  { key: "name", label: "品目名", truncate: true },
+  SORT.ITEM_CODE,
+  SORT.ITEM_NAME,
   SORT.ON_HAND,
   SORT.ALLOCATED,
   SORT.AVAILABLE,
@@ -64,12 +78,22 @@ async function Stocks({ params }: { params: URLSearchParams }) {
   return (
     <div className="space-y-4">
       <FilterBar count={stocks ? stocks.totalCount : null}>
+        <SearchForm defaultValue={single(params, "q") ?? ""} placeholder="コード・品目名で検索">
+          {/* 送っても並べ替えと安全在庫の絞り込みを保つ。検索を変えると 1 ページ目に戻る (after を送らない) */}
+          {variables.orderBy && (
+            <>
+              <input type="hidden" name="sort" value={variables.orderBy.field.toLowerCase()} />
+              <input type="hidden" name="dir" value={variables.orderBy.direction.toLowerCase()} />
+            </>
+          )}
+          {variables.filter?.belowSafetyStock && <input type="hidden" name="below" value="1" />}
+        </SearchForm>
         {/* ダッシュボードの「安全在庫を下回る在庫」と同じ条件を API が数えるので、件数がダッシュボードと一致する */}
         <FilterMenu
           label="在庫"
           icon="stock"
           param="below"
-          value={variables.filter ? "1" : ""}
+          value={variables.filter?.belowSafetyStock ? "1" : ""}
           options={[
             { value: "", label: "すべて" },
             { value: "1", label: "安全在庫を下回るものだけ" },
@@ -99,8 +123,8 @@ async function Stocks({ params }: { params: URLSearchParams }) {
                 )}
                 {nodesOf(stocks).map((s) => {
                   const content: Record<string, ReactNode> = {
-                    code: s.item.code,
-                    name: s.item.name,
+                    ITEM_CODE: s.item.code,
+                    ITEM_NAME: s.item.name,
                     ON_HAND: <span data-testid="on-hand">{formatNumber(s.onHand)}</span>,
                     ALLOCATED: <span data-testid="allocated">{formatNumber(s.allocated)}</span>,
                     // 有効在庫が安全在庫を下回る在庫は、色だけでなく札の文字でも示す

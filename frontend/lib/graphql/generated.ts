@@ -357,6 +357,8 @@ export type StockAdjustmentType =
 export type StockFilter = {
   /** 真なら、ダッシュボードの stocksBelowSafetyStock と同じ条件（有効在庫が安全在庫より小さい）で絞る。偽か省けば絞らない */
   belowSafetyStock?: boolean | null | undefined;
+  /** 前後の空白を除いて、品目コードか品目名に含む品目の在庫に絞る。大文字と小文字を区別せず、% と _ は文字として扱う。空なら絞らない。100 文字まで */
+  keyword?: string | null | undefined;
 };
 
 export type StockMovementFilter = {
@@ -386,6 +388,10 @@ export type StockOrderField =
   | 'ALLOCATED'
   /** 有効在庫（現在庫 - 引当） */
   | 'AVAILABLE'
+  /** 品目コード。品目の写しの無い在庫は、向きによらず最後に並ぶ */
+  | 'ITEM_CODE'
+  /** 品目名。品目の写しの無い在庫は、向きによらず最後に並ぶ */
+  | 'ITEM_NAME'
   /** 現在庫 */
   | 'ON_HAND'
   /** 安全在庫 */

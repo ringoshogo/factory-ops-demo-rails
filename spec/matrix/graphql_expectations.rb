@@ -265,6 +265,14 @@ module MatrixExpectations
       variables: ->(_world) { { orderBy: { field: "AVAILABLE", direction: "DESC" }, filter: { belowSafetyStock: true } } },
       expect: EVERYONE
     },
+    # 品目の写しを結ぶ条件から所有テナントを外しても、品目 ID は他社と重ならないのでここでは捕まらない。
+    # packs/inventory/spec/public/inventory/item_labels_spec.rb が、他社の名義で同じ品目 ID を指す写しで捕まえる
+    "SupplierView.stocks#keyword" => {
+      role: :member,
+      query: "query($orderBy: StockOrder, $filter: StockFilter) { supplier { stocks(orderBy: $orderBy, filter: $filter) { totalCount nodes { onHand } } } }",
+      variables: ->(_world) { { orderBy: { field: "ITEM_NAME", direction: "ASC" }, filter: { keyword: MatrixWorld::FILTER_ITEM_NAME } } },
+      expect: EVERYONE
+    },
     "SupplierView.stockMovements" => {
       role: :member,
       query: "{ supplier { stockMovements { totalCount nodes { id } } } }",

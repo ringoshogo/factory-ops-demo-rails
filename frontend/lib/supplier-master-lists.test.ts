@@ -33,11 +33,17 @@ describe("在庫の一覧の変数", () => {
     expect(stockListVariables(p("")).filter).toBeNull();
   });
 
-  it("orderBy の field のすべてを並べ替えに使える。品目のコードと名前では並べない", () => {
-    for (const field of ["on_hand", "allocated", "available", "safety_stock"]) {
+  it("検索の語を filter.keyword に写し、below=1 と一緒なら両方を渡す。空白だけの語は送らない", () => {
+    expect(stockListVariables(p("q=%E5%85%AD%E8%A7%92")).filter).toEqual({ keyword: "六角" });
+    expect(stockListVariables(p("q=%20B-1%20&below=1")).filter).toEqual({ belowSafetyStock: true, keyword: "B-1" });
+    expect(stockListVariables(p("q=%20%20")).filter).toBeNull();
+  });
+
+  it("orderBy の field のすべてを並べ替えに使える。API に無い列は既定の並び", () => {
+    for (const field of ["item_code", "item_name", "on_hand", "allocated", "available", "safety_stock"]) {
       expect(stockListVariables(p(`sort=${field}&dir=asc`)).orderBy?.field).toBe(field.toUpperCase());
     }
-    expect(stockListVariables(p("sort=code&dir=asc")).orderBy).toBeNull();
+    expect(stockListVariables(p("sort=unit&dir=asc")).orderBy).toBeNull();
   });
 });
 

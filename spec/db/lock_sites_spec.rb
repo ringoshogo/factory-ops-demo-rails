@@ -82,7 +82,9 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     },
     "Sales::ItemPrices.schedule" => { spec: "packs/sales/spec/concurrency/sales/item_prices_lock_spec.rb" },
     "Sales::ItemPrices.correct" => { spec: "packs/sales/spec/concurrency/sales/item_prices_lock_spec.rb" },
-    "Sales::Catalog.save" => { reason: "自社の品目だけを書き、相手のイベントと競わない。同じコードの重複は一意索引が守る" },
+    # 保存の行ロックは、品目の写しの作り直しを待たせる。同じコードの重複は一意索引が守る
+    "Sales::Catalog.save" => { spec: "packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb" },
+    "Sales::Catalog.rebuild_item_labels" => { spec: "packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb" },
     "Sales::Catalog.set_published" => { reason: "自社の品目の公開の状態だけを書き、最後の書き込みが残ってよい" },
     "Sales::FulfillmentEventReceiver.ship" => {
       reason: "「出荷計上」の受け手。受注の時刻が空のときだけ書くので、同じ受注への配送が並んでも結果は変わらない"

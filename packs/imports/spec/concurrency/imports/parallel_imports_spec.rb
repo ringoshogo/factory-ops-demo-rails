@@ -21,7 +21,7 @@ RSpec.describe "並んだ取り込み" do
     Rails.event.unsubscribe(collector)
   end
 
-  after { delete_owned_rows([ tenant ], %w[stock_movements stocks import_rows imports import_files item_prices items]) }
+  after { delete_owned_rows([ tenant ], %w[stock_movements stocks item_labels import_rows imports import_files item_prices items]) }
 
   def tenancy(&) = Tenancy.with_tenant(tenant, &)
 

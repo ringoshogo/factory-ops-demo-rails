@@ -59,7 +59,7 @@ RSpec.describe Inventory::Stock do
 
   # readonly? はクラス単位の一括の書き込みを止めない。在庫の行は在庫のパッケージの外から参照できない（packwerk の
   # enforce_privacy）ので、パッケージの中のコードが一括の書き込みを呼ばないことで、move! を唯一の入口に保つ。
-  # 例外は、数量 0 の行を足すだけの lock_for の insert_all である。呼び出しは Prism の構文木から拾い、
+  # 例外は、数量 0 の行を足すだけの lock_for の insert_all と、在庫の行ではなく品目の写しを書く ItemLabels.put の upsert_all である。呼び出しは Prism の構文木から拾い、
   # コメントと文字列の中の語を呼び出しと取り違えない。SQL を直接流す書き込みは、メソッドの名前で見分けられないので対象にしない
   describe "一括の書き込み" do
     let(:bulk_writes) do
@@ -78,13 +78,13 @@ RSpec.describe Inventory::Stock do
       calls
     end
 
-    it "在庫のパッケージのコードは、lock_for の insert_all のほかに一括の書き込みを呼ばない" do
+    it "在庫のパッケージのコードは、lock_for の insert_all と品目の写しの upsert_all のほかに一括の書き込みを呼ばない" do
       root = File.expand_path("../../../app", __dir__)
       found = Dir.glob("#{root}/**/*.rb").sort.flat_map do |path|
         bulk_write_calls(File.read(path)).map { [ path.delete_prefix("#{root}/"), *_1 ] }
       end
 
-      expect(found).to eq([ [ "models/inventory/stock.rb", :lock_for, :insert_all ] ])
+      expect(found).to eq([ [ "models/inventory/stock.rb", :lock_for, :insert_all ], [ "public/inventory/item_labels.rb", :put, :upsert_all ] ])
     end
 
     it "検査は、文字列の補間を引数に含む呼び出しを拾い、コメントの中の語を拾わない" do

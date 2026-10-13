@@ -106,3 +106,39 @@ test("受注一覧を取引先の名前と受注合計で並べ、照合待ち�
   await page.goto("/supplier/dashboard");
   await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`)).toContainText("照合待ち");
 });
+
+test("在庫の画面で品目名の一部を検索すると、URL の q が変わって当たる在庫だけが件数と一緒に出て、品目コードの並べ替えと安全在庫の絞り込みを重ねられる", async ({ page }, testInfo) => {
+  await login(page, testInfo, "supplier_admin");
+  await page.goto("/supplier/stocks");
+  // 対照：検索の前は、品目名に「シール」を含まない在庫も出る
+  await expect(rows(page)).not.toHaveCount(0);
+  const before = await names(page);
+  expect(before.some((name) => !name.includes("シール"))).toBe(true);
+
+  // E2E の世界で品目名に「シール」を含む在庫は、オイルシール (ITM-006) と長い名前の品目 (ITM-030) の 2 つ
+  const search = page.getByRole("searchbox", { name: "検索" });
+  await expect(search).toBeVisible();
+  await search.fill("シール");
+  await search.press("Enter");
+  await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("シール");
+  await expect(rows(page)).toHaveCount(2);
+  await expect(page.getByTestId("list-count")).toHaveText("2 件");
+  expect((await names(page)).every((name) => name.includes("シール"))).toBe(true);
+
+  await page.getByRole("columnheader", { name: "品目コード" }).getByRole("button").click();
+  await expect(page).toHaveURL(/sort=item_code&dir=asc/);
+  expect(new URL(page.url()).searchParams.get("q")).toBe("シール");
+  expect(await codes(page)).toEqual(["ITM-006", "ITM-030"]);
+  await page.getByRole("columnheader", { name: "品目コード" }).getByRole("button").click();
+  await expect(page).toHaveURL(/sort=item_code&dir=desc/);
+  expect(await codes(page)).toEqual(["ITM-030", "ITM-006"]);
+
+  // 初期在庫が安全在庫を下回るのは ITM-006 だけで、検索と両方に当たる
+  await page.getByRole("button", { name: "在庫 すべて" }).click();
+  await page.getByRole("menuitemradio", { name: "安全在庫を下回るものだけ" }).click();
+  await expect(page).toHaveURL(/below=1/);
+  expect(new URL(page.url()).searchParams.get("q")).toBe("シール");
+  await expect(rows(page)).toHaveCount(1);
+  await expect(page.getByTestId("list-count")).toHaveText("1 件");
+  expect(await codes(page)).toEqual(["ITM-006"]);
+});

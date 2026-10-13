@@ -438,7 +438,7 @@ Active Record の関連は、どの段にも当たらない。関連はコンテ
 以下、2 段目と 3 段目を述べる。
 
 - **可視範囲（scope）**：各コンテキストの policy の `relation_scope` に置く。コンテキストの公開 API は、操作者を必須の引数に取り、内部で scope を掛けてから値を返す。操作者を渡さずにレコードを返す公開 API は作らない。scope は所有の条件を明示し、RLS に任せない。自社のデータを返す scope は `owner_tenant_id` が操作者のテナントであることを、経路 3 の scope は `buyer_tenant_id` が操作者のテナントであることと権限付与を条件にする。RLS は経路 1〜3 の相手の行も返すので、RLS に任せると、受注側の一覧や ID 指定の入口に相手の公開品目・取引関係・出荷が自社の物として混ざる。型の `show?` も同じ条件で判定する。
-- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。ログインの `Partnerships::Authentication.authenticate` は RLS の外で動く認証専用の関数でメールアドレスから引き、シードと E2E の準備がテナントを作る `Partnerships::Onboarding.register` は、作ったテナントの中でだけユーザーを書く。同じ準備が、作った世界をもう一度作らないために引く `Partnerships::Onboarding.tenant_id(code:)` も、テナントが決まる前の入口で、テナントの ID だけを返す。どちらも、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（`Platform::DemoWorldGate`）。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）
+- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。ログインの `Partnerships::Authentication.authenticate` は RLS の外で動く認証専用の関数でメールアドレスから引き、シードと E2E の準備がテナントを作る `Partnerships::Onboarding.register` は、作ったテナントの中でだけユーザーを書く。同じ準備が、作った世界をもう一度作らないために引く `Partnerships::Onboarding.tenant_id(code:)` も、テナントが決まる前の入口で、テナントの ID だけを返す。どちらも、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（`Platform::DemoWorldGate`）。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）。在庫の品目の写しを書く `Inventory::ItemLabels.put` と、それを元から作り直す `Sales::Catalog.rebuild_item_labels`（rake タスク `read_models:rebuild` が呼ぶ）も、この入口の公開 API で、件数だけを返す。`put` は品目の保存と取り込み（操作者のいる入口）の中からも呼ばれるが、写しは誰が保存しても同じ値になるので、操作者を取らない（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）
 - **型・入口・操作ごとの規則**：GraphQL の基底クラスが、宣言された policy の規則を評価する。
 
 policy は、コンテキストの公開 API として `packs/<パッケージ>/app/public/<名前空間>/` に置く。GraphQL 層は、公開 API が返す値に対して同じ policy の規則を評価する。scope と規則が同じ policy クラスにあるので、可視範囲の定義は 1 か所に保たれる（`decisions.md` 2 章「可視範囲」）。
@@ -812,14 +812,14 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つである。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前）か、一覧のパッケージに写した表（在庫の品目のコードと名前。`../implementation-plan.md` M46）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つである。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前）か、一覧のパッケージに写した表（在庫の品目のコードと名前。`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
 
 | 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） |
 |---|---|---|
 | `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE`・`CUSTOMER_NAME`・`TOTAL_AMOUNT`・`STATUS` | `customerTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
 | `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON`・`SUPPLIER_NAME`・`TOTAL_AMOUNT`・`STATUS` | `supplierTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
 | `supplier.shipmentRequests` | `DUE_DATE`・`CUSTOMER_NAME`・`STATUS` | `statuses` |
-| `supplier.stocks` | `ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock` |
+| `supplier.stocks` | `ITEM_CODE`・`ITEM_NAME`・`ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock`、`keyword` |
 | `supplier.stockMovements` | — | `types` |
 | `supplier.items` | `CODE`・`NAME` | `keyword` |
 
@@ -827,9 +827,10 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 - 取引先の名前（`CUSTOMER_NAME`・`SUPPLIER_NAME`）は、取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が返すテナントの ID と名前の副問い合わせから、伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）の行の名前を、行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べる。結合と違い、結ぶ条件を書き誤って 2 行以上が当たると、行を増やさずに SQL のエラーになる。名前は DB の照合順序のまま並べ、読みの順（五十音）にしない。
 - 合計金額（`TOTAL_AMOUNT`）は、明細の数量と単価の積の和を、受注は `Sales::SalesOrderAmount`、発注は `Purchasing::PurchaseOrderAmount` の SQL の式で計算して並べる。単価の無い明細（受注は品番照合待ち、発注は受注確定の前）が 1 つでもあれば、合計は空になり、値の無い行として最後に並ぶ。一覧の `totalAmount` も同じ式を読むので、空の合計は、どの画面でも金額の代わりに空の理由（「照合待ち」・「確定待ち」）を出し、一部の合計を出さない（`frontend/lib/format.ts` の `totalAmountText`）。単価は `bigint` の上限まで入りうるので、積と和は `numeric` で計算する。和は、明細の件数の上限（100）・数量の上限（`integer`）・単価の上限（`bigint`）の積を超えないので 31 桁に収まる。
 - 状況（`STATUS`）は、状況の式の値を業務の進み順の位置で並べる（「状況の enum」）。
+- 在庫の品目コードと品目名（`ITEM_CODE`・`ITEM_NAME`）と在庫の `keyword` は、在庫のパッケージの品目の写し（`item_labels`、`data-model.md`「在庫（`inventory`）」）を、所有テナントと品目 ID の組で外部結合して読む。品目 ID だけで結ぶと、RLS が他社の写しを見せたときに、他社の名義で同じ品目 ID を指す写しを並びと検索に使う。写しの無い在庫は、値の無い行として最後に並び、`keyword` には当たらない。
 - 受注日と発注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す。
 - `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ scope で絞る（「読み取りの一覧」の安全在庫）。偽か省いたときは絞らない。
-- `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。
+- `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目（在庫の一覧は、その品目の在庫）に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。2 つの一覧の規則は `Keyword`（`packs/platform`）の 1 か所にあり、2 つの入力型は同じ上限（`Keyword::MAX_LENGTH`）を読む。
 - `types` と `statuses` の空の配列は 0 件を返し、省くか `null` なら絞らない。
 - 複数の絞り込みを同時に渡すと、すべてに当たる行に絞る。
 
@@ -859,8 +860,8 @@ enum ShipmentRequestOrderField { DUE_DATE CUSTOMER_NAME STATUS }
 input ShipmentRequestFilter { statuses: [ShipmentRequestStatus!] }
 
 input StockOrder { field: StockOrderField!, direction: OrderDirection! }
-enum StockOrderField { ON_HAND ALLOCATED AVAILABLE SAFETY_STOCK }
-input StockFilter { belowSafetyStock: Boolean }
+enum StockOrderField { ITEM_CODE ITEM_NAME ON_HAND ALLOCATED AVAILABLE SAFETY_STOCK }
+input StockFilter { belowSafetyStock: Boolean, keyword: String }
 
 input StockMovementFilter { types: [StockMovementType!] }
 

@@ -8,7 +8,7 @@ RSpec.describe Sales::Catalog, ".bulk_upsert" do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "admin", partner_code: "") }
 
-  after { delete_owned_rows([ supplier.id ], %w[item_prices items]) }
+  after { delete_owned_rows([ supplier.id ], %w[item_labels item_prices items]) }
 
   def row(name, unit_price) = { code: "NEW-1", name:, unit: "個", tax_rate_percent: 10, published: false, unit_price: }
 
