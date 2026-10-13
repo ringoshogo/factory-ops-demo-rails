@@ -5,9 +5,16 @@ on:
   push:
     branches: [ main ]
 
+# 権限を書かないジョブの権限はリポジトリの設定で決まるので、最上位を読み取りだけにし、
+# GHCR へ書く packages: write は publish のジョブにだけ書く
+permissions:
+  contents: read
+
+# amd64 のジョブは ubuntu-24.04、arm64 のジョブは ubuntu-24.04-arm に固定する。ubuntu-latest は GitHub が日程で
+# OS の版を上げ、CI が通るかを確かめないまま版が変わる。版を上げる時期は docs/guides/config.md「CI の工程」にある
 jobs:
   scan_ruby:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -25,7 +32,7 @@ jobs:
         run: bin/bundler-audit
       
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       RUBOCOP_CACHE_ROOT: tmp/rubocop
     steps:
@@ -84,7 +91,7 @@ jobs:
         run: printf '%s' "$PR_BODY" | bin/check-open-items --text -
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -155,7 +162,7 @@ jobs:
   # 画面（frontend/）の検査。codegen の生成物が schema.graphql と画面の問い合わせから作り直したものと一致し、
   # 型検査・lint（コメントの検査を含む）・単体テストが通ることを確かめる
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
@@ -189,7 +196,7 @@ jobs:
   # 画面を Rails・bin/jobs・Next に当てて流す E2E。Playwright の webServer が E2E の DB を作り直し、世界を作ってから
   # 起こす（frontend/e2e/start-rails.sh）。DB とロールの準備は test のジョブと同じ
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -257,11 +264,11 @@ jobs:
           retention-days: 7
 
   # PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・このワークフロー）を変えたかを決める。
-  # images のジョブは 20 分を超え、PR の CI の時間の予算（docs/guides/config.md「CI の工程」）に収まらないので、
-  # それ以外の PR では流さない。アプリのコードを本番の環境で読み込めることは、test のジョブが eager_load で確かめる
+  # images のジョブは、依存が変わって GitHub Actions のキャッシュが外れると、PR の CI の時間の予算
+  # （docs/guides/config.md「CI の工程」）を超えうるので、それ以外の PR では流さない。アプリのコードを本番の環境で読み込めることは、test のジョブが eager_load で確かめる
   image_inputs:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
     steps:
@@ -282,25 +289,15 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # 公開の配置の 2 つのイメージを linux/arm64 で作る（docs/adr/009 決定 6、deploy/README.md）。PR では作って確かめるだけにし、
-  # main への push のときだけ git の SHA のタグで GHCR に置く。latest のタグは付けない。
-  # main への push では毎回流すので、PR で流さなかった変更も main で確かめる
-  images:
-    needs: image_inputs
-    if: ${{ !cancelled() && (github.event_name == 'push' || needs.image_inputs.outputs.changed == 'true') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    env:
-      API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
-      FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
+  # 公開の配置のマニフェストを照らす。kubectl が入った amd64 のランナーで流し、arm64 のランナーのイメージに頼らない。
+  # 1 分で終わるので、image_inputs で絞らずに PR と main への push の両方で流す
+  manifests:
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      # Kustomize の置き換えを描き、Kubernetes の型と照らす。ubuntu のランナーには kubectl が入っている。
-      # kubeconform は取ったファイルを、リリースの sha256 と比べてから展開する
+      # Kustomize の置き換えを描き、Kubernetes の型と照らす。kubeconform は取ったファイルを、リリースの sha256 と比べてから展開する
       - name: Validate manifests
         run: |
           kubectl kustomize deploy > "$RUNNER_TEMP/rendered.yaml"
@@ -309,10 +306,20 @@ jobs:
           tar -xzf "$RUNNER_TEMP/kubeconform.tar.gz" -C "$RUNNER_TEMP" kubeconform
           "$RUNNER_TEMP/kubeconform" -strict -summary "$RUNNER_TEMP/rendered.yaml"
 
-      # GitHub ホストのランナーは amd64 なので、arm64 のイメージを QEMU の上で組み立てる
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+  # 公開の配置の 2 つのイメージを、arm64 のランナーで linux/arm64 のまま組み立てて確かめる（docs/adr/009 決定 6、deploy/README.md）。
+  # GHCR には置かない（publish のジョブが置く）。main への push では毎回流すので、PR で流さなかった変更も main で確かめる
+  images:
+    needs: image_inputs
+    if: ${{ !cancelled() && (github.event_name == 'push' || needs.image_inputs.outputs.changed == 'true') }}
+    runs-on: ubuntu-24.04-arm
+    env:
+      API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
+      FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
 
+      # GitHub Actions のキャッシュ（type=gha）に書くには buildx が要る
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -343,8 +350,51 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
 
+  # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
+  # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
+  # ジョブの if: は、ジョブの名前を並べずに needs.*.result で決める。名前を並べると、needs に足したジョブを
+  # if: に足し忘れたときに、そのジョブが落ちても push する。!cancelled() を書くのは、状態の関数が無いと GitHub が
+  # 暗黙の success() を足し、push では skip される image_inputs から依存の連なりで publish も skip されるからである。
+  # ログインと push のステップの if: は、main 以外のブランチへの push で publish が走っても GHCR に何も置かないためで、
+  # ワークフローの契機を一時に広げて publish の条件を確かめるときにも、この if: でステップが skip される
+  publish:
+    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
+    if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
+      FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build API image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          tags: ${{ env.API_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=api
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          platforms: linux/arm64
+          tags: ${{ env.FRONTEND_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=frontend
+
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -352,7 +402,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push images
-        if: github.event_name == 'push'
+        if: github.ref == 'refs/heads/main'
         run: |
           docker push "$API_IMAGE"
           docker push "$FRONTEND_IMAGE"

@@ -350,11 +350,15 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 | Schema | — | `bin/check-structure` | `structure.sql` の往復を確かめる（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md)） |
 | Alerts | — | `bin/check-alerts` | 警報の規則の式と、テストの系列での発火と不発火を、Prometheus のイメージの promtool で確かめる（[../slo.md](../slo.md)） |
 
-画面（`frontend/`）の検査は `bin/ci` の工程に無く、`.github/workflows/ci.yml` の `frontend` のジョブ（`npm run codegen:check`・`lint`・`typecheck`・`test:unit`）と `e2e` のジョブ（`npm run test:e2e`）が流す。手元では `README.md`「画面」の手順で流す。公開の配置のマニフェストの照合とイメージの組み立て（`images` のジョブ）も `bin/ci` に無く、手元では `kubectl kustomize deploy` と `deploy/README.md` の手順で確かめる。
+画面（`frontend/`）の検査は `bin/ci` の工程に無く、`.github/workflows/ci.yml` の `frontend` のジョブ（`npm run codegen:check`・`lint`・`typecheck`・`test:unit`）と `e2e` のジョブ（`npm run test:e2e`）が流す。手元では `README.md`「画面」の手順で流す。公開の配置のマニフェストの照合（`manifests` のジョブ）とイメージの組み立て（`images` のジョブ）と GHCR への push（`publish` のジョブ）も `bin/ci` に無く、手元では `kubectl kustomize deploy` と `deploy/README.md` の手順で確かめる。
 
 CI のジョブを足すか重くする人は、PR の CI が最も長いジョブで 10 分の内に終わるようにする。PR の CI の時間は、担当が結果を待って次へ進むまでの時間だからである。予算を超えるジョブは、確かめる対象を変えた PR と main への push でだけ流す。`images` のジョブは、`image_inputs` のジョブが「PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・ワークフロー）を変えた」と判定したときと、main への push でだけ流れる。イメージに入るものの置き場を足した人は、ワークフローの `pattern` も直す。Dockerfile とその無視の一覧、Dockerfile が名指しで写すファイル、マニフェストが `pattern` に当たることは `spec/platform/ci_checks_spec.rb` が確かめる。ディレクトリごとに写すアプリのコードと画面は、`test` のジョブ（`eager_load`）と `e2e` のジョブ（`next build`）が確かめるので、`pattern` に入れない。それでも漏れた変更は、main への push で確かめる。
 
 > `images` のジョブは、QEMU の上で arm64 のイメージを組み立てると、キャッシュが空のときに 25〜35 分かかった（サイクル 05、`adr/009`「見直す条件」の 20 分を超えた）。
+
+GHCR にイメージを置くのは `publish` のジョブだけで、main への push で、ワークフローのほかのすべてのジョブ（push では流れない `image_inputs` を除く）が成功したときだけ流れる。テストの落ちた commit のイメージを置かないためである。`images` は組み立てと確かめだけにし、`publish` は同じキャッシュから組み立て直して push する。ジョブを足す人は、`publish` の `needs` にも足す。`publish` の `if:` はジョブの名前を並べず `needs.*.result` だけを見るので、`needs` に無いジョブは、落ちても push を止めない。`publish` の `needs` がほかのすべてのジョブを含むことと、push と `packages: write` を持つジョブが `publish` だけで、ワークフローの最上位の権限が `contents: read` だけであることは、`spec/platform/ci_checks_spec.rb` が確かめる。
+
+どのジョブも、ランナーを OS の版の数字を含む名前（amd64 は `ubuntu-24.04`、arm64 の `images` と `publish` は `ubuntu-24.04-arm`）で指定する。`ubuntu-latest` は GitHub が日程で版を上げ、CI が通るかを確かめないまま版が変わるからである。版の形と arm64 のジョブは `spec/platform/ci_checks_spec.rb` が確かめる。版を上げる人は、GitHub がいまの版のランナーの廃止を告知したとき（GitHub の changelog と、`actions/runner-images` の告知）か、Ubuntu のいまの版の標準の保守が終わる前に、すべてのジョブの `runs-on` を 1 つの PR で上げ、その PR の CI がすべて通ることを確かめる。`image_inputs` はワークフローの変更を拾うので、その PR では `images` も流れる。
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 
