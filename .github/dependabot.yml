@@ -1,17 +1,43 @@
 version: 2
+# 小版と修正版はエコシステムごとに 1 本の PR にまとめ、主版の上げは 1 本ずつ開かせて CI で個別に確かめる。
+# 1 つの依存に 1 本では、組で上げる依存が 1 本ずつでは落ち、PR のたびに images のジョブが流れる。
+# 形は spec/platform/dependency_updates_spec.rb が確かめる（docs/guides/config.md「CI の工程」）
 updates:
 - package-ecosystem: bundler
   directory: "/"
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
+  groups:
+    minor-and-patch:
+      patterns: [ "*" ]
+      update-types: [ minor, patch ]
 - package-ecosystem: github-actions
   directory: "/"
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
+  # 変えるのはワークフローの 1 ファイルで、その PR の CI がそのまま確かめるので、主版も含めて 1 本にまとめる
+  groups:
+    actions:
+      patterns: [ "*" ]
 - package-ecosystem: npm
   directory: "/frontend"
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
+  groups:
+    # react-dom は peer に同じ版の react を求め、1 本ずつでは npm ci が ERESOLVE で落ちるので、主版も含めて組で開く。
+    # Dependabot は依存を最初に当たったまとまりに入れるので、小版と修正版のまとまりより先に置く
+    react:
+      patterns: [ react, react-dom, "@types/react", "@types/react-dom" ]
+    minor-and-patch:
+      patterns: [ "*" ]
+      update-types: [ minor, patch ]
+      # 0 系の小版の上げは破壊的な変更を含みうるので、主版の上げと同じく 1 本ずつ開かせる
+      exclude-patterns: [ cn, class-variance-authority ]
+  ignore:
+    # 型定義の主版を画面の Node の主版（package.json の engines）より上げると、実行の版に無い API が型検査を通る。
+    # Node の主版を上げるときに、engines と一緒に手で上げる
+    - dependency-name: "@types/node"
+      update-types: [ "version-update:semver-major" ]
