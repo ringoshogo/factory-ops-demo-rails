@@ -361,7 +361,10 @@ jobs:
           echo '${{ toJSON(needs) }}'
           echo "results=${{ join(needs.*.result, ',') }}"
           echo "failure=${{ contains(needs.*.result, 'failure') }} cancelled=${{ contains(needs.*.result, 'cancelled') }} skipped=${{ contains(needs.*.result, 'skipped') }}"
-          echo "full=${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}"
+
+      - name: Same condition as publish
+        if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
+        run: echo "publish condition is true"
 
   # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
