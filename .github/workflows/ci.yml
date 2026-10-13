@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -38,7 +38,7 @@ jobs:
     steps:
       # 台帳と証跡の SHA が HEAD の祖先かを確かめ、スキーマの互換の基準を取るので、履歴をすべて取る
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -48,7 +48,7 @@ jobs:
           bundler-cache: true
 
       - name: Prepare RuboCop cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         env:
           DEPENDENCIES_HASH: ${{ hashFiles('.ruby-version', '**/.rubocop.yml', '**/.rubocop_todo.yml', 'Gemfile.lock') }}
         with:
@@ -119,7 +119,7 @@ jobs:
 
       # 分岐の網羅率の警告が、基準の ref との分岐点からの差分を取るので、履歴をすべて取る
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -168,11 +168,11 @@ jobs:
         working-directory: frontend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Node の主版は frontend/package.json の engines（^22.12）に合わせる。ずれると spec/platform/dependency_updates_spec.rb が落ちる
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -223,7 +223,7 @@ jobs:
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -236,7 +236,7 @@ jobs:
           PGPASSWORD: postgres
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -257,7 +257,7 @@ jobs:
       # 落ちたときに、各テストのトレースと画面を残す
       - name: Upload Playwright results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results
           path: frontend/test-results/
@@ -273,7 +273,7 @@ jobs:
       changed: ${{ steps.diff.outputs.changed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -295,7 +295,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Kustomize の置き換えを描き、Kubernetes の型と照らす。kubeconform は取ったファイルを、リリースの sha256 と比べてから展開する
       - name: Validate manifests
@@ -317,7 +317,7 @@ jobs:
       FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # GitHub Actions のキャッシュ（type=gha）に書くには buildx が要る
       - name: Set up Docker Buildx
@@ -378,7 +378,7 @@ jobs:
           exit 1
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
