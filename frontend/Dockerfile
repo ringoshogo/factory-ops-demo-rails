@@ -5,7 +5,8 @@
 # リポジトリの根を文脈にして組み立てる。文脈に入れるものは frontend/Dockerfile.dockerignore が決める。
 #   docker buildx build --platform linux/arm64 -f frontend/Dockerfile .
 
-# CI の frontend と e2e のジョブ（actions/setup-node の 22）と同じ系にし、小版まで固定する
+# 主版は画面の Node の正本（frontend/package.json の engines）に合わせ、CI の frontend と e2e のジョブと同じ系で組み立てる。
+# 主版がそろうことは spec/platform/dependency_updates_spec.rb が確かめる。組み立てを再現できるよう、小版まで固定する
 ARG NODE_VERSION=22.23.3
 FROM docker.io/library/node:${NODE_VERSION}-slim AS build
 

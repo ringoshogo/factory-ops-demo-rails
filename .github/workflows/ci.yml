@@ -170,7 +170,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      # Node は 22 系にする。frontend/package.json の engines（22.12 以上）を満たす
+      # Node の主版は frontend/package.json の engines（^22.12）に合わせる。ずれると spec/platform/dependency_updates_spec.rb が落ちる
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
