@@ -47,7 +47,7 @@ test:
     database: <%= ENV.fetch("TEST_DATABASE", "factory_ops_demo_rails_test") %>
 
 # 本番の owner は、DB_OWNER_USER を渡したプロセスにだけ置く。所有ロールは BYPASSRLS を持つので、
-# 資格情報はマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。
+# 資格情報はマイグレーションの工程（公開の配置では毎日の作り直しの工程も）にだけ渡し、Web とワーカーのプロセスには渡さない。
 # 接続先は開発と同じく DB_HOST と DB_PORT で決める。公開の配置では Service の postgres を指す（deploy/README.md）
 production_host: &production_host
   host: <%= ENV["DB_HOST"] %>

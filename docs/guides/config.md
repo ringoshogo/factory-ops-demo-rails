@@ -85,7 +85,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 | 入口 | 立てたとき | 理由 |
 |---|---|---|
 | `POST /graphql`・`POST /imports/files` | 503 | 業務の表を読み書きする |
-| `POST /session`・`DELETE /session` | 止めない | ログインはメールアドレスでユーザーを引く認証の関数だけを通り、ログアウトは自分のセッションの世代を進めるだけで、業務の表を読み書きしない。ログアウトを止めると、利用者が漏れたセッションを無効にできない |
+| `POST /session`・`DELETE /session` | 止めない | ログインはメールアドレスでユーザーを引く認証の関数だけを通り、ログアウトは自分のセッションの世代を進める（`SHARED_DEMO_ACCOUNTS=1` では進めない）だけで、業務の表を読み書きしない。ログアウトを止めると、利用者が漏れたセッションを無効にできない |
 | `POST /webhooks/sendgrid/events` | 止めない | 受信の表に書くだけで、止めると配信結果を失う |
 | `GET /up` | 止めない | 死活監視が、止めた Web をプロセスの障害と取り違えて起動し直す |
 
@@ -352,7 +352,7 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 
 画面（`frontend/`）の検査は `bin/ci` の工程に無く、`.github/workflows/ci.yml` の `frontend` のジョブ（`npm run codegen:check`・`lint`・`typecheck`・`test:unit`）と `e2e` のジョブ（`npm run test:e2e`）が流す。手元では `README.md`「画面」の手順で流す。公開の配置のマニフェストの照合とイメージの組み立て（`images` のジョブ）も `bin/ci` に無く、手元では `kubectl kustomize deploy` と `deploy/README.md` の手順で確かめる。
 
-CI のジョブを足すか重くする人は、PR の CI が最も長いジョブで 10 分の内に終わるようにする。PR の CI の時間は、担当が結果を待って次へ進むまでの時間で、リポジトリが private の間は GitHub Actions の利用の枠も使う。予算を超えるジョブは、確かめる対象を変えた PR と main への push でだけ流す。`images` のジョブ（QEMU の上の arm64 の組み立てで 20 分を超える）は、`image_inputs` のジョブが「PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・ワークフロー）を変えた」と判定したときと、main への push でだけ流れる。イメージに入るものの置き場を足した人は、ワークフローの `pattern` も直す。漏れても、main への push で確かめる。
+CI のジョブを足すか重くする人は、PR の CI が最も長いジョブで 10 分の内に終わるようにする。PR の CI の時間は、担当が結果を待って次へ進むまでの時間だからである。予算を超えるジョブは、確かめる対象を変えた PR と main への push でだけ流す。`images` のジョブ（QEMU の上の arm64 の組み立てで 20 分を超える）は、`image_inputs` のジョブが「PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・ワークフロー）を変えた」と判定したときと、main への push でだけ流れる。イメージに入るものの置き場を足した人は、ワークフローの `pattern` も直す。Dockerfile とその無視の一覧、Dockerfile が名指しで写すファイル、マニフェストが `pattern` に当たることは `spec/platform/ci_checks_spec.rb` が確かめる。ディレクトリごとに写すアプリのコードと画面は、`test` のジョブ（`eager_load`）と `e2e` のジョブ（`next build`）が確かめるので、`pattern` に入れない。それでも漏れた変更は、main への push で確かめる。
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 

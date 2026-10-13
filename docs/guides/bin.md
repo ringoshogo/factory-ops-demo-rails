@@ -82,7 +82,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、次の
 
 ## 本番のコンテナが使うもの
 
-`Dockerfile` は、`ENTRYPOINT` に `bin/docker-entrypoint`、`CMD` に `./bin/thrust ./bin/rails server` を指定する。ジョブのワーカーは、同じイメージを `bin/jobs` で起動する。メトリクスの exporter のために、Web には `METRICS_PROCESS=web`、ワーカーには `METRICS_PROCESS=jobs` と、どちらにも `PROMETHEUS_EXPORTER_PORT` を渡し、Web には `WEB_CONCURRENCY` を設定しない（理由は [config.md「exporter と値の置き場」](config.md#exporter-と値の置き場)）。
+`Dockerfile` は、`ENTRYPOINT` に `bin/docker-entrypoint`、`CMD` に `./bin/thrust ./bin/rails server` を指定する。ジョブのワーカーは、同じイメージを `bin/jobs` で起動する。メトリクスの exporter のために、Web には `METRICS_PROCESS=web`、ワーカーには `METRICS_PROCESS=jobs` と、どちらにも `PROMETHEUS_EXPORTER_PORT` を渡し、Web には `WEB_CONCURRENCY` を設定しない（理由は [config.md「exporter と値の置き場」](config.md#exporter-と値の置き場)）。公開の配置（`deploy/`）は、Web を Thruster を通さず `bin/rails server` で起こし、メトリクスを集めないので `METRICS_PROCESS` を渡さない（[ADR 009](../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)）。
 
 | ファイル | すること | 出自 |
 |---|---|---|

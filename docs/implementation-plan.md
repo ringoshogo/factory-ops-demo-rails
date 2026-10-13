@@ -1698,19 +1698,19 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
 
 | | 画面 | 視点 | 流用元の画面 | 呼ぶ入口のフィールドと mutation | 作るマイルストーン |
 |---|---|---|---|---|---|
-| 1 | `/` ログイン | 共通 | `/`（デモを開始） | `POST /session`・`DELETE /session`（`SessionsController`）、`viewer`（著者判断 3） | M4・M8 |
+| 1 | `/` ログイン | 共通 | `/`（デモを開始） | `POST /session`・`DELETE /session`（`SessionsController`）、`viewer`（著者判断 3）、ログインの直後の行き先を決める `supplier.partnerships`（著者判断 4） | M4・M8 |
 | 2 | `/settings` 自社の情報 | 共通 | —（新規） | `viewer`（取引用コード `partnerCode` は `admin` だけ） | M8 |
 | 3 ※ | `/audit-logs` 監査ログ | 共通 | —（新規） | `viewer.auditLogs`（`admin` だけ）。シードと E2E の世界は監査の行を書かないので、作った直後はイベントの受信の行だけが並ぶ（OI-141） | M19 |
 | 4 ※ | `/supplier/dashboard` ダッシュボード | 受注側 | `/dashboard` | `supplier.dashboard`、かんばんは状況ごとに `supplier.salesOrders(filter: { statuses: [<状況>] })` を別名で並べる（列ごとに `first: 10` と `totalCount`）、カードの操作は `allocateSalesOrder`・`createShippingInstruction`・`postShipment` | M26・M10・M12・M13・M40 |
 | 5 | `/supplier/sales-orders` 受注一覧 | 受注側 | `/orders` | `supplier.salesOrders`（`orderBy`、取引先と受注日の範囲の `filter`、タブの状況の `filter.statuses`、タブごとの `totalCount`） | M10・M39・M40（状況の「検収済」は M23、取消審査中の印は M21） |
 | 6 ※ | `/supplier/sales-orders/[id]` 受注詳細 | 受注側 | `/orders/[id]` | `supplier.salesOrder`、`allocateSalesOrder`・`createShippingInstruction`・`cancelSalesOrder`・`approveCancellationReview`・`rejectCancellationReview` | M10・M12・M13・M21・M22 |
-| 7 | `/supplier/part-mappings` 品番の対応表 | 受注側 | —（新規） | `supplier.partMappings`・`registerPartMapping`、照合待ちの受注は `supplier.salesOrders`、品目の候補は `supplier.items` | M11 |
+| 7 | `/supplier/part-mappings` 品番の対応表 | 受注側 | —（新規） | `supplier.partMappings`・`registerPartMapping`、照合待ちの受注は `supplier.salesOrders`、品目の候補は `supplier.items`、取引先の名前は `supplier.partnerships` | M11 |
 | 8 | `/supplier/stocks` 在庫と移動履歴 | 受注側 | `/stocks` | `supplier.stocks`（`orderBy`、`filter.belowSafetyStock`）・`supplier.stockMovements`（`filter.types`）・`adjustStock` | M12・M39 |
 | 9 | `/supplier/shipment-requests` 出荷依頼 | 受注側 | `/shipping-instructions` | `supplier.shipmentRequests`（`orderBy`、`filter.statuses`）・`createShippingInstruction`・`cancelShippingInstruction`・`postShipment` | M13・M39・M40（状況の「出荷停止中」は M21） |
 | 10 | `/supplier/items` 品目 | 受注側 | `/items` | `supplier.items`（`orderBy`、`filter.keyword`）・`saveItem`・`setItemPublished` | M9・M39 |
 | 11 ※ | `/supplier/items/[id]` 品目の単価の履歴と改定 | 受注側 | —（新規） | `supplier.item(id:)`（著者判断 6）・`Item.prices(asOf:)`・`scheduleItemPrice`・`correctItemPrice` | M27・M39 |
 | 12 | `/supplier/partnerships` 取引関係 | 受注側 | `/customers` | `supplier.partnerships`・`establishPartnership`・`revokePartnership`・`grantPermission`・`withdrawPermission`（変更は `admin` だけ） | M8 |
-| 13 ※ | `/supplier/billing` 請求の締め | 受注側 | —（新規） | `supplier.billingTerms`・`setBillingTerm`・`supplier.billableItems`・`closeBillingPeriod` | M24 |
+| 13 ※ | `/supplier/billing` 請求の締め | 受注側 | —（新規） | `supplier.billingTerms`・`setBillingTerm`・`supplier.billableItems`・`closeBillingPeriod`、未請求の合計は `supplier.dashboard.unbilledTotal`、取引先の名前は `supplier.partnerships` | M24 |
 | 14 ※ | `/supplier/invoices` 請求書一覧 | 受注側 | —（新規） | `supplier.invoices` | M24 |
 | 15 ※ | `/supplier/invoices/[id]` 請求書詳細 | 受注側 | —（新規） | `supplier.invoice`・`Invoice.items`・`BillableItem.priceExplanation`・`discardDraftInvoice`・`issueInvoice` | M24・M25・M27 |
 | 16 ※ | `/supplier/imports` 取り込みの一覧と開始 | 受注側 | —（新規） | `POST /imports/files`・`startImport`・`supplier.imports` | M29 |
@@ -1822,7 +1822,7 @@ bundle exec rspec spec/graphql/query_budget_spec.rb spec/graphql/query_complexit
 
 GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06）。M33 の完了条件には入れない。
 
-作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。M33 は、OI-144 と OI-177 が片付くまで終えない。
+作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。サイクル 05 の逸脱検査が、画面が決めた 2 つの振る舞い（取消依頼のボタンを出す発注の状況、品番照合待ちを含む受注の合計金額）を作者に確かめる行にした（OI-178・OI-179）。作者の答えが既定と違えば、画面を直す。M33 は、OI-144・OI-177〜OI-179 が片付くまで終えない。
 
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、API で並べられない列での並べ替え（M39 の判断）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
@@ -1920,6 +1920,8 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 - `sessions_spec.rb`：`SHARED_DEMO_ACCOUNTS=1` のとき、`DELETE /session` でセッションの世代が進まず、同じユーザーのほかのセッションが続くことを確かめる。無いときは、いまのとおり世代が進んでほかのセッションが切れる。条件を外すと、変数があるときの example が落ちる
 
 **作者が実機で確かめること**：作るもの 9 の手順 1〜6。結果（測ったメモリ、公開の URL で確かめたこと、流用元のデモが動くこと）を、作者が PR か台帳に書く。実機の確かめは M41 の完了条件に入れず、作者が結果を書くまで公開しない。
+
+**サイクル 05 の逸脱検査から送った確かめ**：CI の `images` のジョブの、キャッシュが効いた後の時間を測り、`adr/009`「見直す条件」の 20 分を超えるかを確かめる（OI-180）。超えれば、改善の探索の裁定（IB-93）に従ってランナーを移す。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 

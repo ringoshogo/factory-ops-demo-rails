@@ -27,7 +27,7 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
   redirect(supplierSide ? "/supplier/dashboard" : "/buyer/purchase-orders");
 }
 
-/** Rails でセッションの世代を進めてから、このオリジンの Cookie を消す。 */
+/** Rails の DELETE /session を呼んで（共有のデモのアカウントの配置では世代を進めない）から、このオリジンの Cookie を消す。 */
 export async function logout(): Promise<void> {
   await destroySession();
   (await cookies()).delete(SESSION_COOKIE);

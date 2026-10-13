@@ -163,7 +163,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      # Node は frontend/package.json の engines と同じ 22 系にする
+      # Node は 22 系にする。frontend/package.json の engines（22.12 以上）を満たす
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -275,7 +275,7 @@ jobs:
         env:
           BASE_REF: origin/${{ github.base_ref }}
         run: |
-          pattern='^(Dockerfile|Dockerfile\.dockerignore|\.dockerignore|Gemfile|Gemfile\.lock|\.ruby-version|vendor/|bin/(docker-entrypoint|thrust|rails|jobs)$|config/(application|boot|environment|puma|database|queue|recurring)\.(rb|yml)$|config/environments/production\.rb$|config/initializers/|deploy/|frontend/(Dockerfile|package\.json|package-lock\.json|next\.config\.mjs|security-headers\.json)$|db/seeds/demo_accounts\.json$|\.github/workflows/ci\.yml$)'
+          pattern='^(Dockerfile|\.dockerignore|Gemfile|Gemfile\.lock|\.ruby-version|vendor/|bin/(docker-entrypoint|thrust|rails|jobs)$|config/(application|boot|environment|puma|database|queue|recurring)\.(rb|yml)$|config/environments/production\.rb$|config/initializers/|deploy/|frontend/(Dockerfile|Dockerfile\.dockerignore|package\.json|package-lock\.json|next\.config\.mjs|security-headers\.json)$|db/seeds/demo_accounts\.json$|\.github/workflows/ci\.yml$)'
           if git diff --name-only "$(git merge-base "$BASE_REF" HEAD)" HEAD | grep -qE "$pattern"; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else

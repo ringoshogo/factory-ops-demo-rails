@@ -15,7 +15,7 @@
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
 
-画面（`frontend/`）のテストは rspec の外にあり、`bin/test-layers` は数えない。画面のテストを足す人は、URL の値を問い合わせの変数に写す関数と、Rails の呼び出し口・Cookie・エラーの分け方は単体（`frontend/lib/**/*.test.ts`、Vitest）に、画面を通す流れ・全画面の寸法とコントラスト・集計の数と飛び先の一覧の件数の一致は E2E（`frontend/e2e/`、Playwright）に置く。E2E が測る画面の一覧は `app/` のルートから集めるので、画面を足すと測る対象にも入る。
+画面（`frontend/`）のテストは rspec の外にあり、`bin/test-layers` は数えない。画面のテストを足す人は、URL の値を問い合わせの変数に写す関数と、Rails の呼び出し口・Cookie・エラーの分け方は単体（`frontend/lib/**/*.test.ts`、Vitest。画面の検査のスクリプトの単体は `frontend/scripts/**/*.test.mjs`）に、画面を通す流れ・全画面の寸法とコントラスト・集計の数と飛び先の一覧の件数の一致は E2E（`frontend/e2e/`、Playwright）に置く。E2E が測る画面の一覧は `app/` のルートから集めるので、画面を足すと測る対象にも入る。
 
 CI は、rspec の JSON の出力を `bin/test-layers` に渡し、層ごとの件数・割合・時間を表にしてジョブの要約に書く。
 

@@ -473,7 +473,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | `Query`・`Mutation` | ルートの型。`Query` は `viewer` と視点の入口だけを、`Mutation` は mutation だけを持ち、各 mutation が宣言する |
 | `Viewer` | ログイン中のユーザーと自社テナントを返す。`auditLogs` はリゾルバで、自ら宣言する |
 | `BuyerView`・`SupplierView` | データを持たない入口。フィールドはすべてリゾルバで、各自が宣言する |
-| `Tenant` | ID と名前だけの葉。認可済みの型のフィールドとしてだけ現れる |
+| `Tenant` | ID と名前だけの葉。認可済みの型のフィールドか、自社のテナントを返す `viewer.tenant` としてだけ現れる |
 | `UserError`・`PageInfo` | データを持たない |
 | `PriceExplanation`・`ImportRowError` | 認可済みの型（`BillableItem`・`Import`）のフィールドとしてだけ現れる |
 | `SupplierDashboard`・`SalesOrderStatusCount` | 自社の集計の入れ物と、その中の件数。`supplier.dashboard` のリゾルバが規則を評価し、各フィールドは自社の scope を掛けた公開 API の値を返す。中の在庫と出荷依頼は、`Stock`・`ShipmentRequest` の型が規則を評価する |
@@ -819,10 +819,10 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 - 複数の絞り込みを同時に渡すと、すべてに当たる行に絞る。
 
 ```graphql
-"どのコネクションも、nodes・edges・pageInfo と並べて持つ"
+"どのコネクションも、nodes・edges・pageInfo と並べて持つ。nodes と edges は graphql-ruby の既定のまま null を許す"
 type SalesOrderConnection {
-  nodes: [SalesOrder!]!
-  edges: [SalesOrderEdge!]!
+  nodes: [SalesOrder]
+  edges: [SalesOrderEdge]
   pageInfo: PageInfo!
   "絞り込んだ一覧の行の数。first と after によらない。選んだときだけ数える"
   totalCount: Int!

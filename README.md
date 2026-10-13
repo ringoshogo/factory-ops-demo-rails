@@ -45,7 +45,7 @@ bin/rails server
 
 ## 画面
 
-画面を手で触る開発者は、「開発環境」のシードを流して Rails を起こしてから、別の端末で `frontend/` の Next を起こす。Node は `frontend/package.json` の `engines` の版（22 系）を使う。
+画面を手で触る開発者は、「開発環境」のシードを流して Rails を起こしてから、別の端末で `frontend/` の Next を起こす。Node は 22 系を使う（`frontend/package.json` の `engines` は 22.12 以上で、CI は 22 系で流す）。
 
 ```sh
 cd frontend
