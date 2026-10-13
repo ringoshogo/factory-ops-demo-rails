@@ -1,0 +1,12 @@
+query SupplierPartnerships {
+  supplier {
+    dashboard { businessDate }
+    partnerships {
+      id
+      status
+      revokedAt
+      buyer { id name }
+      permissions
+    }
+  }
+}

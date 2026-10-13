@@ -1,0 +1,6 @@
+mutation PostShipment($input: PostShipmentInput!) {
+  postShipment(input: $input) {
+    errors { code message path }
+    shipmentRequest { id }
+  }
+}

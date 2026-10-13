@@ -1,0 +1,10 @@
+query ViewerSettings {
+  viewer {
+    id
+    name
+    email
+    role
+    partnerCode
+    tenant { id name }
+  }
+}

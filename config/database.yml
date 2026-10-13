@@ -36,13 +36,15 @@ development:
     <<: *local_owner
     database: factory_ops_demo_rails_development
 
+# TEST_DATABASE は、同じ test の環境を別の DB で動かすときに渡す。E2E は factory_ops_e2e を使い、rspec のテスト DB と分ける
+# （lib/tasks/e2e.rake）。E2E の準備は DB を作り直すので、同じ DB を使うと rspec の DB を消す
 test:
   primary:
     <<: *local_app
-    database: factory_ops_demo_rails_test
+    database: <%= ENV.fetch("TEST_DATABASE", "factory_ops_demo_rails_test") %>
   owner:
     <<: *local_owner
-    database: factory_ops_demo_rails_test
+    database: <%= ENV.fetch("TEST_DATABASE", "factory_ops_demo_rails_test") %>
 
 # 本番の owner は、DB_OWNER_USER を渡したプロセスにだけ置く。所有ロールは BYPASSRLS を持つので、
 # 資格情報はマイグレーションの工程にだけ渡し、Web とワーカーのプロセスには渡さない。

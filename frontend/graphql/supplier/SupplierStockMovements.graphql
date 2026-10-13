@@ -1,0 +1,17 @@
+query SupplierStockMovements($first: Int, $after: String, $itemId: ID, $filter: StockMovementFilter) {
+  supplier {
+    dashboard { businessDate }
+    stockMovements(first: $first, after: $after, itemId: $itemId, filter: $filter) {
+      totalCount
+      nodes {
+        id
+        type
+        quantity
+        reason
+        createdAt
+        item { id code name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

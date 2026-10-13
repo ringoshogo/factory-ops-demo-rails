@@ -117,6 +117,12 @@ RSpec.describe DemoWorld do
       expect(as(supplier) { Partnerships::Directory.for_supplier(_1).map { |partnership| partnership.buyer.name } })
         .to include(start_with(DemoWorld::LONG_BUYER_NAME))
     end
+
+    # 画面の一覧は 1 ページに 20 件を読む。E2E の一覧のページの確かめ（frontend/e2e/list-pagination.spec.ts）は、
+    # 品目が 1 ページを超えて 2 ページ目まで続くことを当てにする
+    it "品目は 22 件で、画面の 1 ページ（20 件）を超える" do
+      expect(as(supplier) { Sales::Catalog.items(_1, first: 100, after: nil).values.size }).to eq(22)
+    end
   end
 
   describe DemoWorld::Jobs do

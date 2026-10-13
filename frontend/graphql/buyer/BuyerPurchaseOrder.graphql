@@ -1,0 +1,26 @@
+query BuyerPurchaseOrder($id: ID!) {
+  supplier { dashboard { businessDate } }
+  buyer {
+    purchaseOrder(id: $id) {
+      id
+      orderNo
+      orderDate
+      desiredDeliveryOn
+      status
+      cancellationPending
+      supplier { id name }
+      lines { id partNumber quantity confirmedItemName confirmedUnitPrice }
+      inboundShipments {
+        id
+        shippedOn
+        inspection { inspectedOn }
+        lines { id shippedQuantity acceptedQuantity purchaseOrderLine { id partNumber confirmedItemName } }
+      }
+      supplierShipments {
+        shippedOn
+        lines { quantity purchaseOrderLine { id partNumber confirmedItemName } }
+      }
+      cancellationRequests { id reason outcome decidedAt }
+    }
+  }
+}

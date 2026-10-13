@@ -1,0 +1,6 @@
+mutation InspectInboundShipment($input: InspectInboundShipmentInput!) {
+  inspectInboundShipment(input: $input) {
+    purchaseOrder { id status }
+    errors { code message path }
+  }
+}

@@ -1,0 +1,31 @@
+query SupplierShipmentRequests(
+  $first: Int
+  $after: String
+  $orderBy: ShipmentRequestOrder
+  $filter: ShipmentRequestFilter
+  $allFilter: ShipmentRequestFilter
+  $openFilter: ShipmentRequestFilter
+  $shippedFilter: ShipmentRequestFilter
+  $cancelledFilter: ShipmentRequestFilter
+) {
+  supplier {
+    dashboard { businessDate }
+    shipmentRequests(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+      totalCount
+      nodes {
+        id
+        dueDate
+        status
+        salesOrder { id orderNo }
+        customer { id name }
+        lines { id quantity }
+        instruction { id plannedDate }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+    all: shipmentRequests(filter: $allFilter) { totalCount }
+    open: shipmentRequests(filter: $openFilter) { totalCount }
+    shipped: shipmentRequests(filter: $shippedFilter) { totalCount }
+    cancelled: shipmentRequests(filter: $cancelledFilter) { totalCount }
+  }
+}

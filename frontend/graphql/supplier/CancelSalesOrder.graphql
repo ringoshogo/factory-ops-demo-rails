@@ -1,0 +1,6 @@
+mutation CancelSalesOrder($input: CancelSalesOrderInput!) {
+  cancelSalesOrder(input: $input) {
+    errors { code message path }
+    salesOrder { id }
+  }
+}

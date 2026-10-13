@@ -1,0 +1,6 @@
+mutation SetItemPublished($input: SetItemPublishedInput!) {
+  setItemPublished(input: $input) {
+    item { id published }
+    errors { code message path }
+  }
+}

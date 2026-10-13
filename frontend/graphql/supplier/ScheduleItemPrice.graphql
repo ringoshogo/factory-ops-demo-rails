@@ -1,0 +1,6 @@
+mutation ScheduleItemPrice($input: ScheduleItemPriceInput!) {
+  scheduleItemPrice(input: $input) {
+    item { id }
+    errors { code message path }
+  }
+}

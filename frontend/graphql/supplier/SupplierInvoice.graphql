@@ -1,0 +1,32 @@
+query SupplierInvoice($id: ID!, $first: Int, $after: String) {
+  supplier {
+    dashboard { businessDate }
+    invoice(id: $id) {
+      id
+      invoiceNumber
+      state
+      periodStart
+      periodEnd
+      issuedAt
+      subtotal
+      taxTotal
+      total
+      customer { id name }
+      taxSummaries { taxRatePercent taxableAmount taxAmount }
+      items(first: $first, after: $after) {
+        totalCount
+        nodes {
+          id
+          inspectedOn
+          itemName
+          quantity
+          unitPrice
+          amount
+          taxRatePercent
+          priceExplanation { orderedUnitPrice pricedOn unitPriceAsOfIssue unitPriceNow }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}

@@ -12,7 +12,7 @@ Rails で B2B SaaS を 0 から作るときの設計判断を、実際に動く�
 
 - **バックエンド**：Rails（API モード）＋ PostgreSQL
 - **API**：GraphQL
-- **フロントエンド**：factory-ops-demo の Next.js を流用する。画面部品はそのまま使い、データ取得層を REST から GraphQL へ書き換え、発注側の画面を追加する
+- **フロントエンド**：`frontend/` の Next.js。factory-ops-demo の画面部品を写し、データ取得層を GraphQL に替え、発注側の画面を足した。ブラウザは Next のサーバーだけを呼び、Next のサーバーが Rails を呼ぶ。起動の手順は「画面」にある
 - **認可**：DB の RLS（自社の行と、相手を読む 3 経路の粗い条件）、Action Policy の scope（公開 API が返す行の絞り込み）、Action Policy の規則（操作ごとの許否と役割）の 3 段で分担する。どのデータにも 3 段が順に掛かる（`docs/architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
 - **コードの置き場**：業務のコードは、コンテキストごとに `packs/<パッケージ>/app/` に置く。他のパッケージから呼べるのは `app/public/` の下だけで、依存してよい先は各 `package.yml` に書く。どちらも `bin/packwerk check` が CI で検査する。Rails の基底クラスは `packs/platform` にある
 
@@ -41,6 +41,28 @@ bin/rails server
 シードを流す間は `bin/jobs` を止めておく。シードはジョブを自分で流すので、ワーカーが同時に動くと、同じジョブを両方が動かすことがある。受け手は冪等なので結果は変わらないが、ジョブの記録が重なる。ログインに使うアカウント（メールアドレスと、共通のパスワード）は `db/seeds/demo_accounts.json` にあり、シードの終わりにも表示する。パスワードはデモの手元で使う値で、本番の資格情報ではない。シードは同じ DB で 2 回目を流しても何も作らない。受注側のテナントがあれば、世界ができていると見なすからである。そのため、シードが途中で失敗したら、`bin/rails db:reset` から流し直す。シードは本番の環境では動かない。
 
 シードは `DemoWorld`（`lib/demo_world.rb`）が作る。E2E の世界も、同じ `DemoWorld` で `namespace` を変えて同じ DB に作るので、シードの中身を変えるときは `DemoWorld` を直す。`DemoWorld` は公開 API とイベントだけで世界を作り、業務の表へ直接書かない。`admin` に限る操作は、mutation と同じ規則を評価してから呼ぶ（`docs/architecture/graphql-schema.md`「役割による制限」）。各段の後に、イベントと取り込みのジョブをその場で流すので、`bin/jobs` を起こさなくても取引は進む。業務の日付（発注日・受注日・検収日・請求書の発行日）はシードを流した日になり、希望納期・出荷日・出荷指示の予定日・単価の改定日・締め日（月末）だけが、今日から決めた値になる。
+
+## 画面
+
+画面を手で触る開発者は、「開発環境」のシードを流して Rails を起こしてから、別の端末で `frontend/` の Next を起こす。Node は `frontend/package.json` の `engines` の版（22 系）を使う。
+
+```sh
+cd frontend
+npm ci
+npm run dev          # http://localhost:3001。Rails は RAILS_URL（既定 http://127.0.0.1:3000）を呼ぶ
+```
+
+`http://localhost:3001` を開き、ログインの画面に並ぶシードのアカウントを押してログインする。Rails の取り込みのファイルの受け口は、ブラウザの `Origin` を `FRONTEND_ORIGIN`（既定 `http://localhost:3001`）と比べるので、`127.0.0.1` ではなく `localhost` で開く。
+
+画面の検査は次で流す。`codegen:check` は、根の `schema.graphql` と `frontend/graphql/` の画面の問い合わせから型を作り直し、`lib/graphql/generated.ts` と一致することを確かめる。スキーマか画面の問い合わせを変えたら `npm run codegen` で作り直して commit する。
+
+```sh
+cd frontend
+npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 手元の Chrome で流す。CI は Playwright の chromium を入れて流す
+```
+
+E2E は、Playwright が E2E の DB（`factory_ops_e2e`）を作り直してワーカーごとに世界を作り、Rails（3200）・`bin/jobs`・Next（3201）と、Rails に届かない Next（3202）を起こす（`frontend/e2e/start-rails.sh`）。手元の開発のサーバーとはポートと DB が別なので、動かしたまま流せる。rspec とは同時に流さない。E2E の Rails も test の環境で `log/` のファイルに書き、ログの spec（`spec/platform/logging_spec.rb`）がそのファイルの末尾を読むからである。検収表のスクリーンショットは `E2E_SCREENSHOTS=1` を付けて流すと `frontend/test-results/acceptance/` に撮る。
 
 ## ドキュメント
 

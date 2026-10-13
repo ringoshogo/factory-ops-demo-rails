@@ -1,0 +1,6 @@
+mutation SetBillingTerm($input: SetBillingTermInput!) {
+  setBillingTerm(input: $input) {
+    billingTerm { id closingDay }
+    errors { code message path }
+  }
+}

@@ -1,0 +1,6 @@
+mutation DiscardDraftInvoice($input: DiscardDraftInvoiceInput!) {
+  discardDraftInvoice(input: $input) {
+    discardedInvoiceId
+    errors { code message path }
+  }
+}

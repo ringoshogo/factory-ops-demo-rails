@@ -151,3 +151,107 @@ jobs:
       # マイグレーションの結果と、読み込み直して書き出した結果の両方が structure.sql と一致すること
       - name: Check structure.sql round-trip
         run: bin/check-structure
+
+  # 画面（frontend/）の検査。codegen の生成物が schema.graphql と画面の問い合わせから作り直したものと一致し、
+  # 型検査・lint（コメントの検査を含む）・単体テストが通ることを確かめる
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # Node は frontend/package.json の engines と同じ 22 系にする
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check generated GraphQL types
+        run: npm run codegen:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+  # 画面を Rails・bin/jobs・Next に当てて流す E2E。Playwright の webServer が E2E の DB を作り直し、世界を作ってから
+  # 起こす（frontend/e2e/start-rails.sh）。DB とロールの準備は test のジョブと同じ
+  e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    env:
+      CI: "1"
+
+    steps:
+      # db:prepare が structure.sql を psql で読み込むので、サーバーと同じ 18 系の client を入れる（adr/001 決定 6）
+      - name: Install PostgreSQL 18 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y postgresql-client-18
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH"
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Create database roles
+        run: psql -h localhost -p 5433 -U postgres -v ON_ERROR_STOP=1 -f docker/initdb/01_roles.sql
+        env:
+          PGPASSWORD: postgres
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E
+        working-directory: frontend
+        run: npm run test:e2e
+
+      # 落ちたときに、各テストのトレースと画面を残す
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: frontend/test-results/
+          retention-days: 7

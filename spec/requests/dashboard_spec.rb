@@ -8,7 +8,7 @@ RSpec.describe "受注側のダッシュボード", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let(:member) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user) } }
   let(:actor) { Partnerships::Actor.new(user_id: member.id, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
-  let(:screen) { Rails.root.join("spec/fixtures/graphql/screens/supplier_dashboard.graphql").read }
+  let(:screen) { Rails.root.join("frontend/graphql/supplier/SupplierDashboard.graphql").read }
   # 日本時間では 10 月 12 日の 1 時で、UTC ではまだ 10 月 11 日
   let(:now) { Time.utc(2026, 10, 11, 16, 0) }
   let(:today) { Date.new(2026, 10, 12) }

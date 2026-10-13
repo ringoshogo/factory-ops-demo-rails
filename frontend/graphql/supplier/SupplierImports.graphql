@@ -1,0 +1,19 @@
+query SupplierImports($first: Int, $after: String) {
+  supplier {
+    dashboard { businessDate }
+    imports(first: $first, after: $after) {
+      totalCount
+      nodes {
+        id
+        kind
+        status
+        totalRows
+        appliedRows
+        failedRows
+        startedAt
+        finishedAt
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

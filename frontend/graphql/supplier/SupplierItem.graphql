@@ -1,0 +1,16 @@
+query SupplierItem($id: ID!, $asOf: ISO8601DateTime) {
+  supplier {
+    dashboard { businessDate }
+    item(id: $id) {
+      id
+      code
+      name
+      unit
+      unitPrice
+      taxRatePercent
+      published
+      stock { onHand allocated available safetyStock belowSafetyStock }
+      prices(asOf: $asOf) { id unitPrice validFrom validTo recordedFrom recordedTo reason }
+    }
+  }
+}

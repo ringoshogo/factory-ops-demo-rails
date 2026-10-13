@@ -1,0 +1,6 @@
+mutation AllocateSalesOrder($input: AllocateSalesOrderInput!) {
+  allocateSalesOrder(input: $input) {
+    errors { code message path }
+    salesOrder { id }
+  }
+}

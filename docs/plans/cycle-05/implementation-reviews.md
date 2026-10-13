@@ -381,3 +381,124 @@ rubocop・packwerk・brakeman・bundler-audit・`bin/check-structure`・`bin/che
 ### 残件の処理
 
 引当先が M40 の行は、着手の前と PR の前に台帳を読み、無かった。OI-07 の作者の判断（サーバーで並べ替えと絞り込み、件数）の残り（状況での絞り込み）をこの PR で反映した。OI-144（並べ替えの列を一覧の表の列に限る）は、状況での並べ替えを足さず既定のまま進めた（引当先は M33）。実装で決めたことは OI-158〜OI-160 に judgment で積み、違和感と測っていない性能は IB-79〜IB-83 に積んだ。
+
+## M33 フロントエンド
+
+`m33-frontend`（base は `main`、PR #59）。PR #55〜#58 が未マージなので、その commit も差分に見える。M33 の差分は `971e6dc..` である。流用元 factory-ops-demo の commit 958de71 の `frontend/` を写した（`6ca98dd`）。
+
+Codex は Conditional Go、Claude は Go だった。どちらの系統も、`971e6dc..9c31e25` の diff を `9c31e25` の版で読み、テストは流さず、依頼に書いた実行結果を前提にした。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex の High は 2 件で、M33-R1 は `fe3cc7b` で直した。M33-R2（OI-144 と検収表の受け入れが作者を待つ）は実装者が直せないので、作者に渡す事項として残した。High があったので Codex に読み直しを 1 回出し、`fe3cc7b` の版で、M33-R1 は解消、M33-R2 は作者を待つため未解消、新しい High は無し、判定は Conditional Go のままだった（OI-144 の判断と検収表の受け入れが済めば Go）。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Conditional Go（High 2・Medium 4・Low 1） | Conditional Go（R1 解消、R2 は作者待ち、新しい High なし） |
+| Claude | Go（Medium 2・Low 7） | 出していない（High が無かった） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R2） | 指摘（R1） |
+| 正しさ | 指摘（R1・R3・R4） | 指摘（R7・R8） |
+| 境界と規約 | 指摘なし | 指摘（R4） |
+| テストの検出力 | 指摘（R5・R6） | 指摘（R2・R3・R9） |
+| 参照の維持 | 指摘（R7） | 指摘（R5・R6） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex | R1：取り込みのファイルの送り先を決める `next.config.mjs` の `rewrites` はビルドの時の値で固まり、E2E では Rails の 3200 ではなく 3000 へ送る | route handler（`app/imports/files/route.ts`）が実行の時の `RAILS_URL` へ送る形にした（OI-167）。取り込みの E2E を足し、`rewrites` に戻すと落ちた | `fe3cc7b` |
+| High | Codex | R2：OI-144 が blocked-user のままで `--due M33` が落ち、検収表の受け入れが無い | 作者の判断と受け入れを待つ。PR と下の「残件の処理」に書いた | — |
+| Medium | Codex・Claude | Codex R5・Claude R1：ログインの画面が寸法の測りと検収表に入らない。流用元の色の検査を画面に繋いでいない | 画面の収集を `app/` の全部のルートのグループにし、ログインの画面をログインせずに測る。全画面をライトとダークで axe のコントラストで測る E2E を足し、`--muted-foreground` を薄くすると落ちた。操作中の状態は IB-88 | `fe3cc7b` |
+| Medium | Claude | R2：呼び出し口・Cookie の写し・ユーザーエラーの分け方に、壊すと落ちるテストが無い | vitest で fetch と next の関数を差し替え、エラーの表の行ごとと Cookie の往復を確かめる 16 examples を足した。`writeSessionCookie` の復号・`sessionHeader` の符号化・NOT_PERMITTED の文言を壊すと、それぞれ落ちた | `fe3cc7b` |
+| Medium | Codex | R3：品番の対応表の品目の候補が先頭 100 件に固定される | 候補をキーワードで 20 件ずつ引く形にし、予算の表の行を合わせた | `fe3cc7b` |
+| Medium | Codex | R4：検収と取消依頼の入力の誤りを、入力欄の下に出さない | `lines.<i>.acceptedQuantity` と `reason` を入力欄の下に出す | `fe3cc7b` |
+| Medium | Codex | R6：rake タスクがワーカーの守りを呼ぶことを確かめていない | 心拍の生きているワーカーを登録して `e2e:check` と `e2e:prepare` を流す example を足した。どちらの呼び出しを外しても落ちた | `fe3cc7b` |
+| Low | Claude | R3：admin に限るボタンを member で確かめていない | 5 つの画面を admin で開いて出ること（対照）と、member で出ないことを確かめる E2E を足した。受注の取消のボタンの `admin &&` を外すと落ちた | `fe3cc7b` |
+| Low | Claude | R4：ESLint が fetch の `cache: "force-cache"` を止めない | `cache` が `no-store` 以外なら落とす規則を足した | `fe3cc7b` |
+| Low | Claude | R5：Next の Cookie と Rails の db:prepare と Playwright の止め方の根拠を引いていない | next 16.4.0 の `stringifyCookie`・`parseCookie`・`MutableRequestCookiesAdapter.wrap` と、Playwright 1.64 の `gracefulShutdown` の説明を引いた | `fe3cc7b` |
+| Low | Claude | R6：計画の fragment の規則が graphql-schema.md と食い違う | 計画を「fragment は使わない」にした | `fe3cc7b` |
+| Low | Claude | R7：Int の範囲を超える入力が、欄の誤りでなくトップレベルのエラーになる | −2^31〜2^31−1 を入力欄で確かめる（上限ちょうどと上限 + 1 の単体を足した） | `fe3cc7b` |
+| Low | Claude | R8：取り込みのファイルの送信の 401 で、Cookie を消してログインへ移さない | セッションの切れた先（`/session/expired`）へ移す | `fe3cc7b` |
+| Low | Claude | R9：失効の後のカタログと、かんばんのカードの確かめが、別の理由の表示でも通る | カタログの「見られません」の文言で確かめ、ダッシュボードにカードがあることを先に確かめる | `fe3cc7b` |
+| Low | Codex | R7：graphql-schema.md のセッションの期限が、画面では延びないことを書いていない | 「1 回のリクエストがたどる道」1 に書いた | `fe3cc7b` |
+
+違和感は次のように扱った。
+
+- Claude 1：M33 を閉じる時点は OI-144 と検収表の受け入れで決まる → PR と「残件の処理」に書いた
+- Claude 2：寸法と検収表は admin の画面だけを測る → IB-84
+- Claude 3：発注詳細の受注側の出荷と取消依頼を予算で計らない → IB-85
+- Claude 4：表の部品のコメントの例に、外した得意先の住所と担当者が残る → 消した（`fe3cc7b`）
+- Claude 5：`e2e:check` が `StatementInvalid` を丸ごと握る → 表が無いときだけ握る形にした（`fe3cc7b`）
+- Claude 6：`playwright.config.ts` の「止まる」が、待つとも失敗するとも読める → しきい値を過ぎるまで失敗すると書いた（`fe3cc7b`）
+- Claude 7：`/session/expired` を GET で開くと Cookie が消える → IB-87
+- Codex 1：業務の今日だけを読む画面も、ダッシュボードの入口を通る → IB-86
+- Codex（読み直し）：取り込みのファイルの本文を route handler が全量読んでから送る → IB-89
+
+### 実装の記録
+
+#### 計画との違い
+
+計画に書かれていないことを決めたものは、OI-161〜OI-167 に judgment で積んだ。予算の表の一覧を持たない文書と詳細の親（OI-161）、取引用コードの `NOT_FOUND` を入力欄に出すこと（OI-162）、Node 22 と依存の版（OI-163）、ダッシュボードの KPI（OI-164）、一覧のタブのまとまり（OI-165）、キャッシュを使わない理由（OI-166）、取り込みのファイルを route handler で送ること（OI-167）である。
+
+ほかに、次を計画の書き方から変えた。
+
+- E2E の準備（OI-143）：計画は `bin/rails e2e:prepare` の 1 つのタスクが DB を作り直すと書いていた。`DemoWorld` を読み込んだプロセスの中で `db:drop`・`db:prepare` を呼ぶと、作り直した DB に構造を読み込まずに終わったので、`e2e:check`・`db:drop db:prepare`・`e2e:prepare` を別のコマンドに分け、`frontend/e2e/start-rails.sh` がこの順に流してから `bin/jobs` を起こす。計画の作るもの 4 を直した
+- ダッシュボードの出荷期限の件数は、出荷依頼の一覧が期限で絞れないので、同じ条件の行を並べた同じ画面の表へ飛ぶ（OI-164、`c41295b`）
+
+画面の部品のうち、受注の明細ごとの引当とカードからの一括の引当（流用元の `bulk-allocation`）は、`allocateSalesOrder` が受注の単位で引き当てるので写さなかった。全件を読んで画面で並べる純関数（`sortRows`・`buildOrderList`・`sample` の絞り込み）は、URL の値を変数に写す関数（`lib/list.ts`・`lib/*-list.ts`）に替えた。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：
+
+- `spec/graphql/query_budget_spec.rb` の、画面の問い合わせのファイルの一覧が予算の表と一致する example は、読み先を `frontend/graphql/` に替えた時点で、表に無い query の文書（`BuyerOrderForm`・`ViewerShell` など）が `the extra elements were:` に並んで落ちた（`fde0d5b` の後、表に行を足す前）
+
+ほかの spec と E2E は実装の後に書いたので、次の壊して落ちる記録で RED に代える。実装を 1 か所ずつ壊し、壊した箇所を確かめる spec か E2E だけを流し、複製から戻した。E2E は壊すたびに `next build` をやり直した。
+
+| 壊したもの | 流したもの | 落ちたもの |
+|---|---|---|
+| 1 ページの件数（`PAGE_SIZE`）を 100 にする | `e2e/list-pagination.spec.ts` | 2（1 ページ目の 20 件、2 ページ目の有無） |
+| URL の `dir` を `orderBy` の向きに逆に写す | 同上 | 1（並べ替えの見出し） |
+| 失効の後の NOT_PERMITTED を API の文言で出す | `e2e/revocation.spec.ts` | 1 |
+| `request.ts` が最初に読んだセッションを使い続ける | `e2e/tenant-switch.spec.ts` | 1 |
+| かんばんの受注済の列を引当済で絞る | `e2e/counts.spec.ts` | 1 |
+| 請求の締めの取引先の選択欄を元の幅に戻す | `e2e/layout.spec.ts` | 1（`/supplier/billing` の 390px） |
+| 測る画面の表から `/missing` の行を消す | 同上 | 収集の時点で落ちた |
+| 接続の失敗をトップレベルのエラーに分ける | `e2e/unreachable.spec.ts` | 2 |
+| 取り込みの送り先を `rewrites` に戻す | `e2e/imports.spec.ts` | 1 |
+| 受注の取消のボタンの `admin &&` を外す | `e2e/admin-only.spec.ts` | 1 |
+| `--muted-foreground` を薄くする | `e2e/contrast.spec.ts` | 複数の画面のコントラストの違反 |
+| `writeSessionCookie` の復号を外す・`sessionHeader` の符号化を外す・NOT_PERMITTED を API の文言にする | `lib/graphql/*.test.ts` | それぞれ 1 以上 |
+| 予算の表のかんばんの `page_size` を外す | `query_budget_spec.rb` | 4（1 件と 20 件の比較と、負例 3） |
+| 件数だけの問い合わせで、名前で選んでほかの選択を残す | 同上 | 11（件数だけを選ぶ example 13 のうち） |
+| `expect_lists` で上限を見ない | 同上 | 1（page_size のガード） |
+| 登録の表から `StartImport` を消す | `metrics_subscriber_spec.rb` | 1 |
+| `e2e:check`・`e2e:prepare` のワーカーの守りの呼び出しを外す | `spec/platform/e2e_prepare_spec.rb` | それぞれ 1 |
+| 守りの関数の件数の比較と DB の名前の比較を外す | 同上 | それぞれ 1 |
+| コメントの検査の台帳の ID の規則を外す | `scripts/check-comments.test.mjs` | 2 |
+
+計画の「手で確かめる」4 つは次のとおりである。`schema.graphql` の `SalesOrder.orderNo` を消すと、`npm run codegen:check` が `Cannot query field "orderNo" on type "SalesOrder"` で落ちた。`request.ts` の先頭に `"use cache"` を足すと、`npm run lint` が `no-restricted-syntax` で落ちた。並べ替えの向きを取り違える確かめは上の表の 2 行目である。検収表の受け入れは作者を待つ（下の「残件の処理」）。
+
+テストの基盤として足したものは、E2E の世界の準備（`e2e:check`・`e2e:prepare`・`start-rails.sh`）、ワーカーごとのアカウントの読み出し（`e2e/support/world.ts`）、画面の収集（`e2e/support/screens.ts`）である。準備の守りは上の表の 2 行（rake タスクの呼び出しと関数）で、画面の収集は `/missing` の行を消すと落ちることで確かめた。
+
+### 確かめたこと
+
+実装レビューの直しの後の `fe3cc7b` で、Ruby 3.4.11・Node 22.23.3 で流した。この worktree では `bin/ci` の Setup の工程が落ちる（IB-72）ので、`config/ci.rb` の Setup のほかの工程を同じコマンドで 1 つずつ流した。
+
+```sh
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 14 files, 136 tests
+cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 2 回続けて 65 passed・25 skipped（約 51 秒）
+bundle exec rspec spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb spec/platform/metrics_subscriber_spec.rb   # 0 failures
+COVERAGE=1 bundle exec rspec                         # 2810 examples, 0 failures
+BASE_REF=origin/main bin/check-branch-coverage       # 一覧は空
+bin/check-open-items --due M33                       # OI-144（blocked-user）で落ちる
+```
+
+rubocop・packwerk・`bin/check-open-items`・`bin/check-commit-refs`・`bin/check-schema-compat` も通った。分岐の網羅率の警告は 2 件（`lib/e2e_prepare.rb` のワーカーの数の分岐）で、2 件とも example を足した。rspec の全件を E2E と同時に流すと、`spec/platform/logging_spec.rb` の 1 つが落ちた。E2E の Rails も test の環境で `log/events.log` に書き、その spec がファイルの末尾を読むからである。単独で流し直して通り、`README.md`「画面」に同時に流さないことを書いた。PR #59 の CI は、`9c31e25` で全ジョブ（e2e 2 分 39 秒・frontend 40 秒・test 5 分 29 秒）が通った。
+
+手元で `bin/rails server` と `next dev` を起こし、シードのアカウントでログインして、受注側（ダッシュボード・受注・在庫・品目・取引関係・請求の締め・請求書・取り込み・自社の情報・監査ログ）と発注側（取引先とカタログ・発注・発注登録・受領請求書）の画面を開いた。書き込みは、担当の画面ごとに引当・出荷指示とその取消・出荷実績・品目の登録と公開・単価の改定の予約・在庫の調整・品番の対応の登録・取引関係の結び直しと失効・締め日の設定・下書きの破棄と締め直し・取り込み・発注の登録・取消依頼を 1 回ずつ通した。
+
+検収表のスクリーンショット（25 画面 × ライト・ダーク × 1280・1024・390px、150 枚）は `E2E_SCREENSHOTS=1` で撮れる。担当者は、ダッシュボード・発注詳細・在庫の 390px などを見比べてから作者に渡した。
+
+### 残件の処理
+
+引当先が M33 の行は、着手の前と PR の前に台帳を読んだ。OI-17・OI-142・OI-143 を閉じた。OI-06〜OI-14 は作者の判断どおりに作った（OI-07 の一覧の読み方、OI-08 の色、OI-09 のログインの画面、OI-10 のサイドバー、OI-11 の期限、OI-13 の入荷予定のタブ。OI-14 の配置は M41）。M33 で決めたことは OI-161〜OI-167 に judgment で積んだ。
+
+作者を待つものは 2 つある。OI-144（並べ替えの列を一覧の表に限るか）は blocked-user のままで、既定（限る）で作った。並べ替えの見出しは orderBy の field から作るので、作者が変えれば、API に列を足すと見出しが足りないことを型検査が知らせる。もう 1 つは検収表のスクリーンショットの受け入れで、計画は作者が受け入れるまで M33 を終えないとする。OI-138・OI-139・OI-141（E2E の世界の中身と、シードが監査の行を書かないこと）は judgment のまま作者の確認を待つ。

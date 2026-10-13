@@ -1,0 +1,6 @@
+mutation EstablishPartnership($input: EstablishPartnershipInput!) {
+  establishPartnership(input: $input) {
+    partnership { id }
+    errors { code message path }
+  }
+}

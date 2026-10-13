@@ -1,0 +1,19 @@
+query SupplierInvoices($first: Int, $after: String) {
+  supplier {
+    dashboard { businessDate }
+    invoices(first: $first, after: $after) {
+      totalCount
+      nodes {
+        id
+        invoiceNumber
+        state
+        periodStart
+        periodEnd
+        issuedAt
+        total
+        customer { id name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}

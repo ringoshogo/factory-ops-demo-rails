@@ -1,0 +1,6 @@
+mutation PlacePurchaseOrder($input: PlacePurchaseOrderInput!) {
+  placePurchaseOrder(input: $input) {
+    purchaseOrder { id }
+    errors { code message path }
+  }
+}

@@ -33,3 +33,6 @@
 # Ignore Docker-related files
 /.dockerignore
 /Dockerfile*
+
+# 画面は別のイメージで動かす。Rails のイメージに Next と node_modules を入れない
+/frontend

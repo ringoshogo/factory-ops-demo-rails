@@ -1,0 +1,6 @@
+mutation RevokePartnership($input: RevokePartnershipInput!) {
+  revokePartnership(input: $input) {
+    partnership { id status }
+    errors { code message path }
+  }
+}

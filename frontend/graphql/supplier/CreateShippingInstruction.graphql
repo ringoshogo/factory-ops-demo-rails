@@ -1,0 +1,6 @@
+mutation CreateShippingInstruction($input: CreateShippingInstructionInput!) {
+  createShippingInstruction(input: $input) {
+    errors { code message path }
+    shipmentRequest { id }
+  }
+}

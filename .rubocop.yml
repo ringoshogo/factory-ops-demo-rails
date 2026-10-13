@@ -7,6 +7,15 @@ inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 # Layout/SpaceInsideArrayLiteralBrackets:
 #   Enabled: false
 
+# frontend/ は Next の画面で、Ruby のファイルを持たない。node_modules の中のファイルを読ませないために外す。
+# 継いだ設定の除外（omakase の data/）を消さないよう、Exclude は継いだものに足す
+AllCops:
+  inherit_mode:
+    merge:
+      - Exclude
+  Exclude:
+    - "frontend/**/*"
+
 require:
   - ./lib/rubocop/cop/factory_ops/event_job_enqueue.rb
   - ./lib/rubocop/cop/factory_ops/external_effect_enqueue.rb

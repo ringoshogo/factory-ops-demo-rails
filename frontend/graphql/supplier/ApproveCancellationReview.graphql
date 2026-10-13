@@ -1,0 +1,6 @@
+mutation ApproveCancellationReview($input: ApproveCancellationReviewInput!) {
+  approveCancellationReview(input: $input) {
+    errors { code message path }
+    salesOrder { id }
+  }
+}

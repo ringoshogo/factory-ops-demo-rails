@@ -1,0 +1,6 @@
+mutation RegisterPartMapping($input: RegisterPartMappingInput!) {
+  registerPartMapping(input: $input) {
+    partMapping { id }
+    errors { code message path }
+  }
+}

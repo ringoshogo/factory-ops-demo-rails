@@ -1,0 +1,29 @@
+query SupplierPartMappings($first: Int, $after: String, $customerTenantId: ID, $itemKeyword: String) {
+  supplier {
+    partnerships { id status buyer { id name } }
+    partMappings(first: $first, after: $after, customerTenantId: $customerTenantId) {
+      totalCount
+      nodes {
+        id
+        customerPartNumber
+        customer { id name }
+        item { id code name }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+    # 登録の品目の候補。品目コードか名前の語で絞り、品目コードの順に 20 件を読む。20 件を超えれば、語で絞って選ぶ
+    candidates: items(first: 20, filter: { keyword: $itemKeyword }, orderBy: { field: CODE, direction: ASC }) {
+      totalCount
+      nodes { id code name }
+    }
+    awaiting: salesOrders(first: 10, filter: { statuses: [AWAITING_PART_MATCH] }, orderBy: { field: ORDER_NO, direction: ASC }) {
+      totalCount
+      nodes {
+        id
+        orderNo
+        customer { id name }
+        lines { id customerPartNumber quantity item { id } }
+      }
+    }
+  }
+}
