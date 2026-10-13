@@ -212,3 +212,74 @@ bin/ci                                               # すべての工程が通�
 ### 残件の処理
 
 引当先が M43 の行は、着手の前に台帳を読んだ時点で無かった（`bin/check-open-items --due M43` が通る）。IB-90 は計画どおり `DemoReset#run` に条件を置き、`DemoWorldGate` の意味は変えていない。実装レビューの違和感は IB-102 に積んだ。
+
+## M44 依存の更新を取り込み、Dependabot の更新をまとめる
+
+`m44-dependency-updates`（base は `main`、PR #76）。M43 の先端 `56b529f` から切った。M42 の PR #74 と M43 の PR #75 が未マージなので、PR の差分には M42・M43 も含まれる。M44 の差分は `56b529f..` である。
+
+### 実装の記録
+
+#### 取り込んだ更新と、取り込まなかった更新
+
+着手の時点（2026-10-13）で開いていた Dependabot の PR は、計画の表と同じ 13 本で、版も進んでいなかった。Dependabot の PR はマージも close もせず、同じ版をこのブランチで入れた。主版の上げと組の上げは commit を分け、各 commit で完了条件の 2 行目（`npm ci`・`npm ls --all`・`codegen:check`・`lint`・`typecheck`・`test:unit`）を Node 22.23.3 で流した。
+
+| commit | 更新 | 結果 |
+|---|---|---|
+| `0020b17` | `actions/checkout` 7・`actions/cache` 6・`actions/upload-artifact` 7・`actions/setup-node` 7（#15・#16・#63・#64） | 取り込んだ。ワークフローの同じ action の `uses:` をすべて同じ主版にした。PR の CI で確かめる |
+| `1812763` | `react`・`react-dom` 19.3.0（#62・#69） | 取り込んだ。画面の検査と E2E が通った |
+| `b930131` | `graphql` 17.0.2（#61） | 取り込んだ。`codegen:check` が生成物の変化なしで通った |
+| — | `eslint` 10.12.0（#70） | 取り込まなかった（下） |
+| `5264b18` | `cn` 0.4.0（#68） | 取り込んだ。画面の検査と E2E が通った |
+| `25379aa` | `@base-ui/react` 1.9.0・`lucide-react` 1.54.0（#67・#71） | 取り込んだ。どちらも小版の上げで、1 つの commit にまとめた。画面の検査と E2E が通った |
+
+`eslint` 10.12.0 は、`npm install --save-dev eslint@10.12.0` が通り、`npm run lint` も通ったが、`npm ls --all` が失敗で終わった。`eslint-config-next` 16.4.0 が入れる `eslint-plugin-import`（peer は `^2 || … || ^9`）・`eslint-plugin-jsx-a11y`（`^3 || … || ^9`）・`eslint-plugin-react`（`^3 || … || ^9.7`）が `eslint` 10 を範囲に含まない。#70 の CI は `frontend`・`e2e`・`images` を含めてすべて通っていたが、CI は `npm ls --all` を流さない。計画の作るもの 1 のとおり、commit にせず外して、計画の表の取り込まない行に移した（`882f474`）。
+
+```
+npm error code ELSPROBLEMS
+npm error invalid: eslint@10.12.0 .../frontend/node_modules/eslint
+```
+
+`lucide-react` は着手の時点で 1.56.0 が出ていたが、#71 の版（1.54.0）で入れた。PR の版が進んでいなかったからである。
+
+#### 計画との違い
+
+- `eslint` 10 を取り込まない行に移した（上）。#70 を `ignore` にせず開いたままにすることは計画に無く、OI-185 に積んだ。上げる時機を IB-103 に、CI が `npm ls --all` を流さないことを IB-104 に積んだ
+- 「文書に残すこと」のほかに、`ci.yml` の `actions/setup-node` の直前のコメント（`engines` を「22.12 以上」と書いていた）を、`engines` の新しい形に合わせた
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：`spec/platform/dependency_updates_spec.rb` を書き、`dependabot.yml` と `engines` を変える前に流した（`56b529f` の作業ツリー、10 examples, 7 failures）。落ちたのは、`groups`（`expected [...] to all include "groups"`）、`engines` の形（`expected ">=22.12" to match /\A\^\d+\.\d+\z/`）、小版と修正版のまとまりの `update-types`（`got: {"bundler" => [], "npm" => []}`）、組のまとまりの位置（`expected: not nil`）、0 系の依存の除外（`got: ["class-variance-authority", "cn"]`）、github-actions のまとまり（`expected {} to include {"patterns" => ["*"]}`）、`@types/node` の `ignore`（`expected [] to include (a hash including ...)`）の 7 つである。Node の主版をそろえる 3 つ（`setup-node`・`NODE_VERSION`・`@types/node`）は、いまの版がそろっているので通った。これらは下の壊して落ちる記録で RED に代える。
+
+GREEN の後に 1 か所ずつ壊し、`bundle exec rspec spec/platform/dependency_updates_spec.rb` を流して、ファイルの複製から戻した。
+
+| 壊したもの | 落ちたもの |
+|---|---|
+| `frontend/Dockerfile` の `NODE_VERSION` を 24.11.0 にする | 1（`NODE_VERSION` の example） |
+| 2 つ目の `actions/setup-node` の `node-version` を 24 にする | 1（`setup-node` の example） |
+| 2 つ目の `actions/setup-node` の `node-version` を `node-version-file` に替える | 1（同上） |
+| 1 つ目の `actions/setup-node` の `node-version` を文字列の `"24.x"` にする | 1（同上）。`"22.x"` にすると通る |
+| `@types/node` の範囲を `^26.6.5` にする | 1（`@types/node` の example） |
+| bundler と npm の小版と修正版のまとまりの `update-types` に `major` を足す | 1（`update-types` の example） |
+| npm の組のまとまりを、小版と修正版のまとまりの後ろへ動かす | 1（組のまとまりの位置の example） |
+| `cn` を `exclude-patterns` から外す | 1（0 系の依存の example） |
+
+`npm ls --all` が組の依存の不一致を捕まえることは、`npm install --legacy-peer-deps --save-exact react-dom@19.3.0` で `react` を 19.2.8 のままにした木で確かめた。`npm ls --all` が `npm error code ELSPROBLEMS` と `npm error invalid: react@19.2.8 ...`（`"^19.3.0" from node_modules/react-dom`）で、終了コード 1 で終わった。`package.json` と `package-lock.json` を戻して `npm ci` を流し直した後は、0 で終わった。
+
+#### 手元で流したもの
+
+`882f474` の作業ツリーで、Ruby 3.4.11・PostgreSQL 18・Node 22.23.3 で流した。
+
+```sh
+bundle exec rspec spec/platform/dependency_updates_spec.rb spec/platform/ci_checks_spec.rb   # 18 examples, 0 failures
+cd frontend && npm ci && npm ls --all > /dev/null && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 通った。test:unit は 136 tests
+cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 65 passed、25 skipped（E2E_SCREENSHOTS が無いときに飛ばすスクリーンショット）
+bin/ci   # すべての工程が通った。rspec は 2873 examples, 0 failures
+bin/check-open-items --due M44
+bin/check-commit-refs
+```
+
+分岐の網羅率の警告は 0 件だった。
+
+### 残件の処理
+
+引当先が M44 の行は、着手の前に台帳を読んだ時点で無かった。OI-163（画面の Node を 22 系にした判断）は、`engines` を `^22.12` にして主版を 1 つに決め、spec で 4 か所をそろえたので、内容は変わらない。IB-99 は計画どおり `typescript` 7 の PR を開いたままにした。実装で積んだのは OI-185・IB-103・IB-104 である。
