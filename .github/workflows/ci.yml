@@ -350,72 +350,18 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max
 
-  probe_full:
-    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
-    if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
-  probe_skipped:
-    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'skipped') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
-  probe_failure:
-    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
-  probe_event:
-    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
-    if: ${{ github.event_name == 'push' && !cancelled() }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
-  probe_direct_skipped:
-    needs: [ scan_ruby ]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'skipped') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
-  probe_images_skipped:
-    needs: [ images ]
-    if: ${{ !cancelled() && !contains(needs.*.result, 'skipped') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
-  probe_success_images:
-    needs: [ images ]
-    if: ${{ success() }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Print needs
-        run: echo '${{ toJSON(needs) }}'
-
   # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
   # ジョブの if: は、ジョブの名前を並べずに needs.*.result で決める。名前を並べると、needs に足したジョブを
   # if: に足し忘れたときに、そのジョブが落ちても push する。!cancelled() を書くのは、状態の関数が無いと GitHub が
   # 暗黙の success() を足し、push では skip される image_inputs から依存の連なりで publish も skip されるからである。
+  # needs.*.result に skipped が無いことは条件にしない。ジョブの段の if: では、needs の先で skip された image_inputs が
+  # skipped として見え、push のたびに publish が skip される（ステップの段の同じ式は真になる）。
   # ログインと push のステップの if: は、main 以外のブランチへの push で publish が走っても GHCR に何も置かないためで、
   # ワークフローの契機を一時に広げて publish の条件を確かめるときにも、この if: でステップが skip される
   publish:
-    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images, probe_full, probe_skipped, probe_failure, probe_event, probe_direct_skipped, probe_images_skipped, probe_success_images ]
-    if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') }}
+    needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
+    if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
