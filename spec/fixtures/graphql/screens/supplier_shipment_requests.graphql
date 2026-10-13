@@ -1,6 +1,6 @@
-query SupplierShipmentRequests($first: Int, $after: String, $orderBy: ShipmentRequestOrder) {
+query SupplierShipmentRequests($first: Int, $after: String, $orderBy: ShipmentRequestOrder, $filter: ShipmentRequestFilter) {
   supplier {
-    shipmentRequests(first: $first, after: $after, orderBy: $orderBy) {
+    shipmentRequests(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
       totalCount
       nodes {
         id

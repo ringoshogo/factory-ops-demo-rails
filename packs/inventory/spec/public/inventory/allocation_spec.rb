@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 引当・解除・消費・受注明細 ID ごとの量と、入出庫の調整（docs/architecture/data-model.md「在庫（`inventory`）」「取消と出荷の競合を止める場所」）
 RSpec.describe Inventory::Allocation do
@@ -76,5 +77,38 @@ RSpec.describe Inventory::Allocation do
     expect(described_class.consume(actor, [ line_ids[0] ]).failures.map(&:code)).to eq([ :conflict ])
     expect(described_class.consume(actor, [ line_ids[1] ]).failures.map(&:code)).to eq([ :conflict ])
     expect(stock.to_h.slice(:on_hand, :allocated)).to eq(on_hand: 5, allocated: 0)
+  end
+end
+
+# 受注の状況の式が結ぶ、受注明細 ID ごとの有効な引当数量の副問い合わせ（docs/adr/010）。他社の引当は他社の受注明細を指し、
+# 自社の受注明細には結ばれないので、副問い合わせから scope を外しても入口の行列では捕まらない。
+# RLS を開き、他社の名義で自社の受注明細を指す引当を見えるようにして確かめる（docs/guides/testing.md「行列テストとの分担」）
+RSpec.describe Inventory::Allocation, ".active_quantities_sql" do
+  include_context "RLS の SELECT と UPDATE を開く"
+
+  let(:tenant) { FactoryBot.create(:tenant) }
+  let(:other) { FactoryBot.create(:tenant) }
+  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
+  let(:line_ids) { Array.new(3) { SecureRandom.uuid } }
+
+  def quantities(subquery)
+    columns = subquery.columns.values_at(:line_id, :allocated_quantity)
+    ActiveRecord::Base.lease_connection.select_rows("SELECT #{columns.join(', ')} FROM (#{subquery.sql}) q").to_h
+  end
+
+  it "操作者の scope を掛け、解除した引当を除いて、受注明細 ID ごとの引当数量を返す" do
+    Tenancy.with_tenant(other.id) { FactoryBot.create(:allocation, sales_order_line_id: line_ids[0], quantity: 5) }
+    Tenancy.with_tenant(tenant.id) do
+      FactoryBot.create(:allocation, sales_order_line_id: line_ids[1], quantity: 3, status: "released")
+      FactoryBot.create(:allocation, sales_order_line_id: line_ids[2], quantity: 1)
+      cross_read!
+      # 対照：開いた後は、scope を掛けない同じ条件の副問い合わせに、他社の名義で自社の受注明細を指す引当が入る
+      unscoped = Inventory::StockAllocation.where.not(status: "released").group(:sales_order_line_id)
+        .select(:sales_order_line_id, Inventory::StockAllocation.arel_table[:quantity].sum.as("quantity"))
+      expect(quantities(SqlSubquery.of(unscoped, line_id: "sales_order_line_id", allocated_quantity: "quantity")))
+        .to eq(line_ids[0] => 5, line_ids[2] => 1)
+
+      expect(quantities(described_class.active_quantities_sql(actor))).to eq(line_ids[2] => 1)
+    end
   end
 end

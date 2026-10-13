@@ -38,11 +38,19 @@ module Inventory
 
     # 受注明細 ID ごとの引当数量。解除した引当は数えず、引当の無い明細は 0 になる
     def self.quantities_for(actor, sales_order_line_ids)
-      sales_order_line_ids.index_with(0).merge(
-        Scope.call(actor, StockAllocation.all).where(sales_order_line_id: sales_order_line_ids).where.not(status: "released")
-          .group(:sales_order_line_id).sum(:quantity)
-      )
+      sales_order_line_ids.index_with(0).merge(active(actor).where(sales_order_line_id: sales_order_line_ids).group(:sales_order_line_id).sum(:quantity))
     end
+
+    # 受注明細 ID ごとの引当数量を返す副問い合わせ。受注の状況の SQL の式が結ぶ（docs/adr/010-状況の導出をSQLの式1つにする.md）。
+    # 条件は quantities_for と同じで、操作者の scope を掛けた後に SQL の文字列にするので、受け取る側は条件を外せない。
+    # 引当の無い明細は行を持たない。役割の名前（line_id・allocated_quantity）を在庫の列の名前と別にし、受け取る側が在庫の列を書かない
+    def self.active_quantities_sql(actor)
+      SqlSubquery.of(active(actor).group(:sales_order_line_id).select(:sales_order_line_id, StockAllocation.arel_table[:quantity].sum.as("quantity")),
+        line_id: "sales_order_line_id", allocated_quantity: "quantity")
+    end
+
+    # 解除していない引当
+    def self.active(actor) = Scope.call(actor, StockAllocation.all).where.not(status: "released")
 
     def self.move(actor, sales_order_line_ids, type, status)
       item_ids = Scope.call(actor, StockAllocation.all).where(sales_order_line_id: sales_order_line_ids).pluck(:item_id)
@@ -61,6 +69,6 @@ module Inventory
       Scope.call(actor, StockAllocation.all).where(sales_order_line_id: sales_order_line_ids)
         .order(:sales_order_line_id).lock.index_by(&:sales_order_line_id)
     end
-    private_class_method :move, :locked_allocations
+    private_class_method :active, :move, :locked_allocations
   end
 end

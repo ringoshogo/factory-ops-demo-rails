@@ -5,31 +5,31 @@ module Fulfillment
     # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）
     ORDER_COLUMNS = { due_date: [ ShipmentRequest.arel_table[:due_date], :date ] }.freeze
 
-    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる
-    def self.list(actor, first:, after:, order_by: nil)
-      Page.of(Scope.call(actor, ShipmentRequest.all), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |requests|
-        to_values(actor, requests)
-      end
+    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
+    # filter は状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
+    def self.list(actor, first:, after:, order_by: nil, filter: {})
+      Page.of(filtered(Scope.call(actor, ShipmentRequest.all), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS),
+        columns: [ ShipmentRequestStatus.expression.as("status") ]) { to_values(_1) }
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
     def self.find(actor, id)
-      to_values(actor, Scope.call(actor, ShipmentRequest.where(id:))).first
+      to_values(with_status(Scope.call(actor, ShipmentRequest.where(id:)))).first
     end
 
     # 受注 ID ごとの出荷依頼。出荷可能になる前の受注は含まない
     def self.for_sales_orders(actor, sales_order_ids)
-      to_values(actor, Scope.call(actor, ShipmentRequest.where(sales_order_id: sales_order_ids))).index_by(&:sales_order_id)
+      to_values(with_status(Scope.call(actor, ShipmentRequest.where(sales_order_id: sales_order_ids)))).index_by(&:sales_order_id)
     end
 
     DUE_WITHIN_LIMIT = 100
 
     # 出荷も取消もしていない出荷依頼（出荷待ち・出荷指示済・出荷停止中）のうち、期限が today から days 日後以下のもの。
-    # 期限を過ぎたものも含め、期限の昇順で上限の件数まで返す。期限の無い出荷依頼は返さない
+    # 期限を過ぎたものも含め、期限の昇順で上限の件数まで返す。期限の無い出荷依頼は返さない。
+    # 状況は一覧の絞り込みと同じ式で絞り、ダッシュボードと、そこから飛ぶ一覧の状況が食い違わないようにする
     def self.due_within(actor, today:, days:)
-      requests = Scope.call(actor, ShipmentRequest.where(cancelled_at: nil, due_date: ..today + days))
-        .where.not(id: Shipment.select(:shipment_request_id)).order(:due_date, :id).limit(DUE_WITHIN_LIMIT)
-      to_values(actor, requests)
+      requests = filtered(Scope.call(actor, ShipmentRequest.where(due_date: ..today + days)), statuses: %i[ready instructed on_hold])
+      to_values(with_status(requests.order(:due_date, :id).limit(DUE_WITHIN_LIMIT)))
     end
 
     def self.lines_for(actor, request_ids)
@@ -57,21 +57,22 @@ module Fulfillment
       shipment_ids.index_with { [] }.merge(lines.group_by(&:shipment_id))
     end
 
-    def self.to_values(actor, requests)
-      requests = requests.to_a
-      ids = requests.map(&:id)
-      instructed = Scope.call(actor, ShippingInstruction.active.where(shipment_request_id: ids)).pluck(:shipment_request_id).to_set
-      shipped = Scope.call(actor, Shipment.where(shipment_request_id: ids)).pluck(:shipment_request_id).to_set
-      held = Scope.call(actor, ShippingHold.active.where(sales_order_id: requests.map(&:sales_order_id))).pluck(:sales_order_id).to_set
+    # statuses の空の配列は、Arel の In が 1=0 にするので 0 件になる（activerecord 8.1 の Arel::Visitors::ToSql#visit_Arel_Nodes_In）
+    def self.filtered(relation, statuses: nil)
+      statuses.nil? ? relation : relation.where(ShipmentRequestStatus.expression.in(statuses.map(&:to_s)))
+    end
+
+    def self.with_status(relation) = relation.select(ShipmentRequest.arel_table[Arel.star], ShipmentRequestStatus.expression.as("status"))
+
+    # requests は状況の式を status の別名で読んだ出荷依頼
+    def self.to_values(requests)
       requests.map do |request|
         ShipmentRequestValue.new(id: request.id, owner_tenant_id: request.owner_tenant_id, sales_order_id: request.sales_order_id,
-          buyer_tenant_id: request.buyer_tenant_id, due_date: request.due_date,
-          status: ShipmentRequestStatus.derive(request, instructed: instructed.include?(request.id), shipped: shipped.include?(request.id),
-            held: held.include?(request.sales_order_id)))
+          buyer_tenant_id: request.buyer_tenant_id, due_date: request.due_date, status: request["status"].to_sym)
       end
     end
 
     def self.to_value(klass, record) = klass.new(**record.slice(*klass.members.map(&:to_s)).symbolize_keys)
-    private_class_method :to_values, :to_value
+    private_class_method :filtered, :with_status, :to_values, :to_value
   end
 end

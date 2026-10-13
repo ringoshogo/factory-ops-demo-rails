@@ -1,17 +1,24 @@
 module Purchasing
-  # 発注の状況を、発注の時刻列と購買の中の入荷・検収から優先順で導出する
-  # （docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」）。
-  # 入荷と検収の有無は、呼ぶ側が購買の表から求めて渡す
+  # 発注の状況を、発注の時刻列と購買の中の入荷・検収から優先順で導出する SQL の式
+  # （docs/architecture/data-model.md「状態は保存せず、時刻列から導出する」、docs/adr/010-状況の導出をSQLの式1つにする.md）。
+  # 公開 API の表示・絞り込み・件数が、この式だけを読む
   module PurchaseOrderStatus
-    def self.derive(order, inbound: false, inspected: false)
-      if order.supplier_cancelled_at then :supplier_cancelled
-      elsif order.cancelled_at then :cancelled
-      elsif inspected then :inspected
-      elsif inbound then :inbound
-      elsif order.accepted_at then :accepted
-      elsif order.awaiting_match_at then :awaiting_supplier_confirmation
-      else :sent
-      end
+    # 導出の優先順に並べた 7 つの状況
+    ALL = %i[supplier_cancelled cancelled inspected inbound accepted awaiting_supplier_confirmation sent].freeze
+
+    # 入荷と検収は、所有テナントと親の組の外部キーで発注と同じテナントに限られる
+    def self.expression
+      orders = PurchaseOrder.arel_table
+      inbound = InboundShipment.where(InboundShipment.arel_table[:purchase_order_id].eq(orders[:id]))
+
+      Arel::Nodes::Case.new
+        .when(orders[:supplier_cancelled_at].not_eq(nil)).then("supplier_cancelled")
+        .when(orders[:cancelled_at].not_eq(nil)).then("cancelled")
+        .when(inbound.joins(:inspection).arel.exists).then("inspected")
+        .when(inbound.arel.exists).then("inbound")
+        .when(orders[:accepted_at].not_eq(nil)).then("accepted")
+        .when(orders[:awaiting_match_at].not_eq(nil)).then("awaiting_supplier_confirmation")
+        .else("sent")
     end
   end
 end

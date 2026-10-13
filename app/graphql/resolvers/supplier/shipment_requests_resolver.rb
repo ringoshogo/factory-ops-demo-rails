@@ -6,10 +6,11 @@ module Resolvers
 
       type Types::ShipmentRequestType.connection_type, null: false
       argument :order_by, Types::ShipmentRequestOrderType, required: false
+      argument :filter, Types::ShipmentRequestFilterType, required: false
 
-      def resolve(order_by: nil)
+      def resolve(order_by: nil, filter: nil)
         Connections::PagedQuery.new do |first:, after:|
-          Fulfillment::ShipmentRequests.list(current_user, first:, after:, order_by: order_by&.to_h)
+          Fulfillment::ShipmentRequests.list(current_user, first:, after:, order_by: order_by&.to_h, filter: filter.to_h)
         end
       end
     end

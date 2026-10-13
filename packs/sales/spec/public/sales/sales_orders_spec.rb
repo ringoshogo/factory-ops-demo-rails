@@ -86,6 +86,25 @@ RSpec.describe Sales::SalesOrders do
         partially_allocated: 2, received: 3)
     end
 
+    # ダッシュボードの数と、そこから飛ぶ一覧の件数が食い違わない（docs/architecture/graphql-schema.md「読み取りの一覧」）
+    it "状況ごとの件数は、その状況で絞った一覧の件数と同じ" do
+      Tenancy.with_tenant(supplier.id) do
+        order(cancelled_at: Time.current)
+        order(shipped_at: Time.current, inspected_at: Time.current)
+        order(shipped_at: Time.current)
+        order(matched: false)
+        order(allocated: [ 2, 2 ])
+        2.times { order(allocated: [ 2, 0 ]) }
+        order
+      end
+      Tenancy.with_tenant(other.id) { order(allocated: [ 2, 2 ]) }
+      totals = Sales::SalesOrderStatus::ALL.index_with { |status| list_ids(filter: { statuses: [ status ] }).last }
+
+      # 対照：どの状況にも受注がある
+      expect(totals).to eq(cancelled: 1, inspected: 1, shipped: 1, awaiting_part_match: 1, allocated: 1, partially_allocated: 2, received: 1)
+      expect(count_by_status).to eq(totals)
+    end
+
     it "受注の無い状況も 0 件で返し、他社の受注を数えない" do
       Tenancy.with_tenant(supplier.id) { order(cancelled_at: Time.current) }
       Tenancy.with_tenant(other.id) do

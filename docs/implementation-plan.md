@@ -1631,11 +1631,11 @@ bin/check-schema-compat   # 破壊的な変更 0 件
    | 出荷依頼 | 出荷依頼の時刻列、有効な出荷指示・出荷実績・解除されていない出荷停止の有無 | 無い（出荷の表だけ） |
 
 2. 絞り込み：`SalesOrderFilter`・`PurchaseOrderFilter` に `statuses: [<状況の enum>!]` を足し、出荷依頼に `ShipmentRequestFilter`（`statuses: [ShipmentRequestStatus!]`）を足す。省くか null なら絞らず、空の配列なら 0 件を返す。M39 の列の絞り込みと同時に渡せば、両方に当たる行に絞る。件数（`totalCount`）は同じ条件で数える。取消の依頼中・審査中（`cancellationPending`・`cancellationReviewPending`）は状況ではないので、絞り込みに入れない（`architecture/graphql-schema.md`「状況の enum」）。
-3. ダッシュボードの件数：`Sales::SalesOrders.count_by_status` を、同じ式で `GROUP BY` して数える形にする。いまは全件を読んで Ruby で数えている。0 件の状況も返す形は変えない。
-4. 行列テスト：M39 で足した 3 つの一覧の変種の行（`#filter`）に、`statuses` を足す。世界には、絞る状況に当たる行と当たらない行を持たせる。引当数量の副問い合わせから scope を外しても、行列の 2 回目の比較では捕まらない。他社の引当は他社の受注明細を指し、自社の受注明細には結ばれないので、RLS を開いて他社の引当が見えても状況は変わらないからである。捕まえるには他社の名義で自社の受注明細を指す引当が要るが、公開 API とイベントでは作れない。そこで、`allocation_spec.rb` に、共有の文脈「RLS の SELECT と UPDATE を開く」（M38）で他社の引当を見えるようにしてから副問い合わせを流し、他社の行が入らないことを確かめる example を足す。同じ example で、scope を掛けなければ他社の行が入ることを先に確かめる（対照）（`guides/testing.md`「行列テストとの分担」）。
+3. ダッシュボードの件数：`Sales::SalesOrders.count_by_status` を、同じ式で `GROUP BY` して数える形にする。いまは全件を読んで Ruby で数えている。0 件の状況も返す形は変えない。ダッシュボードの出荷期限（`Fulfillment::ShipmentRequests.due_within`）の「出荷も取消もしていない」も、出荷依頼の式で出荷待ち・出荷指示済・出荷停止中に絞る形にする（OI-159）。
+4. 行列テスト：M39 で足した 3 つの一覧の変種の行に、`statuses` を足す。出荷依頼の行は並べ替えだけの `#orderBy` なので、`#filter` に変えて並べ替えと状況を渡す（OI-158）。世界には、絞る状況に当たる行と当たらない行を持たせる。引当数量の副問い合わせから scope を外しても、行列の 2 回目の比較では捕まらない。他社の引当は他社の受注明細を指し、自社の受注明細には結ばれないので、RLS を開いて他社の引当が見えても状況は変わらないからである。捕まえるには他社の名義で自社の受注明細を指す引当が要るが、公開 API とイベントでは作れない。そこで、`allocation_spec.rb` に、共有の文脈「RLS の SELECT と UPDATE を開く」（M38）で他社の引当を見えるようにしてから副問い合わせを流し、他社の行が入らないことを確かめる example を足す。同じ example で、scope を掛けなければ他社の行が入ることを先に確かめる（対照）（`guides/testing.md`「行列テストとの分担」）。
 5. クエリ数の予算：受注・発注・出荷依頼の画面の問い合わせに渡す `$filter` に、予算の spec が作る親がすべて当たる状況の集まりを足す。
 
-テナントの境界：書き込みは足さない。式は、公開 API の scope を掛けた relation に列を足すだけで、RLS と policy は変えない。在庫の副問い合わせは在庫の policy の scope を掛けた後に SQL の文字列にするので、受け取る受注のパッケージは条件を外せない。所有の条件を RLS に任せない（`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。コンテキストの境界：受注はすでに在庫の公開 API（`Inventory::Allocation`）に依存しているので、依存の向きは変わらない。受注のパッケージは在庫のモデルも relation も受け取らず、在庫の表の名前と列を書かない（列の名前は値が持つ）。
+テナントの境界：書き込みは足さない。式は、公開 API の scope を掛けた relation に列を足すだけで、RLS と policy は変えない。在庫の副問い合わせは在庫の policy の scope を掛けた後に SQL の文字列にするので、受け取る受注のパッケージは条件を外せない。所有の条件を RLS に任せない（`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。式が読む子の行（受注明細・入荷・検収・出荷指示・出荷実績）は、所有テナントと親の組の外部キーで親と同じテナントに限られる。外部キーの無い出荷停止は、式が所有テナントを出荷依頼にそろえる（OI-160）。コンテキストの境界：受注はすでに在庫の公開 API（`Inventory::Allocation`）に依存しているので、依存の向きは変わらない。受注のパッケージは在庫のモデルも relation も受け取らず、在庫の表の名前と列を書かない（列の名前は値が持つ）。
 
 **判断**：別のコンテキストの値を、SQL の中でどう渡すか
 
@@ -1661,7 +1661,7 @@ bundle exec rspec spec/matrix spec/graphql/query_budget_spec.rb spec/requests/da
 
 `allocation_spec.rb` の、RLS を開いても副問い合わせに他社の引当が入らないことを確かめる example も、このコマンドに含まれる。期待の不一致で最初に落とすのは、3 つの状況の spec を、導出表の行ごとに 1 件ずつ作って `statuses` で絞り、その 1 件だけが返ることを確かめる形に書き直した example である（いまは `derive` に値を渡して確かめている）。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
 
-- 式の優先順を 2 つ入れ替えると、両方に当たる行（取消済みで出荷済みの受注など）の example が落ちる
+- 式の優先順を 2 つ入れ替えると、両方に当たる行（検収済で出荷済の受注など）の example が落ちる。取消済と出荷済のように DB の CHECK 制約で同時に持てない組は作れないので、組まない
 - 引当数量の副問い合わせから解放済みを除く条件を外すと、受注の状況の spec の、引当を解放した受注の example が落ちる。副問い合わせから scope を外すと、`allocation_spec.rb` の RLS を開いた example が落ちる
 - `count_by_status` を別の条件で数えると、`sales_orders_spec.rb` の、状況ごとの件数と `statuses` で絞った一覧の件数を比べる example が落ちる
 

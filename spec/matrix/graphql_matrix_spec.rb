@@ -144,6 +144,30 @@ RSpec.describe "入口の行列", type: :request do
     end
   end
 
+  # 状況でも絞る変種の行は、状況を外すと件数が増えることも確かめる。列の絞り込みだけで世界が絞れるので、
+  # 列には当たり状況で外れる行が世界に無くても上の確かめは通り、状況の絞り込みの scope の抜けが 2 回目の比較に出ない
+  it "状況でも絞る変種の行は、どのペルソナでも、状況を外した件数より少なく、0 より多い件数に絞る" do
+    rows = MatrixExpectations::GRAPHQL.select { |key, _entry| key.end_with?("#filter") }
+      .transform_values { |entry| [ entry[:query], entry[:variables].call(world) ] }
+      .select { |_key, (_query, variables)| variables[:filter].key?(:statuses) }
+    offenders = rows.flat_map do |key, (query, variables)|
+      type_name, field_name = self.class.field_key(key).split(".")
+      MatrixWorld::PERSONAS.filter_map do |persona|
+        login_as(world.users[persona])
+        all, filtered = [ variables.merge(filter: variables[:filter].except(:statuses)), variables ].map do |each|
+          post "/graphql", params: { query:, variables: each }, as: :json
+          response.parsed_body.dig("data", *parent_paths.fetch(type_name), field_name, "totalCount")
+        end
+        [ key, persona, all, filtered ] unless filtered.positive? && filtered < all
+      end
+    end
+
+    # 対照：受注・発注・出荷依頼の 3 つの行が状況でも絞る
+    expect(rows.keys).to contain_exactly("BuyerView.purchaseOrders#filter", "SupplierView.salesOrders#filter",
+      "SupplierView.shipmentRequests#filter")
+    expect(offenders).to eq([])
+  end
+
   it "期待値はすべてのペルソナについて、決めた結果の種類で書かれている" do
     MatrixExpectations::GRAPHQL.each do |key, entry|
       expect(entry[:expect].keys).to match_array(MatrixWorld::PERSONAS), key

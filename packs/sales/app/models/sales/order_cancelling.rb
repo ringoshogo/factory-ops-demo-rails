@@ -8,11 +8,10 @@ module Sales
     def self.cancel(actor, order, cancellation_review_id: nil)
       return conflict("Sales order is cancelled or shipped") if order.cancelled_at || order.shipped_at
 
-      lines = order.lines.lock.to_a
-      line_ids = lines.map(&:id)
+      line_ids = order.lines.lock.ids
       # 「出荷可能」は全明細が全量引当になったときに出し、全量引当は解除か消費でしか崩れない。
       # そのため、解除の前に引当済なら、この受注について「出荷可能」を出している
-      ready = SalesOrderStatus.derive(order, lines, allocated: Inventory::Allocation.quantities_for(actor, line_ids)) == :allocated
+      ready = SalesOrder.where(id: order.id).pick(SalesOrderStatus.expression(actor)) == "allocated"
       return conflict("Allocations are consumed") unless Inventory::Allocation.release(actor, line_ids).success?
 
       order.update!(cancelled_at: Time.current)

@@ -19,7 +19,7 @@
    - `GraphqlController` は、スキーマを実行する前に、ログの文脈（リクエスト ID・テナント・ユーザー・操作名・相関 ID）を `Rails.event.set_context` で設定する。文脈は Fiber のストレージにあり、Dataloader の Fiber は作られた時点の値を写して持つので、実行の途中で設定した値はフィールドの解決に届かない（`../implementation-plan.md` M18）。
    - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「取引関係と権限付与（`partnerships`）」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
-3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。
+3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。別のコンテキストの値を SQL の中で読む公開 API（受注の状況が読む在庫の引当数量）には、相手の公開 API が、scope を掛けた後に SQL の文字列にした副問い合わせを、列の名前と一緒に値（`SqlSubquery`、`packs/platform`）で返す。受け取る側は条件を足さずに副問い合わせとして結ぶだけで、相手の relation もモデルも受け取らない。relation を受け取ると、`unscope`・`rewhere`・`update_all` で相手の scope と書き込みの入口を越えられるからである（`../adr/010-状況の導出をSQLの式1つにする.md`）。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
 5. **入れ子のフィールド**：別のコンテキストの値が要るフィールドは、Dataloader でまとめて公開 API を呼ぶ（「ページングと N+1」）。
 
@@ -215,7 +215,7 @@ type SupplierView {
   salesOrder(id: ID!): SalesOrder
   stocks(first: Int, after: String, orderBy: StockOrder, filter: StockFilter): StockConnection!
   stockMovements(itemId: ID, first: Int, after: String, filter: StockMovementFilter): StockMovementConnection!
-  shipmentRequests(first: Int, after: String, orderBy: ShipmentRequestOrder): ShipmentRequestConnection!
+  shipmentRequests(first: Int, after: String, orderBy: ShipmentRequestOrder, filter: ShipmentRequestFilter): ShipmentRequestConnection!
   billingTerms: [BillingTerm!]!
   "未請求の請求対象明細"
   billableItems(customerTenantId: ID, first: Int, after: String): BillableItemConnection!
@@ -653,9 +653,9 @@ type SalesOrderStatusCount {
 
 集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。今日は、ほかの業務の日付と同じく、アプリの時刻帯（`config.time_zone` の `Asia/Tokyo`）の `Date.current` で決める（`context-map.md`「検収と請求の流れ」）。リゾルバに時刻帯を直に書かない。
 
-- **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。
+- **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。一覧の `statuses` と同じ状況の式で `GROUP BY` して数える。
 - **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。条件は在庫のモデルの scope（`Inventory::Stock.below_safety_stock`）の 1 つにあり、在庫の一覧の `filter: { belowSafetyStock: true }` も同じ scope で絞る。集計の数と、そこから飛ぶ一覧の件数を合わせるためである。在庫は品目コードを持たないので、品目コードでの並べ替えと 100 件の上限は、ルートパッケージが `Sales::Catalog.items_for` で引いたコードで行う。
-- **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。
+- **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。状況は、出荷依頼の一覧の `statuses` と同じ式で絞る。
 - **未請求の合計**：税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税額を出さず、税抜きの合計だけを返す。
 
 `supplier.dashboard` のリゾルバは、規則に `Sales::SalesOrderPolicy#list?` を使う。ダッシュボードは受注の画面で、4 つの公開 API の一覧の規則はどれも、自社のユーザーなら役割を問わず許す。各フィールドは選ばれたときだけ公開 API を呼ぶ。
@@ -738,7 +738,9 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 
 ## 状況の enum
 
-発注と受注の状況は、`data-model.md`「状態は保存せず、時刻列から導出する」の表と同じ優先順で、公開 API が導出して返す。GraphQL 層は導出しない。取消の依頼中・審査中は状況に重ねて示すので、enum の値にせず、別の真偽値のフィールドにする。
+発注・受注・出荷依頼の状況は、`data-model.md`「状態は保存せず、時刻列から導出する」の表と同じ優先順で、公開 API が SQL の式で導出して返す。GraphQL 層は導出しない。取消の依頼中・審査中は状況に重ねて示すので、enum の値にせず、別の真偽値のフィールドにする。
+
+3 つの一覧は、状況で絞る `statuses`（`SalesOrderFilter`・`PurchaseOrderFilter`・`ShipmentRequestFilter`）を持つ。画面が状況のタブで一覧を分け、タブごとの件数を `totalCount` で読むためである。値は enum の状況で、重ねて示すフィールド（取消の依頼中・審査中）は状況ではないので絞り込みに入れない。表示・絞り込み・件数は同じ式を読むので、一覧の `status` と、その状況で絞った一覧と、ダッシュボードの状況ごとの件数が食い違わない。
 
 | enum | 値（導出表の状況） | 重ねて示すフィールド |
 |---|---|---|
@@ -798,13 +800,13 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つで、一覧の表（同じパッケージの表）の列か、その列から計算する値に限る。取引先の名前や品目のコードのような別のコンテキストの値で並べるには、相手の表を結合するか相手の公開 API から並びを受け取ることになり、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである（OI-144）。状況での絞り込みは、導出した値なので、列の絞り込みとは別に足す（`../implementation-plan.md` M40）。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つで、一覧の表（同じパッケージの表）の列か、その列から計算する値に限る。取引先の名前や品目のコードのような別のコンテキストの値で並べるには、相手の表を結合するか相手の公開 API から並びを受け取ることになり、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである（OI-144）。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
 
 | 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） |
 |---|---|---|
-| `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE` | `customerTenantId`、`orderDateFrom`・`orderDateTo` |
-| `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON` | `supplierTenantId`、`orderDateFrom`・`orderDateTo` |
-| `supplier.shipmentRequests` | `DUE_DATE` | — |
+| `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE` | `customerTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
+| `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON` | `supplierTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
+| `supplier.shipmentRequests` | `DUE_DATE` | `statuses` |
 | `supplier.stocks` | `ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock` |
 | `supplier.stockMovements` | — | `types` |
 | `supplier.items` | `CODE`・`NAME` | `keyword` |
@@ -813,7 +815,8 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 - 受注日と発注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す。
 - `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ scope で絞る（「読み取りの一覧」の安全在庫）。偽か省いたときは絞らない。
 - `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。
-- `types` の空の配列は 0 件を返し、省くか `null` なら絞らない。
+- `types` と `statuses` の空の配列は 0 件を返し、省くか `null` なら絞らない。
+- 複数の絞り込みを同時に渡すと、すべてに当たる行に絞る。
 
 ```graphql
 "どのコネクションも、nodes・edges・pageInfo と並べて持つ"
@@ -830,14 +833,15 @@ enum OrderDirection { ASC DESC }
 
 input SalesOrderOrder { field: SalesOrderOrderField!, direction: OrderDirection! }
 enum SalesOrderOrderField { ORDER_NO ORDER_DATE DUE_DATE }
-input SalesOrderFilter { customerTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date }
+input SalesOrderFilter { customerTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date, statuses: [SalesOrderStatus!] }
 
 input PurchaseOrderOrder { field: PurchaseOrderOrderField!, direction: OrderDirection! }
 enum PurchaseOrderOrderField { ORDER_NO ORDER_DATE DESIRED_DELIVERY_ON }
-input PurchaseOrderFilter { supplierTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date }
+input PurchaseOrderFilter { supplierTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date, statuses: [PurchaseOrderStatus!] }
 
 input ShipmentRequestOrder { field: ShipmentRequestOrderField!, direction: OrderDirection! }
 enum ShipmentRequestOrderField { DUE_DATE }
+input ShipmentRequestFilter { statuses: [ShipmentRequestStatus!] }
 
 input StockOrder { field: StockOrderField!, direction: OrderDirection! }
 enum StockOrderField { ON_HAND ALLOCATED AVAILABLE SAFETY_STOCK }
