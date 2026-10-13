@@ -15,6 +15,8 @@
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
 
+画面（`frontend/`）のテストは rspec の外にあり、`bin/test-layers` は数えない。画面のテストを足す人は、URL の値を問い合わせの変数に写す関数と、Rails の呼び出し口・Cookie・エラーの分け方は単体（`frontend/lib/**/*.test.ts`、Vitest）に、画面を通す流れ・全画面の寸法とコントラスト・集計の数と飛び先の一覧の件数の一致は E2E（`frontend/e2e/`、Playwright）に置く。E2E が測る画面の一覧は `app/` のルートから集めるので、画面を足すと測る対象にも入る。
+
 CI は、rspec の JSON の出力を `bin/test-layers` に渡し、層ごとの件数・割合・時間を表にしてジョブの要約に書く。
 
 ```sh
@@ -101,8 +103,8 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 | | シナリオ | 確かめること | 置き場 |
 |---|---|---|---|
-| S1 | テナントの境界 | 発注側が、イベントで受け取った相手の ID（出荷実績 ID）と、受注側の伝票の ID を、ID を取るすべての入口（下の列挙）に持ち込んでも、相手のデータに届かない | `spec/scenarios/tenant_boundary_spec.rb` |
-| S2 | 取引関係の失効 | 失効で 3 経路と新しい発注が閉じ、連結済みの取引は請求まで進む | `spec/scenarios/revocation_spec.rb` |
+| S1 | テナントの境界 | 発注側が、イベントで受け取った相手の ID（出荷実績 ID）と、受注側の伝票の ID を、ID を取るすべての入口（下の列挙）に持ち込んでも、相手のデータに届かない | `spec/scenarios/tenant_boundary_spec.rb`。画面でテナントを切り替えた後に前のテナントの行が出ないことは `frontend/e2e/tenant-switch.spec.ts` |
+| S2 | 取引関係の失効 | 失効で 3 経路と新しい発注が閉じ、連結済みの取引は請求まで進む | `spec/scenarios/revocation_spec.rb`。画面で通すのは `frontend/e2e/revocation.spec.ts` |
 | S3 | 発注と受注の連結 | 照合待ち → 対応表の登録 → 受注確定。同じイベントを 2 回流しても、イベントの届く順を入れ替えても、受注は 1 件で、発注の状況は同じになる | `spec/scenarios/order_linking_spec.rb` |
 | S4 | 引当・出荷・取消の競合 | 同じ出荷依頼の同時の計上は 1 件だけ成立する。同時の引当と出庫で有効在庫が負にならない。同時の取消と計上はどちらか一方だけが成立する | `spec/concurrency/`・`packs/*/spec/concurrency/` |
 | S5 | 請求の金額と税の丸め | 発注 → 受注 → 出荷 → 検収 → 締め → 発行 → 受領請求書で、単価・数量・税額・合計が 2 社で一致し、税が請求書・税率ごとに 1 回だけ切り捨てられる | `spec/scenarios/billing_amounts_spec.rb` |

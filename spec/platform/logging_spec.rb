@@ -77,8 +77,8 @@ RSpec.describe "ログの出口と書式" do
       expect(Rails.logger).not_to respond_to(:tagged)
     end
 
-    it "Rails.event のイベントを、log/events.log の末尾に 1 行ずつ足す" do
-      path = Rails.root.join("log/events.log")
+    it "Rails.event のイベントを、ログのファイルの末尾に 1 行ずつ足す" do
+      path = Platform::Logging.events_log_path(Rails.root)
       before = File.read(path)
 
       Rails.event.notify("spec.first")
@@ -86,6 +86,29 @@ RSpec.describe "ログの出口と書式" do
 
       expect(File.read(path)).to start_with(before)
       expect(File.read(path).delete_prefix(before).lines.map { JSON.parse(_1)["name"] }).to eq(%w[spec.first spec.second])
+    end
+
+    # E2E の Rails は、同じ test の環境を TEST_DATABASE で別の DB に向けて動く。同じファイルに書くと、rspec と同時に流したときに
+    # 上の example が読む末尾に E2E の行が混ざる
+    it "TEST_DATABASE で別の DB を使うプロセスの Rails.event は、log/events.log ではなく DB ごとのファイルに書く" do
+      shared = Rails.root.join("log/events.log")
+      separate = Rails.root.join("log/events.spec_other_process.log")
+      FileUtils.rm_f(separate)
+      before = File.read(shared)
+      script = <<~RUBY
+        require "./config/application"
+        Rails.application.initialize!
+        Rails.event.notify("spec.other_process")
+      RUBY
+      env = { "RAILS_ENV" => "test", "TEST_DATABASE" => "spec_other_process" }
+
+      output, status = Open3.capture2e(env, RbConfig.ruby, "-e", script, chdir: Rails.root.to_s)
+
+      expect(status).to be_success, output
+      expect(File.read(shared).delete_prefix(before)).not_to include("spec.other_process")
+      expect(File.read(separate).lines.map { JSON.parse(_1)["name"] }).to eq(%w[spec.other_process])
+    ensure
+      FileUtils.rm_f(separate)
     end
 
     it "ジョブの引数をログに書かない" do

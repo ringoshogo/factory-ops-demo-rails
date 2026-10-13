@@ -25,8 +25,8 @@
 生成されたままの `bin/setup` は、DB がすでに動いていて、`config/database.yml` のユーザーで接続できることを前提にする。本デモの DB は、`compose.yaml` の PostgreSQL 18 と、2 つの DB ロールを前提にしている。そこで、`db:prepare` の前に次の 3 つを足した。
 
 1. **pg_dump の版を確かめ、18 未満なら止まる。** 18 未満の pg_dump は 18 のサーバーに対して動かず、`db/structure.sql` を書けない（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) 決定 6）。
-2. **`docker compose up -d --wait db` で DB を起動する。**
-3. **`docker/initdb/01_roles.sql` を psql で流し、所有ロール `factory_owner` とアプリのロール `factory_app` を作る。** compose の初期化スクリプトはボリュームを初めて作るときにしか流れないので、既存のボリュームにもここで作る（[data-model.md「RLS」](../architecture/data-model.md#rls)）。
+2. **DB が `DB_HOST`・`DB_PORT`（既定は `localhost:5433`）で応えなければ、`docker compose up -d --wait db` で起動する。** compose のプロジェクト名は作業ツリーのディレクトリ名で決まるので、git worktree から compose を起こすと、元の作業ツリーのコンテナが使う 5433 に別のコンテナを起こそうとして落ちる。すでに応える DB はそのまま使うので、担当ごとの worktree（[dev-cycle.md「着手の前に」](dev-cycle.md#着手の前に)）でも `bin/ci` を 1 つで流せる。
+3. **`docker/initdb/01_roles.sql` を psql で TCP から流し、所有ロール `factory_owner` とアプリのロール `factory_app` を作る。** compose の初期化スクリプトはボリュームを初めて作るときにしか流れないので、既存のボリュームにもここで作る（[data-model.md「RLS」](../architecture/data-model.md#rls)）。`docker compose exec` を使わないのは、worktree からは元の作業ツリーのコンテナに届かないからで、CI と同じ流し方になる。
 
 `db:prepare` は所有ロールの接続で流れ、終わった後に `lib/tasks/db_roles.rake` がアプリのロールへ権限を付与する。2 つのロールの分け方は [config.md「DB の接続」](config.md#db-の接続) にある。
 
@@ -66,13 +66,17 @@
 
 ## CI が使うもの
 
-GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、3 つのジョブで各スクリプトを直接呼ぶ。
+GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、次のジョブで各スクリプトとコマンドを直接呼ぶ。`frontend`・`e2e`・`image_inputs`・`images` は `bin/` の検査を呼ばない。
 
 | ジョブ | 流すもの |
 |---|---|
 | `scan_ruby` | `bin/brakeman --no-pager`、`bin/bundler-audit` |
 | `lint` | `bin/rubocop -f github`、`bin/packwerk validate && bin/packwerk check`、`bin/check-open-items`（PR では本文を `--text -` で渡す）、`bin/check-commit-refs`、`bin/check-schema-compat`（PR では `BASE_REF` を `origin/<base_ref>`、main への push では push の前の先端にする）、`bin/check-alerts`。SHA の祖先とスキーマの互換の基準を確かめるので、履歴をすべて取る（`fetch-depth: 0`） |
 | `test` | psql で `docker/initdb/01_roles.sql`、`bin/rails db:test:prepare`、`COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json`、`bin/check-branch-coverage`（`BASE_REF` は `lint` のジョブの `bin/check-schema-compat` と同じ）、`bin/test-layers tmp/rspec.json`、`bin/check-structure`。分岐の網羅率の基準を取るので、履歴をすべて取る（`fetch-depth: 0`） |
+| `frontend` | `npm ci`、`npm run codegen:check`・`lint`・`typecheck`・`test:unit`（README「画面」） |
+| `e2e` | `test` と同じ PostgreSQL 18 とロールの準備、`npx playwright install --with-deps chromium`、`npm run test:e2e`。落ちたら `frontend/test-results/` を残す |
+| `image_inputs` | PR でだけ流れ、PR がイメージに入るものを変えたかを判定する（[config.md「CI の工程」](config.md#ci-の工程)） |
+| `images` | `kubectl kustomize deploy` を kubeconform で照らし、2 つのイメージを arm64 で組み立て、Rails のイメージを本番の環境で起こす。main への push では毎回流れて SHA のタグで GHCR に push し、PR では `image_inputs` が変えたと判定したときだけ流れる |
 
 `test` のジョブは `bin/setup` を流さない。サービスのコンテナには初期化スクリプトを渡せないので、ロールはワークフローが psql で作る。
 

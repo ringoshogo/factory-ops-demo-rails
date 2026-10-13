@@ -48,7 +48,7 @@ Secret はリポジトリに置かない。作者が「作者の手順」1 で�
 | `db-credentials` | `app-password` | postgres・web・jobs・migrate・daily-reset | アプリのロール `factory_app` のパスワード |
 | `db-credentials` | `owner-password` | postgres・migrate・daily-reset | 所有ロール `factory_owner` のパスワード。RLS を素通りするので、DB を作る工程にだけ渡す |
 | `db-credentials` | `superuser-password` | postgres | PostgreSQL の `postgres` のパスワード。Rails は使わない |
-| `ghcr-pull-secret` | `.dockerconfigjson` | web・jobs・frontend・migrate・daily-reset | GHCR の private のイメージを取る読み取りの資格情報 |
+| `ghcr-pull-secret` | `.dockerconfigjson` | web・jobs・frontend・migrate・daily-reset | GHCR のイメージを取る読み取りの資格情報。パッケージの可視性はリポジトリと別に決まるので、private でも取れるように置く |
 | `rails-credentials` | `secret-key-base` | web・jobs・migrate・daily-reset | セッションの Cookie の暗号化の鍵。`config/credentials.yml.enc` は使わない |
 
 `owner-password` と `app-password` は、postgres の PVC が空の初回の起動でだけロールに入る。初回の後に Secret を変えても、ロールのパスワードは変わらない。
@@ -114,6 +114,8 @@ ssh raspi kubectl rollout status -n factory-ops-rails deployment/web --timeout=1
 `migrate` の Job は spec を変えられないので、2 回目からの適用では、適用の前に `ssh raspi kubectl delete job migrate -n factory-ops-rails --ignore-not-found` で消す。消さずに適用すると `field is immutable` で失敗する。`jobs` は、初回の適用で `migrate` が表を作り終えるまで、起動に失敗して再起動を繰り返す。
 
 `kubectl wait` が時間切れになったら、`migrate` は再試行（`backoffLimit: 3`）を使い切って `Failed` で止まっている。初回の適用で postgres の起動が遅れたときに起きる。作者は `ssh raspi kubectl logs -n factory-ops-rails job/migrate` で原因を見てから、Job を消して同じ適用を流し直す。
+
+`web`・`jobs`・`frontend` は新旧の Pod を同時に置かない（`Recreate`。Raspberry Pi のメモリに 1 プロセス分を上乗せしないため）ので、適用のたびに、古い Pod が止まってから新しい Pod が応えるまで画面が止まる。`web` は起動に最大 3 分待つ。作者は、訪問者の少ない時間に適用する。
 
 適用は、毎日の作り直しの時刻（日本時間の 4:30 から数分）を避ける。適用はマニフェストの `replicas: 1` で、作り直しが 0 にした `web` と `jobs` を途中で起こすからである。
 

@@ -256,9 +256,38 @@ jobs:
           path: frontend/test-results/
           retention-days: 7
 
+  # PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・このワークフロー）を変えたかを決める。
+  # images のジョブは 20 分を超え、PR の CI の時間の予算（docs/guides/config.md「CI の工程」）に収まらないので、
+  # それ以外の PR では流さない。アプリのコードを本番の環境で読み込めることは、test のジョブが eager_load で確かめる
+  image_inputs:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check whether image inputs changed
+        id: diff
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: |
+          pattern='^(Dockerfile|Dockerfile\.dockerignore|\.dockerignore|Gemfile|Gemfile\.lock|\.ruby-version|vendor/|bin/(docker-entrypoint|thrust|rails|jobs)$|config/(application|boot|environment|puma|database|queue|recurring)\.(rb|yml)$|config/environments/production\.rb$|config/initializers/|deploy/|frontend/(Dockerfile|package\.json|package-lock\.json|next\.config\.mjs|security-headers\.json)$|db/seeds/demo_accounts\.json$|\.github/workflows/ci\.yml$)'
+          if git diff --name-only "$(git merge-base "$BASE_REF" HEAD)" HEAD | grep -qE "$pattern"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # 公開の配置の 2 つのイメージを linux/arm64 で作る（docs/adr/009 決定 6、deploy/README.md）。PR では作って確かめるだけにし、
-  # main への push のときだけ git の SHA のタグで GHCR に置く。latest のタグは付けない
+  # main への push のときだけ git の SHA のタグで GHCR に置く。latest のタグは付けない。
+  # main への push では毎回流すので、PR で流さなかった変更も main で確かめる
   images:
+    needs: image_inputs
+    if: ${{ !cancelled() && (github.event_name == 'push' || needs.image_inputs.outputs.changed == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

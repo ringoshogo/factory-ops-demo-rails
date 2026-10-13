@@ -1820,7 +1820,9 @@ bundle exec rspec spec/graphql/query_budget_spec.rb spec/graphql/query_complexit
 
 並べ替えの列を一覧の表に限ること（M39 の判断）は、流用元の画面の並べ替えと検索を減らすので、作者に確かめている（OI-144）。M33 を終える前に決まっていなければならない。
 
-GitHub のリポジトリを public にする時期（OI-06）は、まだ決めない。M33 の完了条件に public にすることを入れず、決まるまで private のまま進める。
+GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06）。M33 の完了条件には入れない。
+
+作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。M33 は、OI-144 と OI-177 が片付くまで終えない。
 
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、API で並べられない列での並べ替え（M39 の判断）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
@@ -1919,7 +1921,7 @@ bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/platform/demo_rese
 
 **作者が実機で確かめること**：作るもの 9 の手順 1〜6。結果（測ったメモリ、公開の URL で確かめたこと、流用元のデモが動くこと）を、作者が PR か台帳に書く。実機の確かめは M41 の完了条件に入れず、作者が結果を書くまで公開しない。
 
-**範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
+**範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
 **実装する文書の節**：`adr/009`、`config/database.yml` の `production`、`architecture/data-model.md`「RLS」・「監査ログ（`platform`）」、`architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」・「監査ログ」・「1 回のリクエストがたどる道」、`guides/config.md`「ジョブ」・「環境ごとの設定」、流用元の `deploy/README.md`・`deploy/preflight.sh`・`deploy/daily-reset-cronjob.yaml`・`docs/plans/cycle-01-t34-release-runbook.md`
 
