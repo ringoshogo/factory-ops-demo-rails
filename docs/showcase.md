@@ -121,6 +121,7 @@ bundle exec rspec spec/packwerk
 - 腐敗防止層：`packs/sales/app/public/sales/purchase_order_translator.rb` が、発注側の自社品番を受注側の品目へ読み替えて受注を作る
 - 状況の導出：受注・発注・出荷依頼の状況は保存せず、時刻列から SQL の式 1 つで導出する（`packs/sales/app/models/sales/sales_order_status.rb`、`packs/purchasing/app/models/purchasing/purchase_order_status.rb`、`packs/fulfillment/app/models/fulfillment/shipment_request_status.rb`）。イベントが想定外の順で届いても遷移表から外れず、一覧の表示・状況での絞り込み・件数・ダッシュボードの件数が同じ式を読むので、数と飛び先の一覧が食い違わない。別のコンテキストの値（引当の数量）は、相手の公開 API が scope を掛けた後の副問い合わせを値で渡す（[`adr/010-状況の導出をSQLの式1つにする.md`](adr/010-状況の導出をSQLの式1つにする.md)）
 - 発注側の写し：発注側は、受注確定の品目名と単価・出荷計上を、自社の表に写して持つ（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`、`packs/purchasing/app/models/purchasing/inbound_shipment.rb`）。相手の伝票を読みに行かない
+- 在庫の品目の写し：在庫は受注に依存できないので、受注の公開 API が品目を書くのと同じトランザクションで在庫の公開 API を呼び、品目のコードと名前を在庫の表に写す（`packs/sales/app/public/sales/catalog.rb`、`packs/inventory/app/public/inventory/item_labels.rb`、[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）。写しに外部キーを張らず、写しを書く経路と元から作り直すタスク（`bin/rails read_models:rebuild`）が同じ写しを作ることを一致の spec（`spec/scenarios/read_model_copies_spec.rb`）で確かめる
 
 **どう確かめられるか**
 
@@ -129,7 +130,7 @@ bundle exec rspec packs/sales/spec/models packs/purchasing/spec/models packs/ful
 bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappings_spec.rb          # 腐敗防止層と照合のやり直し
 ```
 
-**状態**：実装済み（M4・M5・M10・M11・M14、請求書の写し（受領請求書）は M25、状況を SQL の式 1 つで導出するのは M40）。
+**状態**：実装済み（M4・M5・M10・M11・M14、請求書の写し（受領請求書）は M25、状況を SQL の式 1 つで導出するのは M40、在庫の品目の写しは M46）。
 
 ### 4. 整合性の設計
 
@@ -144,7 +145,7 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 - イベントの登録：`packs/contracts/app/public/contracts.rb` の `Contracts.publish` だけが、トランザクションの中で `Contracts::EventJob`（`packs/contracts/app/public/contracts/event_job.rb`）を登録する。外で登録するとカスタム Cop `lib/rubocop/cop/factory_ops/event_job_enqueue.rb` と実行時の検査が落とす。outbox は置かない
 - 冪等キー：受け手ごとに業務の ID の一意制約で取る（例：受注の `source_purchase_order_id`、`packs/sales/app/public/sales/purchase_order_translator.rb`）
 - 在庫の同期：`Inventory::Allocation`（`packs/inventory/app/public/inventory/allocation.rb`）を受注と出荷が同じトランザクションで呼び、有効在庫が負にならないことを行ロックと CHECK 制約で守る
-- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない
+- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（照合順序 `"C"`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
 - 引当の行を直列化の点にする：出荷の計上は `active` の引当だけを消費し、受注の取消は消費済みの引当を解除しない。同時に進んでもどちらか一方だけが成立する
 - 組の勧告ロック：`Partnerships::Access.lock_pair!` が、受注側と発注側の組ごとに PostgreSQL の勧告ロック（`pg_advisory_xact_lock`）を取り、発注の登録と、取引関係の失効・権限の撤回を直列にする。照合と対応表の登録は `Sales::PartMatching.lock`（`packs/sales/app/models/sales/part_matching.rb`）で直列にする
 
@@ -188,6 +189,7 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 **設計判断**
 - [`adr/004-GraphQLの型を視点ごとに分けnodeを置かない.md`](adr/004-GraphQLの型を視点ごとに分けnodeを置かない.md)
 - [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「視点ごとに型を分ける」「ID と `node`」「認可：宣言の無い型・リゾルバ・mutation は拒否する」「スキーマの変更と非推奨」
+- [`adr/010-状況の導出をSQLの式1つにする.md`](adr/010-状況の導出をSQLの式1つにする.md) 決定 2、[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)（別のコンテキストの値での並べ替え）
 
 **どこで守っているか**
 - 視点の宣言と認可の宣言：基底クラス `app/graphql/types/base_object.rb`・`app/graphql/resolvers/base_resolver.rb`・`app/graphql/mutations/base_mutation.rb` と `app/graphql/authorization_declarations.rb`。宣言が無ければ開発とテストで例外、本番で `FORBIDDEN`
@@ -195,6 +197,7 @@ bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/f
 - 問い合わせの深さと複雑度の上限：同じく `app/graphql/factory_ops_schema.rb`
 - スキーマの破壊的変更：`schema.graphql` を commit し、CI の lint のジョブで `bin/check-schema-compat` が非推奨を経ない削除を落とす
 - 一覧：すべての一覧が件数（`totalCount`）を持ち、画面の一覧は並べ替え（`orderBy`）と絞り込み（`filter`・`statuses`）をサーバーで行う。件数とページは同じ scope と絞り込みの relation から引く（`packs/platform/app/models/page.rb`、[`architecture/graphql-schema.md`](architecture/graphql-schema.md)「ページングと N+1」）。画面は 1 ページずつ読み、`schema.graphql` と画面の問い合わせから作った型で検査する（`frontend/graphql/`、`npm run codegen:check`）
+- 別のコンテキストの値での並べ替え：相手の表を直に結合せず、取引先の名前は取引関係の公開 API が返す副問い合わせから伝票の行ごとに 1 つ引き（`packs/platform/app/models/sql_subquery.rb`）、在庫の品目は在庫に写した表を結ぶ。結ぶ条件を誤って 2 行以上が当たると、行と件数を黙って増やさずに SQL のエラーになる。合計金額と状況は同じパッケージの SQL の式で並べ、状況は業務の進み順の位置で並べる（`packs/platform/app/models/page.rb`）
 
 **どう確かめられるか**
 
@@ -207,7 +210,7 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 - `base_classes_spec.rb`：宣言の無いものを拒否し、拒否を `FORBIDDEN` に揃える
 - `query_complexity_spec.rb`：画面の問い合わせのどれもが、1 ページの件数を上限まで求めても複雑度の上限に収まる。いまのスキーマに無い形の、コネクションの要素の下にコネクションを置いて両方に 100 件を求める問い合わせは、同じ上限を持つスキーマを spec の中で作って渡し、上限を超えて拒否されることを確かめる。リストの要素の下のコネクションは掛け算にならないので、画面の問い合わせに置かないことを `query_budget_spec.rb` が確かめる
 
-**状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。画面の問い合わせの複雑度のテストは実装済み（M26）。一覧の件数・並べ替え・絞り込みは実装済み（M39・M40）で、行列が RLS を開いた 2 回目の比較で件数と並びの scope の抜けを落とす（`packs/platform/spec/models/page_spec.rb`、`spec/matrix/graphql_matrix_spec.rb`）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、互換の判定は CI で流している（M20）。
+**状態**：視点・`node` の不在・宣言の強制は実装済み（M5・M6）。画面の問い合わせの複雑度のテストは実装済み（M26）。一覧の件数・並べ替え・絞り込みは実装済み（M39・M40）、取引先の名前・合計金額・状況での並べ替えは M45、在庫の品目のコードと名前での並べ替えと検索は M46 で、行列が RLS を開いた 2 回目の比較で件数と並びの scope の抜けを落とす（`packs/platform/spec/models/page_spec.rb`、`spec/matrix/graphql_matrix_spec.rb`）。スキーマの書き出しの検査（`spec/graphql/schema_dump_spec.rb`）と互換の判定（`spec/graphql/schema_compat_spec.rb`）は実装済みで、互換の判定は CI で流している（M20）。
 
 ### 7. 時間の扱い：販売単価のバイテンポラル履歴
 
@@ -247,6 +250,8 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 | N+1 を作らない | Bullet と、画面の問い合わせごとのクエリ数の予算 `spec/graphql/query_budget_spec.rb` | 実装済み |
 | 画面のコメントに経緯・マイルストーンの番号を書かない | `frontend/scripts/check-comments.mjs`（`npm run lint`） | 実装済み |
 | 画面は Rails を 1 か所から呼び、Next のデータのキャッシュを使わない | ESLint の規則（`frontend/eslint.config.mjs`） | 実装済み |
+| CI のランナーを版の数字で固定し、GHCR に push して `packages: write` を持つのは `publish` のジョブだけにする | `spec/platform/ci_checks_spec.rb` | 実装済み |
+| Dependabot の更新をエコシステムごとにまとめ、画面の Node の主版を `engines` と CI とイメージでそろえる | `spec/platform/dependency_updates_spec.rb` | 実装済み |
 
 守りの検査は、外すとテストが落ちることを確かめてから戻す（`handoff.md`「1 つのマイルストーンの回し方」）。
 
@@ -274,6 +279,7 @@ bin/check-structure
 - イベントは `:solid_queue` のまま `solid_queue_jobs` の行を読んで受け手まで流す（`spec/support/events.rb` の `deliver_enqueued_events`）
 - 重要シナリオ S1〜S5（テナントの境界・失効・連結・競合・請求の金額）は、置き場からタグが付く。`spec/scenarios` の S1・S2・S3・S5 には `:scenario` が、競合の S4 を置く `spec/concurrency`・`packs/*/spec/concurrency` には `:concurrency` が付き、それぞれ `--tag` で単独で流せる。絞り込みの結果が 0 件なら失敗する
 - 同時実行は、2 つの接続を別のスレッドで動かし、後の接続が先の接続のロックを待つことを pid で確かめる（`spec/support/concurrency.rb`）
+- 一覧のために別のコンテキストへ写した値は、`spec/scenarios/read_model_copies_spec.rb` が、シードと E2E の世界を作った後と品目を変えた後に、元から作り直しても何も書かないことを確かめる
 - 画面は、Playwright の E2E が Rails・`bin/jobs`・Next を起こして通す。S1・S2 を画面でも確かめ、全画面の寸法とコントラストを測り、集計の数と飛び先の一覧の件数が一致することを確かめる（`frontend/e2e/`）
 
 **どう確かめられるか**
@@ -285,7 +291,7 @@ bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちら�
 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
-**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。
+**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46。
 
 ### 10. 運用性
 
@@ -300,11 +306,11 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/te
 - 監査ログ：mutation とイベントのジョブの基底クラスが記録し、表は追記だけ（M19）
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
-- 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）
+- 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）
 
-**どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）、`spec/platform/deploy_manifests_spec.rb`（マニフェストの規則）・`spec/platform/demo_reset_spec.rb`（作り直しの順と、失敗しても Web とワーカーを戻すこと）と CI の `images` のジョブ（M41）。
+**どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）、`spec/platform/deploy_manifests_spec.rb`（マニフェストの規則）・`spec/platform/demo_reset_spec.rb`（作り直しの順と、失敗しても Web とワーカーを戻すこと）と CI の `manifests`・`images`・`publish` のジョブ、`publish` の条件と権限を確かめる `spec/platform/ci_checks_spec.rb`（M41・M42）。
 
-**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
+**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
 
 ### 11. チーム開発
 
