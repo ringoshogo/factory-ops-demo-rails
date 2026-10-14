@@ -154,6 +154,58 @@ RSpec.describe Inventory::Stocks do
       expect(list(order_by: { field: :safety_stock, direction: :asc })).to eq([ [ d, b, c, a ].map(&:item_id), 4 ])
     end
 
+    # 品目のコードと名前は品目の写しで並べ、絞る。写しの無い在庫は、並べると向きによらず最後に置き、検索には当たらない
+    describe "品目の写し" do
+      # code と name の写しを持つ在庫。code が nil なら写しを作らない
+      def labeled_stock(code, name = "#{code} の品目", **stock)
+        Tenancy.with_tenant(supplier.id) do
+          FactoryBot.create(:stock, **stock).tap { FactoryBot.create(:item_label, item_id: _1.item_id, code:, name:) if code }
+        end
+      end
+
+      it "品目コードと品目名と ID の組で並べ、写しの無い在庫は向きによらず最後に置く" do
+        bolt = labeled_stock("B-1", "六角ボルト")
+        unlabeled = labeled_stock(nil)
+        nut = labeled_stock("N-2", "六角ナット")
+        washer = labeled_stock("W-3", "平座金")
+
+        expect(list(order_by: { field: :item_code, direction: :asc })).to eq([ [ bolt, nut, washer, unlabeled ].map(&:item_id), 4 ])
+        expect(list(order_by: { field: :item_code, direction: :desc })).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
+        expect(list(order_by: { field: :item_name, direction: :asc })).to eq([ [ nut, bolt, washer, unlabeled ].map(&:item_id), 4 ])
+      end
+
+      it "keyword は写しの品目コードか品目名に含む在庫に絞り、件数も同じ条件で数える。写しの無い在庫は当たらない" do
+        bolt = labeled_stock("B-1", "六角ボルト")
+        nut = labeled_stock("n-2", "六角ナット")
+        labeled_stock("W-3", "平座金")
+        labeled_stock(nil)
+
+        expect(list(filter: { keyword: "　六角 " })).to eq([ [ nut, bolt ].map(&:item_id), 2 ])
+        expect(list(filter: { keyword: "N-2" })).to eq([ [ nut.item_id ], 1 ])
+        expect(list(filter: { keyword: "" })[1]).to eq(4)
+      end
+
+      it "keyword の % と _ は、ワイルドカードではなく文字として扱う" do
+        off = labeled_stock("50%OFF")
+        under = labeled_stock("A_1")
+        labeled_stock("500FF")
+        labeled_stock("AB1")
+
+        expect(list(filter: { keyword: "%" })).to eq([ [ off.item_id ], 1 ])
+        expect(list(filter: { keyword: "_" })).to eq([ [ under.item_id ], 1 ])
+        # 対照：ワイルドカードでない文字は、そのまま部分一致で絞る
+        expect(list(filter: { keyword: "0" })[1]).to eq(2)
+      end
+
+      it "keyword と belowSafetyStock を同時に渡せば、両方に当たる在庫に絞る" do
+        below = labeled_stock("B-1", safety_stock: 20)
+        labeled_stock("B-2")
+        labeled_stock("N-1", safety_stock: 20)
+
+        expect(list(filter: { keyword: "B-", below_safety_stock: true })).to eq([ [ below.item_id ], 1 ])
+      end
+    end
+
     # 集計と、そこから飛ぶ一覧が同じ条件で絞ることを、同じ在庫で両方を読んで確かめる
     it "belowSafetyStock は、ダッシュボードの安全在庫と同じ在庫に絞り、件数も同じ。偽か省けば絞らない" do
       Tenancy.with_tenant(supplier.id) do

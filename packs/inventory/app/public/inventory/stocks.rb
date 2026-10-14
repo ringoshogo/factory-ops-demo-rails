@@ -6,18 +6,26 @@ module Inventory
     # 安全在庫の上限。列の型（integer）の最大値で、超えた値は保存の時点で ActiveModel::RangeError になる
     MAX_SAFETY_STOCK = 2_147_483_647
 
-    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。有効在庫は現在庫 - 引当の式で並べる
+    LABELS = ItemLabel.arel_table
+
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。有効在庫は現在庫 - 引当の式で、
+    # 品目のコードと名前は品目の写しの列で並べる
     ORDER_COLUMNS = {
       on_hand: [ Stock.arel_table[:on_hand], :integer ],
       allocated: [ Stock.arel_table[:allocated], :integer ],
       available: [ Stock.arel_table[:on_hand] - Stock.arel_table[:allocated], :integer ],
-      safety_stock: [ Stock.arel_table[:safety_stock], :integer ]
+      safety_stock: [ Stock.arel_table[:safety_stock], :integer ],
+      item_code: [ LABELS[:code], :string ],
+      item_name: [ LABELS[:name], :string ]
     }.freeze
 
     # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
-    # filter の below_safety_stock が真なら、ダッシュボードの安全在庫（below_safety_stock）と同じ条件で絞る
+    # filter の below_safety_stock が真なら、ダッシュボードの安全在庫（below_safety_stock）と同じ条件で絞る。
+    # filter の keyword は、品目の一覧の keyword と同じ規則で、品目の写しのコードか名前を検索する（Keyword）。
+    # 写しの無い在庫は、品目のコードと名前で並べると最後に置かれ、keyword には当たらない
     def self.list(actor, first:, after:, order_by: nil, filter: {})
-      Page.of(filtered(Scope.call(actor, Stock.all), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |stocks|
+      relation = filtered(labeled(Scope.call(actor, Stock.all)), **filter)
+      Page.of(relation, first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |stocks|
         stocks.map { to_value(_1) }
       end
     end
@@ -61,14 +69,23 @@ module Inventory
       end
     end
 
-    def self.filtered(relation, below_safety_stock: nil)
-      below_safety_stock ? relation.below_safety_stock : relation
+    # 在庫の行に、同じ所有テナントの同じ品目の写しを外部結合する。所有テナントの組で結ぶのは、在庫の scope が絞った所有テナントを
+    # 写しにも掛けるためで、品目 ID だけで結ぶと、他社の名義で同じ品目 ID を指す写しを RLS が見せたときに、それを並びと検索に使う
+    def self.labeled(relation)
+      stocks = Stock.arel_table
+      relation.joins(stocks.join(LABELS, Arel::Nodes::OuterJoin)
+        .on(LABELS[:owner_tenant_id].eq(stocks[:owner_tenant_id]).and(LABELS[:item_id].eq(stocks[:item_id]))).join_sources)
+    end
+
+    def self.filtered(relation, below_safety_stock: nil, keyword: nil)
+      relation = relation.below_safety_stock if below_safety_stock
+      Keyword.search(relation, keyword, LABELS[:code], LABELS[:name])
     end
 
     def self.movements_filtered(relation, types: nil)
       types.nil? ? relation : relation.where(type: types)
     end
-    private_class_method :filtered, :movements_filtered
+    private_class_method :labeled, :filtered, :movements_filtered
 
     def self.to_value(stock)
       StockValue.new(owner_tenant_id: stock.owner_tenant_id, item_id: stock.item_id, on_hand: stock.on_hand,

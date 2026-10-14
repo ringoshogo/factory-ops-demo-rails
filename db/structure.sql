@@ -682,6 +682,30 @@ COMMENT ON TABLE public.invoices IS '[請求] 請求書。発行の時刻が空�
 
 
 --
+-- Name: item_labels; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.item_labels (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    owner_tenant_id uuid NOT NULL,
+    item_id uuid NOT NULL,
+    code character varying NOT NULL,
+    name character varying NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+ALTER TABLE ONLY public.item_labels FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: TABLE item_labels; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.item_labels IS '[在庫] 品目のコードと名前の写し。在庫の一覧を並べ、検索するために、受注の品目から写す';
+
+
+--
 -- Name: item_prices; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2125,6 +2149,14 @@ ALTER TABLE ONLY public.invoices
 
 
 --
+-- Name: item_labels item_labels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.item_labels
+    ADD CONSTRAINT item_labels_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: item_prices item_prices_current_no_overlap; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2869,6 +2901,20 @@ CREATE UNIQUE INDEX index_invoices_on_owner_tenant_id_and_invoice_number ON publ
 --
 
 CREATE UNIQUE INDEX index_invoices_one_draft_per_customer ON public.invoices USING btree (owner_tenant_id, customer_tenant_id) WHERE (issued_at IS NULL);
+
+
+--
+-- Name: index_item_labels_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_item_labels_on_owner_tenant_id_and_id ON public.item_labels USING btree (owner_tenant_id, id);
+
+
+--
+-- Name: index_item_labels_on_owner_tenant_id_and_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_item_labels_on_owner_tenant_id_and_item_id ON public.item_labels USING btree (owner_tenant_id, item_id);
 
 
 --
@@ -3956,6 +4002,14 @@ ALTER TABLE ONLY public.receipt_inspection_lines
 
 
 --
+-- Name: item_labels fk_rails_8b205fb500; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.item_labels
+    ADD CONSTRAINT fk_rails_8b205fb500 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
+
+
+--
 -- Name: shipment_lines fk_rails_8d83f67036; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4298,6 +4352,12 @@ ALTER TABLE public.invoice_tax_summaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: item_labels; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.item_labels ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: item_prices; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4426,6 +4486,13 @@ CREATE POLICY owner_write ON public.invoice_tax_summaries USING ((owner_tenant_i
 --
 
 CREATE POLICY owner_write ON public.invoices USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
+
+
+--
+-- Name: item_labels owner_write; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY owner_write ON public.item_labels USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
 
 
 --
@@ -4770,6 +4837,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261014000000'),
 ('20261013000100'),
 ('20261013000000'),
 ('20261012200100'),

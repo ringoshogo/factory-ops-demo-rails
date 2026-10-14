@@ -111,6 +111,8 @@ ssh raspi kubectl wait -n factory-ops-rails --for=condition=complete job/migrate
 ssh raspi kubectl rollout status -n factory-ops-rails deployment/web --timeout=10m
 ```
 
+一覧のために別のコンテキストへ値を写す表（在庫の品目の写し）を足すマイグレーションは、写しを埋めない（`docs/adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）。次の毎日の作り直しがシードで写しを作るまで、在庫の画面の品目のコードと名前での並べ替えと検索が当たらない。作者は、待たずに埋めるときだけ、適用の後に `ssh raspi kubectl exec -n factory-ops-rails deployment/web -- bin/rails read_models:rebuild` を流す。アプリのロールで動き、テナントごとに足した数と書き直した数を出す。
+
 `migrate` の Job は spec を変えられないので、2 回目からの適用では、適用の前に `ssh raspi kubectl delete job migrate -n factory-ops-rails --ignore-not-found` で消す。消さずに適用すると `field is immutable` で失敗する。`jobs` は、初回の適用で `migrate` が表を作り終えるまで、起動に失敗して再起動を繰り返す。
 
 `kubectl wait` が時間切れになったら、`migrate` は再試行（`backoffLimit: 3`）を使い切って `Failed` で止まっている。初回の適用で postgres の起動が遅れたときに起きる。作者は `ssh raspi kubectl logs -n factory-ops-rails job/migrate` で原因を見てから、Job を消して同じ適用を流し直す。

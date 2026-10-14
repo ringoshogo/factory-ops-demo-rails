@@ -26,6 +26,7 @@ module Sales
     # 新しい品目には、単価を有効期間 (,) の行として足す。既存の品目の単価は変えず、今日の単価と違う値は INVALID_INPUT にする。
     # 単価の改定と訂正は、admin に限る ItemPrices の操作だけが行う（docs/architecture/context-map.md「自社の中の役割」）。
     # 同じ値は、品目の名前や単位を直すときにも単価が必須の引数として届くので、無視する。
+    # 品目のコードと名前は、同じトランザクションで在庫の写しへ書く（docs/adr/011 決定 1）。
     # 同じコードの同時の作成は一意索引が拒否する。セーブポイントまで戻してから失敗を返す
     def self.save(actor, code:, name:, unit:, unit_price:, tax_rate_percent:)
       item = Item.transaction(requires_new: true) do
@@ -34,6 +35,7 @@ module Sales
 
         created = record.new_record?
         record.update!(name:, unit:, tax_rate_percent:)
+        Inventory::ItemLabels.put([ label(record.id, record.code, record.name) ])
         if created
           ItemPrice.add!(item_id: record.id, unit_price:, valid_from: nil, valid_to: nil, at: Time.current, recorded_by_user_id: actor.user_id)
         end
@@ -59,6 +61,7 @@ module Sales
     # 既存の品目の単価には触れない。単価の改定は、admin に限る ItemPrices の操作だけが行う。
     # 単価の空の新しい品目は書かずに INVALID_INPUT にする。品目コードごとの結果を返す。
     # upsert は既存の品目の行をロックするので、同じ品目への save・改定の予約とは品目の行ロックで直列になる。
+    # 書いた品目のコードと名前は、同じトランザクションで在庫の写しへ書く（docs/adr/011 決定 1）。
     # 行をコードの順に並べ、並んだ取り込みがロックを同じ順で取るようにする。同じ新しいコードを並んで書くと、後の upsert は
     # 一意索引で先のコミットを待ってから更新に回り、作った品目として数えないので、最初の単価の行は 1 つになる
     def self.bulk_upsert(actor, rows)
@@ -74,6 +77,8 @@ module Sales
         writable.map { { owner_tenant_id: Current.tenant_id, **_1.slice(:code, :name, :unit, :tax_rate_percent, :published) } },
         unique_by: %i[owner_tenant_id code], returning: Arel.sql("id, code, xmax = 0 AS created")
       )
+      names = writable.to_h { [ _1[:code], _1[:name] ] }
+      Inventory::ItemLabels.put(written.map { label(_1["id"], _1["code"], names.fetch(_1["code"])) })
       at = Time.current
       prices = writable.to_h { [ _1[:code], _1[:unit_price] ] }
       written.each do |item|
@@ -84,6 +89,23 @@ module Sales
         results[item["code"]] = OperationResult.success(Upserted.new(item_id: item["id"], created: item["created"]))
       end
       results
+    end
+
+    # いまのテナントの全品目のコードと名前を、在庫の写しへ書き直す（rake タスク read_models:rebuild が呼ぶ）。
+    # 足した写しの数と書き直した写しの数（Inventory::ItemLabels::Counts）だけを返し、写しが元と一致していれば両方 0 になる。
+    # 操作者のいない入口なので、テナントの設定を求め、所有テナントを明示して読む。品目の表には公開した品目を取引先に見せる
+    # SELECT のポリシーがあるので、所有の条件を RLS に任せられない。
+    # 品目を FOR SHARE で読み、写しを書き終えるまで save と bulk_upsert の行ロックを待たせる。待たせないと、ここが古い名前を
+    # 読んだ後に保存が新しい名前と写しを書き、ここが古い名前で写しを上書きする。
+    # ロックは bulk_upsert と同じ品目コードの順に取り、並んでも行き詰まらないようにする。bulk_upsert は Ruby の文字列の比べ方
+    # （バイトの順）で並べるので、DB の照合順序（en_US.utf8 では a-1 が B-1 より前）ではなく、バイトの順の照合順序 "C" で並べる
+    def self.rebuild_item_labels
+      Tenancy.require_tenant!
+      Item.transaction(requires_new: true) do
+        items = Item.where(owner_tenant_id: Current.tenant_id).order(Arel.sql('items.code COLLATE "C"')).lock("FOR SHARE")
+          .pluck(:id, :code, :name)
+        Inventory::ItemLabels.put(items.map { label(*_1) })
+      end
     end
 
     # 品目コードごとの自社の品目 ID。見えないコードと無いコードは含まない
@@ -99,18 +121,10 @@ module Sales
       OperationResult.success(to_values(actor, [ item ]).first)
     end
 
-    # keyword の前後の空白（全角の空白を含む）を除き、品目コードか品目名に含む品目に、大文字と小文字を区別せずに絞る。
-    # % と _ はワイルドカードにせず、文字として探す。空の keyword は絞らない
-    def self.searched(relation, keyword: nil)
-      keyword = keyword.to_s.gsub(/\A[[:space:]]+|[[:space:]]+\z/, "")
-      return relation if keyword.empty?
+    # 品目コードか品目名を検索する。規則は在庫の一覧の検索と同じ Keyword にある
+    def self.searched(relation, keyword: nil) = Keyword.search(relation, keyword, Item.arel_table[:code], Item.arel_table[:name])
 
-      # sanitize_sql_like は % と _ と \ の前に \ を置く。ESCAPE を明示して DB の既定のエスケープ文字に頼らず、
-      # case_sensitive: false で PostgreSQL の ILIKE にする（Arel::Predications#matches、activerecord 8.1）
-      pattern = "%#{Item.sanitize_sql_like(keyword)}%"
-      code, name = %i[code name].map { Item.arel_table[_1] }
-      relation.where(code.matches(pattern, "\\", false).or(name.matches(pattern, "\\", false)))
-    end
+    def self.label(item_id, code, name) = { item_id:, code:, name: }
 
     # 今日の単価は品目の一覧に対して 1 回で引く
     def self.to_values(actor, items)
@@ -120,6 +134,6 @@ module Sales
         ItemValue.new(**item.slice(*(ItemValue.members - [ :unit_price ]).map(&:to_s)).symbolize_keys, unit_price: prices.fetch(item.id))
       end
     end
-    private_class_method :searched, :to_values
+    private_class_method :searched, :label, :to_values
   end
 end

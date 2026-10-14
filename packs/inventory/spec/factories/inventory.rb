@@ -13,6 +13,14 @@ FactoryBot.define do
     quantity { 1 }
   end
 
+  # 品目の写し。item_id は在庫と同じく受注の品目の ID 参照で、既定は品目にも在庫にも当たらない乱数の ID
+  factory :item_label, class: "Inventory::ItemLabel" do
+    owner_tenant_id { Current.tenant_id }
+    item_id { SecureRandom.uuid }
+    sequence(:code) { "LABEL-#{_1}" }
+    sequence(:name) { "写しの品目 #{_1}" }
+  end
+
   factory :stock_movement, class: "Inventory::StockMovement" do
     owner_tenant_id { Current.tenant_id }
     item_id { FactoryBot.create(:stock, owner_tenant_id:).item_id }

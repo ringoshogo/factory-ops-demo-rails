@@ -59,4 +59,51 @@ RSpec.describe "在庫と引当", type: :request do
     expect(graphql_body("{ supplier { items { nodes { stock { onHand } } } } }").dig("data", "supplier", "items", "nodes"))
       .to eq([ { "stock" => nil } ])
   end
+
+  # 在庫の一覧の品目の検索と並べ替えは、saveItem が在庫へ写した品目のコードと名前を読む
+  # （docs/architecture/graphql-schema.md「ページングと N+1」、docs/architecture/data-model.md「在庫（`inventory`）」）
+  describe "品目のコードと名前での検索と並べ替え" do
+    let(:stocks_query) do
+      <<~GRAPHQL
+        query($orderBy: StockOrder, $filter: StockFilter) {
+          supplier { stocks(orderBy: $orderBy, filter: $filter) { totalCount nodes { item { code } } } }
+        }
+      GRAPHQL
+    end
+
+    def save_item(code, name)
+      graphql_body(<<~GRAPHQL, input: { code:, name:, unit: "個", unitPrice: 100 }).dig("data", "saveItem", "item", "id")
+        mutation($input: SaveItemInput!) { saveItem(input: $input) { item { id } errors { code } } }
+      GRAPHQL
+    end
+
+    def stocks(**variables)
+      graphql_body(stocks_query, **variables).dig("data", "supplier", "stocks")&.then { [ _1["nodes"]&.map { |node| node.dig("item", "code") }, _1["totalCount"] ] }
+    end
+
+    before do
+      { "N-2" => "六角ナット M8", "B-1" => "六角ボルト M8", "W-3" => "平座金 M8" }.each do |code, name|
+        adjust("INBOUND", 1, item_id: save_item(code, name))
+      end
+    end
+
+    it "keyword は品目コードか品目名に含む在庫に絞り、件数も同じ条件で数える" do
+      # 対照：絞らなければ 3 件とも返る（在庫の作った順の新しいものから）
+      expect(stocks).to eq([ %w[W-3 B-1 N-2], 3 ])
+      expect(stocks(filter: { keyword: "六角" })).to eq([ %w[B-1 N-2], 2 ])
+      expect(stocks(filter: { keyword: "w-3" })).to eq([ %w[W-3], 1 ])
+    end
+
+    it "keyword は品目の一覧と同じく 100 文字ちょうどを受け付け、101 文字はトップレベルのエラーにする" do
+      query = "query($keyword: String) { supplier { stocks(filter: { keyword: $keyword }) { totalCount } } }"
+
+      expect(graphql_body(query, keyword: "あ" * 100)).to eq("data" => { "supplier" => { "stocks" => { "totalCount" => 0 } } })
+      expect(graphql_body(query, keyword: "あ" * 101)["errors"].map { _1["message"] }).to eq([ "keyword is too long (maximum is 100)" ])
+    end
+
+    it "品目コードと品目名で並べる" do
+      expect(stocks(orderBy: { field: "ITEM_CODE", direction: "ASC" })).to eq([ %w[B-1 N-2 W-3], 3 ])
+      expect(stocks(orderBy: { field: "ITEM_NAME", direction: "ASC" })).to eq([ %w[N-2 B-1 W-3], 3 ])
+    end
+  end
 end

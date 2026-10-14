@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 受注側の品目の保存。品目コードで引き、無ければ非公開で作り、あれば更新する。公開の状態は変えない（変えるのは set_published と取り込みの bulk_upsert）。
 # 新しい品目は最初の単価を持ち、既存の品目の単価は変えない（docs/architecture/graphql-schema.md「mutation の一覧」）
@@ -105,6 +106,80 @@ RSpec.describe Sales::Catalog do
       expect(items(filter: { keyword: "\\" })).to eq([ [ "A\\1" ], 1 ])
       # 対照：ワイルドカードでない文字は、そのまま部分一致で絞る
       expect(items(filter: { keyword: "A" })[1]).to eq(3)
+    end
+  end
+end
+
+# 在庫の一覧が品目のコードと名前で並べ、検索する写し（docs/architecture/data-model.md「在庫（`inventory`）」、docs/adr/011）。
+# 保存は同じトランザクションで写しを書き、作り直しは自社の全品目の写しを書き直して、足した数と書き直した数を返す
+RSpec.describe Sales::Catalog, "の品目の写し" do
+  let!(:supplier) { FactoryBot.create(:tenant) }
+  let!(:other) { FactoryBot.create(:tenant) }
+  let(:actor) do
+    Partnerships::Actor.new(user_id: SecureRandom.uuid, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "")
+  end
+
+  def mine(&) = Tenancy.with_tenant(supplier.id, &)
+
+  def save(code: "N-1", name: "ナット", unit_price: 300)
+    mine { described_class.save(actor, code:, name:, unit: "個", unit_price:, tax_rate_percent: 10) }
+  end
+
+  # 写しのモデルは在庫のパッケージの外に出さないので、SQL で読む。RLS がテナントの写しだけを見せる
+  def label_rows(columns) = ActiveRecord::Base.lease_connection.select_rows("SELECT #{columns} FROM item_labels")
+
+  def labels_of(tenant) = Tenancy.with_tenant(tenant.id) { label_rows("item_id, code, name") }
+
+  def counts(inserted, updated) = Inventory::ItemLabels::Counts.new(inserted:, updated:)
+
+  describe ".save" do
+    it "品目のコードと名前を在庫の写しへ書き、名前を変えれば写しも変え、保存しなかった品目の写しは変えない" do
+      item = save.value
+      expect(labels_of(supplier)).to eq([ [ item.id, "N-1", "ナット" ] ])
+
+      save(name: "六角ナット")
+      expect(labels_of(supplier)).to eq([ [ item.id, "N-1", "六角ナット" ] ])
+
+      expect(save(name: "改名", unit_price: 999)).not_to be_success
+      expect(labels_of(supplier)).to eq([ [ item.id, "N-1", "六角ナット" ] ])
+    end
+  end
+
+  describe ".rebuild_item_labels" do
+    def rebuild = mine { described_class.rebuild_item_labels }
+
+    it "写しの無い品目に足し、値の違う写しを書き直して、それぞれの数を返す。一致していれば両方 0 になる" do
+      bolt, nut, washer = mine { [ %w[B-1 ボルト], %w[N-1 ナット], %w[W-1 座金] ].map { FactoryBot.create(:item, code: _1, name: _2) } }
+      mine { Inventory::ItemLabels.put([ { item_id: nut.id, code: "N-1", name: "古い名前" }, { item_id: washer.id, code: "W-1", name: "座金" } ]) }
+
+      expect(rebuild).to eq(counts(1, 1))
+      expect(labels_of(supplier)).to contain_exactly([ bolt.id, "B-1", "ボルト" ], [ nut.id, "N-1", "ナット" ], [ washer.id, "W-1", "座金" ])
+      expect(rebuild).to eq(counts(0, 0))
+    end
+
+    it "テナントの設定の外では例外にする" do
+      expect { described_class.rebuild_item_labels }.to raise_error(Tenancy::MissingTenant)
+    end
+
+    # 品目の表には公開した品目を取引先に見せる SELECT のポリシーがあるので、所有の条件を RLS に任せられない。
+    # RLS の SELECT と UPDATE を開き、他社の品目が見える状態で、自社の品目だけを写すことを確かめる
+    # （docs/guides/testing.md「行列テストとの分担」）
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社の品目が見えても、自社の品目だけを読んで写す" do
+        theirs = Tenancy.with_tenant(other.id) { FactoryBot.create(:item, code: "X-1", name: "他社の品目") }
+        own = mine { FactoryBot.create(:item, code: "M-1", name: "自社の品目") }
+
+        mine do
+          cross_read!
+          # 対照：開いた後は他社の品目が見える
+          expect(Sales::Item.where(id: [ own.id, theirs.id ]).pluck(:id)).to contain_exactly(own.id, theirs.id)
+
+          expect(described_class.rebuild_item_labels).to eq(counts(1, 0))
+          expect(label_rows("owner_tenant_id, item_id")).to eq([ [ supplier.id, own.id ] ])
+        end
+      end
     end
   end
 end

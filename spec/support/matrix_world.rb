@@ -159,7 +159,8 @@ class MatrixWorld
   # 一覧の絞り込み（入口の行列の "#filter" の行）に当たる行。どのペルソナにも当たる行と当たらない行があるので、
   # 公開 API が絞り込みか件数の scope を外すと、RLS の SELECT を開いた入口の行列で他社のこの行が応答に入る。
   # 受注と発注は、列の絞り込みに当たる取消済の行が当たり、取消していない行は状況で外れる。
-  # 在庫の安全在庫はダッシュボードの行が当たる。出荷依頼は、表ごとの行とダッシュボードの行（出荷待ち）が当たり、
+  # 在庫の安全在庫はダッシュボードの行が当たる。在庫の品目の検索は、品目名が当たる写しの在庫が当たり、当たらない写しの在庫と、
+  # 写しの無い表ごとの行とダッシュボードの行が外れる。出荷依頼は、表ごとの行とダッシュボードの行（出荷待ち）が当たり、
   # 出荷指示と出荷実績の表ごとの行が factory で作る出荷依頼（出荷指示済・出荷済）が外れるので、足さない
   def add_filter_rows
     [ nil, Time.current ].each do |cancelled_at|
@@ -168,6 +169,7 @@ class MatrixWorld
     end
     FactoryBot.create(:stock_movement, type: "outbound")
     FactoryBot.create(:item, name: FILTER_ITEM_NAME)
+    [ FILTER_ITEM_NAME, "当たらない品目" ].each { |name| FactoryBot.create(:item_label, item_id: FactoryBot.create(:stock).item_id, name:) }
   end
 
   # 受注側の ACL が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、

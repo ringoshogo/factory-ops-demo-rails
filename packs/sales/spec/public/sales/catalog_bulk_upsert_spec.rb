@@ -47,6 +47,21 @@ RSpec.describe Sales::Catalog, ".bulk_upsert" do
     end
   end
 
+  # 在庫の一覧が品目のコードと名前で並べ、検索する写し（docs/adr/011 決定 1）
+  it "書いた品目のコードと名前を同じトランザクションで在庫の写しへ書き、書かなかった行の写しは作らない" do
+    mine do
+      existing = FactoryBot.create(:item, code: "OLD-1", name: "旧名")
+      Inventory::ItemLabels.put([ { item_id: existing.id, code: "OLD-1", name: "旧名" } ])
+
+      results = described_class.bulk_upsert(actor, [ row("NEW-1"), row("OLD-1", name: "新名"), row("NEW-2", unit_price: nil) ])
+
+      # 写しのモデルは在庫のパッケージの外に出さないので、SQL で読む
+      expect(ActiveRecord::Base.lease_connection.select_rows("SELECT item_id, code, name FROM item_labels")).to contain_exactly(
+        [ results["NEW-1"].value.item_id, "NEW-1", "取り込んだ品目" ], [ existing.id, "OLD-1", "新名" ]
+      )
+    end
+  end
+
   it "他社の同じコードの品目に触れず、自社の品目を作る" do
     theirs = Tenancy.with_tenant(other.id) { FactoryBot.create(:item, code: "SAME-1", name: "他社の品目") }
 

@@ -19,17 +19,30 @@ export function itemListVariables(params: URLSearchParams) {
   };
 }
 
-export const STOCK_SORT_FIELDS: readonly StockOrderField[] = ["ON_HAND", "ALLOCATED", "AVAILABLE", "SAFETY_STOCK"];
+export const STOCK_SORT_FIELDS: readonly StockOrderField[] = [
+  "ITEM_CODE",
+  "ITEM_NAME",
+  "ON_HAND",
+  "ALLOCATED",
+  "AVAILABLE",
+  "SAFETY_STOCK",
+];
 
 /**
  * 在庫の一覧。`below=1` のときだけ、有効在庫が安全在庫より小さい在庫に絞る。ダッシュボードの「安全在庫を下回る在庫」と
- * 同じ条件を API が持つので、件数がダッシュボードと一致する。
+ * 同じ条件を API が持つので、件数がダッシュボードと一致する。検索の語 (`q`) は品目の一覧と同じく、空白だけなら送らない。
+ * 両方を渡せば、API が両方に当たる在庫に絞る。
  */
 export function stockListVariables(params: URLSearchParams) {
+  const keyword = single(params, "q")?.trim() ?? "";
+  const below = single(params, "below") === "1";
   return {
     ...pageArgs(params),
     orderBy: parseSort(params, STOCK_SORT_FIELDS),
-    filter: single(params, "below") === "1" ? { belowSafetyStock: true } : null,
+    filter:
+      keyword === "" && !below
+        ? null
+        : { ...(below ? { belowSafetyStock: true } : {}), ...(keyword === "" ? {} : { keyword }) },
   };
 }
 
