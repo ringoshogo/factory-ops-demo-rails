@@ -377,7 +377,7 @@ bin/check-commit-refs            # 通った
 
 実装の記録を載せた `87214b0` の PR の CI はすべて通った（`test` 6 分 8 秒、`e2e` 3 分 29 秒、`images` 1 分 57 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38511905424)）。
 
-実装レビューの直しの後も、`232eee7` の作業ツリーで `TEST_DATABASE=factory_ops_m47_test bin/ci` を流し、すべての工程が通った（rspec は 3053 examples, 0 failures、分岐の網羅率の警告は 0 件）。`frontend` の `codegen:check`・`lint`・`typecheck`・`test:unit`（145 tests passed）と、`bin/check-open-items --due M47`・`bin/check-commit-refs` も通った。
+実装レビューの直しの後も、`232eee7` の作業ツリーで `TEST_DATABASE=factory_ops_m47_test bin/ci` を流し、すべての工程が通った（rspec は 3053 examples, 0 failures、分岐の網羅率の警告は 0 件）。`frontend` の `codegen:check`・`lint`・`typecheck`・`test:unit`（145 tests passed）と、`bin/check-open-items --due M47`・`bin/check-commit-refs` も通った。`27f9d2f` の PR の CI はすべて通った（`test` 5 分 59 秒、`e2e` 3 分 27 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38514548779)）。
 
 ### 残件の処理
 
