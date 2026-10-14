@@ -73,7 +73,7 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
       instructed: request(instructed: true), ready: request
     }
     sorted = lambda do |direction|
-      Fulfillment::ShipmentRequests.list(actor, first: 100, after: nil, order_by: { field: :status, direction: }).values.map(&:status)
+      Fulfillment::ShipmentRequests.list(actor, first: 100, after: nil, order_by: [ { field: :status, direction: } ]).values.map(&:status)
     end
 
     expected = %i[ready instructed on_hold shipped cancelled]

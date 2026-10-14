@@ -148,10 +148,10 @@ RSpec.describe Inventory::Stocks do
       end
       Tenancy.with_tenant(other.id) { FactoryBot.create(:stock) }
 
-      expect(list(order_by: { field: :on_hand, direction: :asc })).to eq([ [ a, d, c, b ].map(&:item_id), 4 ])
-      expect(list(order_by: { field: :allocated, direction: :desc })).to eq([ [ b, d, c, a ].map(&:item_id), 4 ])
-      expect(list(order_by: { field: :available, direction: :desc })).to eq([ [ c, a, d, b ].map(&:item_id), 4 ])
-      expect(list(order_by: { field: :safety_stock, direction: :asc })).to eq([ [ d, b, c, a ].map(&:item_id), 4 ])
+      expect(list(order_by: [ { field: :on_hand, direction: :asc } ])).to eq([ [ a, d, c, b ].map(&:item_id), 4 ])
+      expect(list(order_by: [ { field: :allocated, direction: :desc } ])).to eq([ [ b, d, c, a ].map(&:item_id), 4 ])
+      expect(list(order_by: [ { field: :available, direction: :desc } ])).to eq([ [ c, a, d, b ].map(&:item_id), 4 ])
+      expect(list(order_by: [ { field: :safety_stock, direction: :asc } ])).to eq([ [ d, b, c, a ].map(&:item_id), 4 ])
     end
 
     # 品目のコードと名前は品目の写しで並べ、絞る。写しの無い在庫は、並べると向きによらず最後に置き、検索には当たらない
@@ -170,9 +170,9 @@ RSpec.describe Inventory::Stocks do
         nut = labeled_stock("N-2", "六角ナット")
         washer = labeled_stock("W-3", "平座金")
 
-        expect(list(order_by: { field: :item_code, direction: :asc })).to eq([ [ bolt, nut, washer, unlabeled ].map(&:item_id), 4 ])
-        expect(list(order_by: { field: :item_code, direction: :desc })).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
-        expect(list(order_by: { field: :item_name, direction: :asc })).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
+        expect(list(order_by: [ { field: :item_code, direction: :asc } ])).to eq([ [ bolt, nut, washer, unlabeled ].map(&:item_id), 4 ])
+        expect(list(order_by: [ { field: :item_code, direction: :desc } ])).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
+        expect(list(order_by: [ { field: :item_name, direction: :asc } ])).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
       end
 
       it "keyword は写しの品目コードか品目名に含む在庫に絞り、件数も同じ条件で数える。写しの無い在庫は当たらない" do

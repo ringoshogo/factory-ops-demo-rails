@@ -66,10 +66,10 @@ RSpec.describe Purchasing::PurchaseOrders, ".list" do
     end
     Tenancy.with_tenant(other.id) { FactoryBot.create(:purchase_order) }
 
-    expect(list_ids(order_by: { field: :order_no, direction: :desc })).to eq([ [ d, a, c, b ].map(&:id), 4 ])
-    expect(list_ids(order_by: { field: :order_date, direction: :asc })).to eq([ [ c, a, d, b ].map(&:id), 4 ])
-    expect(list_ids(order_by: { field: :desired_delivery_on, direction: :asc })).to eq([ [ d, b, c, a ].map(&:id), 4 ])
-    expect(list_ids(order_by: { field: :desired_delivery_on, direction: :desc })).to eq([ [ c, b, d, a ].map(&:id), 4 ])
+    expect(list_ids(order_by: [ { field: :order_no, direction: :desc } ])).to eq([ [ d, a, c, b ].map(&:id), 4 ])
+    expect(list_ids(order_by: [ { field: :order_date, direction: :asc } ])).to eq([ [ c, a, d, b ].map(&:id), 4 ])
+    expect(list_ids(order_by: [ { field: :desired_delivery_on, direction: :asc } ])).to eq([ [ d, b, c, a ].map(&:id), 4 ])
+    expect(list_ids(order_by: [ { field: :desired_delivery_on, direction: :desc } ])).to eq([ [ c, b, d, a ].map(&:id), 4 ])
     # 対照：並べ替えを省くと、作った順の新しいものから
     expect(list_ids).to eq([ [ d, c, b, a ].map(&:id), 4 ])
   end
@@ -106,8 +106,8 @@ RSpec.describe Purchasing::PurchaseOrders, ".list" do
 
     values = Tenancy.with_tenant(buyer.id) { described_class.list(actor, first: 10, after: nil).values.to_h { [ _1.id, _1.total_amount ] } }
     expect(values).to eq(small.id => 240, unconfirmed.id => nil, large.id => 1240)
-    expect(list_ids(order_by: { field: :total_amount, direction: :asc })).to eq([ [ small, large, unconfirmed ].map(&:id), 3 ])
-    expect(list_ids(order_by: { field: :total_amount, direction: :desc })).to eq([ [ large, small, unconfirmed ].map(&:id), 3 ])
+    expect(list_ids(order_by: [ { field: :total_amount, direction: :asc } ])).to eq([ [ small, large, unconfirmed ].map(&:id), 3 ])
+    expect(list_ids(order_by: [ { field: :total_amount, direction: :desc } ])).to eq([ [ large, small, unconfirmed ].map(&:id), 3 ])
   end
 
   it "受注側の名前と、業務の進み順の状況で並べる" do
@@ -118,8 +118,8 @@ RSpec.describe Purchasing::PurchaseOrders, ".list" do
       end
     end
 
-    expect(list_ids(order_by: { field: :supplier_name, direction: :asc })).to eq([ [ b, a, c ].map(&:id), 3 ])
-    expect(list_ids(order_by: { field: :status, direction: :asc })).to eq([ [ c, b, a ].map(&:id), 3 ])
-    expect(list_ids(order_by: { field: :status, direction: :desc })).to eq([ [ a, b, c ].map(&:id), 3 ])
+    expect(list_ids(order_by: [ { field: :supplier_name, direction: :asc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
+    expect(list_ids(order_by: [ { field: :status, direction: :asc } ])).to eq([ [ c, b, a ].map(&:id), 3 ])
+    expect(list_ids(order_by: [ { field: :status, direction: :desc } ])).to eq([ [ a, b, c ].map(&:id), 3 ])
   end
 end

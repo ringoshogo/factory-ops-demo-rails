@@ -91,7 +91,7 @@ RSpec.describe Inventory::ItemLabels do
 
         expect(list(filter: { keyword: "他社" })).to eq([ [], 0 ])
         # 他社の写しの A-1 を使うと、写しの無い在庫が自社の M-1 より前に並ぶ
-        expect(list(order_by: { field: :item_code, direction: :asc })).to eq([ [ own.item_id, unlabeled.item_id ], 2 ])
+        expect(list(order_by: [ { field: :item_code, direction: :asc } ])).to eq([ [ own.item_id, unlabeled.item_id ], 2 ])
       end
     end
 

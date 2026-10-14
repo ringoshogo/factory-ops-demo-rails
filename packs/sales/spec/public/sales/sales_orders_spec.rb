@@ -44,10 +44,10 @@ RSpec.describe Sales::SalesOrders do
       end
       Tenancy.with_tenant(other.id) { FactoryBot.create(:sales_order) }
 
-      expect(list_ids(order_by: { field: :order_no, direction: :asc })).to eq([ [ b, c, a, d ].map(&:id), 4 ])
-      expect(list_ids(order_by: { field: :order_date, direction: :desc })).to eq([ [ b, d, a, c ].map(&:id), 4 ])
-      expect(list_ids(order_by: { field: :due_date, direction: :asc })).to eq([ [ d, b, c, a ].map(&:id), 4 ])
-      expect(list_ids(order_by: { field: :due_date, direction: :desc })).to eq([ [ c, b, d, a ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :order_no, direction: :asc } ])).to eq([ [ b, c, a, d ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :order_date, direction: :desc } ])).to eq([ [ b, d, a, c ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :due_date, direction: :asc } ])).to eq([ [ d, b, c, a ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :due_date, direction: :desc } ])).to eq([ [ c, b, d, a ].map(&:id), 4 ])
       # 対照：並べ替えを省くと、作った順の新しいものから
       expect(list_ids).to eq([ [ d, c, b, a ].map(&:id), 4 ])
     end
@@ -111,8 +111,8 @@ RSpec.describe Sales::SalesOrders do
         [ priced_order([ 100 ]), priced_order([ 500 ]), priced_order([ nil, 100 ]), priced_order([ 100 ]), priced_order([ 2**63 - 1 ]) ]
       end
 
-      expect(list_ids(order_by: { field: :total_amount, direction: :asc })).to eq([ [ small, same, large, huge, awaiting ].map(&:id), 5 ])
-      expect(list_ids(order_by: { field: :total_amount, direction: :desc })).to eq([ [ huge, large, same, small, awaiting ].map(&:id), 5 ])
+      expect(list_ids(order_by: [ { field: :total_amount, direction: :asc } ])).to eq([ [ small, same, large, huge, awaiting ].map(&:id), 5 ])
+      expect(list_ids(order_by: [ { field: :total_amount, direction: :desc } ])).to eq([ [ huge, large, same, small, awaiting ].map(&:id), 5 ])
     end
   end
 
@@ -121,8 +121,8 @@ RSpec.describe Sales::SalesOrders do
       beta, alpha = %w[beta alpha].map { FactoryBot.create(:tenant, name: _1) }
       a, b, c = Tenancy.with_tenant(supplier.id) { [ beta, alpha, beta ].map { FactoryBot.create(:sales_order, customer_tenant_id: _1.id) } }
 
-      expect(list_ids(order_by: { field: :customer_name, direction: :asc })).to eq([ [ b, a, c ].map(&:id), 3 ])
-      expect(list_ids(order_by: { field: :customer_name, direction: :desc })).to eq([ [ c, a, b ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :customer_name, direction: :asc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :customer_name, direction: :desc } ])).to eq([ [ c, a, b ].map(&:id), 3 ])
     end
 
     it "状況を業務の進み順（SORT_ORDER）で並べる" do
@@ -130,8 +130,8 @@ RSpec.describe Sales::SalesOrders do
         [ order(cancelled_at: Time.current), order(shipped_at: Time.current), order(matched: false), order ]
       end
 
-      expect(list_ids(order_by: { field: :status, direction: :asc })).to eq([ [ awaiting, received, shipped, cancelled ].map(&:id), 4 ])
-      expect(list_ids(order_by: { field: :status, direction: :desc })).to eq([ [ cancelled, shipped, received, awaiting ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :status, direction: :asc } ])).to eq([ [ awaiting, received, shipped, cancelled ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :status, direction: :desc } ])).to eq([ [ cancelled, shipped, received, awaiting ].map(&:id), 4 ])
     end
   end
 

@@ -84,8 +84,8 @@ RSpec.describe Sales::Catalog do
     it "品目コードか品目名で、品目コードと ID の組で並べる" do
       [ [ "B-1", "ナット" ], [ "A-1", "ボルト" ], [ "C-1", "ナット" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
 
-      expect(items(order_by: { field: :code, direction: :asc })).to eq([ %w[A-1 B-1 C-1], 3 ])
-      expect(items(order_by: { field: :name, direction: :desc })).to eq([ %w[A-1 C-1 B-1], 3 ])
+      expect(items(order_by: [ { field: :code, direction: :asc } ])).to eq([ %w[A-1 B-1 C-1], 3 ])
+      expect(items(order_by: [ { field: :name, direction: :desc } ])).to eq([ %w[A-1 C-1 B-1], 3 ])
     end
 
     it "keyword は、前後の空白を除いて、品目コードか品目名に含む品目に、大文字と小文字を区別せずに絞る。空なら絞らない" do
@@ -103,7 +103,7 @@ RSpec.describe Sales::Catalog do
     it "品目名を、漢字の音読みの順に並べる" do
       [ [ "N-2", "六角ナット M8" ], [ "B-1", "六角ボルト M8" ], [ "W-3", "平座金 M8" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
 
-      expect(items(order_by: { field: :name, direction: :asc })).to eq([ %w[W-3 N-2 B-1], 3 ])
+      expect(items(order_by: [ { field: :name, direction: :asc } ])).to eq([ %w[W-3 N-2 B-1], 3 ])
     end
 
     # 品目コードの列（pg_c_utf8）は ASCII の外の文字も、品目名の列（ja-x-icu）は全角の英字も、大文字と小文字を区別せずに探す。
