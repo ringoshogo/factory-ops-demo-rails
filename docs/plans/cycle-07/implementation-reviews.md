@@ -150,7 +150,7 @@ cd frontend && npm ci && npm ls --all > /dev/null   # 終了コード 0（Node 2
 
 ## M49 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする
 
-`m49-collations`（base は `main`）。M48 の `m48-ci-deps-check` の先端 `abc9bd6` から切った。M48（#84）は着手の後に main にマージされたので、M49 の差分は `abc9bd6..` である。
+`m49-collations`（base は `main`、PR #86）。M48 の `m48-ci-deps-check` の先端 `abc9bd6` から切った。M48（#84）は着手の後に main にマージされたので、M49 の差分は `abc9bd6..` である。
 
 ### 実装の記録
 
@@ -227,4 +227,6 @@ TEST_DATABASE=factory_ops_m49_test bundle exec rspec spec/platform/logging_spec.
 TEST_DATABASE=factory_ops_m49_test bin/ci   # すべての工程が通った。rspec は 2988 examples, 0 failures
 ```
 
-`bin/ci` の 1 回目（`31a476a`）は、`stocks_spec.rb` の品目名の並びの期待で 1 件落ち（2988 examples, 1 failure）、`0b3871b` で直した。`bin/ci` の後も `log/events.log` はできなかった。分岐の網羅率の警告は 0 件だった。
+`bin/ci` の 1 回目（`31a476a`）は、`stocks_spec.rb` の品目名の並びの期待で 1 件落ち（2988 examples, 1 failure）、`0b3871b` で直した。実装の記録を載せた `e73974b` でも `TEST_DATABASE=factory_ops_m49_test bin/ci` を流し、すべての工程が通った（2988 examples, 0 failures）。`bin/ci` の後も `log/events.log` はできなかった。分岐の網羅率の警告は 0 件だった。`bin/check-open-items --due M49` と `bin/check-commit-refs` も通った。
+
+`e73974b` の PR の CI はすべて通った（`test` 6 分 25 秒、`e2e` 2 分 44 秒、`images` 2 分 13 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38505414473)）。CI の PostgreSQL のサービスでも `collations_spec.rb` の版の example が通った。
