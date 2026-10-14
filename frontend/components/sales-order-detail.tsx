@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { approveCancellationReview, cancelSalesOrder, rejectCancellationReview } from "@/lib/actions/fulfillment";
 import { IDLE, type FormState } from "@/lib/form-state";
-import { sumAmounts, yen } from "@/lib/format";
+import { totalAmountText, yen } from "@/lib/format";
 import type { SupplierSalesOrderQuery } from "@/lib/graphql/generated";
 import {
   canAllocate,
@@ -24,8 +24,8 @@ import { SALES_ORDER_STATUS, SHIPMENT_REQUEST_STATUS } from "@/lib/statuses";
 
 type Order = NonNullable<SupplierSalesOrderQuery["supplier"]["salesOrder"]>;
 
-const lineAmount = (line: Order["lines"][number]) =>
-  line.unitPrice ? BigInt(line.unitPrice) * BigInt(line.quantity) : BigInt(0);
+/** 単価の決まった明細の金額。合計は API の totalAmount を出し、明細から足さない。 */
+const lineAmount = (unitPrice: string, quantity: number) => BigInt(unitPrice) * BigInt(quantity);
 
 /**
  * 受注詳細。出せる操作は lib/sales-order-flow.ts で受注の状況と出荷依頼の状況から決め、押せるのに通らないボタンを
@@ -93,7 +93,7 @@ export function SalesOrderDetail({ order, businessDate, admin }: { order: Order;
         <div>
           <dt className="text-muted-foreground">受注合計（税抜き）</dt>
           <dd data-testid="order-total" className="tabular-nums">
-            {yen(sumAmounts(order.lines.map(lineAmount)))} 円
+            {totalAmountText(order.totalAmount, "salesOrder")}
           </dd>
         </div>
       </dl>
@@ -145,7 +145,7 @@ export function SalesOrderDetail({ order, businessDate, admin }: { order: Order;
               <span className="text-muted-foreground text-sm tabular-nums">
                 {line.unitPrice ? (
                   <>
-                    {yen(line.unitPrice)} 円 × {line.quantity} = {yen(lineAmount(line))} 円
+                    {yen(line.unitPrice)} 円 × {line.quantity} = {yen(lineAmount(line.unitPrice, line.quantity))} 円
                   </>
                 ) : (
                   <>数量 {line.quantity}</>

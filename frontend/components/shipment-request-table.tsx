@@ -84,13 +84,13 @@ export function ShipmentRequestTable({
                     {row.salesOrder.orderNo}
                   </TextLink>
                 ),
-                customer: row.customer.name,
+                CUSTOMER_NAME: row.customer.name,
                 DUE_DATE: (
                   <DueDate due={row.dueDate} open={OPEN_SHIPMENT_REQUEST_STATUSES.includes(row.status)} businessDate={businessDate} />
                 ),
                 planned: <DateText iso={row.plannedDate} businessDate={businessDate} />,
                 quantity: row.quantity,
-                status: <StatusBadge style={SHIPMENT_REQUEST_STATUS[row.status]} value={row.status} />,
+                STATUS: <StatusBadge style={SHIPMENT_REQUEST_STATUS[row.status]} value={row.status} />,
                 actions: actions.length > 0 ? <RowActions name={`${row.salesOrder.orderNo} の操作`} actions={actions} /> : null,
               };
               return (

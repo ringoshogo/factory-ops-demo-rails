@@ -34,8 +34,11 @@ export const OPEN_PURCHASE_ORDER_STATUSES: readonly PurchaseOrderStatus[] = [
 
 export const PURCHASE_ORDER_SORT_FIELDS: readonly PurchaseOrderOrderField[] = [
   "ORDER_NO",
+  "SUPPLIER_NAME",
   "ORDER_DATE",
   "DESIRED_DELIVERY_ON",
+  "STATUS",
+  "TOTAL_AMOUNT",
 ];
 
 export type PurchaseOrderListQuery = {

@@ -8,6 +8,7 @@ query SupplierSalesOrder($id: ID!) {
       dueDate
       status
       cancellationReviewPending
+      totalAmount
       cancellationReviews { id requestedAt decision decidedAt }
       customer { id name }
       lines {

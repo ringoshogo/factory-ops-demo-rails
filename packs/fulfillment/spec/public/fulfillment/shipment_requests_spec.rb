@@ -77,5 +77,19 @@ RSpec.describe Fulfillment::ShipmentRequests do
       # 対照：並べ替えを省くと、作った順の新しいものから
       expect(list_ids).to eq([ [ d, c, b, a ].map(&:id), 4 ])
     end
+
+    it "得意先の名前と、業務の進み順の状況で並べる" do
+      beta, alpha = %w[beta alpha].map { FactoryBot.create(:tenant, name: _1) }
+      a, b, c = Tenancy.with_tenant(supplier.id) do
+        [ beta, alpha, beta ].map { FactoryBot.create(:shipment_request, buyer_tenant_id: _1.id) }.tap do |(cancelled, instructed, _ready)|
+          cancelled.update!(cancelled_at: Time.current)
+          FactoryBot.create(:shipping_instruction, shipment_request: instructed)
+        end
+      end
+
+      expect(list_ids(order_by: { field: :customer_name, direction: :asc })).to eq([ [ b, a, c ].map(&:id), 3 ])
+      expect(list_ids(order_by: { field: :status, direction: :asc })).to eq([ [ c, b, a ].map(&:id), 3 ])
+      expect(list_ids(order_by: { field: :status, direction: :desc })).to eq([ [ a, b, c ].map(&:id), 3 ])
+    end
   end
 end

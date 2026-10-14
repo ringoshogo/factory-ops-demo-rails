@@ -1,18 +1,12 @@
 module Purchasing
-  # 発注側が自社の発注を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）
+  # 発注側が自社の発注を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
+  # 状況と合計金額は、行と一緒に PurchaseOrderStatus と PurchaseOrderAmount の SQL の式で読む
   module PurchaseOrders
-    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。伝票番号は桁をそろえた文字列なので、文字列の順が番号の順になる
-    ORDER_COLUMNS = {
-      order_no: [ PurchaseOrder.arel_table[:order_no], :string ],
-      order_date: [ PurchaseOrder.arel_table[:order_date], :date ],
-      desired_delivery_on: [ PurchaseOrder.arel_table[:desired_delivery_on], :date ]
-    }.freeze
-
     # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
     # filter は受注側と、両端を含む発注日の範囲と、状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
     def self.list(actor, first:, after:, order_by: nil, filter: {})
-      Page.of(filtered(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS),
-        columns: [ PurchaseOrderStatus.expression.as("status") ]) { to_values(_1) }
+      Page.of(filtered(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, order_columns(actor)),
+        columns:) { to_values(_1) }
     end
 
     # 見えない ID は存在しない ID と同じく nil になる
@@ -75,16 +69,32 @@ module Purchasing
       relation
     end
 
-    def self.with_status(relation) = relation.select(PurchaseOrder.arel_table[Arel.star], PurchaseOrderStatus.expression.as("status"))
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。伝票番号は桁をそろえた文字列なので、文字列の順が番号の順になる。
+    # 受注側の名前は取引関係の公開 API の副問い合わせから引き、状況は業務の進み順の位置で並べる
+    def self.order_columns(actor)
+      orders = PurchaseOrder.arel_table
+      { order_no: [ orders[:order_no], :string ],
+        order_date: [ orders[:order_date], :date ],
+        desired_delivery_on: [ orders[:desired_delivery_on], :date ],
+        supplier_name: [ Partnerships::Directory.tenant_names_sql(actor).lookup(:name, :tenant_id, orders[:supplier_tenant_id]), :string ],
+        total_amount: [ PurchaseOrderAmount.expression, :decimal ],
+        status: [ Page::Sort.rank(PurchaseOrderStatus.expression, PurchaseOrderStatus::SORT_ORDER), :integer ] }
+    end
 
-    # orders は状況の式を status の別名で読んだ発注
+    # 行と一緒に読む状況と合計金額の式
+    def self.columns = [ PurchaseOrderStatus.expression.as("status"), PurchaseOrderAmount.expression.as("total_amount") ]
+
+    def self.with_status(relation) = relation.select(PurchaseOrder.arel_table[Arel.star], *columns)
+
+    # orders は状況と合計金額の式を status・total_amount の別名で読んだ発注。合計は numeric で読むので、整数に戻す
     def self.to_values(orders)
       orders = orders.to_a
       pending = CancellationRequest.pending.where(purchase_order_id: orders.map(&:id)).pluck(:purchase_order_id).to_set
       orders.map do |order|
         PurchaseOrderValue.new(id: order.id, owner_tenant_id: order.owner_tenant_id, order_no: order.order_no,
           supplier_tenant_id: order.supplier_tenant_id, order_date: order.order_date,
-          desired_delivery_on: order.desired_delivery_on, status: order["status"].to_sym, cancellation_pending: pending.include?(order.id))
+          desired_delivery_on: order.desired_delivery_on, status: order["status"].to_sym, cancellation_pending: pending.include?(order.id),
+          total_amount: order["total_amount"]&.to_i)
       end
     end
 
@@ -97,6 +107,6 @@ module Purchasing
     def self.to_record_value(klass, record, **extra)
       klass.new(**record.slice(*(klass.members - extra.keys).map(&:to_s)).symbolize_keys, **extra)
     end
-    private_class_method :filtered, :with_status, :to_values, :to_cancellation_request_value, :to_line_value, :to_record_value
+    private_class_method :order_columns, :columns, :filtered, :with_status, :to_values, :to_cancellation_request_value, :to_line_value, :to_record_value
   end
 end

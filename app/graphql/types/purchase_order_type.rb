@@ -12,6 +12,7 @@ module Types
     field :desired_delivery_on, GraphQL::Types::ISO8601Date
     field :status, PurchaseOrderStatusType, null: false
     field :cancellation_pending, Boolean, null: false, description: "回答待ちの取消依頼がある"
+    field :total_amount, GraphQL::Types::BigInt, description: "税抜の合計金額。受注確定の前の明細を含むと空"
     field :lines, [ PurchaseOrderLineType ], null: false
     field :cancellation_requests, [ CancellationRequestType ], null: false
     field :inbound_shipments, [ InboundShipmentType ], null: false

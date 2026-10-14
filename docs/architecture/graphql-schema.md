@@ -19,7 +19,7 @@
    - `GraphqlController` は、スキーマを実行する前に、ログの文脈（リクエスト ID・テナント・ユーザー・操作名・相関 ID）を `Rails.event.set_context` で設定する。文脈は Fiber のストレージにあり、Dataloader の Fiber は作られた時点の値を写して持つので、実行の途中で設定した値はフィールドの解決に届かない（`../implementation-plan.md` M18）。
    - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「取引関係と権限付与（`partnerships`）」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。公開の配置（`deploy/`）では、全員がログインの画面に並ぶ同じアカウントを使うので、`web` に `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めず Cookie を消すだけにする。世代を進めると、同じアカウントのほかの訪問者が全員切れるからである。このとき、ログアウトの前に写し取られた Cookie は期限まで使えるままになる。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。Rails は応答のたびに期限を延ばした Cookie を書き直すが、画面（`frontend/`）では、Next がブラウザへ Cookie を写せるのは server action と route handler の応答だけで、サーバーコンポーネントの読み取りの応答では写せない。そのため画面の利用者の期限は、ログインか最後の書き込みから 12 時間になる（`frontend/lib/graphql/request.ts`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
-3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。別のコンテキストの値を SQL の中で読む公開 API（受注の状況が読む在庫の引当数量）には、相手の公開 API が、scope を掛けた後に SQL の文字列にした副問い合わせを、列の名前と一緒に値（`SqlSubquery`、`packs/platform`）で返す。受け取る側は条件を足さずに副問い合わせとして結ぶだけで、相手の relation もモデルも受け取らない。relation を受け取ると、`unscope`・`rewhere`・`update_all` で相手の scope と書き込みの入口を越えられるからである（`../adr/010-状況の導出をSQLの式1つにする.md`）。
+3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。別のコンテキストの値を SQL の中で読む公開 API（受注の状況が読む在庫の引当数量）には、相手の公開 API が、scope を掛けた後に SQL の文字列にした副問い合わせを、列の名前と一緒に値（`SqlSubquery`、`packs/platform`）で返す。受け取る側は条件を足さずに副問い合わせとして結ぶだけで、相手の relation もモデルも受け取らない。relation を受け取ると、`unscope`・`rewhere`・`update_all` で相手の scope と書き込みの入口を越えられるからである。所有テナントの無い表の値（受注・発注・出荷依頼の一覧を取引先の名前で並べるときのテナントの名前）は、相手の公開 API が scope を掛けずに、返す列を ID と名前に絞った副問い合わせを同じ値で返す（`../adr/010-状況の導出をSQLの式1つにする.md` 決定 2）。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
 5. **入れ子のフィールド**：別のコンテキストの値が要るフィールドは、Dataloader でまとめて公開 API を呼ぶ（「ページングと N+1」）。
 
@@ -118,6 +118,8 @@ type PurchaseOrder {
   status: PurchaseOrderStatus!
   "回答待ちの取消依頼がある"
   cancellationPending: Boolean!
+  "税抜の合計金額。受注確定の前の明細を含むと空"
+  totalAmount: BigInt
   lines: [PurchaseOrderLine!]!
   cancellationRequests: [CancellationRequest!]!
   inboundShipments: [InboundShipment!]!
@@ -243,6 +245,8 @@ type SalesOrder {
   status: SalesOrderStatus!
   "未決の取消の審査がある"
   cancellationReviewPending: Boolean!
+  "税抜の合計金額。品番照合待ちの明細を含むと空"
+  totalAmount: BigInt
   lines: [SalesOrderLine!]!
   cancellationReviews: [CancellationReview!]!
   "全量引当で出荷可能になった後に現れる"
@@ -742,6 +746,14 @@ mutation が受け取る入力の件数と長さには上限を置く。公開 A
 
 3 つの一覧は、状況で絞る `statuses`（`SalesOrderFilter`・`PurchaseOrderFilter`・`ShipmentRequestFilter`）を持つ。画面が状況のタブで一覧を分け、タブごとの件数を `totalCount` で読むためである。値は enum の状況で、重ねて示すフィールド（取消の依頼中・審査中）は状況ではないので絞り込みに入れない。表示・絞り込み・件数は同じ式を読むので、一覧の `status` と、その状況で絞った一覧と、ダッシュボードの状況ごとの件数が食い違わない。
 
+3 つの一覧は、状況でも並べる（`orderBy` の `STATUS`、「ページングと N+1」）。並べる順は、下の表の導出の優先順ではなく、業務の進み順である。状況のモジュールが進み順の一覧（`SORT_ORDER`）を持ち、公開 API は状況の式の値の、その一覧での位置で並べる。状況のモジュールの単体が、`SORT_ORDER` と導出の優先順（`ALL`）が同じ状況の集まりであることを確かめる。片方にだけ状況を足すと、足した状況の位置が空になり、黙って最後に並ぶからである。
+
+| 一覧 | 状況で並べる順（`ASC`） |
+|---|---|
+| 受注 | 品番照合待ち・受注済・一部引当・引当済・出荷済・検収済・取消済 |
+| 発注 | 送信済み・受注側で確認中・受注済・入荷予定・検収済・取消済み・受注側により取消 |
+| 出荷依頼 | 出荷待ち・出荷指示済・出荷停止中・出荷済・取消済 |
+
 | enum | 値（導出表の状況） | 重ねて示すフィールド |
 |---|---|---|
 | `PurchaseOrderStatus` | `SUPPLIER_CANCELLED`（受注側により取消）・`CANCELLED`（取消済み）・`INSPECTED`（検収済）・`INBOUND`（入荷予定）・`ACCEPTED`（受注済）・`AWAITING_SUPPLIER_CONFIRMATION`（受注側で確認中）・`SENT`（送信済み） | `PurchaseOrder.cancellationPending`（取消依頼中） |
@@ -800,18 +812,21 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つで、一覧の表（同じパッケージの表）の列か、その列から計算する値に限る。取引先の名前や品目のコードのような別のコンテキストの値で並べるには、相手の表を結合するか相手の公開 API から並びを受け取ることになり、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである（OI-144）。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つである。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前）か、一覧のパッケージに写した表（在庫の品目のコードと名前。`../implementation-plan.md` M46）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
 
 | 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） |
 |---|---|---|
-| `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE` | `customerTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
-| `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON` | `supplierTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
-| `supplier.shipmentRequests` | `DUE_DATE` | `statuses` |
+| `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE`・`CUSTOMER_NAME`・`TOTAL_AMOUNT`・`STATUS` | `customerTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
+| `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON`・`SUPPLIER_NAME`・`TOTAL_AMOUNT`・`STATUS` | `supplierTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
+| `supplier.shipmentRequests` | `DUE_DATE`・`CUSTOMER_NAME`・`STATUS` | `statuses` |
 | `supplier.stocks` | `ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock` |
 | `supplier.stockMovements` | — | `types` |
 | `supplier.items` | `CODE`・`NAME` | `keyword` |
 
 - 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。
+- 取引先の名前（`CUSTOMER_NAME`・`SUPPLIER_NAME`）は、取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が返すテナントの ID と名前の副問い合わせから、伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）の行の名前を、行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べる。結合と違い、結ぶ条件を書き誤って 2 行以上が当たると、行を増やさずに SQL のエラーになる。名前は DB の照合順序のまま並べ、読みの順（五十音）にしない。
+- 合計金額（`TOTAL_AMOUNT`）は、明細の数量と単価の積の和を、受注は `Sales::SalesOrderAmount`、発注は `Purchasing::PurchaseOrderAmount` の SQL の式で計算して並べる。単価の無い明細（受注は品番照合待ち、発注は受注確定の前）が 1 つでもあれば、合計は空になり、値の無い行として最後に並ぶ。一覧の `totalAmount` も同じ式を読むので、空の合計は、どの画面でも金額の代わりに空の理由（「照合待ち」・「確定待ち」）を出し、一部の合計を出さない（`frontend/lib/format.ts` の `totalAmountText`）。単価は `bigint` の上限まで入りうるので、積と和は `numeric` で計算する。和は、明細の件数の上限（100）・数量の上限（`integer`）・単価の上限（`bigint`）の積を超えないので 31 桁に収まる。
+- 状況（`STATUS`）は、状況の式の値を業務の進み順の位置で並べる（「状況の enum」）。
 - 受注日と発注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す。
 - `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ scope で絞る（「読み取りの一覧」の安全在庫）。偽か省いたときは絞らない。
 - `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。
@@ -832,15 +847,15 @@ type SalesOrderConnection {
 enum OrderDirection { ASC DESC }
 
 input SalesOrderOrder { field: SalesOrderOrderField!, direction: OrderDirection! }
-enum SalesOrderOrderField { ORDER_NO ORDER_DATE DUE_DATE }
+enum SalesOrderOrderField { ORDER_NO ORDER_DATE DUE_DATE CUSTOMER_NAME TOTAL_AMOUNT STATUS }
 input SalesOrderFilter { customerTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date, statuses: [SalesOrderStatus!] }
 
 input PurchaseOrderOrder { field: PurchaseOrderOrderField!, direction: OrderDirection! }
-enum PurchaseOrderOrderField { ORDER_NO ORDER_DATE DESIRED_DELIVERY_ON }
+enum PurchaseOrderOrderField { ORDER_NO ORDER_DATE DESIRED_DELIVERY_ON SUPPLIER_NAME TOTAL_AMOUNT STATUS }
 input PurchaseOrderFilter { supplierTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date, statuses: [PurchaseOrderStatus!] }
 
 input ShipmentRequestOrder { field: ShipmentRequestOrderField!, direction: OrderDirection! }
-enum ShipmentRequestOrderField { DUE_DATE }
+enum ShipmentRequestOrderField { DUE_DATE CUSTOMER_NAME STATUS }
 input ShipmentRequestFilter { statuses: [ShipmentRequestStatus!] }
 
 input StockOrder { field: StockOrderField!, direction: OrderDirection! }
@@ -856,7 +871,7 @@ input ItemFilter { keyword: String }
 
 `orderBy` を省いた一覧は、主キーの UUIDv7 で作成順の新しいものから並べ、主キーをカーソルにする。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。取り込みの失敗した行（`Import.rowErrors`）は、行番号の昇順に並べ、行番号をカーソルにする。
 
-`orderBy` を渡した一覧は「列の値、主キー」の組で並べ、主キーを列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、向きによらず最後に置く。そのため、カーソルの値が空なら後ろは「値が空で主キーが後のもの」だけになり、値があれば後ろは「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、並べ替えの列の名前・向き・列の値・主キーを JSON にして Base64 で包んだ不透明な文字列である。形の誤ったカーソルと、別の並べ替え（列か向きの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
+`orderBy` を渡した一覧は「列の値、主キー」の組で並べ、主キーを列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、向きによらず最後に置く。そのため、カーソルの値が空なら後ろは「値が空で主キーが後のもの」だけになり、値があれば後ろは「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、並べ替えの列の名前・向き・列の値・主キーを JSON にして Base64 で包んだ不透明な文字列である。合計金額の値は、`bigint` を超えうるので JSON の数にせず整数の 10 進の文字列で書き、読むときは 31 桁までの数字だけを受け付ける。形の誤ったカーソルと、別の並べ替え（列か向きの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
 
 公開 API は、操作者・件数・カーソル（並べ替えと絞り込みを持つ一覧は、それも）を受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無・件数を `Page`（`packs/platform`）で返す。公開 API は scope と絞り込みを掛けた relation を `Page.of` に渡し、`Page` はページの行と件数を同じ relation から引く。ページと件数で scope と絞り込みを別々に書くと、片方だけ scope が抜けても単体の spec では気づきにくいからである。`Page` は、行と件数を初めて読まれたときに引く。`totalCount` だけを選ぶ問い合わせ（画面のタブの件数）は、件数の 1 つの SQL だけを流し、ページの行も値への写しも読まない。`Page` を作った `Tenancy.with_tenant` の外で行か件数を読むと、`Tenancy::MissingTenant` にする。テナントの設定の無い接続では、RLS が行を隠して空のページを黙って返すからである。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
 

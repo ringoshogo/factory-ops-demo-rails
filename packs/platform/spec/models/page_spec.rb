@@ -71,6 +71,46 @@ RSpec.describe Page do
     end
   end
 
+  describe "金額の和（:decimal）で並べる" do
+    # 監査ログの表に金額の列は無いので、request_id の数字を numeric に読み替えて和の代わりにする
+    let(:amount) { Arel::Nodes::NamedFunction.new("CAST", [ AuditLog.arel_table[:request_id].as(Arel.sql("numeric")) ]) }
+
+    def amount_sort(direction) = Page::Sort.of({ field: :amount, direction: }, amount: [ amount, :decimal ])
+
+    it "bigint の上限を超える和を、カーソルに 10 進の文字列で書き、往復しても行が抜けも重なりもしない" do
+      huge = (2**63) * 3
+      logs = [ huge, huge, huge + 1, 1 ].map { create_log(request_id: _1.to_s) }
+      blank = create_log(request_id: nil)
+
+      expect(walk(first: 1, sort: amount_sort(:asc)).flatten).to eq([ logs[3], logs[0], logs[1], logs[2], blank ].map(&:id))
+      expect(walk(first: 1, sort: amount_sort(:desc)).flatten).to eq([ logs[2], logs[1], logs[0], logs[3], blank ].map(&:id))
+      cursor = page(first: 1, sort: amount_sort(:desc))[:cursors].sole
+      expect(JSON.parse(Base64.urlsafe_decode64(cursor))[2]).to eq((huge + 1).to_s)
+    end
+
+    it "31 桁を超える値・負の値・数の値・小数のカーソルを拒み、31 桁ちょうどの値は受け付ける" do
+      create_log(request_id: "1")
+      id = SecureRandom.uuid
+      forge = ->(value) { Base64.urlsafe_encode64(JSON.generate([ "amount", "asc", value, id ]), padding: false) }
+
+      [ "1" * 32, "-1", 1, "1.5", "" ].each do |value|
+        expect { page(first: 1, after: forge.call(value), sort: amount_sort(:asc)) }.to raise_error(Page::InvalidCursor), value.inspect
+      end
+      # 対照：31 桁ちょうどの値は受け付け、SQL で比べられる
+      expect(page(first: 1, after: forge.call("9" * 31), sort: amount_sort(:asc))[:values]).to eq([])
+      expect(page(first: 1, after: forge.call("0"), sort: amount_sort(:asc))[:values].size).to eq(1)
+    end
+  end
+
+  describe "Page::Sort.rank" do
+    it "式の値を、渡した一覧の中の位置で並べる" do
+      logs = %w[b c a].map { create_log(request_id: _1) }
+      rank = Page::Sort.of({ field: :rank, direction: :asc }, rank: [ Page::Sort.rank(AuditLog.arel_table[:request_id], %i[c a b]), :integer ])
+
+      expect(walk(first: 2, sort: rank).flatten).to eq([ logs[1], logs[2], logs[0] ].map(&:id))
+    end
+  end
+
   describe "カーソルの拒否" do
     before { Array.new(3) { create_log(request_id: "r-1") } }
 

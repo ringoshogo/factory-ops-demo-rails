@@ -65,6 +65,28 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
     expect(list([])).to eq([ [], 0 ])
     expect(list(nil)).to eq([ [ [ instructed.id, :instructed ], [ ready.id, :ready ], [ cancelled.id, :cancelled ] ], 3 ])
   end
+
+  # 期待する順は docs/architecture/graphql-schema.md「状況の enum」の「状況で並べる順」の表から書き写す
+  it "状況で並べると、業務の進み順に並び、DESC はその逆になる" do
+    requests = {
+      cancelled: request(cancelled_at: Time.current), shipped: request(shipped: true), on_hold: request(held: true),
+      instructed: request(instructed: true), ready: request
+    }
+    sorted = lambda do |direction|
+      Fulfillment::ShipmentRequests.list(actor, first: 100, after: nil, order_by: { field: :status, direction: }).values.map(&:status)
+    end
+
+    expected = %i[ready instructed on_hold shipped cancelled]
+    expect(requests.keys).to match_array(expected)
+    expect(sorted.call(:asc)).to eq(expected)
+    expect(sorted.call(:desc)).to eq(expected.reverse)
+  end
+
+  # 片方にだけ状況を足すと、足した状況の順位が空になり、状況で並べたときに黙って最後に並ぶ
+  it "状況で並べる順（SORT_ORDER）は、導出の優先順（ALL）と同じ状況の集まりを持つ" do
+    expect(described_class::SORT_ORDER).to match_array(described_class::ALL)
+    expect(described_class::SORT_ORDER.uniq.size).to eq(described_class::SORT_ORDER.size)
+  end
 end
 
 # 出荷停止は受注の ID を参照するだけで外部キーが無く、他社の名義で自社の受注を指す行を DB は拒まない。

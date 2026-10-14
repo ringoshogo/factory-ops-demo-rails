@@ -70,6 +70,71 @@ RSpec.describe Sales::SalesOrders do
     end
   end
 
+  # 合計金額は明細の数量と単価の積の和で、単価の無い明細（照合待ち）があれば空にする（docs/architecture/graphql-schema.md「ページングと N+1」）
+  describe "合計金額" do
+    # prices は明細ごとの単価で、nil は照合待ちの明細
+    def priced_order(prices, quantity: 3)
+      FactoryBot.create(:sales_order).tap do |order|
+        prices.each do |unit_price|
+          if unit_price
+            FactoryBot.create(:sales_order_line, :matched, sales_order: order, quantity:, unit_price:)
+          else
+            FactoryBot.create(:sales_order_line, sales_order: order, quantity:)
+          end
+        end
+      end
+    end
+
+    it "照合待ちの明細を含む受注は合計を空にし、照合済みの受注は数量と単価の積の和を持つ。一覧・1 件・ID ごとの取得で同じ" do
+      awaiting, matched = Tenancy.with_tenant(supplier.id) { [ priced_order([ 100, nil ]), priced_order([ 100, 250 ]) ] }
+
+      Tenancy.with_tenant(supplier.id) do
+        listed = described_class.list(actor, first: 10, after: nil).values.to_h { [ _1.id, _1.to_h ] }
+        expect(listed.fetch(awaiting.id)).to include(total_amount: nil)
+        expect(listed.fetch(matched.id)).to include(total_amount: 1050)
+        expect(described_class.find(actor, matched.id).to_h).to include(total_amount: 1050)
+        expect(described_class.by_ids(actor, [ awaiting.id, matched.id ]).transform_values(&:to_h).transform_values { _1[:total_amount] })
+          .to eq(awaiting.id => nil, matched.id => 1050)
+      end
+    end
+
+    it "bigint を超える和を、桁あふれさせずに整数で持つ" do
+      order = Tenancy.with_tenant(supplier.id) { priced_order([ 2**63 - 1, 2**63 - 1 ]) }
+
+      total = Tenancy.with_tenant(supplier.id) { described_class.find(actor, order.id).to_h[:total_amount] }
+      expect(total).to eq((2**63 - 1) * 6)
+      expect(total).to be_an(Integer)
+    end
+
+    it "合計で並べると、照合待ちの受注を向きによらず最後に置く。bigint を超える和もカーソルで往復する" do
+      small, large, awaiting, same, huge = Tenancy.with_tenant(supplier.id) do
+        [ priced_order([ 100 ]), priced_order([ 500 ]), priced_order([ nil, 100 ]), priced_order([ 100 ]), priced_order([ 2**63 - 1 ]) ]
+      end
+
+      expect(list_ids(order_by: { field: :total_amount, direction: :asc })).to eq([ [ small, same, large, huge, awaiting ].map(&:id), 5 ])
+      expect(list_ids(order_by: { field: :total_amount, direction: :desc })).to eq([ [ huge, large, same, small, awaiting ].map(&:id), 5 ])
+    end
+  end
+
+  describe "取引先の名前と状況で並べる" do
+    it "得意先の名前で並べ、名前の同じ受注を ID で並べる" do
+      beta, alpha = %w[beta alpha].map { FactoryBot.create(:tenant, name: _1) }
+      a, b, c = Tenancy.with_tenant(supplier.id) { [ beta, alpha, beta ].map { FactoryBot.create(:sales_order, customer_tenant_id: _1.id) } }
+
+      expect(list_ids(order_by: { field: :customer_name, direction: :asc })).to eq([ [ b, a, c ].map(&:id), 3 ])
+      expect(list_ids(order_by: { field: :customer_name, direction: :desc })).to eq([ [ c, a, b ].map(&:id), 3 ])
+    end
+
+    it "状況を業務の進み順（SORT_ORDER）で並べる" do
+      cancelled, shipped, awaiting, received = Tenancy.with_tenant(supplier.id) do
+        [ order(cancelled_at: Time.current), order(shipped_at: Time.current), order(matched: false), order ]
+      end
+
+      expect(list_ids(order_by: { field: :status, direction: :asc })).to eq([ [ awaiting, received, shipped, cancelled ].map(&:id), 4 ])
+      expect(list_ids(order_by: { field: :status, direction: :desc })).to eq([ [ cancelled, shipped, received, awaiting ].map(&:id), 4 ])
+    end
+  end
+
   describe ".count_by_status" do
     it "状況ごとに数え、取消済も数える" do
       Tenancy.with_tenant(supplier.id) do

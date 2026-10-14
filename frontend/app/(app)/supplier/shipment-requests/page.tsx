@@ -21,16 +21,19 @@ import { SHIPMENT_REQUEST_STATUS } from "@/lib/statuses";
 
 const ALL = { value: "", label: "すべて" };
 
-// 並べ替えの見出しは API の orderBy の field から作る。出荷依頼は出荷期限でだけ並べられる
-const SORT = sortColumns<ShipmentRequestOrderField>({ DUE_DATE: "出荷期限" });
+// 並べ替えの見出しは API の orderBy の field から作る
+const SORT = sortColumns<ShipmentRequestOrderField>(
+  { CUSTOMER_NAME: "取引先", DUE_DATE: "出荷期限", STATUS: "状況" },
+  { CUSTOMER_NAME: { truncate: true } },
+);
 
 const COLUMNS: Column<ShipmentRequestOrderField>[] = [
   { key: "orderNo", label: "受注番号" },
-  { key: "customer", label: "取引先", truncate: true },
+  SORT.CUSTOMER_NAME,
   SORT.DUE_DATE,
   { key: "planned", label: "出荷予定日" },
   { key: "quantity", label: "数量", numeric: true },
-  { key: "status", label: "状況" },
+  SORT.STATUS,
   { key: "actions", label: "操作" },
 ];
 

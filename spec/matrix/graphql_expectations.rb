@@ -202,6 +202,13 @@ module MatrixExpectations
       },
       expect: EVERYONE
     },
+    # 受注側の名前の副問い合わせを結ぶ条件を書き誤り、発注ごとに複数の名前を引くと、SQL のエラーになって落ちる
+    "BuyerView.purchaseOrders#orderByName" => {
+      role: :member,
+      query: "query($orderBy: PurchaseOrderOrder) { buyer { purchaseOrders(orderBy: $orderBy) { totalCount nodes { id supplier { name } } } } }",
+      variables: ->(_world) { { orderBy: { field: "SUPPLIER_NAME", direction: "ASC" } } },
+      expect: EVERYONE
+    },
     # 経路 3。自社の発注に連結した出荷が、有効な取引関係と view_shipments の付与がある発注側にだけ見え、
     # 付与があっても失効で閉じる。受注側の supplier の発注には連結した出荷が無い
     "PurchaseOrder.supplierShipments" => {
@@ -230,6 +237,13 @@ module MatrixExpectations
           filter: { customerTenantId: world.tenants[:granted_buyer], orderDateFrom: MatrixWorld::FILTER_ORDER_DATE.iso8601,
                     orderDateTo: MatrixWorld::FILTER_ORDER_DATE.iso8601, statuses: [ "CANCELLED" ] } }
       },
+      expect: EVERYONE
+    },
+    # 得意先の名前の副問い合わせを結ぶ条件を書き誤り、受注ごとに複数の名前を引くと、SQL のエラーになって落ちる
+    "SupplierView.salesOrders#orderByName" => {
+      role: :member,
+      query: "query($orderBy: SalesOrderOrder) { supplier { salesOrders(orderBy: $orderBy) { totalCount nodes { id customer { name } } } } }",
+      variables: ->(_world) { { orderBy: { field: "CUSTOMER_NAME", direction: "DESC" } } },
       expect: EVERYONE
     },
     # 発注に連結した受注。発注側の granted_buyer にも見えない
@@ -287,6 +301,13 @@ module MatrixExpectations
       query: "query($orderBy: ShipmentRequestOrder, $filter: ShipmentRequestFilter) " \
         "{ supplier { shipmentRequests(orderBy: $orderBy, filter: $filter) { totalCount nodes { id dueDate } } } }",
       variables: ->(_world) { { orderBy: { field: "DUE_DATE", direction: "ASC" }, filter: { statuses: [ "READY" ] } } },
+      expect: EVERYONE
+    },
+    # 得意先の名前の副問い合わせを結ぶ条件を書き誤り、出荷依頼ごとに複数の名前を引くと、SQL のエラーになって落ちる
+    "SupplierView.shipmentRequests#orderByName" => {
+      role: :member,
+      query: "query($orderBy: ShipmentRequestOrder) { supplier { shipmentRequests(orderBy: $orderBy) { totalCount nodes { id customer { name } } } } }",
+      variables: ->(_world) { { orderBy: { field: "CUSTOMER_NAME", direction: "ASC" } } },
       expect: EVERYONE
     },
     # 出荷指示の無い出荷依頼に指示を作る

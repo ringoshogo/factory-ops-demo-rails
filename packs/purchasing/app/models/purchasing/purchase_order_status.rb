@@ -5,6 +5,8 @@ module Purchasing
   module PurchaseOrderStatus
     # 導出の優先順に並べた 7 つの状況
     ALL = %i[supplier_cancelled cancelled inspected inbound accepted awaiting_supplier_confirmation sent].freeze
+    # 状況で並べるときの業務の進み順。導出の優先順（ALL）とは別の一覧で、同じ状況の集まりを持つ
+    SORT_ORDER = %i[sent awaiting_supplier_confirmation accepted inbound inspected cancelled supplier_cancelled].freeze
 
     # 入荷と検収は、所有テナントと親の組の外部キーで発注と同じテナントに限られる
     def self.expression

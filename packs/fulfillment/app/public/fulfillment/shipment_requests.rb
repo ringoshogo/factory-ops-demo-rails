@@ -2,13 +2,10 @@ module Fulfillment
   # 受注側が自社の出荷依頼と、その出荷指示・出荷実績を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
   # *_for は親の ID の配列を取り、ID ごとの値のハッシュを返す
   module ShipmentRequests
-    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）
-    ORDER_COLUMNS = { due_date: [ ShipmentRequest.arel_table[:due_date], :date ] }.freeze
-
     # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
     # filter は状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
     def self.list(actor, first:, after:, order_by: nil, filter: {})
-      Page.of(filtered(Scope.call(actor, ShipmentRequest.all), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS),
+      Page.of(filtered(Scope.call(actor, ShipmentRequest.all), **filter), first:, after:, sort: Page::Sort.of(order_by, order_columns(actor)),
         columns: [ ShipmentRequestStatus.expression.as("status") ]) { to_values(_1) }
     end
 
@@ -62,6 +59,15 @@ module Fulfillment
       statuses.nil? ? relation : relation.where(ShipmentRequestStatus.expression.in(statuses.map(&:to_s)))
     end
 
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。
+    # 得意先の名前は取引関係の公開 API の副問い合わせから引き、状況は業務の進み順の位置で並べる
+    def self.order_columns(actor)
+      requests = ShipmentRequest.arel_table
+      { due_date: [ requests[:due_date], :date ],
+        customer_name: [ Partnerships::Directory.tenant_names_sql(actor).lookup(:name, :tenant_id, requests[:buyer_tenant_id]), :string ],
+        status: [ Page::Sort.rank(ShipmentRequestStatus.expression, ShipmentRequestStatus::SORT_ORDER), :integer ] }
+    end
+
     def self.with_status(relation) = relation.select(ShipmentRequest.arel_table[Arel.star], ShipmentRequestStatus.expression.as("status"))
 
     # requests は状況の式を status の別名で読んだ出荷依頼
@@ -73,6 +79,6 @@ module Fulfillment
     end
 
     def self.to_value(klass, record) = klass.new(**record.slice(*klass.members.map(&:to_s)).symbolize_keys)
-    private_class_method :filtered, :with_status, :to_values, :to_value
+    private_class_method :order_columns, :filtered, :with_status, :to_values, :to_value
   end
 end

@@ -12,4 +12,12 @@ SqlSubquery = Data.define(:sql, :columns) do
   def as(name) = Arel::Nodes::TableAlias.new(Arel::Nodes::Grouping.new(Arel.sql(sql)), name)
 
   def column(table_alias, role) = table_alias[columns.fetch(role)]
+
+  # key の役割の列が value に等しい 1 行の、role の役割の列を引くスカラーの副問い合わせ（Arel のノード）。
+  # 結ぶ側の行ごとに 1 つの値を返すので、結合と違って結ぶ側の行の数を変えない。当たる行が無ければ空になり、
+  # 2 行以上当たれば SQL のエラーになる
+  def lookup(role, key, value)
+    table = as("lookup")
+    Arel::Nodes::Grouping.new(Arel::SelectManager.new(table).project(column(table, role)).where(column(table, key).eq(value)))
+  end
 end

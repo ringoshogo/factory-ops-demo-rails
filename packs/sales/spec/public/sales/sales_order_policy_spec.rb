@@ -41,7 +41,8 @@ RSpec.describe Sales::SalesOrderPolicy, "の規則" do
   # 受注側の取消と引当は受注に対して、審査の承認・却下は審査に対して評価する
   let(:targets) do
     order = Sales::SalesOrderValue.new(id: SecureRandom.uuid, owner_tenant_id: tenant_id, order_no: "SO-000001",
-      customer_tenant_id: SecureRandom.uuid, order_date: Date.current, due_date: nil, status: :confirmed, cancellation_review_pending: false)
+      customer_tenant_id: SecureRandom.uuid, order_date: Date.current, due_date: nil, status: :confirmed, cancellation_review_pending: false,
+      total_amount: nil)
     review = Sales::CancellationReviewValue.new(id: SecureRandom.uuid, owner_tenant_id: tenant_id, sales_order_id: order.id,
       requested_at: Time.current, decision: nil, decided_at: nil)
     { cancel?: order, review?: review, allocate?: order }

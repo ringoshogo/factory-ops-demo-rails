@@ -33,6 +33,15 @@ module Partnerships
       Tenant.where(id: ids).to_h { [ _1.id, TenantSummary.new(id: _1.id, name: _1.name) ] }
     end
 
+    # テナントの ID と名前の副問い合わせ。受注・購買・出荷の一覧が、伝票の相手のテナント ID で結んで名前で並べる
+    # （docs/adr/010-状況の導出をSQLの式1つにする.md）。取引用コードは含めない。テナントの表は RLS も所有テナントも無く、
+    # 名前は取引の相手にすでに見せている値で、結ぶ側の相手のテナント ID で 1 行に絞られるので、scope を掛けない
+    def self.tenant_names_sql(actor)
+      raise ArgumentError, "actor is required" unless actor.is_a?(Actor)
+
+      SqlSubquery.of(Tenant.select(:id, :name), tenant_id: "id", name: "name")
+    end
+
     # 自社のユーザーの ID ごとの名前。監査ログの操作者を示すのに使う。別テナントのユーザーの ID は含まない。
     # 所有の条件は RLS に任せず、操作者のテナントで明示する（docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
     def self.user_names(actor, ids)

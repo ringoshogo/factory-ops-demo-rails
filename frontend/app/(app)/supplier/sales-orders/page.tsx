@@ -11,7 +11,7 @@ import { Pagination } from "@/components/pagination";
 import { ColumnHeads, sortColumns, type Column } from "@/components/columns";
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
-import { yen, sumAmounts } from "@/lib/format";
+import { totalAmountText } from "@/lib/format";
 import { SupplierSalesOrdersDocument, type SalesOrderOrderField } from "@/lib/graphql/generated";
 import { query } from "@/lib/graphql/request";
 import { UNREACHABLE_MESSAGE } from "@/lib/graphql/user-errors";
@@ -28,16 +28,26 @@ import { SALES_ORDER_STATUS } from "@/lib/statuses";
 
 const ALL = { value: "", label: "すべて" };
 
-// 並べ替えの見出しは API の orderBy の field から作る。取引先の名前・状況・合計は API で並べられないので、ただの見出しにする
-const SORT = sortColumns<SalesOrderOrderField>({ ORDER_NO: "受注番号", ORDER_DATE: "受注日", DUE_DATE: "希望納期" });
+// 並べ替えの見出しは API の orderBy の field から作る
+const SORT = sortColumns<SalesOrderOrderField>(
+  {
+    ORDER_NO: "受注番号",
+    CUSTOMER_NAME: "取引先",
+    ORDER_DATE: "受注日",
+    DUE_DATE: "希望納期",
+    STATUS: "状況",
+    TOTAL_AMOUNT: "受注合計",
+  },
+  { CUSTOMER_NAME: { truncate: true }, TOTAL_AMOUNT: { numeric: true } },
+);
 
 const COLUMNS: Column<SalesOrderOrderField>[] = [
   SORT.ORDER_NO,
-  { key: "customer", label: "取引先", truncate: true },
+  SORT.CUSTOMER_NAME,
   SORT.ORDER_DATE,
   SORT.DUE_DATE,
-  { key: "status", label: "状況" },
-  { key: "total", label: "受注合計", numeric: true },
+  SORT.STATUS,
+  SORT.TOTAL_AMOUNT,
 ];
 
 // 受注一覧。1 ページずつ読み、並べ替え・絞り込み・件数はサーバーが行う。絞り込みは URL に載せ、共有や再読み込みで同じ画面に戻る
@@ -108,19 +118,19 @@ export default async function SalesOrdersPage({ searchParams }: { searchParams: 
                         {o.orderNo}
                       </TextLink>
                     ),
-                    customer: o.customer.name,
+                    CUSTOMER_NAME: o.customer.name,
                     ORDER_DATE: <DateText iso={o.orderDate} businessDate={businessDate} />,
                     DUE_DATE: (
                       <DueDate due={o.dueDate} open={OPEN_SALES_ORDER_STATUSES.includes(o.status)} businessDate={businessDate} />
                     ),
-                    status: (
+                    STATUS: (
                       <StatusBadge
                         style={SALES_ORDER_STATUS[o.status]}
                         value={o.status}
                         mark={o.cancellationReviewPending ? "取消審査中" : undefined}
                       />
                     ),
-                    total: yen(sumAmounts(o.lines.map((l) => (l.unitPrice ? BigInt(l.unitPrice) * BigInt(l.quantity) : BigInt(0))))),
+                    TOTAL_AMOUNT: totalAmountText(o.totalAmount, "salesOrder"),
                   };
                   return (
                     <TableRow key={o.id} data-testid="list-row">

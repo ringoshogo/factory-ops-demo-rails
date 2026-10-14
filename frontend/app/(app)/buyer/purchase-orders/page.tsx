@@ -12,6 +12,7 @@ import { Pagination } from "@/components/pagination";
 import { StatusBadge } from "@/components/status-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { totalAmountText } from "@/lib/format";
 import { BuyerPurchaseOrdersDocument, type PurchaseOrderOrderField } from "@/lib/graphql/generated";
 import { query } from "@/lib/graphql/request";
 import { UNREACHABLE_MESSAGE } from "@/lib/graphql/user-errors";
@@ -28,20 +29,27 @@ import { PURCHASE_ORDER_STATUS } from "@/lib/statuses";
 
 const ALL = { value: "", label: "すべて" };
 
-// 並べ替えの見出しは API の orderBy の field から作る。取引先の名前・状況は API で並べられないので、ただの見出しにする
-const SORT = sortColumns<PurchaseOrderOrderField>({
-  ORDER_NO: "発注番号",
-  ORDER_DATE: "発注日",
-  DESIRED_DELIVERY_ON: "希望納期",
-});
+// 並べ替えの見出しは API の orderBy の field から作る。明細の件数は API で並べられないので、ただの見出しにする
+const SORT = sortColumns<PurchaseOrderOrderField>(
+  {
+    ORDER_NO: "発注番号",
+    SUPPLIER_NAME: "取引先",
+    ORDER_DATE: "発注日",
+    DESIRED_DELIVERY_ON: "希望納期",
+    STATUS: "状況",
+    TOTAL_AMOUNT: "発注合計",
+  },
+  { SUPPLIER_NAME: { truncate: true }, TOTAL_AMOUNT: { numeric: true } },
+);
 
 const COLUMNS: Column<PurchaseOrderOrderField>[] = [
   SORT.ORDER_NO,
-  { key: "supplier", label: "取引先", truncate: true },
+  SORT.SUPPLIER_NAME,
   SORT.ORDER_DATE,
   SORT.DESIRED_DELIVERY_ON,
-  { key: "status", label: "状況" },
+  SORT.STATUS,
   { key: "lines", label: "明細", numeric: true },
+  SORT.TOTAL_AMOUNT,
 ];
 
 // 発注一覧。1 ページずつ読み、並べ替え・絞り込み・件数はサーバーが行う。入荷を待つ発注は「入荷予定」のタブで見て、
@@ -120,7 +128,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                         {o.orderNo}
                       </TextLink>
                     ),
-                    supplier: o.supplier.name,
+                    SUPPLIER_NAME: o.supplier.name,
                     ORDER_DATE: <DateText iso={o.orderDate} businessDate={businessDate} />,
                     DESIRED_DELIVERY_ON: (
                       <DueDate
@@ -129,7 +137,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                         businessDate={businessDate}
                       />
                     ),
-                    status: (
+                    STATUS: (
                       <StatusBadge
                         style={PURCHASE_ORDER_STATUS[o.status]}
                         value={o.status}
@@ -137,6 +145,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                       />
                     ),
                     lines: `${o.lines.length} 件`,
+                    TOTAL_AMOUNT: totalAmountText(o.totalAmount, "purchaseOrder"),
                   };
                   return (
                     <TableRow key={o.id} data-testid="list-row">

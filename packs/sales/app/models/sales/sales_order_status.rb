@@ -5,6 +5,8 @@ module Sales
   module SalesOrderStatus
     # 導出の優先順に並べた 7 つの状況
     ALL = %i[cancelled inspected shipped awaiting_part_match allocated partially_allocated received].freeze
+    # 状況で並べるときの業務の進み順。導出の優先順（ALL）とは別の一覧で、同じ状況の集まりを持つ
+    SORT_ORDER = %i[awaiting_part_match received partially_allocated allocated shipped inspected cancelled].freeze
 
     # 引当数量は、在庫の公開 API が操作者の scope を掛けて返す、受注明細 ID ごとの有効な引当数量の副問い合わせを結ぶ。
     # 引当の無い明細は副問い合わせに行が無いので、外部結合して 0 と読む。受注明細は、所有テナントと受注の組の外部キーで受注と同じテナントに限られる

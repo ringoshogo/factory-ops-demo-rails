@@ -62,3 +62,47 @@ test("並べ替えの見出しを押すと、URL の sort・dir と並びが変�
   await page.getByRole("button", { name: "品目名" }).click();
   await expect(page).toHaveURL(/sort=name&dir=asc/);
 });
+
+/** 受注一覧の n 列目 (1 から) のセルの文字。 */
+async function column(page: Page, n: number): Promise<string[]> {
+  return rows(page).locator(`td:nth-child(${n})`).allInnerTexts();
+}
+
+/** 続けて同じ値が並ぶところを 1 つにまとめる。 */
+const runs = (values: readonly string[]) => values.filter((v, i) => i === 0 || values[i - 1] !== v);
+
+test("受注一覧を取引先の名前と受注合計で並べ、照合待ちの受注は末尾に並び、一覧・詳細・かんばんのどれでも「照合待ち」と出る", async ({ page }, testInfo) => {
+  await login(page, testInfo, "supplier_admin");
+  await page.goto("/supplier/sales-orders");
+
+  // 世界の受注の得意先は 2 社。名前の並びは DB の照合順序で決まるので、画面の照合順序とは比べない。
+  // 同じ得意先の受注がまとまり、降順でまとまりの順が逆になる。絞り込みにも「取引先」のボタンがあるので、見出しの中から探す
+  const customer = page.getByRole("columnheader", { name: "取引先" }).getByRole("button");
+  await expect(customer).toBeVisible();
+  await customer.click();
+  await expect(page).toHaveURL(/sort=customer_name&dir=asc/);
+  await expect(page.getByRole("columnheader", { name: "取引先" })).toHaveAttribute("aria-sort", "ascending");
+  const ascending = runs(await column(page, 2));
+  expect(ascending).toHaveLength(2);
+  await customer.click();
+  await expect(page).toHaveURL(/sort=customer_name&dir=desc/);
+  expect(runs(await column(page, 2))).toEqual([...ascending].reverse());
+
+  await page.getByRole("columnheader", { name: "受注合計" }).getByRole("button").click();
+  await expect(page).toHaveURL(/sort=total_amount&dir=asc/);
+  const totals = await column(page, 6);
+  const awaitingFrom = totals.indexOf("照合待ち");
+  expect(awaitingFrom).toBeGreaterThan(0);
+  expect(totals.slice(awaitingFrom).every((t) => t === "照合待ち")).toBe(true);
+  const amounts = totals.slice(0, awaitingFrom).map((t) => BigInt(t.replace(/[^0-9]/g, "")));
+  expect(amounts).toEqual([...amounts].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+
+  // 末尾の照合待ちの受注を、詳細とかんばんのカードでも見る
+  const link = rows(page).last().getByRole("link");
+  const href = await link.getAttribute("href");
+  const orderId = href!.split("/").at(-1)!;
+  await link.click();
+  await expect(page.getByTestId("order-total")).toHaveText("照合待ち");
+  await page.goto("/supplier/dashboard");
+  await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`)).toContainText("照合待ち");
+});

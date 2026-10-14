@@ -10,9 +10,13 @@ class Page
   # 日付は PostgreSQL の date の上限（5874897 年）までで、紀元前の日付は扱わない
   INTEGER = -(2**31)..(2**31 - 1)
   DATE = Date.new(1, 1, 1)..Date.new(5_874_897, 12, 31)
+  # 金額の和は、明細の件数の上限（100）・数量の上限（integer）・単価の上限（bigint）の積を超えないので 31 桁に収まる。
+  # bigint を超えうるので、JSON の数ではなく 10 進の文字列でカーソルに書く
+  DECIMAL = /\A\d{1,31}\z/
 
-  # 並べ替えの列。name はカーソルに書く名前、expression は一覧の表の列か、その列から計算する式（Arel のノード）、
-  # type はカーソルの値の型（:string・:date・:integer）、direction は :asc か :desc
+  # 並べ替えの列。name はカーソルに書く名前、expression は一覧の表の列か、その列から計算する式か、行ごとに 1 つの値を返す
+  # スカラーの副問い合わせ（Arel のノード）、
+  # type はカーソルの値の型（:string・:date・:integer・:decimal）、direction は :asc か :desc。:decimal は 0 以上の整数の値に限る
   Sort = Data.define(:name, :expression, :type, :direction) do
     # order_by は { field:, direction: }。columns は並べてよい列の名前ごとの [式, 型] で、無い列は引数の誤りにする
     def self.of(order_by, columns)
@@ -25,6 +29,12 @@ class Page
 
       expression, type = columns.fetch(field)
       new(name: field.to_s, expression:, type:, direction:)
+    end
+
+    # 式の値の、order の中の位置（1 から）。状況を業務の進み順で並べるのに使う。order に無い値は空になり、最後に並ぶ
+    def self.rank(expression, order)
+      values = ApplicationRecord.with_connection { |connection| order.map { connection.quote(_1.to_s) } }
+      Arel::Nodes::NamedFunction.new("array_position", [ Arel.sql("ARRAY[#{values.join(", ")}]::text[]"), expression ])
     end
   end
 
@@ -74,6 +84,7 @@ class Page
   def self.encode(sort, record)
     value = record["page_sort_value"]
     value = value.iso8601 if value.is_a?(Date)
+    value = value.to_i.to_s if sort.type == :decimal && value
     Base64.urlsafe_encode64(JSON.generate([ sort.name, sort.direction.to_s, value, record.id ]), padding: false)
   end
 
@@ -94,6 +105,10 @@ class Page
     in [ :string, String ] if value.valid_encoding? && !value.include?("\u0000") then value
     in [ :integer, Integer ] if INTEGER.cover?(value) then value
     in [ :date, String ] if DATE.cover?(date = Date.iso8601(value)) then date
+    # Integer で比べると、Active Record が bigint を超える整数を引数の誤りにするので、numeric の BigDecimal で比べる
+    # （activerecord 8.1 の ActiveRecord.raise_int_wider_than_64bit の既定は true で、
+    # connection_adapters/postgresql/quoting.rb の check_int_in_range が IntegerOutOf64BitRange を投げる）
+    in [ :decimal, String ] if value.match?(DECIMAL) then BigDecimal(value)
     end
   end
   private_class_method :keyed, :sorted, :encode, :decode, :cast

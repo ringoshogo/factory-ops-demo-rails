@@ -9,7 +9,7 @@ RSpec.describe Purchasing::PurchaseOrderPolicy do
     {
       request_cancellation?: Purchasing::PurchaseOrderValue.new(id: SecureRandom.uuid, owner_tenant_id: tenant_id, order_no: "PO-000001",
         supplier_tenant_id: SecureRandom.uuid, order_date: Date.current, desired_delivery_on: nil, status: :ordered,
-        cancellation_pending: false),
+        cancellation_pending: false, total_amount: nil),
       inspect_receipt?: Purchasing::InboundShipmentValue.new(id: SecureRandom.uuid, owner_tenant_id: tenant_id,
         purchase_order_id: SecureRandom.uuid, shipped_on: Date.current)
     }
