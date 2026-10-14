@@ -7,7 +7,8 @@ import { PURCHASE_ORDER_STATUS, SALES_ORDER_STATUS } from "./statuses";
 const SALES_ORDER_STATUSES = Object.keys(SALES_ORDER_STATUS) as SalesOrderStatus[];
 const PURCHASE_ORDER_STATUSES = Object.keys(PURCHASE_ORDER_STATUS) as PurchaseOrderStatus[];
 
-// 作者の判断：照合待ち・確定待ちのまま取り消した伝票は、合計の欄に「取消」と出す。受注側の取消も発注側の取消も含む
+// 照合待ち・確定待ちのまま取り消した伝票は、合計の欄に「取消」と出す (docs/architecture/context-map.md「発注の連結と品番の照合」)。
+// 受注側の取消も発注側の取消も含む
 const CANCELLED_SALES_ORDER: readonly SalesOrderStatus[] = ["CANCELLED"];
 const CANCELLED_PURCHASE_ORDER: readonly PurchaseOrderStatus[] = ["CANCELLED", "SUPPLIER_CANCELLED"];
 

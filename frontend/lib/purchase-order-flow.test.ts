@@ -7,7 +7,8 @@ import { PURCHASE_ORDER_STATUS } from "./statuses";
 // codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める状況の一覧から集める。API が値を足すと、ここにも入る
 const ALL = Object.keys(PURCHASE_ORDER_STATUS) as PurchaseOrderStatus[];
 
-// 作者の判断：取消依頼は出荷の前だけ。出荷済の受注への依頼は受注側が必ず却下するので、却下だけが返る操作を見せない
+// 取消依頼は出荷の前だけ (docs/architecture/context-map.md「取消の流れ」)。出荷済の受注への依頼は受注側が必ず却下するので、
+// 却下だけが返る操作を見せない
 const BEFORE_SHIPMENT: readonly PurchaseOrderStatus[] = ["SENT", "AWAITING_SUPPLIER_CONFIRMATION", "ACCEPTED"];
 
 describe("canRequestCancellation: 発注詳細の取消依頼のボタン", () => {
