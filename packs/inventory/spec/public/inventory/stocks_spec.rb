@@ -163,6 +163,7 @@ RSpec.describe Inventory::Stocks do
         end
       end
 
+      # 品目名は列の照合順序 ja-x-icu で、漢字を音読みの順（平のヘイが六のロクより前）に並べる
       it "品目コードと品目名と ID の組で並べ、写しの無い在庫は向きによらず最後に置く" do
         bolt = labeled_stock("B-1", "六角ボルト")
         unlabeled = labeled_stock(nil)
@@ -171,7 +172,7 @@ RSpec.describe Inventory::Stocks do
 
         expect(list(order_by: { field: :item_code, direction: :asc })).to eq([ [ bolt, nut, washer, unlabeled ].map(&:item_id), 4 ])
         expect(list(order_by: { field: :item_code, direction: :desc })).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
-        expect(list(order_by: { field: :item_name, direction: :asc })).to eq([ [ nut, bolt, washer, unlabeled ].map(&:item_id), 4 ])
+        expect(list(order_by: { field: :item_name, direction: :asc })).to eq([ [ washer, nut, bolt, unlabeled ].map(&:item_id), 4 ])
       end
 
       it "keyword は写しの品目コードか品目名に含む在庫に絞り、件数も同じ条件で数える。写しの無い在庫は当たらない" do
