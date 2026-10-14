@@ -69,7 +69,7 @@ packwerk の違反は `package_todo.yml` に逃がさず、その場で直す（
 
 残りの業務機能（M21〜M26）の前に、横断の仕組み（M15〜M20）を入れる。横断の仕組みは、mutation の宣言・イベントの引数・テストの置き場・CI の検査を変える。業務機能の後に入れると、M21〜M26 で書いた mutation・イベント・テストを書き直すことになる。業務機能を終えた後に、見せどころ（M27〜M31）を足す。最後に、シード（M32）と、それを使って E2E を流すフロントエンド（M33）を作り、公開の配置（M41）で終える。フロントエンドの前に、画面が一覧を 1 ページずつ読むための API（M39・M40）を足す。
 
-M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。M42・M43 は、サイクル 05 の改善の探索（`plans/cycle-05/improvement.md`）で採用した変更で、節を M41 の後に置き、サイクル 06 で実装する。M44 は、サイクル 06 の計画レビューで、開いたままの Dependabot の PR の扱いを決めるために起こしたマイルストーンで、節を M43 の後に置き、M42 の後に実装する。M45〜M47 は、作者が一覧の並べ替えを別のコンテキストの値と複数の列にも広げた（OI-144）ので起こしたマイルストーンで、節を M40 の後に置き、M44 の後、M33 の残りの前に実装する。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
+M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement.md`）で採用した変更である。M21 より前に実装する（`guides/dev-cycle.md`「全体の流れ」）。M21 以降の番号を振り直すと、台帳・証跡・文書の参照が崩れるので、番号は末尾に足し、節は実装の順に M20 の後へ置く。M36 は、サイクル 02 の改善の探索（`plans/cycle-02/improvement.md`）で採用した変更で、同じ理由で節を M24 の後に置き、M25 より前に実装する。M37 は、サイクル 03 の改善の探索（`plans/cycle-03/improvement.md`）で採用した変更で、節を M29 の後に置き、M30 より前に実装する。M38 は、サイクル 04 の改善の探索（`plans/cycle-04/improvement.md`）で採用した変更で、節を M32 の後に置き、M33 より前に実装する。M39〜M41 は、作者が M33 の著者判断で一覧の読み方と公開の配置を変えた（OI-07・OI-14）ので、M33 から分けたマイルストーンである。M42・M43 は、サイクル 05 の改善の探索（`plans/cycle-05/improvement.md`）で採用した変更で、節を M41 の後に置き、サイクル 06 で実装する。M44 は、サイクル 06 の計画レビューで、開いたままの Dependabot の PR の扱いを決めるために起こしたマイルストーンで、節を M43 の後に置き、M42 の後に実装する。M45〜M47 は、作者が一覧の並べ替えを別のコンテキストの値と複数の列にも広げた（OI-144）ので起こしたマイルストーンで、節を M40 の後に置き、M44 の後、M33 の残りの前に実装する。M48・M49 は、サイクル 06 の改善の探索（`plans/cycle-06/improvement.md`）で採用した変更で、節を M44 の後に置き、サイクル 07 の最初に実装する。M49 には、作者が名前の並びを流用元にそろえると決めた（OI-190）名前の列の照合順序も入れた。M50 は、作者が流用元の画面が並べるほかの列でも並べると決めた（OI-186）ので起こしたマイルストーンで、節を M47 の後に置き、M47 の後、M33 の残りの前に実装する。M39・M40 は節を M38 の後に置いて M33 より前に、M41 は節を M33 の後に置いて M33 の後に実装する。
 
 | | マイルストーン | 機械で守るようになる規則 |
 |---|---|---|
@@ -115,13 +115,14 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M45 | 受注・発注・出荷依頼を、取引先の名前と合計と状況で並べる | 合計と状況の表示・並びが同じ式を読み、照合待ちを含む伝票の合計がどの画面にも出ない |
 | M46 | 在庫を、品目のコードと名前で並べ、検索する | 品目の写しが、保つ経路と作り直しで同じ答えになり、他社の写しが在庫の一覧に混ざらない |
 | M47 | 複数の列で並べる | 列の組で並べた一覧が、値の同じ行と値の無い行がページの境目をまたいでも、行を抜かさず重ねない |
+| M50 | 品目と出荷依頼の一覧を、流用元が並べるほかの列でも並べる | 出荷依頼に写した受注番号が、イベントと作り直しで同じ答えになり、他社の在庫の安全在庫が品目の並びに混ざらない |
 | M33 | フロントエンド | 画面の問い合わせが `schema.graphql` で型検査され、同じ種類の要素の寸法とそろえが全画面で測られる |
 | M41 | Raspberry Pi の k3s への配置 | マニフェストが Secret を持たず、所有ロールの資格情報とデモの世界の許可が、作り直しとマイグレーションの工程にだけ渡る |
 | M42 | CI のランナーの版を固定し、公開の配置のイメージを arm64 で組み立てる | CI のジョブが OS の版を明示し、テストの落ちた commit のイメージが GHCR に置かれない |
 | M43 | 公開の配置の作り直しを、本番の環境でだけ動かす | 本番の環境の外では、作り直しが DB にも Kubernetes の API にも触れずに止まる |
 | M44 | 依存の更新を取り込み、Dependabot の更新をまとめる | 画面の Node の主版が、CI・画面のイメージ・`engines`・型定義でそろい、Dependabot の設定がどのエコシステムでも更新をまとめる |
 | M48 | CI で依存の木を確かめ、イメージの組み立てを PR のたびに流す | 入れ子の依存の peer の範囲から外れた更新の PR が CI で落ち、イメージの組み立てが条件の保守なしに PR ごとに確かめられる |
-| M49 | 品目コードの列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする | 品目コードの並びが Ruby の比べ方と列の定義でそろい、コードの順で取るロックが照合順序を知らずに書いても食い違わない |
+| M49 | 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする | 品目コードの並びが Ruby の比べ方と列の定義でそろい、コードの順で取るロックが照合順序を知らずに書いても食い違わない。名前の並びが流用元の `Intl.Collator("ja")` と同じになる |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -151,14 +152,15 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M40 | M39 | 状況の絞り込みを、M39 の入力型・件数・ページの土台に足す |
 | M45 | M40・M44 | 状況で並べる順位を M40 の状況の式から作る。積み重ねた PR の最上段の M44 のブランチから切る |
 | M46 | M45 | M45 が書き直す `architecture/graphql-schema.md`「ページングと N+1」の、別のコンテキストの値で並べる形に、在庫の列を足す。積み重ねた PR の M45 のブランチから切る |
-| M47 | M46 | 2 つ目からの列に、M45・M46 で足した列も使う |
-| M33 | M32・M40・M47 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る。残り（サイクル 07）は、M45〜M47 が直した画面の上で、作者の指摘を直す |
+| M47 | M46・M49 | 2 つ目からの列に、M45・M46 で足した列も使う。取引先の名前を含む列の組の並びを、M49 が名前の列の照合順序を決めた後の形で確かめる |
+| M50 | M47 | 足す列を、M47 の Shift の操作でも並べる。M46 の作り直しのタスクと一致の spec に、出荷依頼の受注番号を足す |
+| M33 | M32・M40・M47・M50 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る。残り（サイクル 07）は、M45〜M47・M50 が直した画面の上で、作者の指摘を直す |
 | M41 | M33 | 画面のイメージを `frontend/` から作り、作り直しで M32 の `DemoWorld` を流す |
 | M42 | M41 | `images` のジョブと `image_inputs` の条件が M41 とサイクル 05 の再発防止にある |
 | M43 | M41 | 作り直しの `DemoReset` が M41 にある |
 | M44 | M42 | 版を上げる `uses:` の行が、M42 が分けたジョブを含む。`package-lock.json` と `ci.yml` を変える PR で流れる `images` のジョブが、M42 で arm64 のランナーに移っている |
 | M48 | M44 | `npm ls --all` を、M44 で取り込んだ依存の木と `groups` でまとめた PR に当てる。`image_inputs` と `publish` の形が M42 にある |
-| M49 | M46 | 照合順序を決める `item_labels.code` と作り直しの式が M46 にある |
+| M49 | M46 | 照合順序を決める `item_labels.code`・`item_labels.name` と作り直しの式が M46 にあり、取引先の名前の副問い合わせが M45 にある |
 
 ---
 
@@ -1748,7 +1750,7 @@ cd frontend && npm run test:e2e
 - `SORT_ORDER` から状況を 1 つ外すと、状況のモジュールの単体の、`ALL` と同じ集まりであることの example が落ちる
 - 画面の合計の関数で、空の合計を 0 として扱うと、その単体（`frontend/lib/*.test.ts`）が落ちる
 
-**範囲外**：在庫の品目のコードと名前での並べ替えと検索（M46）、複数の列での並べ替え（M47）、作者の判断（OI-144）の問いに挙げた値に入っていない列（OI-186）、名前の読みの順（五十音）での並べ替え（DB の照合順序のまま並べる。OI-190）。
+**範囲外**：在庫の品目のコードと名前での並べ替えと検索（M46）、複数の列での並べ替え（M47）、作者の判断（OI-144）の問いに挙げた値に入っていない列（OI-186。M50 で足す）、名前の並びを流用元にそろえる照合順序（OI-190。M49 で名前の列を ICU の日本語の照合順序にする）。
 
 **実装する文書の節**：`architecture/graphql-schema.md`「1 回のリクエストがたどる道」3・「ページングと N+1」・「状況の enum」、`architecture/data-model.md`「状態は保存せず、時刻列から導出する」、`adr/010`
 
@@ -1815,15 +1817,21 @@ cd frontend && npm run test:e2e
 
 ## M47 複数の列で並べる
 
-**目的**：作者の判断（OI-144）のうち、複数の列での並べ替えをサーバーで行う。流用元は、ダッシュボードのかんばんの列の中を、未完了の受注は希望納期・受注番号の順に、終わった受注は受注番号の降順に並べ、一覧の見出しは 1 つの列で並べる（流用元の `frontend/lib/kanban.ts`・`lib/sort.ts`）。M39 の `orderBy` は列を 1 つしか持たないので、この節は 2 つ目からの列を足し、列の組でページをたどれるようにし、かんばんの並びをそれで作る。書き込みは変えない。
+**目的**：作者の判断（OI-144）のうち、複数の列での並べ替えをサーバーで行う。流用元は、ダッシュボードのかんばんの列の中を、未完了の受注は希望納期・受注番号の順に、終わった受注は受注番号の降順に並べ、一覧の見出しは 1 つの列で並べる（流用元の `frontend/lib/kanban.ts`・`lib/sort.ts`）。M39 の `orderBy` は列を 1 つしか持たないので、この節は 2 つ目からの列を足し、列の組でページをたどれるようにし、かんばんの並びをそれで作る。あわせて、作者の判断（OI-187）で、一覧の見出しで Shift を押して見出しを押すと 2 つ目からの列を足せるようにし、何番目の並べる列かを見出しに出す。流用元に無い操作で、値の同じ行が続く列（状況・取引先）で並べたときに、2 つ目の列で並びが決まり、ページの境目で抜けも重なりも無いことを画面で見せる。書き込みは変えない。
 
 **作るもの**
 
 1. ページ：`Page.of` が並べ替えの列を 3 つまでの配列で受け取る。並びは「列 1、列 2、…、主キー」の組で、列ごとに向きを持ち、値の無い行は列ごとに向きによらず後ろに置く。主キーは最後の列と同じ向きに並べる（列が 1 つなら M39 と同じ）。カーソルの後ろの行は、「ある列より前の列がすべてカーソルと同じ値（空どうしを同じとみなす `IS NOT DISTINCT FROM`）で、その列がカーソルより後」のどれかか、「すべての列が同じで、主キーが後」である。列ごとの「後」は M39 と同じで、カーソルの値が空なら無く、値があれば「値が後か、値が空」である。カーソルは、列ごとの名前・向き・値を順に並べ、最後に主キーを置いた JSON を Base64 で包む。列が 1 つのカーソルは M39 の形と同じ文字列になるので、画面の URL に残るいまのカーソルはそのまま読める。列の数・名前・向きのどれかが違うカーソルは、形の誤ったカーソルと同じトップレベルのエラー（`Invalid cursor`）にする。
-2. 引数：`orderBy` を持つ 5 つの一覧（`supplier.salesOrders`・`buyer.purchaseOrders`・`supplier.shipmentRequests`・`supplier.stocks`・`supplier.items`）に、`thenBy: [<型>Order!]` を足す。`orderBy` が 1 つ目の列、`thenBy` が 2 つ目からの列である（判断）。`orderBy` を省いて `thenBy` を渡す、列が合わせて 4 つ以上になる、同じ `field` を 2 回書く、のどれかは、引数の検証でトップレベルのエラーにする。列を 3 つまでにするのは、カーソルの後ろの条件が列の数の 2 乗で長くなり、画面が使うのは 2 つまでだからである。
-3. かんばん：ダッシュボードのかんばんの画面の問い合わせ（`frontend/graphql/supplier/SupplierKanban.graphql`）で、未完了の 4 つの状況（品番照合待ち・受注済・一部引当・引当済）の列を、希望納期の昇順（`orderBy`）と受注番号の昇順（`thenBy`）で読む。終わった 3 つの状況の列は、いまの受注番号の降順のままにする。一覧の見出しは、流用元と同じく 1 つの列で並べ、見出しで複数の列を指定する操作は作らない（OI-187）。
-4. 行列テスト：5 つの一覧に、2 つの列で並べる変種の行（`"SupplierView.salesOrders#thenBy"` の形）を足す。並べ替えを持つ一覧が引数ごとに変種の行を持つという列挙の規則（`guides/testing.md`「行列テストとの分担」）を満たすためで、M47 は結ぶ表も条件も足さないので、変種の行が捕まえる scope の抜けは無い。2 つ目の列の向きの正しさは、`page_spec.rb` だけが確かめる。
-5. 互換：省いてよい引数の追加なので、`bin/check-schema-compat` は通す。
+2. 引数：`orderBy` を持つ 5 つの一覧（`supplier.salesOrders`・`buyer.purchaseOrders`・`supplier.shipmentRequests`・`supplier.stocks`・`supplier.items`）に、`thenBy: [<型>Order!]` を足す。`orderBy` が 1 つ目の列、`thenBy` が 2 つ目からの列である（判断）。`orderBy` を省いて `thenBy` を渡す、列が合わせて 4 つ以上になる、同じ `field` を 2 回書く、のどれかは、引数の検証でトップレベルのエラーにする。列を 3 つまでにするのは、カーソルの後ろの条件が列の数の 2 乗で長くなるからで、画面の見出しで足せる列も同じ 3 つまでにする（作るもの 4）。
+3. かんばん：ダッシュボードのかんばんの画面の問い合わせ（`frontend/graphql/supplier/SupplierKanban.graphql`）で、未完了の 4 つの状況（品番照合待ち・受注済・一部引当・引当済）の列を、希望納期の昇順（`orderBy`）と受注番号の昇順（`thenBy`）で読む。終わった 3 つの状況の列は、いまの受注番号の降順のままにする。
+4. 一覧の見出し（OI-187）：並べ替えの見出しを持つ 5 つの一覧の画面（受注一覧・発注一覧・出荷依頼・在庫・品目）で、見出しの操作を次のとおりにする。
+   - URL：`sort` と `dir` を、列の順にコンマでつないだ同じ長さの並びにする（`sort=customer_name,order_date&dir=asc,desc`）。列が 1 つの URL はいまの形と同じ文字列なので、画面に残るいまの URL はそのまま読める。`frontend/lib/list.ts` の `parseSort` が並びを読み、1 つ目を `orderBy`、2 つ目からを `thenBy` に写す。並びの長さが違う、列の一覧に無い値か不正な向きを含む、同じ列が 2 回ある、4 つ以上ある、のどれかは、いまの不正な値と同じく既定の並び（`orderBy` も `thenBy` も渡さない）にする
+   - 操作：Shift を押さずに見出しを押すと、いまと同じく、その列 1 つの並びにする（同じ列は 昇順 → 降順 → 既定の並び）。Shift を押して押すと、並びに無い列は昇順で後ろに足し、並びにある列はその列の向きだけを 昇順 → 降順 → 並びから外す の順に進め、ほかの列の順と向きを保つ。並びが 3 つのときに、並びに無い列を Shift を押して押しても変えない。どれも 1 ページ目に戻す。次の並びは `nextSort` の 1 つの純関数で決め、`frontend/components/sortable-head.tsx` がクリックの `shiftKey` を渡す。見出しはボタンなので、Shift を押した Enter でもクリックの `shiftKey` が立つ見込みで、下の E2E の `press("Shift+Enter")` で確かめる。立たなければ、`onKeyDown` で Shift を押した Enter を扱う
+   - 表示：並びが 2 つ以上のとき、並びにある見出しの矢印の横に、何番目の並べる列かの数字を出す。並びが 1 つのときは数字を出さず、いまの見た目のままにする。数字の要素は矢印と同じ寸法の規則（`SORT_ICON`）に置く。全画面の寸法とそろえの E2E（`frontend/e2e/layout.spec.ts`）が数字の要素を測るよう、`frontend/e2e/support/screens.ts` の受注一覧の `variants` に 2 つの列の並びの URL を足し、測る前に数字が描かれていることを確かめる
+   - 支援技術：`aria-sort` は、WAI-ARIA 1.2 が 1 度に 1 つの見出しにだけ付けるよう求める（「Authors SHOULD apply aria-sort to only one header at a time」）ので、1 つ目の列の見出しにだけ付ける。2 つ目からの列は、見出しのボタンの名前を見出しの文字のまま変えず（`sortable-head.tsx` の冒頭のコメント）、見えない文字（`sr-only`）で「並べ替え 2 番目・昇順」の形を添える。数字の要素は `aria-hidden` にする
+   - 文字の選択：ブラウザは Shift を押したクリックで、前のクリックからの文字を選ぶ。見出しのボタンで、Shift を押した `mousedown` の既定の動きだけを止め、表の文字が選ばれないようにする。Shift を押さない `mousedown` は止めないので、ふつうのクリックではいまと同じくボタンにフォーカスが移る。Shift を押したクリックではフォーカスが移らないが、Shift を押した Enter はキーボードでフォーカスした見出しで使う操作なので、困らない
+5. 行列テスト：5 つの一覧に、2 つの列で並べる変種の行（`"SupplierView.salesOrders#thenBy"` の形）を足す。並べ替えを持つ一覧が引数ごとに変種の行を持つという列挙の規則（`guides/testing.md`「行列テストとの分担」）を満たすためで、M47 は結ぶ表も条件も足さないので、変種の行が捕まえる scope の抜けは無い。2 つ目の列の向きの正しさは、`page_spec.rb` だけが確かめる。
+6. 互換：省いてよい引数の追加なので、`bin/check-schema-compat` は通す。
 
 テナントの境界とコンテキストの境界：書き込みは足さない。並べ替えの列は、M39 と M45・M46 で決めた列と式だけで、RLS・policy・パッケージの依存は変えない。
 
@@ -1837,23 +1845,97 @@ cd frontend && npm run test:e2e
 **完了条件**
 
 ```sh
-bundle exec rspec packs/platform/spec/models/page_spec.rb spec/requests/catalog_spec.rb spec/matrix spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb   # 0 failures
+bundle exec rspec packs/platform/spec/models/page_spec.rb spec/requests/catalog_spec.rb spec/requests/dashboard_spec.rb spec/matrix spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb   # 0 failures
 bin/check-schema-compat   # 破壊的な変更 0 件
 cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
 cd frontend && npm run test:e2e
 ```
 
-期待の不一致で最初に落とすのは、`spec/requests/catalog_spec.rb` の、`orderBy: { field: NAME, direction: ASC }` と `thenBy: [{ field: CODE, direction: DESC }]` で品目の一覧を読み、名前の同じ品目がコードの降順に並ぶことを確かめる example（`thenBy` を足す前は引数の検証のエラーが返り、期待した並びと食い違う）と、E2E（`frontend/e2e/counts.spec.ts`）の、希望納期の同じ 2 つの受注のカードが、かんばんの未完了の列で受注番号の昇順に並ぶことを確かめる example である。E2E の世界に、希望納期の同じ未完了の受注が無ければ `DemoWorld` の `variant: :e2e` に足す。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+期待の不一致で最初に落とすのは、次の 4 つである。
+
+- `spec/requests/catalog_spec.rb` の、`orderBy: { field: NAME, direction: ASC }` と `thenBy: [{ field: CODE, direction: DESC }]` で品目の一覧を読み、名前の同じ品目がコードの降順に並ぶことを確かめる example（`thenBy` を足す前は引数の検証のエラーが返り、期待した並びと食い違う）
+- `spec/requests/dashboard_spec.rb` の、画面の問い合わせ `frontend/graphql/supplier/SupplierKanban.graphql` の文書をそのまま送り、希望納期の同じ未完了の 2 つの受注が受注番号の昇順に並ぶことを確かめる example。2 つの受注は factory で、主キーの順と受注番号の順が逆になるように ID を与えて作る。受注番号も主キーも作った順に増えるので、`DemoWorld` で作った受注では、`thenBy` が無くても主キーの順で同じ並びになり、確かめにならない（IB-106）。いまの文書は `thenBy` を持たないので、主キーの順に並んで食い違う
+- `frontend/lib/list.test.ts` の、Shift を押した見出しの操作で並びに列が後ろに足され、並びにある列の向きだけが進むことを確かめる example（いまの `nextSort` は Shift を受け取らず、列 1 つの並びに置き換える）
+- E2E（`frontend/e2e/list-pagination.spec.ts`）の、受注一覧の状況の見出しを押してから取引先の見出しを Shift を押して 2 回押すと、URL の `sort` と `dir` が `status,customer_name` と `asc,desc` になり、見出しに 1 と 2 が出て、1 ページ目の行が状況の順で、状況の同じ行が取引先の名前の降順に並ぶことを確かめる example。E2E の世界の受注は、どれも同じ受注日で作られる（発注の日付が今日）ので、2 つ目の列を受注日にすると `thenBy` を渡さなくても通る。取引先は世界に 2 社あり、降順にすると主キーの順とも食い違う。同じ example で、取引先の見出しにフォーカスして `press("Shift+Enter")` を押すと取引先の列が並びから外れることと、Shift を押したクリックの後に表の文字が選ばれていない（`window.getSelection()` が空）ことを確かめる。ページの境目をまたいで抜けも重なりも無いことは、`page_spec.rb` が確かめ、E2E では確かめない
+
+ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+
+- `SupplierKanban.graphql` の未完了の列から `thenBy` を外すと、上の `dashboard_spec.rb` の example が落ちる
 
 - 前の列が同じことの比べ方を `=` にする（空どうしを同じとみなさない）と、`page_spec.rb` の、1 つ目の列の値が空の行がページの境目をまたぐ example が落ちる。向きの違う 2 つの列で、1 つ目の列の値が同じ行がページの境目をまたぐ example は、2 つ目の列の後ろの条件の向きを入れ替えると落ちる
 - カーソルから 2 つ目の列の向きを外すと、`page_spec.rb` の、2 つ目の列の向きだけを変えたカーソルを拒む example が落ちる。1 つの列のカーソルの形を変えると、M39 の形で作ったカーソルを読む example が落ちる
 - 引数の検証から同じ `field` の重なりの確かめを外すと、`spec/requests/catalog_spec.rb` の、同じ列を 2 回書いた問い合わせがトップレベルのエラーになる example が落ちる
+- `parseSort` から並びの長さの比べ方か同じ列の重なりの確かめを外すと、`list.test.ts` の、長さの違う `sort` と `dir`、同じ列を 2 回含む `sort` を既定の並びにする example が落ちる。並びが 3 つのときに Shift で列を足せるようにすると、同じファイルの 3 つの並びの example が落ちる
 
-**範囲外**：一覧の見出しで複数の列を指定する画面の操作（OI-187）、4 つ以上の列。
+**範囲外**：4 つ以上の列、かんばんの列の中の並びを画面で変える操作。
 
 **実装する文書の節**：`architecture/graphql-schema.md`「ページングと N+1」・「スキーマの変更と非推奨」
 
-**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」の、並べ替えの列が 1 つであるという文と、カーソルの中身と後ろの条件の説明を、複数の列の形に書き直し、`thenBy` と列の数の上限を SDL と箇条に書く。
+**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」の、並べ替えの列が 1 つであるという文と、カーソルの中身と後ろの条件の説明を、複数の列の形に書き直し、`thenBy` と列の数の上限を SDL と箇条に書く。`frontend/lib/list.ts` の冒頭と `parseSort`・`nextSort`・`sortable-head.tsx` のコメントを、列の並びの URL と Shift の操作に直す。いまの「同じ列は 昇順 → 降順 → 既定の並び」を種類で `git grep` し、Shift の操作を書き足す。
+
+## M50 品目と出荷依頼の一覧を、流用元が並べるほかの列でも並べる
+
+**目的**：作者の判断（OI-186）で、流用元の画面が並べる列のうち、M45〜M47 に入っていない列でも並べる。品目の一覧の単位・単価・安全在庫と、出荷依頼の一覧の受注番号・出荷予定日である。作者の判断（OI-144）の問いに挙げた値は M45・M46 で足したので、この節で流用元が並べられる列がそろう。どの値も M39（同じ表の列）・M45（同じパッケージの式と、依存している相手の公開 API の副問い合わせ）の形で並べ、例外は出荷依頼の受注番号だけである。出荷は受注に依存せず（受注と出荷はイベントだけでつながる。`architecture/context-map.md`「コンテキスト間の関係」）、受注の公開 API の副問い合わせを結べないので、「出荷可能」のイベントで受注番号を運び、出荷依頼に写す。書き込みは、出荷依頼に受注番号を写すことと、それを埋める作り直しの入口だけを足し、業務の振る舞いは変えない。
+
+**作るもの**
+
+1. 並べ替えの列：次の列を `<型>OrderField` に足す。値の無い行は、M39 の値の無い行と同じく向きによらず最後に置く。
+
+   | 一覧 | 足す列 | 並べる値 |
+   |---|---|---|
+   | `supplier.items` | `UNIT` | 品目の単位の列 |
+   | `supplier.items` | `UNIT_PRICE` | 今日（日本時間）の販売単価。表示の `Item.unitPrice` と同じ値を読む（下の箇条） |
+   | `supplier.items` | `SAFETY_STOCK` | 在庫の公開 API が返す安全在庫の副問い合わせ（作るもの 2）から、品目 ID の行を引くスカラーの副問い合わせ（`SqlSubquery#lookup`）。在庫の行が無い品目は空 |
+   | `supplier.shipmentRequests` | `ORDER_NO` | 出荷依頼に写した受注番号（作るもの 3） |
+   | `supplier.shipmentRequests` | `PLANNED_DATE` | 有効な出荷指示の出荷予定日。状況の式が出荷指示を読むのと同じ条件で、出荷依頼ごとに 1 行を引くスカラーの副問い合わせ。出荷指示の無い出荷依頼は空 |
+
+   - 単価の式：受注の公開 API `Sales::ItemPrices` に、品目ごとに今日の単価の行を 1 つ引くスカラーの副問い合わせを 1 つ置き、並べ替えはそれを使う。条件は `price_at` と同じ scope（所有の scope・`valid_on`・`current`）で組み、今日は Ruby の `Sales::ItemPrice.today` をバインドの値で渡す（SQL の `CURRENT_DATE` は DB の時刻帯で決まるので使わない。M32）。表示（`Sales::Catalog` が `price_at` を `fetch` で読み、`Item.unitPrice` は空を許さない）と同じく、どの品目にも今日の単価の行があることを前提にする。`catalog_spec.rb` の一覧の example で、単価で並べた順と、返った `unit_price` の値の順が一致することを確かめ、2 つの読み方が食い違えば落ちるようにする
+   - カーソルの型：単価は `bigint` まで入りうる（M45 の作るもの 2）ので、`Page::Sort` の型を M45 の合計と同じ `:decimal` にする。`:integer` は `integer` の範囲しか受け付けず、2,147,483,647 を超える単価の品目がページの境目に来ると、正しいカーソルが `Invalid cursor` になる。単位は `:string`、安全在庫は `:integer`（在庫の列が `integer`）、受注番号は `:string`、出荷予定日は `:date` である
+
+2. 安全在庫の副問い合わせ：在庫の公開 API `Inventory::Stocks.safety_stocks_sql(actor)` が、品目 ID と安全在庫の副問い合わせを `SqlSubquery.of` で返す。`Inventory::Allocation.active_quantities_sql` と同じく、操作者の scope を掛けた後に SQL の文字列にし、役割の名前（`item_id`・`safety_stock`）を返す。受注は在庫に依存しているので、依存の向きは変わらない。
+3. 受注番号の写し：イベント `Contracts::SalesOrderReadyForShipment` に `sales_order_no` を足し、受注（`Sales::OrderAllocation`）が出すときに受注番号を入れる。出荷依頼の表に `sales_order_no`（null を許す）を足し、出荷の受け手が出荷依頼を作るときに写す。受注番号は受注を作った後に変わらないので、写した後に書き直す経路は要らない（判断「出荷依頼の受注番号を、どう並べるか」）。足す前に登録されたジョブのペイロードは `sales_order_no` を持たない。そこで、このイベントの型の `from_payload` だけが、ペイロードに `sales_order_no` が無ければ空を足してから作る。`new` は全項目を求めたままにし、発行元が受注番号を渡し忘れたら例外になるようにする。`packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb` に、項目を省いたペイロードを `from_payload` で読んだイベントを受けた受け手が、受注番号の空の出荷依頼を作る example を足す。`packs/sales/spec/public/sales/order_allocation_spec.rb` に、出す「出荷可能」が受注番号を持つ example を足す。イベントを `new` で直に作る spec（`packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb`・`sales_event_receiver_lock_spec.rb` と、`git grep SalesOrderReadyForShipment.new` で当たるもの）にも `sales_order_no` を渡す。
+4. 既存の DB：表に列を足すマイグレーションは、列を埋めない（`adr/001` 決定 4）。`bin/rails read_models:rebuild` が、テナントごとに、受注の公開 API `Sales::SalesOrders.order_numbers`（テナントの設定を求め、所有テナントを明示して自社の受注の ID と受注番号の組を返す）を読み、出荷の公開 API `Fulfillment::ShipmentRequests.put_order_numbers(pairs)`（テナントの設定を求め、所有テナントを明示して、受注番号が違う自社の出荷依頼だけを書き、書き直した数を返す）に渡す。どちらも M46 の `Inventory::ItemLabels.put` と同じ、操作者のいない入口の公開 API の形にする。タスクは、品目の写しと同じく、テナントごとと合計の数を 1 行ずつ出す。受注と出荷はどちらも相手に依存しないので、組を受け渡すのはルートのタスクである。画面の受注番号の表示は、いまと同じく `ShipmentRequest.salesOrder` から受注の値を出し、写しを表示に使わない。作り直しを流す前の既存の DB では、写しの空の出荷依頼が受注番号で並べると末尾に並び、画面にはその受注番号が出る。M46 の在庫の品目の写しと同じ扱いである。
+5. 写しの一致の守り：`spec/scenarios/read_model_copies_spec.rb` に、世界を作った直後の作り直しで出荷依頼の受注番号の書き直しが 0 であることを足す。同じ example で、出荷依頼の 1 つの受注番号を空にし、別の 1 つを書き換えてから流すと、書き直しが 2 になることを先に確かめる（対照）。
+6. 所有の条件の守り：M46 の作るもの 7 と同じく、共有の文脈「RLS の SELECT と UPDATE を開く」（`guides/testing.md`「行列テストとの分担」）で、次の 3 つを確かめる。どれも、開いた後に他社の行が見えることを同じ example で先に確かめる（対照）。
+   - 品目の一覧が、他社の名義で自社の品目 ID を指す在庫の行を factory で作っても、`cross_read!` の後に安全在庫の並びにそれを使わない（`packs/sales/spec/public/sales/catalog_spec.rb`）。品目 ID は UUIDv7 で他社の品目と重ならないので、入口の行列では捕まらない
+   - `put_order_numbers` に他社の出荷依頼の受注 ID を含む組を渡しても、`cross_read!` の後に他社の出荷依頼を書かず、書き直した数にも数えない（`packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb`）。出荷依頼の受注 ID はテナントをまたいで一意（`index_shipment_requests_on_sales_order_id`）なので、他社の名義で同じ受注 ID の出荷依頼は作れず、正しい組からは他社の行に当たらない。守るのは、組の誤り（作り直しのタスクが別のテナントの組を渡すこと）に対してである
+   - `Sales::SalesOrders.order_numbers` が、`cross_read!` の後に他社の受注が見えても、自社の受注だけを返す（`packs/sales/spec/public/sales/sales_orders_spec.rb`）
+7. 行列テスト：入口の行列に、品目を単価と安全在庫で、出荷依頼を出荷予定日で並べる変種の行を足す。3 つとも、行ごとに 1 行を引くスカラーの副問い合わせで、結ぶ条件を書き誤って 2 行以上が当たると SQL のエラーになり、1 回目の比較で落ちる（M45 の作るもの 6 と同じ）。単位と受注番号は品目か出荷依頼の表の列で、結ぶ表を足さない。所有の条件の抜けは、品目 ID と出荷依頼 ID が他社の行と重ならないので、この行では捕まらず、作るもの 6 の単体が捕まえる。
+8. 画面：品目（画面 10）の単位・単価の見出しと、出荷依頼（画面 9）の受注番号・出荷予定日の見出しを、並べ替えの対象にする。品目の画面に「安全在庫」の列を足し（いまは有効在庫だけを出す。OI-194）、並べ替えの対象にする。画面の問い合わせ `SupplierItems` は、すでに `Item.stock` の `safetyStock` を選んでいる。URL の値を変数に写す関数（`frontend/lib/supplier-master-lists.ts` の `ITEM_SORT_FIELDS`、`frontend/lib/shipment-request-list.ts` の `SHIPMENT_REQUEST_SORT_FIELDS`）に足し、品目の画面の「単価・税率・在庫は API で並べられない」のコメントを直す。M47 の Shift の操作は、足した列にもそのまま効く。
+9. 互換：足すのは、enum の値と、null を許す表の列と、省いてよいイベントの項目だけなので、`bin/check-schema-compat` は通す。
+
+テナントの境界：書き込みは、出荷依頼の 1 つの列と、それを埋める作り直しの入口だけを足す。作り直しの入口は所有テナントを明示し、受け手はいまと同じく宛先テナントの名義で書く。読み取りは、いまの公開 API の scope を掛けた relation に、式と副問い合わせの結合と並びを足すだけで、RLS と policy は変えない。コンテキストの境界：受注は、依存している在庫の公開 API の副問い合わせを結ぶ。出荷は受注番号をイベントで受け取り、受注を参照しない。作り直しで受注と出荷の組を渡すのはルートのタスクだけである。
+
+**判断**：出荷依頼の受注番号を、どう並べるか
+
+- **既定の推奨**：「出荷可能」のイベントで受注番号を運び、出荷依頼に写す。出荷依頼の表は、もとから「出荷可能」の写しで（表の説明）、発注明細 ID も同じイベントで受け取っている（`architecture/context-map.md`「コンテキスト間の関係」）。受注番号は変わらないので、M46 の品目の写しと違い、写しを書き直す経路が無い。
+- **比べた案**：(a) 出荷に受注への依存を足し、受注の公開 API の副問い合わせを結ぶ。受注と出荷はイベントでしかつながっていないので、許可する依存の向きを変える設計の変更になる。(b) ルートの GraphQL の層が、受注の副問い合わせを出荷の公開 API に渡す。出荷の公開 API が、名前を知らない相手の SQL を結ぶ引数を持つことになる。
+- **裏返る条件**：受注番号を後から変える入口を足す → 受注から番号の変更のイベントを出し、出荷の受け手が書き直す。
+- **撤退コスト**：小。列とイベントの項目を残したまま、並べ替えの enum の値を非推奨にする。
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/sales/spec/public/sales/catalog_spec.rb packs/sales/spec/public/sales/sales_orders_spec.rb packs/sales/spec/public/sales/order_allocation_spec.rb packs/inventory/spec/public/inventory/stocks_spec.rb packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb   # 0 failures
+bundle exec rspec spec/scenarios/read_model_copies_spec.rb spec/matrix spec/requests/catalog_spec.rb spec/requests/supplier_shipments_spec.rb spec/graphql/query_budget_spec.rb   # 0 failures
+bin/check-schema-compat   # 破壊的な変更 0 件
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+cd frontend && npm run test:e2e
+```
+
+期待の不一致で最初に落とすのは、`spec/requests/catalog_spec.rb` の、`orderBy: { field: SAFETY_STOCK, direction: DESC }` で品目の一覧を読み、安全在庫の多い順に並び、在庫の行の無い品目が最後に来ることを確かめる example と、`spec/requests/supplier_shipments_spec.rb` の、`orderBy: { field: ORDER_NO, direction: ASC }` で出荷依頼の一覧を読み、受注番号の順に並ぶことを確かめる example である（列を足す前は引数の検証のエラーが返り、期待した並びと食い違う）。E2E（`frontend/e2e/list-pagination.spec.ts`）に、出荷依頼の受注番号の見出しを押すと URL の `sort` が `order_no` になって受注番号の順に並び、品目の単価の見出しを Shift を押して押すと（1 つ目の並びを単位にして）URL が 2 つの並びになり、単位の同じ品目が単価の順に並ぶことを確かめる example を足す。見出しの列の一覧（`ITEM_SORT_FIELDS`・`SHIPMENT_REQUEST_SORT_FIELDS`）から足した列を外すと、この example が落ちる。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+
+- `UNIT_PRICE` の型を `:integer` にすると、`catalog_spec.rb` の、2,147,483,647 を超える単価の品目をページの境目に置いて次のページを読む example が `Invalid cursor` で落ちる
+- 単価の式から `current` の条件を外すと、訂正した単価を持つ品目を訂正の前の単価で並べ、`catalog_spec.rb` の単価で並べる example が落ちる。`valid_on` の今日を別の日に替えると、予約した改定を持つ品目の example が落ちる
+- 出荷予定日の式から有効な出荷指示に限る条件を外すと、取り消した出荷指示を持つ出荷依頼の example が SQL のエラー（2 行以上）か並びの食い違いで落ちる
+- 受け手で受注番号を写さないと、`read_model_copies_spec.rb` の世界を作った直後の example が落ちる（書き直しが 1 以上）。発行元（`Sales::OrderAllocation`）から受注番号を外すと、`order_allocation_spec.rb` の受注番号を持つ example が落ちる
+- 安全在庫の副問い合わせから scope を外すと、上の所有の条件の example が落ちる
+
+**範囲外**：品目の税率と有効在庫、出荷依頼の数量での並べ替え（流用元も並べない）、受注番号を後から変える入口。
+
+**実装する文書の節**：`architecture/graphql-schema.md`「ページングと N+1」・「認可：宣言の無い型・リゾルバ・mutation は拒否する」、`architecture/data-model.md`「出荷（`fulfillment`）」、`architecture/context-map.md`「コンテキスト間の関係」、`adr/010` 決定 2、`adr/011`
+
+**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に足した列と、受注番号を出荷依頼の写しで並べることを書き、「認可」の操作者のいない入口の一覧に `Sales::SalesOrders.order_numbers` と `Fulfillment::ShipmentRequests.put_order_numbers` を書く。`architecture/data-model.md`「出荷（`fulfillment`）」の出荷依頼の表に `sales_order_no` を、`architecture/context-map.md`「コンテキスト間の関係」の受注 → 出荷の行に受注番号を運ぶことを書く。`adr/011` に、イベントで運んだ値の写しも作り直しのタスクで埋めることを足す。`lib/tasks/read_models.rake` の冒頭のコメントと `desc` を、2 つの写しに直す。`README.md`「開発環境」の `read_models:rebuild` の文に、出荷依頼の受注番号を足す。
 
 ## M33 フロントエンド
 
@@ -2008,7 +2090,9 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 
 作者は 2026-10-13 に検収表のスクリーンショットを受け入れ、画面の細かい指摘は実際に動かした後に出すとした。担当者は、作者が出した指摘を直す（OI-177）。サイクル 05 の逸脱検査が、画面が決めた 2 つの振る舞い（取消依頼のボタンを出す発注の状況、品番照合待ちを含む受注の合計金額）を作者に確かめる行にした（OI-178・OI-179）。作者の答えが既定と違えば、画面を直す。M33 は、OI-144・OI-177〜OI-179 が片付くまで終えない。
 
-**残り（サイクル 07）**：M33 は実装レビューまで終え、作者を待つ 4 行（OI-144・OI-177〜OI-179）だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-14 に OI-144・OI-178・OI-179 に答えた。OI-144 と OI-179 の答えは API に及ぶので、取りまとめ役は、API とそれを使う画面の変更を M45〜M47 として起こし、サイクル 06 の計画レビューに通した（`plans/cycle-06/plan-review.md`）。M33 の残りに残るのは、OI-178 の画面の直しと、作者の画面の指摘を待つ OI-177 と、サイクル 06 の逸脱検査で作者に渡した OI-192（取消済の伝票の合計の表示）である。サイクル 06 のマイルストーンを上限の 6 つに収めるため、残りは M47 と一緒にサイクル 07 へ移した。サイクル 07 の計画レビューで、サイクル 06 の末で変わった正本に合わせて節を見直す。
+**残り（サイクル 07）**：M33 は実装レビューまで終え、作者を待つ 4 行（OI-144・OI-177〜OI-179）だけをサイクル 06 へ移した（`guides/dev-cycle.md`「全体の流れ」）。作者は 2026-10-14 に OI-144・OI-178・OI-179 に答えた。OI-144 と OI-179 の答えは API に及ぶので、取りまとめ役は、API とそれを使う画面の変更を M45〜M47 として起こし、サイクル 06 の計画レビューに通した（`plans/cycle-06/plan-review.md`）。M33 の残りに残るのは、OI-178 の画面の直しと、作者の画面の指摘を待つ OI-177 と、サイクル 06 の逸脱検査で作者に渡した OI-192（取消済の伝票の合計の表示）である。サイクル 06 のマイルストーンを上限の 6 つに収めるため、残りは M47 と一緒にサイクル 07 へ移した。作者は 2026-10-14 に OI-192 に答えた（「取消」と出す）。サイクル 07 の計画レビューで、サイクル 06 の末で変わった正本に合わせて節を見直した（`plans/cycle-07/plan-review.md`）。
+
+担当者は、OI-178 と OI-192 の直しを、OI-177 の指摘を待たずに作り、実装レビューまで終える。OI-177 の指摘が来たら、下の表の手順でこの節に書き足して直す。指摘が来ないまま、サイクル 07 のほかのマイルストーンを終えたら、取りまとめ役は、OI-177 だけを「M33 の残り」として次のサイクルへ移す（`guides/dev-cycle.md`「全体の流れ」）。
 
 | ID | 作者の答え | 作るもの |
 |---|---|---|
@@ -2016,9 +2100,11 @@ GitHub のリポジトリは、作者が 2026-10-13 に public にした（OI-06
 | OI-177 | （作者が画面を動かした後に指摘を出す） | 取りまとめ役が、指摘を台帳の結果の欄に写すときに、指摘ごとに画面だけで済むか API に及ぶかを書く。画面だけの指摘は、直す画面と、直したことを確かめる E2E か単体のテストをこの節の下に書いて直す。API に及ぶ指摘は、作るものと完了条件をこの節の下に書き、差分を計画レビューの 2 系統に通してから実装者に渡す |
 | OI-178 | 出荷の前（`SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED`）だけボタンを出す | 下の取消依頼のボタン |
 | OI-179 | 照合待ちの明細を含む受注は、どの画面でも合計を出さず、照合待ちであることを出す | M45（合計の式と、画面の 1 つの関数） |
-| OI-192 | （作者の答えを待つ。既定はいまの画面のまま、取消済の伝票にも「照合待ち」「確定待ち」を出す） | 答えが既定と違えば、`frontend/lib/format.ts` の `totalAmountText` に状況を渡し、`format.test.ts` と E2E の期待を直す。明細の無い伝票の空の表示（IB-108）を同じ分岐で扱うかは、差分の計画レビューで決める |
+| OI-192 | 照合待ち・確定待ちのまま取り消した受注と発注は、合計の欄に「取消」と出す。合計で並べるときは末尾に置いたままにする | 下の取消済の伝票の合計の表示 |
 
 取消依頼のボタン（OI-178）：取消依頼のボタンを出す状況の集合を、`frontend/components/purchase-order-detail.tsx` の `CANCELLABLE` から `frontend/lib/purchase-order-flow.ts` の関数（`canRequestCancellation`）へ移し、集合を `SENT`・`AWAITING_SUPPLIER_CONFIRMATION`・`ACCEPTED` にする。`frontend/lib/purchase-order-flow.test.ts` が、`PurchaseOrderStatus` のすべての値（codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める `frontend/lib/statuses.ts` の `PURCHASE_ORDER_STATUS` の鍵から集める）について、出すか隠すかを確かめる。受注側の `frontend/lib/sales-order-flow.ts` と同じ置き方にする。`frontend/e2e/admin-only.spec.ts` は `INBOUND` の発注でボタンが出ることを期待しているので、その期待も直し、出荷の前の発注でボタンが出ることを別に確かめる（サイクル 06 の逸脱検査 D3）。期待の不一致で最初に落とすのは、この単体の、`INBOUND` の発注でボタンを隠すことを確かめる example である（いまの画面は `INBOUND` で出す）。集合から `ACCEPTED` を外すと落ちることを、壊して落ちる記録に残す。
+
+取消済の伝票の合計の表示（OI-192）：`frontend/lib/format.ts` の `totalAmountText` に伝票の状況を渡し、合計が空で、状況が取消（受注の `CANCELLED`、発注の `CANCELLED`・`SUPPLIER_CANCELLED`）なら「取消」を、取消でなければいまと同じく「照合待ち」「確定待ち」を返す。合計があれば、取消済の伝票でも円の表記を返す（流用元と同じく、単価の決まった伝票は取り消しても合計を出す）。取消の状況の集合は `frontend/lib/statuses.ts` の状況の一覧の隣に置く。呼ぶ 4 か所（受注一覧・受注詳細・ダッシュボードのかんばん・発注一覧）は、どれも画面の問い合わせで状況を選んでいるので、状況をそのまま渡す。合計の式と API は変えない。`frontend/lib/format.test.ts` が、`SalesOrderStatus`・`PurchaseOrderStatus` のすべての値（`statuses.ts` の鍵から集める）について、合計が空のときの文言を確かめる。明細の無い伝票の空の表示（IB-108）は同じ分岐で扱わない。入口からは明細の無い伝票を作れず、画面に出る経路が無いからである。期待の不一致で最初に落とすのは、この単体の、合計が空で `CANCELLED` の受注に「取消」を返すことを確かめる example である（いまは「照合待ち」を返す）。E2E（`frontend/e2e/list-pagination.spec.ts` の受注合計の example）は、末尾の確かめを「照合待ち」か「取消」が末尾に並ぶ形に直す。詳細とかんばんで「照合待ち」を確かめる受注は、末尾の行ではなく、一覧で「照合待ち」と出た行から ID を取って追う。E2E の世界に、照合待ちのまま取り消した受注が無ければ `DemoWorld` の `variant: :e2e` に足し、その受注を ID で追って、一覧の取消済のタブと受注詳細で合計の欄が「取消」と出ることを確かめる（かんばんの列は取消済の受注を出す列でも、確かめる受注の ID で引く）。取消の集合から `SUPPLIER_CANCELLED` を外すと単体が落ちることを、壊して落ちる記録に残す。
 
 残りの完了条件：
 
@@ -2028,9 +2114,11 @@ cd frontend && npm run test:e2e
 bin/check-open-items --due M33
 ```
 
-OI-177 の指摘が来ないまま、ほかのマイルストーンを終えたら、取りまとめ役は M33 の残りを次のサイクルへ移す（`guides/dev-cycle.md`「全体の流れ」）。
+`bin/check-open-items --due M33` は、OI-177 が `open` の間は落ち、OI-177 の 1 行だけを出すことを期待する。ほかの行が出れば、片付いていない。上のとおり、OI-177 だけを次のサイクルへ移す。
 
-**範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、作者の判断（OI-144）の値に入っていない列での並べ替え（OI-186）、一覧の見出しで複数の列を指定する操作（OI-187）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
+残りの文書に残すこと：`architecture/context-map.md`「発注の連結と品番の照合」の合計金額の段落と、`architecture/graphql-schema.md`「ページングと N+1」の合計金額の箇条に、取り消した伝票は合計の代わりに「取消」を出すことを書く。「照合待ち」「確定待ち」を種類で `git grep` し、画面の規則を書いた文に取消の場合を足す。
+
+**範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、作者の判断（OI-144）の値に入っていない列での並べ替え（OI-186。M50 で足す）、一覧の見出しで複数の列を指定する操作（OI-187。M47 で足す）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
 **実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
 
@@ -2154,7 +2242,7 @@ bin/check-open-items --due M41
 
 マニフェストを替えたら、CI のマニフェストの照合（M42 の後は `manifests` のジョブ）が通ることも確かめる。作者が答えないまま、ほかのマイルストーンを終えたら、取りまとめ役は M41 の残りを次のサイクルへ移す。
 
-**残り（サイクル 07）**：プローブの直しは、サイクル 06 で実装レビューまで終えた（`plans/cycle-06/implementation-reviews.md`「M41 の残り：公開の配置のプローブの時間切れを明示する」）。残る作者の実機の手順（作るもの 9 の手順 1〜6）だけをサイクル 07 へ移した。作者が結果を PR か台帳に書いたら、取りまとめ役は、測った値でプローブの時間と requests と limits を直すか（OI-182）、PVC を移すか（OI-183）を確かめ、直すものがあれば差分をこの節の下に書いて実装レビューに通す。
+**残り（サイクル 07）**：プローブの直しは、サイクル 06 で実装レビューまで終えた（`plans/cycle-06/implementation-reviews.md`「M41 の残り：公開の配置のプローブの時間切れを明示する」）。残る作者の実機の手順（作るもの 9 の手順 1〜6）だけをサイクル 07 へ移し、`blocked-user` の行（OI-196）にして、`bin/check-open-items --due M41` が結果を待つようにした。作者が結果を PR か台帳に書いたら、取りまとめ役は、測った値でプローブの時間と requests と limits を直すか（OI-182）、PVC を移すか（OI-183）を確かめ、直すものがあれば差分をこの節の下に書いて実装レビューに通す。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
@@ -2282,7 +2370,7 @@ cd frontend && npm run test:e2e
 
 1. `frontend` のジョブ：`npm ci` の後に `npm ls --all` のステップを足す。`spec/platform/ci_checks_spec.rb` に、`frontend` のジョブが `npm ci` の後に `npm ls --all` を流すことを確かめる example を足す
 2. `image_inputs` を外す：`image_inputs` のジョブと、`images` の `needs`・ジョブの段の `if:` を外し、`images` を PR と main への push のたびに流す。`ci_checks_spec.rb` の `pattern` の example を消し、「`publish` の `needs` は `image_inputs` のほかのすべてのジョブを含む」と「ジョブの段の `if:` を持つのは `image_inputs`・`images`・`publish` だけ」の example を、外した後の形（`publish` の `needs` はほかのすべてのジョブ、ジョブの段の `if:` を持つのは `publish` だけ）に直す
-3. `publish` の `skipped` の守り：いまは `publish` の最初のステップで、直接の `needs` に skip されたジョブがあれば落とす（OI-184）。`image_inputs` が無くなれば、ジョブの段の `if:` に `!contains(needs.*.result, 'skipped')` を戻せる見込みだが、確かめていない。マイルストーンの中で、M42 と同じくブランチへの push で確かめ、戻せたら戻して最初のステップを消す。確かめられなければ、最初のステップに残す。どちらにしたかを OI-184 の結果か新しい `judgment` に書く
+3. `publish` の `skipped` の守り：いまは `publish` の最初のステップで、直接の `needs` に skip されたジョブがあれば落とす（OI-184）。`image_inputs` が無くなれば、ジョブの段の `if:` に `!contains(needs.*.result, 'skipped')` を戻せる見込みだが、確かめていない。`image_inputs` と `images` の `if:` を外すと、`publish` の `needs` に skip されうるジョブが残らないので、ふつうの push では戻した項が効くかを見られない。マイルストーンの中で、M42 と同じくブランチへの push で、`needs` の 1 つ（`manifests`）に一時に `if: false` を足した commit を流し、戻した項で `publish` が skip されることを見る。続けて、一時の `if: false` を外してすべての `needs` が成功する commit を同じブランチへ push し、`publish` が skip されずに流れる（ログインと push のステップは `github.ref` の条件で skip される）ことを見る。OI-184 で起きたのは、すべての `needs` が成功してもジョブの段の項が偽になり `publish` を誤って止めたことなので、流れない側だけを見ても確かめにならない。2 つの結果がそろったときだけ戻して最初のステップを消し、そろわなければ最初のステップに残す。どちらにしたかと 2 つの実行の URL を、OI-184 の結果か新しい `judgment` に書く
 4. 壊し方の型の試行（IB-17）：このマイルストーンで足すか直す example のそれぞれについて、壊して落ちる記録に、「消す・外す」のほかに、キーや要素を残したまま「値を替える・順を入れ替える・書き込み先を替える・条件や要素を足す」壊し方を 1 つ以上流した行を書く。規則の文は、試行が効いてから `guides/dev-cycle.md`「テストから書く」と実装レビューの観点 4 に書く
 
 **判断**：PR で `images` を流す条件を外すか
@@ -2303,26 +2391,27 @@ bundle exec rspec spec/platform/ci_checks_spec.rb spec/platform/dependency_updat
 ほかに、次を PR の CI と証跡で確かめる。
 
 - M48 の PR の CI で、`images` が流れ、ワークフロー全体（実行が始まってから終わるまで）が 10 分の内に終わる。キャッシュが空のときの時間も、M42 と同じく `scope` を替えた一時の commit で 1 回測る
-- 組の依存をずらした一時の commit（M44 の壊して落ちる記録と同じ、`npm install --legacy-peer-deps` で `react` を古い版のままにした木）を PR に push し、`frontend` のジョブが `npm ls --all` のステップで落ちることを見てから戻す
+- `npm ci` は通り、`npm ls --all` だけが落ちる木の一時の commit を PR に push し、`frontend` のジョブが `npm ci` の後の `npm ls --all` のステップで落ちることを見てから戻す。木は、#70 と同じく `eslint` を 10 に上げた `package.json` と `package-lock.json` にする（入れ子の依存の peer の外れは `npm ci` が止めない。IB-104）。`react` だけを古い版のままにした木は、先の `npm ci` が ERESOLVE で止めるので、追加したステップの確かめにならない。証跡には、2 つのステップのそれぞれの結果を書く
 - 作るもの 3 の確かめを、M42 と同じくブランチへの push で行い、`test` だけを落とした push で `publish` が流れないことを見る。一時の契機を戻した commit で `on.push.branches` が `[ main ]` だけであることを証跡に書く
 - マージした後の最初の main への push で `publish` が流れ、2 つのイメージを置くことは、取りまとめ役がサイクル 07 の振り返りで確かめる
 
 **範囲外**：`publish` の組み立ての形、画面の書体の取り方（IB-101）
 
-**実装する文書の節**：`guides/config.md`「CI の工程」、`adr/009`「見直す条件」、`guides/bin.md`「CI が使うもの」
+**実装する文書の節**：`guides/config.md`「CI の工程」、`adr/009`「見直す条件」、`guides/bin.md`「CI が使うもの」、GitHub の文書の `jobs.<job_id>.needs` と状態の関数（M42 と同じ）
 
 **文書に残すこと**：`guides/config.md`「CI の工程」の、予算を超えるジョブの段落と `image_inputs` の文、`publish` の条件の段落、`frontend` のジョブの一覧に `npm ls --all`。`adr/009`「見直す条件」の「private に戻したら `images` は `image_inputs` の条件で絞ったままにする」を、戻すときは条件も戻すと書き直す。`guides/bin.md`「CI が使うもの」の表から `image_inputs` を消す。「`image_inputs`」を `git grep` で数え、計画の M42 の節と証跡のほかに残らないようにする。
 
-## M49 品目コードの列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする
+## M49 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする
 
-**目的**：2 つの小さい直しを 1 つにまとめる。1 つ目は、文字列の照合順序を決めた記録が無く、DB の既定（公式の `postgres` のイメージが initdb する `en_US.utf8`）のままであることである。M46 で、品目の写しの作り直しが品目を DB の照合順序の `ORDER BY code` で読んでロックし、取り込みは Ruby のバイトの順でロックするので、`B-1` と `a-1` のように順が逆になるコードで行き詰まりうる形を、計画も実装も通した（実装レビューの High）。いまは作り直しの式に `COLLATE "C"` を書いて直してあるが、次にコードの順でロックする箇所を書く人が照合順序を知らなければ、同じ形がまた出る。品目コードの列そのものの照合順序を、Ruby の文字列の比べ方と同じ順に決める（IB-77）。2 つ目は、`TEST_DATABASE` を渡した worktree で `bin/ci` を流すと、`spec/platform/logging_spec.rb` の 1 件が、既定の DB のプロセスが書く `log/events.log` を固定で読んで落ちることである（IB-110）。どちらもサイクル 06 の改善の探索で採用した（`plans/cycle-06/improvement.md`）。名前の列（品目名・取引先の名前）の照合順序は、作者の確認を待つ OI-190 に関わるので触らない。
+**目的**：文字列の列の照合順序を決めることと、小さい直しを 1 つにまとめる。1 つ目は、文字列の照合順序を決めた記録が無く、DB の既定（公式の `postgres` のイメージが initdb する `en_US.utf8`）のままであることである。M46 で、品目の写しの作り直しが品目を DB の照合順序の `ORDER BY code` で読んでロックし、取り込みは Ruby のバイトの順でロックするので、`B-1` と `a-1` のように順が逆になるコードで行き詰まりうる形を、計画も実装も通した（実装レビューの High）。いまは作り直しの式に `COLLATE "C"` を書いて直してあるが、次にコードの順でロックする箇所を書く人が照合順序を知らなければ、同じ形がまた出る。品目コードの列そのものの照合順序を、Ruby の文字列の比べ方と同じ順に決める（IB-77）。2 つ目は、取引先の名前と品目の名前の並びが、DB の既定の照合順序では、漢字を含む名前で流用元と変わることである。流用元は画面で最大 200 件を `Intl.Collator("ja")` で並べる（流用元の `frontend/lib/sort.ts`）。作者の判断（OI-190）で、名前の列の照合順序を ICU の日本語の照合順序（`ja-x-icu`）にし、流用元と同じ並びを件数の上限なしにサーバーで作る。3 つ目は、`TEST_DATABASE` を渡した worktree で `bin/ci` を流すと、`spec/platform/logging_spec.rb` の 1 件が、既定の DB のプロセスが書く `log/events.log` を固定で読んで落ちることである（IB-110）。1 つ目と 3 つ目はサイクル 06 の改善の探索で採用した（`plans/cycle-06/improvement.md`）。
 
 **作るもの**
 
-1. マイグレーション 1 本で、`items.code` と `item_labels.code` の照合順序を、下の判断で決めたものにする。`(owner_tenant_id, code)` の一意索引が作り直される。`db/structure.sql` を書き直す
+1. マイグレーション 1 本で、`items.code` と `item_labels.code` の照合順序を、下の判断「品目コードの列の照合順序を何にするか」で決めたものにし、`tenants.name`・`items.name`・`item_labels.name` の照合順序を `"ja-x-icu"` にする（判断「名前の列の照合順序を何にするか」）。`(owner_tenant_id, code)` の一意索引が作り直される。strong_migrations は照合順序の変更を安全な型の変更に数えず止めるので、`safety_assured` で包み、表が小さく、公開の配置は毎日 DB ごと作り直すという理由を 1 文添える（`adr/001`）。`db/structure.sql` を書き直す。並べる式とカーソルの比べ方は列の照合順序を使い（取引先の名前のスカラーの副問い合わせも、列の照合順序を引き継ぐ）、式に照合順序を書かない
 2. 作り直し（`Sales::Catalog.rebuild_item_labels`）の式から照合順序の指定を外し、列の順で読む。コメントを、列の照合順序が Ruby の比べ方と同じ順にすることに直す
-3. spec：2 つの列の照合順序が決めたものであることを `pg_attribute` と `pg_collation` から確かめる example。作り直しの式から照合順序の指定を外しても `packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb` の `B-1`・`a-1` の example が通ることと、列の照合順序を DB の既定に戻すと同じ example が落ちることを、壊して落ちる記録に残す。品目コードの検索（`Keyword` の ILIKE）が、ASCII 以外の文字を含むコードの大文字と小文字を、変える前と同じに扱うことを確かめる example を足す
-4. `spec/platform/logging_spec.rb` の別の DB の子のプロセスの example が、親のファイルを `Platform::Logging.events_log_path(Rails.root)`（自分のプロセスのログ）から読む
+3. spec：5 つの列の照合順序が決めたものであることを `pg_attribute` と `pg_collation` から確かめる example（`spec/platform/collations_spec.rb`）。作り直しの式から照合順序の指定を外しても `packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb` の `B-1`・`a-1` の example が通ることと、列の照合順序を DB の既定に戻すと同じ example が落ちることを、壊して落ちる記録に残す。品目コードの検索（`Keyword` の ILIKE）が、ASCII 以外の文字を含むコードの大文字と小文字を、変える前と同じに扱うことを確かめる example を足す
+4. 名前の並びの spec：`spec/requests/purchase_orders_spec.rb` に、「青嵐精機工業」と「東和商事」の 2 社へ出した発注を `SUPPLIER_NAME` の昇順で `first: 1` ずつ読み、青嵐精機工業の発注が先に来て、2 ページ目で東和商事の発注に移ることを確かめる example を足す（DB の既定の照合順序では、東和商事が先に来る）。`spec/requests/inventory_spec.rb` に、在庫を `ITEM_NAME` で並べる同じ形の example を足す。品目名の検索（`Keyword` の ILIKE）が、全角と半角の英字と大文字と小文字を、変える前と同じに扱うことを確かめる example を足す。E2E（`frontend/e2e/list-pagination.spec.ts`）の受注一覧の取引先の名前の並びの確かめと、品目の一覧を名前で読む example の確かめを、`new Intl.Collator("ja").compare` で並べた並びと等しいことを確かめる形にし、「画面の照合順序とは比べない」「画面の照合順序とは一致しない」のコメントを直す。同じ並びと言えるのは、spec と E2E の名前の組（ひらがな・カタカナ・漢字・英字・全角の英字を含む）での一致で、ICU の版の違いによる個々の漢字の差までは言わない。`spec/platform/collations_spec.rb`（作るもの 3 の example と同じファイル）に、`ja-x-icu` と `pg_c_utf8` があり、`pg_collation.collversion` が `pg_collation_actual_version` と等しいことを確かめる example を足す。CI と手元のイメージで流れるので、イメージの ICU の版が DB の記録と食い違えば落ちる
+5. `spec/platform/logging_spec.rb` の別の DB の子のプロセスの example が、親のファイルを `Platform::Logging.events_log_path(Rails.root)`（自分のプロセスのログ）から読む
 
 **判断**：品目コードの列の照合順序を何にするか
 
@@ -2331,18 +2420,30 @@ bundle exec rspec spec/platform/ci_checks_spec.rb spec/platform/dependency_updat
 - **裏返る条件**：`pg_c_utf8` の ILIKE が、作るもの 3 の example で変える前と違う結果になる → `"C"` にし、品目コードの形を ASCII に限る検証を足すかを計画レビューに戻す
 - **撤退コスト**：小さい。照合順序を戻すマイグレーション 1 本で、データは変わらない
 
+**判断**：名前の列の照合順序を何にするか
+
+- **既定の推奨**：`"ja-x-icu"`（作者の判断、OI-190）。かなを五十音で、よく使う漢字をその漢字の音読みの順で並べ、流用元の `Intl.Collator("ja")`（ICU の日本語の照合）と同じ並びになる。名前全体の読みの順ではない（「山田部品」は音読みのサンで「青嵐精機工業」より前に来る）。ICU の照合順序は決定的なので、LIKE と ILIKE が使え、検索の振る舞いを変えない見込みで、作るもの 4 の example で確かめる。公式の `postgres` のイメージ（手元・CI・公開の配置）は ICU を入れて作られ、手元の PostgreSQL 18.6 で `ja-x-icu` があることを確かめた（`plans/cycle-06/author-decisions.md` の 2）
+- **比べた案**：(a) 名前の読みの列を持ち、読みで並べる。入力の画面と取り込みの列が変わるので、作者が選ばなかった。(b) DB の既定を ICU にする（initdb の引数）。品目コードの並びも変わり、既存のボリュームは initdb をやり直さないと変わらない
+- **裏返る条件**：ICU の版が `ja-x-icu` の並びを変えるほど上がり、流用元の画面の並びと食い違う → 読みの列（比べた案 (a)）を作者に確かめる
+- **版の扱い**：PostgreSQL のイメージを上げて ICU の版が変わると、照合順序の版の食い違いの警告が出る（`pg_collation.collversion` と `pg_collation_actual_version`）。公開の配置の毎日の作り直しは `db:drop db:prepare` で、クラスタ（PVC）は残り、新しい DB は `template1` から版の記録を写すので、作り直しでは消えない。イメージを上げた人は、`template1` とアプリの DB で名前の列の索引を作り直してから `ALTER COLLATION pg_catalog."ja-x-icu" REFRESH VERSION` を流す。この手順を `guides/config.md` と `deploy/README.md` に書く。CI は毎回新しいクラスタなので当たらず、作るもの 4 の版の example が、イメージと DB の記録の食い違いを手元で捕まえる
+- **撤退コスト**：小さい。照合順序を戻すマイグレーション 1 本で、データは変わらない
+
 **完了条件**
 
 ```sh
-bundle exec rspec packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb packs/sales/spec/public/sales/catalog_spec.rb packs/inventory/spec/public/inventory/item_labels_spec.rb spec/requests/catalog_spec.rb spec/requests/inventory_spec.rb   # 0 failures
+bundle exec rspec packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb packs/sales/spec/public/sales/catalog_spec.rb packs/inventory/spec/public/inventory/item_labels_spec.rb spec/requests/catalog_spec.rb spec/requests/inventory_spec.rb spec/requests/purchase_orders_spec.rb   # 0 failures
+bundle exec rspec spec/platform/collations_spec.rb   # 0 failures
 TEST_DATABASE=factory_ops_m49 bundle exec rspec spec/platform/logging_spec.rb   # log/events.log の無い worktree で 0 failures
 TEST_DATABASE=factory_ops_m49 bin/ci
+cd frontend && npm run test:e2e
 ```
 
-期待の不一致で最初に落とすのは、2 つの列の照合順序を確かめる example（いまは DB の既定）と、`log/events.log` の無い worktree で `TEST_DATABASE` を渡して流した `logging_spec.rb` の別の DB の example（いまは `Errno::ENOENT` で落ちるので、親のファイルを読む前にファイルがあることを期待として確かめる形にして、期待の不一致で落とす）である。`Platform::Logging.events_log_path` が `TEST_DATABASE` を見ない形に壊すと、直した example が落ちることを壊して落ちる記録に残す。
+公開の配置のイメージ（`deploy/postgres.yaml` の `postgres:18.6`、arm64）に `ja-x-icu` と `pg_c_utf8` があり、記録の版と実際の版が等しいことも、そのタグのイメージで `pg_collation` を引いて確かめ、流したコマンドと結果とイメージのダイジェストを証跡に書く。手元の Mac は arm64 で、`compose.yaml` の `postgres:18` が同じ 18.6 を指していれば、手元の DB で流した `collations_spec.rb` の結果と `SELECT version()` で代えてよい。
 
-**範囲外**：名前の列の照合順序（OI-190）、伝票番号の列
+期待の不一致で最初に落とすのは、5 つの列の照合順序を確かめる example（いまは DB の既定）と、作るもの 4 の、青嵐精機工業の発注が先に来ることを確かめる example（いまは東和商事が先に来る）と、`log/events.log` の無い worktree で `TEST_DATABASE` を渡して流した `logging_spec.rb` の別の DB の example（いまは `Errno::ENOENT` で落ちるので、親のファイルを読む前にファイルがあることを期待として確かめる形にして、期待の不一致で落とす）である。`Platform::Logging.events_log_path` が `TEST_DATABASE` を見ない形に壊すと、直した example が落ちることを壊して落ちる記録に残す。名前の列の 1 つを DB の既定に戻すと、その列を並べる example が落ちることを、3 つの列のそれぞれで壊して落ちる記録に残す。E2E の確かめは、`tenants.name` を DB の既定に戻すと落ちることを記録に残す（E2E の世界の取引先の名前が、2 つの照合順序で並びの変わる組になっていなければ、`DemoWorld` の `variant: :e2e` の名前を替え、`spec/scenarios/demo_world_spec.rb` の期待を直す）。
 
-**実装する文書の節**：`architecture/data-model.md`「在庫（`inventory`）」「受注（`sales`）」、`adr/011` 決定 1、`guides/config.md`「ログの出口：Rails.event と Rails.logger」
+**範囲外**：名前の読みの列（OI-190 の (b)）、伝票番号の列、取引関係と取引先の一覧の名前の並び（並べ替えの引数を持たない）
 
-**文書に残すこと**：`architecture/data-model.md` に、DB の既定の照合順序を前提にしていることと、文字列のキーで行ロックの順を決める列は Ruby の比べ方と同じ順の照合順序を列に持たせることを書く。`adr/011` 決定 1 と `showcase.md`「4. 整合性の設計」の「照合順序 `"C"`」を、列の照合順序の文に直す。「`COLLATE \"C\"`」と「照合順序 `\"C\"`」を `git grep` で数え、証跡のほかに残らないようにする。
+**実装する文書の節**：`architecture/data-model.md`「在庫（`inventory`）」「受注（`sales`）」、`adr/011` 決定 1、`guides/config.md`「ログの出口：Rails.event と Rails.logger」、`architecture/graphql-schema.md`「ページングと N+1」
+
+**文書に残すこと**：`architecture/data-model.md` に、DB の既定の照合順序を前提にしていることと、文字列のキーで行ロックの順を決める列は Ruby の比べ方と同じ順の照合順序を列に持たせることと、画面に並べる名前の列は `"ja-x-icu"` を持たせることを書く。`architecture/graphql-schema.md`「ページングと N+1」の、名前で並べる列の説明に、並びが流用元の `Intl.Collator("ja")` と同じであることを書く。`adr/011` 決定 1 と `showcase.md`「4. 整合性の設計」の「照合順序 `"C"`」を、列の照合順序の文に直す。「`COLLATE \"C\"`」と「照合順序 `\"C\"`」を `git grep` で数え、証跡のほかに残らないようにする。「照合順序」と「en_US」も `git grep` で数え、DB の既定の照合順序を前提に書いたコメント（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb` の `a-1` が先という説明を含む）を直す。
