@@ -18,7 +18,7 @@ export type BoardCard = {
   status: SalesOrderStatus;
   cancellationReviewPending: boolean;
   customerName: string;
-  /** 受注の合計の表示 (totalAmountText)。品番照合待ちの明細を含む受注は、金額の代わりに「照合待ち」。 */
+  /** 受注の合計の表示 (totalAmountText)。品番照合待ちの明細を含む受注は、金額の代わりに「照合待ち」 (取り消していれば「取消」)。 */
   total: string;
   shipmentRequest: { id: string; status: ShipmentRequestStatus } | null;
 };
@@ -140,7 +140,9 @@ function Card({
         <TextLink href={`/supplier/sales-orders/${card.id}`} className="font-semibold">
           {card.orderNo}
         </TextLink>
-        <span className="text-[15px] font-semibold tabular-nums">{card.total}</span>
+        <span data-testid="card-total" className="text-[15px] font-semibold tabular-nums">
+          {card.total}
+        </span>
       </div>
       <p className="truncate font-medium" title={card.customerName}>
         {card.customerName}

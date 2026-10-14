@@ -245,7 +245,7 @@ function toCard(order: NonNullable<NonNullable<Kanban["received"]["nodes"]>[numb
     status: order.status,
     cancellationReviewPending: order.cancellationReviewPending,
     customerName: order.customer.name,
-    total: totalAmountText(order.totalAmount, "salesOrder"),
+    total: totalAmountText(order.totalAmount, "salesOrder", order.status),
     shipmentRequest: order.shipmentRequest,
   };
 }

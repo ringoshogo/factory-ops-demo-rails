@@ -105,7 +105,12 @@ class DemoWorld
   LONG_ITEM = [ "ITM-030", "超高精度クロスローラーベアリング 薄型シリーズ CRB-12025 両側シール付き・防錆処理済み（クリーンルーム対応品）",
     "個", 12_800, 2, 10 ].freeze
   LONG_BUYER_NAME = "東海産機システム株式会社 第二工場 自動化設備調達センター（試作ライン・量産ライン共通窓口）"
-  E2E_ORDERS = [ Order.new(buyer: :granted_buyer, lines: [ [ "030", 2 ], [ "016", 5 ] ], due_in: 14, stage: :received) ].freeze
+  # 品番照合待ちのまま受注側が取り消した受注（発注は受注側により取消）は、合計を持たない取消済の伝票として、
+  # 合計の欄に待ちではなく「取消」が出ることを見せる
+  E2E_ORDERS = [
+    Order.new(buyer: :granted_buyer, lines: [ [ "030", 2 ], [ "016", 5 ] ], due_in: 14, stage: :received),
+    Order.new(buyer: :granted_buyer, lines: [ [ UNMAPPED_NUMBER, 1 ] ], due_in: 11, stage: :supplier_cancelled)
+  ].freeze
 
   def self.build(namespace:, variant:) = new(namespace:, variant:).build
 

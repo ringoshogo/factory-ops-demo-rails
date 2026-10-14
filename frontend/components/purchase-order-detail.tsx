@@ -14,15 +14,13 @@ import { inspectInboundShipment, requestPurchaseOrderCancellation } from "@/lib/
 import { IDLE, type FormState } from "@/lib/form-state";
 import { yen } from "@/lib/format";
 import type { BuyerPurchaseOrderQuery } from "@/lib/graphql/generated";
+import { canRequestCancellation } from "@/lib/purchase-order-flow";
 import { OPEN_PURCHASE_ORDER_STATUSES } from "@/lib/purchase-order-list";
 import { PURCHASE_ORDER_STATUS } from "@/lib/statuses";
 
 type PurchaseOrder = NonNullable<BuyerPurchaseOrderQuery["buyer"]["purchaseOrder"]>;
 
 const OUTCOME_LABEL = { APPROVED: "承認", REJECTED: "却下" } as const;
-
-// 取消を依頼できる状況。受注側が確定する前と、確定して入荷を待つ間。検収した発注と取り消した発注には出さない
-const CANCELLABLE = new Set(["SENT", "AWAITING_SUPPLIER_CONFIRMATION", "ACCEPTED", "INBOUND"]);
 
 /**
  * 発注詳細。明細・入荷と検収・受注側の出荷 (経路 3)・取消依頼を 1 画面に置く。検収と取消依頼は admin だけに出す。
@@ -244,7 +242,7 @@ export function PurchaseOrderDetail({
             ))}
           </ul>
         )}
-        {admin && CANCELLABLE.has(order.status) && !order.cancellationPending && (
+        {admin && canRequestCancellation(order) && (
           <form action={requestCancel} className="rounded-card flex flex-wrap items-end gap-2 border p-4">
             <input type="hidden" name="purchaseOrderId" value={order.id} />
             <div className="min-w-64 flex-1 space-y-1.5">

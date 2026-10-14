@@ -130,7 +130,7 @@ export default async function SalesOrdersPage({ searchParams }: { searchParams: 
                         mark={o.cancellationReviewPending ? "取消審査中" : undefined}
                       />
                     ),
-                    TOTAL_AMOUNT: totalAmountText(o.totalAmount, "salesOrder"),
+                    TOTAL_AMOUNT: totalAmountText(o.totalAmount, "salesOrder", o.status),
                   };
                   return (
                     <TableRow key={o.id} data-testid="list-row">
