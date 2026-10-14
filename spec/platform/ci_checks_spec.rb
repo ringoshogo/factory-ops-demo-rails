@@ -29,14 +29,20 @@ RSpec.describe "CI と手元で流す検査" do
   end
 
   # npm ci は直接の依存の peer の不一致しか止めず、入れ子の依存の peer の範囲から外れた更新は npm ls --all でだけ見える
-  # （docs/guides/config.md「CI の工程」）。npm ls は入れた木を読むので npm ci の後に流し、落ちたらジョブを落とす
-  it "frontend のジョブは、npm ci の後に npm ls --all を流し、その失敗でジョブを落とす" do
-    steps = self.class.workflow.dig("jobs", "frontend", "steps")
+  # （docs/guides/config.md「CI の工程」）。npm ls は npm ci が frontend に入れた木を読むので、同じ置き場で npm ci の後に流す。
+  # 失敗でジョブを落とすこと（continue-on-error を持たないこと）は、publish の needs の example がすべてのステップで確かめる
+  it "frontend のジョブは、npm ci の後に、同じ frontend の置き場で npm ls --all を必ず流す" do
+    job = self.class.workflow.dig("jobs", "frontend")
+    steps = job.fetch("steps")
     commands = steps.filter_map { _1["run"]&.strip }
-    list_step = steps.find { _1["run"]&.strip == "npm ls --all" }
+    directory = ->(command) do
+      step = steps.find { _1["run"]&.strip == command }
+      step && (step["working-directory"] || job.dig("defaults", "run", "working-directory"))
+    end
 
     expect(commands.drop_while { _1 != "npm ci" }.drop(1)).to include("npm ls --all")
-    expect(list_step&.slice("if", "continue-on-error", "working-directory")).to eq({})
+    expect([ "npm ci", "npm ls --all" ].map(&directory)).to eq(%w[frontend frontend])
+    expect(steps.find { _1["run"]&.strip == "npm ls --all" }).not_to have_key("if")
   end
 
   # ubuntu-latest は GitHub が日程で OS の版を上げ、CI が通るかを確かめないまま版が変わる（docs/guides/config.md「CI の工程」）。
@@ -63,19 +69,27 @@ RSpec.describe "CI と手元で流す検査" do
   end
 
   # publish は needs の結果だけを見て、ジョブの名前を並べない。needs に無いジョブが落ちても push するので、
-  # 期待するジョブは publish の needs からではなく、ワークフローの jobs から集める。ジョブの段の continue-on-error は、
-  # そのジョブが落ちても needs の結果を success にするので、publish がそのジョブの成功を待たなくなる
-  it "publish の needs は、ほかのすべてのジョブを含み、ジョブの段の continue-on-error を持つジョブは無い" do
+  # 期待するジョブは publish の needs からではなく、ワークフローの jobs から集める。continue-on-error は、ジョブの段では
+  # そのジョブが落ちても needs の結果を、ステップの段ではそのステップが落ちてもジョブの結果を success にするので、
+  # publish がそのジョブかステップの成功を待たなくなる
+  it "publish の needs は、ほかのすべてのジョブちょうどで、continue-on-error を持つジョブとステップは無い" do
     jobs = self.class.workflow.fetch("jobs")
+    continuing = jobs.select { |_, job| job.key?("continue-on-error") }.keys +
+      jobs.flat_map { |name, job| job.fetch("steps").select { _1.key?("continue-on-error") }.map { "#{name}: #{_1['name']}" } }
 
-    expect(jobs.keys - %w[publish] - Array(jobs.dig("publish", "needs"))).to eq([])
-    expect(jobs.select { |_, job| job.key?("continue-on-error") }.keys).to eq([])
+    expect(Array(jobs.dig("publish", "needs")).sort).to eq((jobs.keys - %w[publish]).sort)
+    expect(continuing).to eq([])
   end
 
   # どのジョブも PR と main への push のたびに流れ、publish だけが main への push で、ほかのすべてのジョブの成功を待って流れる
-  # （docs/guides/config.md「CI の工程」）。ほかのジョブに契機を絞る if: を足すと、そのジョブが確かめないまま push する
-  it "ジョブの段の if: を持つのは publish だけ" do
-    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
+  # （docs/guides/config.md「CI の工程」）。ほかのジョブに契機を絞る if: を足すと、push でそのジョブが skip され、
+  # publish も skip されてイメージが置かれなくなる。publish の if: に状態の関数を書くと、GitHub が足す success() が外れ、
+  # needs のジョブが落ちても push する。式の形は照らさず、状態の関数を含まないことだけを照らす
+  it "ジョブの段の if: を持つのは publish だけで、publish の if: は状態の関数を含まない" do
+    jobs = self.class.workflow.fetch("jobs")
+
+    expect(jobs.select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
+    expect(jobs.dig("publish", "if").to_s).not_to match(/\b(success|failure|cancelled|always)\s*\(/)
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do
