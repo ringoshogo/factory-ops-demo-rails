@@ -75,7 +75,7 @@ RSpec.describe "CI と手元で流す検査" do
   # どのジョブも PR と main への push のたびに流れ、publish だけが main への push で、ほかのすべてのジョブの成功を待って流れる
   # （docs/guides/config.md「CI の工程」）。ほかのジョブに契機を絞る if: を足すと、そのジョブが確かめないまま push する
   it "ジョブの段の if: を持つのは publish だけ" do
-    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys).to eq(%w[manifests publish])
+    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do
