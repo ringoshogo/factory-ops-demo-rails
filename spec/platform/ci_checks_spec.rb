@@ -83,4 +83,8 @@ RSpec.describe "CI と手元で流す検査" do
 
     expect(self.class.bin_commands(text)).to eq(%w[bin/check-branch-coverage bin/packwerk bin/rails])
   end
+
+  it "一時に落とす（publish が流れないことを確かめる）" do
+    expect(1).to eq(2)
+  end
 end
