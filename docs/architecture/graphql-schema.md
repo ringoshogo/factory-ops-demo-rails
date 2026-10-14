@@ -611,7 +611,7 @@ type AuditLog {
 | フィールド | 呼ぶ公開 API |
 |---|---|
 | `supplier.partnerships` | `Partnerships::Directory.for_supplier` |
-| `supplier.items`・`supplier.item`・`Item` | `Sales::Catalog` |
+| `supplier.items`・`supplier.item`・`Item` | `Sales::Catalog`。今日の単価で並べるときは `Sales::ItemPrices` の副問い合わせを、安全在庫で並べるときは在庫の公開 API `Inventory::Stocks` が返す副問い合わせを結ぶ |
 | `supplier.partMappings` | `Sales::PartMappings` |
 | `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す。取引先の名前で並べるときは、取引関係の `Partnerships::Directory.tenant_names_sql` が返す副問い合わせを結ぶ） |
 | `SalesOrder.cancellationReviews` | `Sales::CancellationReviews.for_sales_orders`（受注 ID をまとめて渡す） |
