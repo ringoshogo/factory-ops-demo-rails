@@ -14,7 +14,7 @@ RSpec.describe "文字列の列の照合順序" do
   end
 
   # 品目コードは、取り込みが Ruby の文字列の比べ方（バイトの順）で行ロックを取る列なので、コードポイントの順の pg_c_utf8 にする。
-  # 名前は画面に並べる列なので、流用元の Intl.Collator("ja") と同じ並びの ja-x-icu にする
+  # 名前は画面に並べる列なので、流用元の Intl.Collator("ja") と同じ規則で並べる ja-x-icu にする
   it "品目コードの列は pg_c_utf8、テナントと品目の名前の列は ja-x-icu を持つ" do
     expect(collations(%w[items.code item_labels.code tenants.name items.name item_labels.name])).to eq(
       "items.code" => "pg_c_utf8", "item_labels.code" => "pg_c_utf8",
@@ -22,8 +22,8 @@ RSpec.describe "文字列の列の照合順序" do
     )
   end
 
-  # ICU の版が上がると ja-x-icu の並びが変わりうる。DB が記録した版がイメージの版と違えば、名前の列の索引を作り直してから
-  # 記録を改める（docs/guides/config.md「照合順序の版」）。CI と手元のイメージで、記録と実際の版が食い違わないことを確かめる
+  # ICU の版が上がると ja-x-icu の並びが変わりうる。DB が記録した版がイメージの版と違えば、docs/guides/config.md「照合順序の版」
+  # の手順で記録を改める。CI と手元のイメージで、記録と実際の版が食い違わないことを確かめる
   it "ja-x-icu と pg_c_utf8 があり、DB が記録した版がイメージの版と等しい" do
     versions = ActiveRecord::Base.lease_connection.select_rows(<<~SQL)
       SELECT collname, collversion IS NOT NULL AND collversion = pg_collation_actual_version(oid)

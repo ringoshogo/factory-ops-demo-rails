@@ -152,6 +152,37 @@ cd frontend && npm ci && npm ls --all > /dev/null   # 終了コード 0（Node 2
 
 `m49-collations`（base は `main`、PR #86）。M48 の `m48-ci-deps-check` の先端 `abc9bd6` から切った。M48（#84）は着手の後に main にマージされたので、M49 の差分は `abc9bd6..` である。
 
+Codex も Claude も Go だった。どちらの系統も、`abc9bd6..64e3cc7` の diff を `64e3cc7` の版で読んだ。Codex は手元の DB への接続を実行の環境に拒まれ、rspec・E2E・CI は証跡の記録を前提にし、Ruby の文字列の順とコードポイントの順の一致を 10,020 個の文字列で確かめた。Claude は 200 個の文字列で `String#sort` と `ORDER BY … COLLATE pg_c_utf8` の一致を確かめ、`factory_ops_m49_test` で `item_labels.code` を既定に戻して spec を流した（R1）。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Low 1） | 出していない（High が無かった） |
+| Claude | Go（Low 3） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘（R3） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘（R1） |
+| 参照の維持 | 指摘（R1） | 指摘（R2） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Low | Claude | R1：`item_labels.code` を DB の既定に戻しても、振る舞いを確かめる example が落ちない（在庫の `ITEM_CODE` の品目コードがどちらの照合順序でも同じ順） | `inventory_spec.rb` に、`a-4` を足して在庫を品目コードで並べると品目の一覧と同じバイトの順（`a-4` が最後）になる example を足した。`item_labels.code` を既定に戻すと落ちる行を壊して落ちる記録に足した | この節を載せた commit |
+| Low | Claude | R2：`collations_spec.rb` の版の example のコメントが、計画の前の形（索引を作り直してから記録を改める）を書く | 手順の中身を書かずに `config.md`「照合順序の版」を指す形にした | 同上 |
+| Low | Claude | R3：M48 の節にある「残件の処理」が無い | 下に「残件の処理」を足した | 同上 |
+| Low | Codex | R1：`data-model.md` と `graphql-schema.md` が、名前の並びが `Intl.Collator("ja")` と同じになると無条件に書く。計画は spec と E2E の名前の組に限り、`Intl.Collator` が同じ順位とする文字（は／ハ、Ａ／A）の前後は PostgreSQL がバイトの順で決める | `data-model.md`「文字列の照合順序」に、同じと言える範囲（確かめた名前の組まで。ICU の版の違いと同じ順位の文字の前後は言わない）を書き、`graphql-schema.md`・`handoff.md`・マイグレーションと spec のコメントを「同じ規則で並べる」に直した。特定の名前の組を確かめる spec のコメントは、その組では同じ並びなのでそのままにした | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：`data-model.md` の表が `item_labels.code` を行ロックの順を決める列に入れるが、理由は `items` の話だけ → 行の種類を「行ロックの順を決める列と、その写し」にし、写しは在庫の一覧の並びと検索を品目の一覧とそろえるためと書いた
+- Claude 2：CI と手元は `postgres:18` の動くタグで、公開の配置は `postgres:18.6` に固定しており、ICU の版が別になりうる → IB-119
+- Claude 3：`deploy/README.md` の作り直しの Job の名前が、同じ日に手で流していると重なる → 既存の手順（「作り直しが飛ばされた日」）と同じ付け方で、重なれば `kubectl create job` が落ちて気付くので、扱わない
+- Claude 4：`handoff.md` は「`_test` で終わる」、`config.md` は「`_test` を区切りとして含める」と書く → `handoff.md` を `config.md` の言い方にそろえた
+- Codex 1：`logging_spec.rb` の `ensure` の削除を外しても、次の実行の冒頭の削除が補うので何も落ちない → IB-120
+- Codex 2：OI-190 の内容の欄と IB-77・IB-110 の説明に、変える前の状態が残る → IB-116（M48 で積んだ、`decided` の行の内容の欄が前の形を今の形として書く）と同じ種類として、IB-116 で扱う
+
 ### 実装の記録
 
 #### 計画との違い
@@ -187,6 +218,7 @@ RED（期待の不一致で落ちたもの）：spec を足し、マイグレー
 | `catalog_spec.rb` の品目名の並び | `items.name` を既定に戻す | 1（この example。`spec/requests/catalog_spec.rb` と合わせて流した） |
 | `inventory_spec.rb` の品目名の並びと 1 件ずつのページ | `item_labels.name` を既定に戻す | 2（この 2 つ。`item_labels_spec.rb` と合わせて流した） |
 | `stocks_spec.rb` の品目名の並び | `item_labels.name` を既定に戻す（`0b3871b` の作業ツリー） | 1（この example） |
+| `inventory_spec.rb` の品目コードのバイトの順（実装レビューの Claude R1 で足した） | `item_labels.code` を既定に戻す（直しを載せた版で） | 1（この example。`a-4` が先に来る） |
 | `catalog_spec.rb` の検索（品目） | `items.name` を `"C"` にする | 2（この example の `ａｂｃ` と、品目名の並び） |
 | `inventory_spec.rb` の検索（在庫） | `item_labels.name` を `"C"` にする | 3（この example の `ａｂｃ` と、品目名の 2 つ） |
 | `collations_spec.rb` の版 | `factory_ops_m49_test` の `ja-x-icu` の `collversion` を `153.0` に書き換える | 1（この example） |
@@ -230,3 +262,7 @@ TEST_DATABASE=factory_ops_m49_test bin/ci   # すべての工程が通った。r
 `bin/ci` の 1 回目（`31a476a`）は、`stocks_spec.rb` の品目名の並びの期待で 1 件落ち（2988 examples, 1 failure）、`0b3871b` で直した。実装の記録を載せた `e73974b` でも `TEST_DATABASE=factory_ops_m49_test bin/ci` を流し、すべての工程が通った（2988 examples, 0 failures）。`bin/ci` の後も `log/events.log` はできなかった。分岐の網羅率の警告は 0 件だった。`bin/check-open-items --due M49` と `bin/check-commit-refs` も通った。
 
 `e73974b` の PR の CI はすべて通った（`test` 6 分 25 秒、`e2e` 2 分 44 秒、`images` 2 分 13 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38505414473)）。CI の PostgreSQL のサービスでも `collations_spec.rb` の版の example が通った。
+
+### 残件の処理
+
+引当先が M49 の行は、着手の前と PR の前と実装レビューの直しの前に台帳を読んだ。OI-190（`decided`、名前の列を `ja-x-icu` にする作者の判断）は作るもの 1・4 で反映した。IB-77（品目コードの列の照合順序）と IB-110（`TEST_DATABASE` を渡した worktree の `bin/ci`）は M49 で実装した。M49 で作者に確かめることを OI-197（`judgment`）に、実装で見つけたことを IB-117・IB-118 に、実装レビューの違和感を IB-119・IB-120 に積んだ。作者の判断の受け口（`decisions.md`）に、M49 への判断は書かれていなかった。

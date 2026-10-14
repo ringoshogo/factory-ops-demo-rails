@@ -108,6 +108,14 @@ RSpec.describe "在庫と引当", type: :request do
       expect(stocks(orderBy: { field: "ITEM_NAME", direction: "ASC" })).to eq([ %w[W-3 N-2 B-1], 3 ])
     end
 
+    # 品目コードの写しの列の照合順序 pg_c_utf8 は、品目の一覧の品目コードと同じバイトの順で並べ、小文字で始まるコードを
+    # 大文字の後に置く。大文字と小文字を後で比べる言語の照合順序（en_US.utf8 など）では a-4 が先になる
+    it "品目コードを、品目の一覧と同じバイトの順で並べる" do
+      adjust("INBOUND", 1, item_id: save_item("a-4", "六角穴付きボルト"))
+
+      expect(stocks(orderBy: { field: "ITEM_CODE", direction: "ASC" })).to eq([ %w[B-1 N-2 W-3 a-4], 4 ])
+    end
+
     it "品目名を、漢字の音読みの順に 1 件ずつのページで並べ、ページの境目で抜けも重なりもしない" do
       query = <<~GRAPHQL
         query($after: String) {

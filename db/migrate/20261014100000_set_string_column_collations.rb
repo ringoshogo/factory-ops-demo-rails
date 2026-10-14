@@ -2,7 +2,7 @@
 # DB の既定の照合順序はイメージの initdb で決まり、環境ごとに変わりうる。
 # 品目コードは、取り込みが Ruby の文字列の比べ方（バイトの順）で行ロックを取るので、コードポイントの順の pg_c_utf8 にし、
 # コードの順でロックする SQL が照合順序を書かずに同じ順になるようにする。名前は画面に並べる列なので、流用元の
-# Intl.Collator("ja") と同じ並びの ja-x-icu にする
+# Intl.Collator("ja") と同じ規則で並べる ja-x-icu にする
 class SetStringColumnCollations < ActiveRecord::Migration[8.1]
   COLLATIONS = {
     [ :items, :code ] => "pg_c_utf8",
