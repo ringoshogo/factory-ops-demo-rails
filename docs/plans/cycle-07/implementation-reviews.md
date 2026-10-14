@@ -613,7 +613,7 @@ bin/check-open-items --due M33   # 計画どおり、OI-177 の 1 行だけを�
 docs/plans/open-items.md:185: 引当先が M33 の OI-177 が open のまま残っている
 ```
 
-分岐の網羅率の警告は 0 件だった（`bin/ci` の工程。基準は `b2fd138`）。
+分岐の網羅率の警告は 0 件だった（`bin/ci` の工程。基準は `b2fd138`）。`b71498b` の PR の CI（#89）はすべて通った（`test` 5 分 49 秒、`e2e` 3 分 29 秒、`images` 2 分 42 秒。`publish` は PR なので skip）。実装レビューの直し（コメントと証跡だけ）の後の `ccb76b6` の PR の CI もすべて通った（`test` 4 分 47 秒、`e2e` 3 分 32 秒、`images` 2 分 32 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38531346415)）。
 
 ### 残件の処理
 
