@@ -97,7 +97,7 @@ class Page
   def self.later_operator(sort) = sort.direction == :desc ? :lt : :gt
 
   # カーソルは、列ごとの名前・向き・値を順に並べ、最後に id を置いた配列を JSON にして Base64 で包む。
-  # 列の名前と向きも持たせ、別の並べ替えで作ったカーソルを拒めるようにする。列が 1 つなら、列が 1 つだったときと同じ文字列になる
+  # 列の名前と向きも持たせ、別の並べ替えで作ったカーソルを拒めるようにする。列が 1 つなら、名前・向き・値・id の 4 つを並べた形になる
   def self.encode(sorts, record)
     parts = sorts.each_with_index.flat_map do |sort, i|
       value = record["page_sort_value_#{i}"]

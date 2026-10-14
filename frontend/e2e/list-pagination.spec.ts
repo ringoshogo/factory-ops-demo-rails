@@ -127,14 +127,22 @@ test("受注一覧の見出しを Shift を押して押すと 2 つ目の並べ�
   const customerHead = page.getByRole("columnheader", { name: "取引先" });
   const customer = customerHead.getByRole("button");
 
+  // ブラウザは Shift を押したクリックで、前に押したところからの文字を選ぶことがある。見出しは Shift を押した mousedown の
+  // 既定の動きだけを止める。Chromium はボタンの上の Shift を押したクリックで文字を選ばず、選ばれた文字では止めたかを確かめられないので、
+  // document まで届いた mousedown が既定の動きを止められたかで確かめる
+  await page.evaluate(() =>
+    document.addEventListener("mousedown", (e) => document.body.setAttribute("data-prevented", String(e.defaultPrevented))),
+  );
   await statusHead.getByRole("button").click();
   await expect(page).toHaveURL(/sort=status&dir=asc/);
+  // 対照：Shift を押さないクリックは止めない (ボタンにフォーカスが移る)
+  await expect(page.locator("body")).toHaveAttribute("data-prevented", "false");
   await customer.click({ modifiers: ["Shift"] });
+  await expect(page.locator("body")).toHaveAttribute("data-prevented", "true");
   await expect.poll(() => sortOf(page)).toEqual(["status,customer_name", "asc,asc"]);
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
   await customer.click({ modifiers: ["Shift"] });
   await expect.poll(() => sortOf(page)).toEqual(["status,customer_name", "asc,desc"]);
-  // ブラウザは Shift を押したクリックで、前のクリックの位置からの文字を選ぶ。見出しはその既定の動きを止める
-  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
 
   // 番号は並びの順に出る。aria-sort は 1 つ目の列にだけ付け、2 つ目の列は見えない文字で順番と向きを添え、ボタンの名前は変えない
   await expect(statusHead.locator("[data-sort-rank]")).toHaveText("1");

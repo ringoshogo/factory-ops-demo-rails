@@ -6,7 +6,7 @@ import { SORT_ICON, TableHead } from "@/components/ui/table";
 import { nextSort, sortHref, sortRank, type Sort } from "@/lib/list";
 
 /**
- * 並べ替えの見出し。押すとその列 1 つの並びにし (同じ列は 昇順 → 降順 → 既定の並び)、Shift を押して押すと 2 つ目からの並べる列を
+ * 並べ替えの見出し。押すとその列 1 つの並びにし (並びがその列 1 つなら 昇順 → 降順 → 既定の並び)、Shift を押して押すと 2 つ目からの並べる列を
  * 足す (`nextSort`)。サーバーで並べるので、URL を変えて描き直させ、1 ページ目に戻す。
  * ボタンの名前は見出しの文字そのものにする (`aria-label` を付けると、同じ文字の入力欄のラベルの検索に見出しも当たる)。
  * 並びが 2 つ以上なら、矢印の右に何番目の並べる列かの番号を出す。`aria-sort` は WAI-ARIA 1.2 が 1 度に 1 つの見出しにだけ
