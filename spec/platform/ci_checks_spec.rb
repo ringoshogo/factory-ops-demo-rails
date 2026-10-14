@@ -28,22 +28,15 @@ RSpec.describe "CI と手元で流す検査" do
     expect(self.class.workflow_commands - self.class.bin_commands(Rails.root.join("config/ci.rb").read)).to eq([])
   end
 
-  # images のジョブは、PR がイメージに入るものを変えたときだけ流れる（docs/guides/config.md「CI の工程」）。
-  # 判定の pattern から漏れたファイルだけを変えた PR は、イメージを組み立てて確かめないまま通る。
-  # 対象は Dockerfile とその無視の一覧、Dockerfile が名指しで写すファイル、マニフェストで、ディレクトリごとに写す
-  # アプリのコードと画面は test と e2e のジョブが確かめるので含めない
-  it "image_inputs の pattern は、Dockerfile・無視の一覧・Dockerfile が名指しで写すファイル・マニフェストに当たる" do
-    run = YAML.load_file(Rails.root.join(".github/workflows/ci.yml")).dig("jobs", "image_inputs", "steps").filter_map { _1["run"] }.join
-    pattern = Regexp.new(run[/pattern='([^']+)'/, 1] || raise("image_inputs のジョブに pattern が無い"))
-    tracked = IO.popen(%w[git ls-files], chdir: Rails.root, &:read).lines(chomp: true)
-    dockerfiles = tracked.grep(%r{(\A|/)Dockerfile\z})
-    copied = dockerfiles.flat_map do |file|
-      Rails.root.join(file).read.scan(/^COPY (?!.*--from)(.+) \S+$/).flatten.flat_map(&:split).reject { _1.start_with?("--") }
-    end
-    inputs = dockerfiles + tracked.grep(/(\A|\/)(\.dockerignore|Dockerfile\.dockerignore)\z/) + tracked.grep(%r{\Adeploy/}) +
-      copied.reject { _1 == "." || _1.end_with?("/", "*") }
+  # npm ci は直接の依存の peer の不一致しか止めず、入れ子の依存の peer の範囲から外れた更新は npm ls --all でだけ見える
+  # （docs/guides/config.md「CI の工程」）。npm ls は入れた木を読むので npm ci の後に流し、落ちたらジョブを落とす
+  it "frontend のジョブは、npm ci の後に npm ls --all を流し、その失敗でジョブを落とす" do
+    steps = self.class.workflow.dig("jobs", "frontend", "steps")
+    commands = steps.filter_map { _1["run"]&.strip }
+    list_step = steps.find { _1["run"]&.strip == "npm ls --all" }
 
-    expect(inputs.uniq.reject { pattern.match?(_1) }).to eq([])
+    expect(commands.drop_while { _1 != "npm ci" }.drop(1)).to include("npm ls --all")
+    expect(list_step&.slice("if", "continue-on-error", "working-directory")).to eq({})
   end
 
   # ubuntu-latest は GitHub が日程で OS の版を上げ、CI が通るかを確かめないまま版が変わる（docs/guides/config.md「CI の工程」）。
@@ -69,19 +62,20 @@ RSpec.describe "CI と手元で流す検査" do
     expect(self.class.workflow["permissions"]).to eq("contents" => "read")
   end
 
-  # publish の if: は needs の結果だけを見て、ジョブの名前を並べない。needs に無いジョブが落ちても push するので、
-  # 期待するジョブは publish の needs からではなく、ワークフローの jobs から集める。image_inputs は push では skip される
-  it "publish の needs は、image_inputs のほかのすべてのジョブを含む" do
+  # publish は needs の結果だけを見て、ジョブの名前を並べない。needs に無いジョブが落ちても push するので、
+  # 期待するジョブは publish の needs からではなく、ワークフローの jobs から集める。ジョブの段の continue-on-error は、
+  # そのジョブが落ちても needs の結果を success にするので、publish がそのジョブの成功を待たなくなる
+  it "publish の needs は、ほかのすべてのジョブを含み、ジョブの段の continue-on-error を持つジョブは無い" do
     jobs = self.class.workflow.fetch("jobs")
 
-    expect(jobs.keys - %w[image_inputs publish] - Array(jobs.dig("publish", "needs"))).to eq([])
+    expect(jobs.keys - %w[publish] - Array(jobs.dig("publish", "needs"))).to eq([])
+    expect(jobs.select { |_, job| job.key?("continue-on-error") }.keys).to eq([])
   end
 
-  # publish はジョブの段の if: で needs の skipped を見ないので、push で skip されたジョブは push を止めない
-  # （docs/guides/config.md「CI の工程」）。ジョブの段の if: は、PR でだけ流す image_inputs と、push では必ず流れる
-  # images と、publish 自身にだけ書く
-  it "ジョブの段の if: を持つのは image_inputs・images・publish だけ" do
-    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys.sort).to eq(%w[image_inputs images publish])
+  # どのジョブも PR と main への push のたびに流れ、publish だけが main への push で、ほかのすべてのジョブの成功を待って流れる
+  # （docs/guides/config.md「CI の工程」）。ほかのジョブに契機を絞る if: を足すと、そのジョブが確かめないまま push する
+  it "ジョブの段の if: を持つのは publish だけ" do
+    expect(self.class.workflow.fetch("jobs").select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do

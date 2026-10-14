@@ -55,11 +55,11 @@ npm run dev          # http://localhost:3001。Rails は RAILS_URL（既定 http
 
 `http://localhost:3001` を開き、ログインの画面に並ぶシードのアカウントを押してログインする。Rails の取り込みのファイルの受け口は、ブラウザの `Origin` を `FRONTEND_ORIGIN`（既定 `http://localhost:3001`）と比べるので、`127.0.0.1` ではなく `localhost` で開く。
 
-画面の検査は次で流す。`codegen:check` は、根の `schema.graphql` と `frontend/graphql/` の画面の問い合わせから型を作り直し、`lib/graphql/generated.ts` と一致することを確かめる。スキーマか画面の問い合わせを変えたら `npm run codegen` で作り直して commit する。
+画面の検査は次で流す。`npm ls --all` は、入れた依存の木に peer の範囲から外れた依存があれば落ちる（`npm ci` は入れ子の依存の peer の外れを止めない）。`codegen:check` は、根の `schema.graphql` と `frontend/graphql/` の画面の問い合わせから型を作り直し、`lib/graphql/generated.ts` と一致することを確かめる。スキーマか画面の問い合わせを変えたら `npm run codegen` で作り直して commit する。
 
 ```sh
 cd frontend
-npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+npm ls --all > /dev/null && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
 PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 手元の Chrome で流す。CI は Playwright の chromium を入れて流す
 ```
 
