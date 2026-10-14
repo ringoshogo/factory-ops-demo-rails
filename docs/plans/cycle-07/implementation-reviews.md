@@ -142,6 +142,8 @@ cd frontend && npm ci && npm ls --all > /dev/null   # 終了コード 0（Node 2
 
 分岐の網羅率の警告は 0 件だった（M48 は Ruby のアプリのコードを変えていない）。この節と台帳と `handoff.md` を載せた版で、`bin/check-open-items --due M48` と `bin/check-commit-refs` を流して通した。
 
+実装レビューの直しの後も、`f08f6fb` の作業ツリーで `bin/ci` を流し、すべての工程が通った（rspec は 2981 examples, 0 failures、分岐の網羅率の警告は 0 件）。`bin/check-open-items --due M48` と `bin/check-commit-refs` も通った。`f08f6fb` の PR の CI はすべて通り、ワークフローは 6 分 8 秒だった（`test` が 6 分 5 秒で最も長く、`images` は 1 分 16 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38501174039)）。
+
 ### 残件の処理
 
 引当先が M48 の行は、着手の前と PR の前に台帳を読んだ。どちらの時点でも無かった。OI-184（作者の確認で「M48 で簡単にできるかを確かめる」）の結果の欄に、M48 で戻した形と 2 つの実行の URL を書いた。IB-104・IB-113 は M48 で実装し、IB-17 の試行の標本は上の壊して落ちる記録である。IB-17 の効いたとする基準の判定の材料は、この節の冒頭の実装レビューの結果に書いた。実装レビューの違和感は IB-116 に積んだ。
