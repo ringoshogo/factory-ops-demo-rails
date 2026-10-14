@@ -117,13 +117,12 @@ RSpec.describe Sales::Catalog do
 
     # 単価の行は、訂正で閉じた行と、今日より後に予約した改定の行も持つ。並びは表示と同じく、いま信じている今日の単価だけを使う
     it "訂正した単価は訂正の後の値で、予約した改定は今日の値で並べる" do
-      corrected, revised, plain = [ [ "A-1", 100 ], [ "B-1", 200 ], [ "C-1", 150 ] ].map { |code, unit_price| FactoryBot.create(:item, code:, unit_price:) }
+      corrected, revised = [ [ "A-1", 100 ], [ "B-1", 200 ], [ "C-1", 150 ] ].map { |code, unit_price| FactoryBot.create(:item, code:, unit_price:) }
       row = Sales::ItemPrices.history(actor, [ corrected.id ]).fetch(corrected.id).sole
       expect(Sales::ItemPrices.correct(actor, item_price_id: row.id, unit_price: 500, reason: "入力の誤り")).to be_success
       expect(Sales::ItemPrices.schedule(actor, item_id: revised.id, unit_price: 10, effective_on: Sales::ItemPrice.today + 1)).to be_success
 
       expect(items(first: 1, order_by: [ { field: :unit_price, direction: :asc } ])).to eq([ %w[C-1 B-1 A-1], 3 ])
-      expect(described_class.item(actor, plain.id).unit_price).to eq(150)
     end
 
     it "keyword は、前後の空白を除いて、品目コードか品目名に含む品目に、大文字と小文字を区別せずに絞る。空なら絞らない" do

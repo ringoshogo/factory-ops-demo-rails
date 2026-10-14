@@ -1936,7 +1936,7 @@ cd frontend && npm run test:e2e
 
 **実装する文書の節**：`architecture/graphql-schema.md`「ページングと N+1」・「認可：宣言の無い型・リゾルバ・mutation は拒否する」、`architecture/data-model.md`「出荷（`fulfillment`）」、`architecture/context-map.md`「コンテキスト間の関係」、`adr/010` 決定 2、`adr/011`
 
-**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に足した列と、受注番号を出荷依頼の写しで並べることを書き、「認可」の操作者のいない入口の一覧に `Sales::SalesOrders.order_numbers` と `Fulfillment::ShipmentRequests.put_order_numbers` を書く。`architecture/data-model.md`「出荷（`fulfillment`）」の出荷依頼の表に `sales_order_no` を、`architecture/context-map.md`「コンテキスト間の関係」の受注 → 出荷の行に受注番号を運ぶことを書く。`adr/011` に、イベントで運んだ値の写しも作り直しのタスクで埋めることを足す。`lib/tasks/read_models.rake` の冒頭のコメントと `desc` を、2 つの写しに直す。`README.md`「開発環境」の `read_models:rebuild` の文に、出荷依頼の受注番号を足す。
+**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に足した列と、受注番号を出荷依頼の写しで並べることを書き、「認可」の操作者のいない入口の一覧に `Sales::SalesOrders.order_numbers` と `Fulfillment::ShipmentRequests.put_order_numbers` を書く。`architecture/data-model.md`「出荷（`fulfillment`）」の出荷依頼の表に `sales_order_no` を、「イベントの受け口と冪等キー」の「出荷可能」の運ぶ値に受注番号と、イベントに項目を足すときに `from_payload` で既定の値を補う規則を、`architecture/context-map.md`「コンテキスト間の関係」の受注 → 出荷の行に受注番号を運ぶことを書く。`adr/011` に、イベントで運んだ値の写しも作り直しのタスクで埋めることを足す。`lib/tasks/read_models.rake` の冒頭のコメントと `desc` を、2 つの写しに直す。`README.md`「開発環境」と `deploy/README.md` の `read_models:rebuild` の文に、出荷依頼の受注番号と、受注番号を運ぶ前に登録したジョブを配り終えてから流すことを足す。
 
 ## M33 フロントエンド
 

@@ -389,7 +389,38 @@ bin/check-commit-refs            # 通った
 
 `m50-sort-more`（base は `main`）。M47 の `m47-multi-sort` の先端 `336d798` から切った。M47（#87）は着手の時点で作者のマージ前なので、M50 の差分は `336d798..` である。
 
-（実装レビューの判定は、レビューの後にここへ書く）
+Codex も Claude も Go だった。どちらの系統も、`336d798..53bef21` の diff を `53bef21` の版で読んだ。Codex は DB を使わず、旧いペイロードの互換と単価のカーソルの往復を `53bef21` のコードで確かめ、rspec と E2E は証跡の記録を前提にした。Claude は `factory_ops_m50_review_test` で完了条件の 1 行目の spec と出荷の競合の spec（94 examples, 0 failures）、2 行目の spec のうち行列を除くもの（107 examples, 0 failures）、行列の足した 3 つの変種の行（30 examples, 0 failures）を流した。Claude は手元の Node で Vitest を流せず、壊す確かめはコードを読んで行った。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Medium 3） | 出していない（High が無かった） |
+| Claude | Go（Medium 1、Low 1） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R2） | 指摘なし |
+| 正しさ | 指摘（R1） | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R3） | 指摘なし |
+| 参照の維持 | 指摘（R1） | 指摘（R4・R5） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | R1：受注番号を運ぶ前に登録したジョブが作り直しの後に届くと、受注番号の空の出荷依頼が次の作り直しまで残る。作り直しの前にジョブを配り終える条件を手順に書くか、後から届いても埋める仕組みが要る | 受注番号は受注の側にしか無く、受け手は空の写しを作るしかないので、手順の側で防ぐ。`data-model.md`「イベントの受け口と冪等キー」・`adr/011`「引き受けるコスト」・`README.md`「開発環境」・`deploy/README.md`・計画の「文書に残すこと」に、ジョブを配り終えてから作り直しを流すことを書いた。後から届いたときに空の写しを作ることは、`sales_event_receiver_spec.rb` の受注番号を持たないペイロードの example が確かめ、空の写しを作り直しが書き直すことは、`read_model_copies_spec.rb` の受注番号の example が確かめる。公開の配置は毎日 DB ごと作り直すので、キューに受注番号を持たないジョブは残らない | この節を載せた commit |
+| Medium | Codex | R2：E2E を全体で流した 3 回のどれも、失敗が 0 になっていない | `53bef21` の PR の CI の `e2e` が全体で通ったことを下の「E2E」に書いた。手元の 3 回の失敗は、ログインの時間切れ（IB-117）と、マシンの混みによる M47 の example の待ちの時間切れで、M50 が足した example と変えた画面の example は、2 回目と 3 回目ですべて通った | 同上 |
+| Medium | Codex | R3：`stocks_spec.rb` の `safety_stocks_sql` の example と、`supplier-master-lists.test.ts`・`shipment-request-list.test.ts` に、spec 自体が落ちた記録が無い。RLS を開く補助を外したときに対照が落ちる記録も無い | 壊して落ちる記録に 6 行を足した（`safety_stocks_sql` の安全在庫の列を現在庫にする、2 つの並べ替えの列の一覧から足した列を外す、3 つの RLS を開く example から `cross_read!` を外す） | 同上 |
+| Medium | Claude | R4：`data-model.md`「イベントの受け口と冪等キー」の「出荷可能」の運ぶ値に受注番号が無く、`context-map.md` と食い違う | 運ぶ値に受注番号を足し、計画の「文書に残すこと」にこの節を足した。`git grep` で「受注 ID、受注側・発注側テナント、発注 ID、納期」が残らないことを確かめた | 同上 |
+| Low | Claude | R5：(a) イベントに項目を足すとき、足す前のペイロードを `from_payload` で補う規則が、イベントの型のコメントにしか無い。(b) `adr/011`「引き受けるコスト」が、作り直すまでの影響を在庫の並べ替えと検索だけと書く | (a) `data-model.md`「イベントの受け口と冪等キー」に規則を書いた。(b) `adr/011` に、受注番号で並べた出荷依頼の画面で写しの空の行が末尾に並ぶことを足した | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：作り直しのタスクが 2 つの写しを同じトランザクションで作り直すので、品目の `FOR SHARE` が受注番号の写しの分だけ長く残る → IB-124 に積んだ
+- Claude 2：受注番号を運ぶ前のジョブが作り直しの後に届く → Codex R1 と同じなので、R1 で直した
+- Claude 3：`columnClass` の並べ替えの見出しの列を隠さない分岐に、確かめるテストが無い → `components/` の関数が Vitest の対象の外にあるので、IB-125 に積んだ
+- Claude 4：税率と有効在庫が既定の並びになる確かめは、変更の前から通る → OI-200 の前提（隠れた列で並ばない）を記録する example として残す。2 つの列を `ITEM_SORT_FIELDS` に足すと落ちる
+- Claude 5：手元の E2E の全体が通った回が無い → Codex R2 と同じなので、R2 で直した
+- Claude 6：`catalog_spec.rb` の訂正と改定の example の最後の確かめが、example の主張と関わりが薄い → 消した
+- Codex 1：IB-123（落ちた example の後に RLS を開くグループで止まる）が、壊して検出力を確かめる作業を妨げる → IB-123 の調べを優先する材料として、ここに書く。サイクル末の台帳の棚卸しで読み直す
 
 ### 実装の記録
 
@@ -438,6 +469,14 @@ RED（期待の不一致で落ちたもの）：マイグレーションを足�
 | 行列の `SupplierView.items#orderBySafetyStock` | 安全在庫の `lookup` の値を副問い合わせ自身の品目 ID にする | 10（この行の全ペルソナ。`PG::CardinalityViolation`） |
 | E2E の出荷依頼の受注番号と品目の単価の example | `SHIPMENT_REQUEST_SORT_FIELDS` から `ORDER_NO` を外す | 1（この example。受注番号の見出しの `aria-sort` が `ascending` にならない） |
 | 同上 | `ITEM_SORT_FIELDS` から `UNIT_PRICE` を外す | 1（この example。単価の見出しに 2 番目の番号が出ない） |
+| `stocks_spec.rb` の、`safety_stocks_sql` が自社の在庫の品目 ID と安全在庫を返す example | 副問い合わせの安全在庫の列を現在庫にする | 1（この example。`got: [[<品目 ID>, 10]]`） |
+| `shipment-request-list.test.ts` の、API で並べられる列を受ける example | `SHIPMENT_REQUEST_SORT_FIELDS` から `ORDER_NO` を外す | 1（この example） |
+| `supplier-master-lists.test.ts` の、単位・単価・安全在庫の列で並べる example | `ITEM_SORT_FIELDS` から `UNIT_PRICE` を外す | 1（この example） |
+| `catalog_spec.rb` の、他社の名義の在庫の行を並びに使わない example の対照 | `cross_read!` を呼ばない | 1（この example。他社の在庫の行が見えず、対照の `expected: [<他社のテナント>] got: []`） |
+| `sales_orders_spec.rb` の、RLS を開いても自社の受注だけを返す example の対照 | 同上 | 1（この example。対照で他社の受注が見えない） |
+| `shipment_requests_spec.rb` の、組に他社の出荷依頼の受注 ID が混ざる example の対照 | 同上 | 1（この example。他社の出荷依頼を読み直せない） |
+
+表の最後の 6 行は、実装レビューの R3 を受けて `53bef21` の作業ツリーでとった。
 
 `catalog_spec.rb` を丸ごと流して `current` を外した壊し方を確かめると、落ちた example の後の RLS を開くグループで rspec が止まった（2 回、200 秒で打ち切り）。落ちた example を含む `describe` だけを流して記録をとり、止まることを IB-123 に積んだ。
 
@@ -455,6 +494,8 @@ E2E の壊して落ちる記録は、`list-pagination.spec.ts` を丸ごと流�
 | 2 | 1024px の直しの後の作業ツリー | 5 failed・26 skipped・66 passed | `list-pagination.spec.ts` の受注一覧の Shift の example（M47）が、Shift を押した後の URL を 5 秒待って `status` のままだった |
 | 3 | 同上 | 1 failed・26 skipped・70 passed | なし |
 
+PR の CI では、`53bef21` の `e2e` が全体で通った（3 分 30 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38524271166)）。
+
 2 回目の Shift の example は、M50 が変えていない受注一覧の画面の example で、`list-pagination.spec.ts` だけを流したどの回（壊して落ちる記録の回を含めて 7 回）と、3 回目では通った。マシンの混み具合による待ちの時間切れとみて、ここに記録する。
 
 #### 手元で流したもの
@@ -470,8 +511,8 @@ cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm
 bin/check-open-items --due M50   # 通った
 ```
 
-分岐の網羅率の警告は 0 件だった（`bin/ci` の工程）。
+分岐の網羅率の警告は 0 件だった（`bin/ci` の工程）。1024px の直しと証跡の後の `53bef21` でも `bin/ci` を流し、すべての工程が通った（rspec は 3102 examples, 0 failures、分岐の網羅率の警告は 0 件）。`53bef21` の PR の CI（#88）はすべて通った（`test` 5 分 57 秒、`e2e` 3 分 30 秒、`images` 2 分 20 秒。`publish` は PR なので skip）。
 
 ### 残件の処理
 
-引当先が M50 の行は、着手の前と PR の前に台帳を読んだ。OI-186（`decided`、流用元が並べるほかの列を足す作者の判断）は作るもの 1・8 で、OI-193（`judgment`、受注番号をイベントで運んで写す）は作るもの 3〜5 で、OI-194（`judgment`、品目の画面の安全在庫の列）は作るもの 8 で、計画のとおりに反映した。実装で決めたことを OI-199・OI-200（`judgment`）に、壊して落ちる記録で rspec が止まったことを IB-123 に積んだ。作者の判断の受け口（`decisions.md`）の D-1（1024px のはみ出しの扱い）を OI-200 に、D-2（M47 と Dependabot のマージ。差分の範囲は変わらない）を PR の差分の範囲に反映した。
+引当先が M50 の行は、着手の前と PR の前に台帳を読んだ。OI-186（`decided`、流用元が並べるほかの列を足す作者の判断）は作るもの 1・8 で、OI-193（`judgment`、受注番号をイベントで運んで写す）は作るもの 3〜5 で、OI-194（`judgment`、品目の画面の安全在庫の列）は作るもの 8 で、計画のとおりに反映した。実装で決めたことを OI-199・OI-200（`judgment`）に、壊して落ちる記録で rspec が止まったことを IB-123 に、実装レビューの違和感を IB-124・IB-125 に積んだ。作者の判断の受け口（`decisions.md`）の D-1（1024px のはみ出しの扱い）を OI-200 に、D-2（M47 と Dependabot のマージ。差分の範囲は変わらない）を PR の差分の範囲に反映した。
