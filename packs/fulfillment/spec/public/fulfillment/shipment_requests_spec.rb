@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # ダッシュボードの出荷期限。出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、期限が今日から指定の日数後以下のものを、
 # 期限を過ぎたものも含めて期限の昇順で返す（docs/architecture/graphql-schema.md「読み取りの一覧」）
@@ -90,6 +91,77 @@ RSpec.describe Fulfillment::ShipmentRequests do
       expect(list_ids(order_by: [ { field: :customer_name, direction: :asc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
       expect(list_ids(order_by: [ { field: :status, direction: :asc } ])).to eq([ [ c, b, a ].map(&:id), 3 ])
       expect(list_ids(order_by: [ { field: :status, direction: :desc } ])).to eq([ [ a, b, c ].map(&:id), 3 ])
+    end
+
+    it "受注番号の写しで並べ、写しの空の出荷依頼を向きによらず最後に置く" do
+      a, b, c = Tenancy.with_tenant(supplier.id) { [ "SO-000002", nil, "SO-000001" ].map { FactoryBot.create(:shipment_request, sales_order_no: _1) } }
+
+      expect(list_ids(order_by: [ { field: :order_no, direction: :asc } ])).to eq([ [ c, a, b ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :order_no, direction: :desc } ])).to eq([ [ a, c, b ].map(&:id), 3 ])
+    end
+
+    # 取り消した出荷指示は、有効な指示と同じ出荷依頼に残る。有効な指示だけを引かなければ、2 行が当たって SQL のエラーになるか、
+    # 取り消した指示の日で並ぶ
+    it "有効な出荷指示の出荷予定日で並べ、取り消した指示を使わず、有効な指示の無い出荷依頼を最後に置く" do
+      a, b, c = Tenancy.with_tenant(supplier.id) do
+        requests = Array.new(3) { FactoryBot.create(:shipment_request) }
+        FactoryBot.create(:shipping_instruction, shipment_request: requests[0], planned_date: today + 5)
+        FactoryBot.create(:shipping_instruction, shipment_request: requests[1], planned_date: today + 1, status: "cancelled")
+        FactoryBot.create(:shipping_instruction, shipment_request: requests[1], planned_date: today + 9)
+        FactoryBot.create(:shipping_instruction, shipment_request: requests[2], planned_date: today, status: "cancelled")
+        requests
+      end
+
+      expect(list_ids(order_by: [ { field: :planned_date, direction: :asc } ])).to eq([ [ a, b, c ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :planned_date, direction: :desc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
+    end
+  end
+
+  # 出荷依頼の受注番号の写しを作り直すタスクが、受注の公開 API の組を渡す（docs/adr/011）
+  describe ".put_order_numbers" do
+    def put(order_numbers) = Tenancy.with_tenant(supplier.id) { described_class.put_order_numbers(order_numbers) }
+
+    def numbers_of(tenant) = Tenancy.with_tenant(tenant.id) { Fulfillment::ShipmentRequest.pluck(:sales_order_id, :sales_order_no).to_h }
+
+    it "受注番号の違う出荷依頼だけを書き直し、書き直した数を返す。値の同じ写しと、組に無い出荷依頼は変えない" do
+      blank, same, stale, absent = Tenancy.with_tenant(supplier.id) do
+        [ nil, "SO-000002", "SO-000099", "SO-000004" ].map { FactoryBot.create(:shipment_request, sales_order_no: _1) }
+      end
+      written_at = Tenancy.with_tenant(supplier.id) { same.reload.updated_at }
+
+      expect(put(blank.sales_order_id => "SO-000001", same.sales_order_id => "SO-000002", stale.sales_order_id => "SO-000003",
+        SecureRandom.uuid => "SO-000005")).to eq(2)
+      expect(numbers_of(supplier)).to eq(blank.sales_order_id => "SO-000001", same.sales_order_id => "SO-000002",
+        stale.sales_order_id => "SO-000003", absent.sales_order_id => "SO-000004")
+      expect(Tenancy.with_tenant(supplier.id) { same.reload.updated_at }).to eq(written_at)
+      expect(put(blank.sales_order_id => "SO-000001")).to eq(0)
+      expect(put({})).to eq(0)
+    end
+
+    it "テナントの設定の外では例外にする" do
+      expect { described_class.put_order_numbers(SecureRandom.uuid => "SO-000001") }.to raise_error(Tenancy::MissingTenant)
+    end
+
+    # RLS が他社の出荷依頼を隠すので、所有の条件を外しても上の example は落ちない。出荷依頼の受注 ID はテナントをまたいで一意なので、
+    # 正しい組からは他社の行に当たらない。組の誤り（別のテナントの組を渡すこと）に対して、他社の出荷依頼を書かないことを確かめる
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "組に他社の出荷依頼の受注 ID が混ざっても、他社の出荷依頼を所有の列を含めて変えず、書き直した数に数えない" do
+        own = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:shipment_request) }
+        theirs = Tenancy.with_tenant(other.id) { FactoryBot.create(:shipment_request, sales_order_no: "SO-000007") }
+
+        Tenancy.with_tenant(supplier.id) do
+          cross_read!
+          # 対照：開いた後は他社の出荷依頼が見え、自社の出荷依頼は書き直す
+          before = reread(theirs)
+          expect(Fulfillment::ShipmentRequest.where(id: [ own.id, theirs.id ]).pluck(:id)).to contain_exactly(own.id, theirs.id)
+
+          expect(described_class.put_order_numbers(own.sales_order_id => "SO-000001", theirs.sales_order_id => "SO-000002")).to eq(1)
+          expect(own.reload.sales_order_no).to eq("SO-000001")
+          expect(reread(theirs)).to eq(before)
+        end
+      end
     end
   end
 end

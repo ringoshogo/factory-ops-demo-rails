@@ -73,6 +73,15 @@ module Sales
       Scope.item_prices(actor, :own).where(item_id: item_ids).valid_on(valid_on).believed_at(as_of).pluck(:item_id, :unit_price).to_h
     end
 
+    # 品目の今日の単価を引くスカラーの副問い合わせ（Arel のノード）。品目の一覧が単価で並べるために、品目の行ごとに item_id で結ぶ。
+    # 条件は price_at の今日の単価と同じで、表示（Catalog が price_at で読む unitPrice）と並びが食い違わない。
+    # 今日は Ruby の ItemPrice.today で渡す。SQL の CURRENT_DATE は DB の時刻帯で決まり、表示の今日とずれうる。
+    # 品目は同じ記録時点では有効期間が重ならないので、品目ごとに高々 1 行になる
+    def self.today_price(actor, item_id)
+      prices = Scope.item_prices(actor, :own).where(ItemPrice.arel_table[:item_id].eq(item_id)).valid_on(ItemPrice.today).current
+      Arel::Nodes::Grouping.new(prices.select(:unit_price).arel)
+    end
+
     # 品目 ID ごとの、as_of の時点で正しいと信じていた行。有効期間の順に並べ、as_of を省けばいま信じている行を返す。
     # 見えない品目の ID は空の配列になる
     def self.history(actor, item_ids, as_of: nil)

@@ -9,7 +9,7 @@ RSpec.describe Fulfillment::SalesEventReceiver do
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:buyer) { FactoryBot.create(:tenant) }
   let(:event) do
-    Contracts::SalesOrderReadyForShipment.new(sales_order_id: SecureRandom.uuid, supplier_tenant_id: supplier.id,
+    Contracts::SalesOrderReadyForShipment.new(sales_order_id: SecureRandom.uuid, sales_order_no: "SO-000042", supplier_tenant_id: supplier.id,
       buyer_tenant_id: buyer.id, purchase_order_id: SecureRandom.uuid, due_date: "2026-10-31",
       lines: [ { "sales_order_line_id" => SecureRandom.uuid, "purchase_order_line_id" => SecureRandom.uuid,
         "item_id" => SecureRandom.uuid, "quantity" => 4 } ])
@@ -30,10 +30,24 @@ RSpec.describe Fulfillment::SalesEventReceiver do
     Tenancy.with_tenant(supplier.id) do
       request = Fulfillment::ShipmentRequest.sole
       expect(request).to have_attributes(owner_tenant_id: supplier.id, sales_order_id: event.sales_order_id, buyer_tenant_id: buyer.id,
-        source_purchase_order_id: event.purchase_order_id, due_date: Date.new(2026, 10, 31))
+        source_purchase_order_id: event.purchase_order_id, due_date: Date.new(2026, 10, 31), sales_order_no: "SO-000042")
       expect(request.lines.map { _1.slice(:sales_order_line_id, :source_purchase_order_line_id, :item_id, :quantity).values })
         .to eq(event.lines.map(&:values))
     end
+  end
+
+  # 受注番号を運ぶ前に登録したジョブのペイロードは sales_order_no を持たない。読めずに再配送を繰り返さず、受注番号の空の出荷依頼を作り、
+  # 作り直しのタスクが埋める
+  it "受注番号を持たないペイロードから読んだイベントでも、受注番号の空の出荷依頼を作る。new は受注番号を求める" do
+    payload = event.to_payload.except("sales_order_no")
+    Tenancy.with_tenant(supplier.id) { described_class.handle(Contracts::SalesOrderReadyForShipment.from_payload(payload)) }
+
+    Tenancy.with_tenant(supplier.id) do
+      expect(Fulfillment::ShipmentRequest.sole).to have_attributes(sales_order_id: event.sales_order_id, sales_order_no: nil)
+    end
+    expect { Contracts::SalesOrderReadyForShipment.new(**payload.symbolize_keys) }.to raise_error(ArgumentError, /sales_order_no/)
+    # 対照：受注番号のあるペイロードは、その値で読む
+    expect(Contracts::SalesOrderReadyForShipment.from_payload(event.to_payload).sales_order_no).to eq("SO-000042")
   end
 
   it "同じ受注の出荷依頼がすでにあれば、冪等キーの確認を通り抜けても一意索引が止め、何も書かない" do

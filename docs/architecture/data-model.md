@@ -129,7 +129,7 @@ DB の既定の照合順序は、公式の `postgres` のイメージが initdb 
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `shipment_requests`（「出荷可能」の写し） | `sales_order_id`→・`buyer_tenant_id`→・`source_purchase_order_id`→・`due_date`・`cancelled_at` | `sales_order_id` 一意 |
+| `shipment_requests`（「出荷可能」の写し） | `sales_order_id`→・`sales_order_no`（受注番号の写し。一覧を受注番号で並べる）・`buyer_tenant_id`→・`source_purchase_order_id`→・`due_date`・`cancelled_at` | `sales_order_id` 一意。`sales_order_no` は空を許し、受注番号を運ぶ前の既存の行は `bin/rails read_models:rebuild` が埋める（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`） |
 | `shipment_request_lines` | `sales_order_line_id`→・`source_purchase_order_line_id`→・`item_id`→・`quantity` | `sales_order_line_id` 一意 |
 | `shipping_holds`（出荷停止） | `sales_order_id`→・`source_cancellation_review_id`→・`released_at` | `source_cancellation_review_id` 一意。解除前の停止を受注ごとに 1 件に限らない（「イベントの届く順の入れ替わり」） |
 | `shipping_instructions`（出荷指示） | `shipment_request_id`・`planned_date`・`status`（`active` / `cancelled`） | 有効な指示は出荷依頼ごとに 1 件（部分一意索引） |

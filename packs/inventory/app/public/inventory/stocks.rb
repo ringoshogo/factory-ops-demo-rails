@@ -35,6 +35,13 @@ module Inventory
       Scope.call(actor, Stock.all).where(item_id: item_ids).to_h { [ _1.item_id, to_value(_1) ] }
     end
 
+    # 品目 ID ごとの安全在庫を返す副問い合わせ。受注の品目の一覧が、安全在庫で並べるために結ぶ（docs/architecture/graphql-schema.md「ページングと N+1」）。
+    # 操作者の scope を掛けた後に SQL の文字列にするので、受け取る側は所有の条件を外せない。在庫は所有テナントと品目 ID の組で一意なので、
+    # 品目ごとに高々 1 行になる。役割の名前（item_id・safety_stock）を返し、受け取る側が在庫の列を書かない
+    def self.safety_stocks_sql(actor)
+      SqlSubquery.of(Scope.call(actor, Stock.all).select(:item_id, :safety_stock), item_id: "item_id", safety_stock: "safety_stock")
+    end
+
     # 有効在庫が安全在庫より小さい在庫。等しい在庫は返さない（docs/architecture/data-model.md「在庫（`inventory`）」）。
     # 在庫は品目コードを持たないので、並べ替えと件数の上限はルートパッケージが品目コードで行う
     def self.below_safety_stock(actor)

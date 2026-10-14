@@ -34,6 +34,14 @@ module Sales
       lines.to_h { [ _1.id, to_line_value(_1, allocated) ] }
     end
 
+    # いまのテナントの受注の ID ごとの受注番号（rake タスク read_models:rebuild が、出荷依頼の受注番号の写しを作り直すために読む）。
+    # 操作者のいない入口なので、テナントの設定を求め、所有テナントを明示して読む。取引先の受注は RLS に任せると見えうるからである
+    # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
+    def self.order_numbers
+      Tenancy.require_tenant!
+      SalesOrder.where(owner_tenant_id: Current.tenant_id).pluck(:id, :order_no).to_h
+    end
+
     # 状況ごとの受注の件数。受注一覧の状況の絞り込みと同じ式で GROUP BY して数え、取消済を含む 7 つの状況をすべて持つ（0 件の状況も返す）
     def self.count_by_status(actor)
       counts = Scope.sales_orders(actor, :own).group(SalesOrderStatus.expression(actor)).count

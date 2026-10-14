@@ -88,6 +88,44 @@ RSpec.describe Sales::Catalog do
       expect(items(order_by: [ { field: :name, direction: :desc } ])).to eq([ %w[A-1 C-1 B-1], 3 ])
     end
 
+    # 単価は表示の unit_price と同じ今日の単価で並べる。並べた順と、返った unit_price の値の順が一致する
+    it "単位、今日の単価、安全在庫で並べ、値の無い行を向きによらず最後に置く" do
+      bolt, _nut, washer = [ [ "B-1", "個", 300 ], [ "N-1", "箱", 50 ], [ "W-1", "個", 120 ] ].map do |code, unit, unit_price|
+        FactoryBot.create(:item, code:, unit:, unit_price:)
+      end
+      [ [ bolt, 5 ], [ washer, 9 ] ].each { |item, safety_stock| FactoryBot.create(:stock, item_id: item.id, safety_stock:) }
+      prices = ->(order_by) { [ items(order_by:).first, described_class.items(actor, first: 10, after: nil, order_by:).values.map(&:unit_price) ] }
+
+      expect(items(order_by: [ { field: :unit, direction: :asc }, { field: :code, direction: :desc } ])).to eq([ %w[W-1 B-1 N-1], 3 ])
+      expect(prices.call([ { field: :unit_price, direction: :asc } ])).to eq([ %w[N-1 W-1 B-1], [ 50, 120, 300 ] ])
+      expect(prices.call([ { field: :unit_price, direction: :desc } ])).to eq([ %w[B-1 W-1 N-1], [ 300, 120, 50 ] ])
+      # N-1 は在庫の行が無い
+      expect(items(order_by: [ { field: :safety_stock, direction: :asc } ])).to eq([ %w[B-1 W-1 N-1], 3 ])
+      expect(items(order_by: [ { field: :safety_stock, direction: :desc } ])).to eq([ %w[W-1 B-1 N-1], 3 ])
+    end
+
+    # 単価は bigint まで入る。カーソルの型が integer の範囲しか受け付けないと、2,147,483,647 を超える単価の品目がページの境目に来たときに、
+    # 正しいカーソルが Invalid cursor になる
+    it "2,147,483,647 を超える単価の品目がページの境目に来ても、そのカーソルで続きを返す" do
+      [ [ "A-1", 2_147_483_648 ], [ "B-1", 9_223_372_036_854_775_807 ], [ "C-1", 1 ] ].each do |code, unit_price|
+        FactoryBot.create(:item, code:, unit_price:)
+      end
+
+      expect(items(first: 1, order_by: [ { field: :unit_price, direction: :asc } ])).to eq([ %w[C-1 A-1 B-1], 3 ])
+      expect(items(first: 1, order_by: [ { field: :unit_price, direction: :desc } ])).to eq([ %w[B-1 A-1 C-1], 3 ])
+    end
+
+    # 単価の行は、訂正で閉じた行と、今日より後に予約した改定の行も持つ。並びは表示と同じく、いま信じている今日の単価だけを使う
+    it "訂正した単価は訂正の後の値で、予約した改定は今日の値で並べる" do
+      corrected, revised, plain = [ [ "A-1", 100 ], [ "B-1", 200 ], [ "C-1", 150 ] ].map { |code, unit_price| FactoryBot.create(:item, code:, unit_price:) }
+      row = Sales::ItemPrices.history(actor, [ corrected.id ]).fetch(corrected.id).sole
+      expect(Sales::ItemPrices.correct(actor, item_price_id: row.id, unit_price: 500, reason: "入力の誤り")).to be_success
+      expect(Sales::ItemPrices.schedule(actor, item_id: revised.id, unit_price: 10, effective_on: Sales::ItemPrice.today + 1)).to be_success
+
+      expect(items(first: 1, order_by: [ { field: :unit_price, direction: :asc } ])).to eq([ %w[C-1 B-1 A-1], 3 ])
+      expect(described_class.item(actor, plain.id).unit_price).to eq(150)
+    end
+
     it "keyword は、前後の空白を除いて、品目コードか品目名に含む品目に、大文字と小文字を区別せずに絞る。空なら絞らない" do
       [ [ "BOLT-8", "六角ボルト" ], [ "nut-1", "Bolt 用ナット" ], [ "W-1", "ワッシャー" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
 
@@ -198,6 +236,37 @@ RSpec.describe Sales::Catalog, "の品目の写し" do
           expect(label_rows("owner_tenant_id, item_id")).to eq([ [ supplier.id, own.id ] ])
         end
       end
+    end
+  end
+end
+
+# 品目の一覧の安全在庫は、在庫の公開 API の副問い合わせから引く（docs/architecture/graphql-schema.md「ページングと N+1」）。
+# 品目 ID は UUIDv7 で他社の品目と重ならないので、副問い合わせから所有の条件を外しても入口の行列では捕まらない。
+# RLS の SELECT と UPDATE を開き、他社の名義で自社の品目 ID を指す在庫の行が見える状態で確かめる（docs/guides/testing.md「行列テストとの分担」）
+RSpec.describe Sales::Catalog, "の安全在庫での並べ替え" do
+  include_context "RLS の SELECT と UPDATE を開く"
+
+  let!(:supplier) { FactoryBot.create(:tenant) }
+  let!(:other) { FactoryBot.create(:tenant) }
+  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
+
+  it "他社の名義で自社の品目 ID を指す在庫の行を、安全在庫の並びに使わない" do
+    unstocked = Tenancy.with_tenant(supplier.id) do
+      FactoryBot.create(:item, code: "A-1").tap { FactoryBot.create(:stock, item_id: _1.id, safety_stock: 5) }
+      FactoryBot.create(:item, code: "B-1")
+    end
+    Tenancy.with_tenant(other.id) { FactoryBot.create(:stock, item_id: unstocked.id, safety_stock: 1) }
+
+    Tenancy.with_tenant(supplier.id) do
+      cross_read!
+      # 対照：開いた後は、自社の品目 ID を指す他社の在庫の行が見える
+      expect(Inventory::Stocks.for_items(actor, [ unstocked.id ])).to be_empty
+      expect(ActiveRecord::Base.lease_connection.select_values("SELECT owner_tenant_id FROM stocks WHERE item_id = $1", "SQL", [ unstocked.id ]))
+        .to eq([ other.id ])
+
+      # 他社の在庫の 1 を使うと、B-1 が A-1 より前に並ぶ
+      codes = described_class.items(actor, first: 10, after: nil, order_by: [ { field: :safety_stock, direction: :asc } ]).values.map(&:code)
+      expect(codes).to eq(%w[A-1 B-1])
     end
   end
 end

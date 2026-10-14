@@ -27,7 +27,18 @@ describe("品目の一覧の変数", () => {
   it("空白だけの語と語の無いものは絞らない。API で並べられない列は既定の並び", () => {
     expect(itemListVariables(p("q=%20%20")).filter).toBeNull();
     expect(itemListVariables(p("")).filter).toBeNull();
-    expect(itemListVariables(p("sort=unit_price&dir=asc")).orderBy).toBeNull();
+    expect(itemListVariables(p("sort=tax_rate_percent&dir=asc")).orderBy).toBeNull();
+    expect(itemListVariables(p("sort=available&dir=asc")).orderBy).toBeNull();
+  });
+
+  it("単位・単価・安全在庫の列で並べる", () => {
+    expect(itemListVariables(p("sort=unit,unit_price,safety_stock&dir=asc,desc,asc"))).toMatchObject({
+      orderBy: { field: "UNIT", direction: "ASC" },
+      thenBy: [
+        { field: "UNIT_PRICE", direction: "DESC" },
+        { field: "SAFETY_STOCK", direction: "ASC" },
+      ],
+    });
   });
 });
 

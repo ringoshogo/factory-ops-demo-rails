@@ -18,6 +18,8 @@ module Fulfillment
     end
 
     # 「出荷可能」の写しを作る。冪等キーは sales_order_id で、2 回目の配送では何もしない。同時に届いた配送は一意索引が止める。
+    # 受注番号は受注を作った後に変わらないので、写した後に書き直さない。受注番号を運ぶ前に登録したイベントは空を写し、
+    # 作り直しのタスク（bin/rails read_models:rebuild）が埋める。
     # 出荷依頼の有無を読む前に受注のロックを取り、出荷停止の受け手と直列にする
     def self.create_request(event)
       lock_sales_order(event.sales_order_id)
@@ -27,6 +29,7 @@ module Fulfillment
         ShipmentRequest.create!(
           owner_tenant_id: Current.tenant_id,
           sales_order_id: event.sales_order_id,
+          sales_order_no: event.sales_order_no,
           buyer_tenant_id: event.buyer_tenant_id,
           source_purchase_order_id: event.purchase_order_id,
           due_date: event.due_date&.then { Date.iso8601(_1) },

@@ -110,4 +110,49 @@ RSpec.describe "出荷計上の還流と経路 3", type: :request do
     expect(purchase_order).to include("status" => "INBOUND", "supplierShipments" => [])
     expect(purchase_order["inboundShipments"].size).to eq(1)
   end
+
+  # 1 件ずつのページで最後までたどった出荷依頼の ID。並べ替えを受け付けなければ、data が無く nil を返す
+  def request_ids(order_by)
+    query = <<~GRAPHQL
+      query($after: String, $orderBy: ShipmentRequestOrder) {
+        supplier { shipmentRequests(first: 1, after: $after, orderBy: $orderBy) { nodes { id } pageInfo { hasNextPage endCursor } } }
+      }
+    GRAPHQL
+    ids = []
+    after = nil
+    loop do
+      post "/graphql", params: { query:, variables: { after:, orderBy: order_by } }, as: :json
+      page = response.parsed_body.dig("data", "supplier", "shipmentRequests")
+      break unless page
+
+      ids.concat(page.fetch("nodes").map { _1["id"] })
+      break ids unless page.dig("pageInfo", "hasNextPage")
+
+      after = page.dig("pageInfo", "endCursor")
+    end
+  end
+
+  # 計上まで流した出荷依頼（受注番号 SO-000001、出荷予定日 2026-10-09）の受注番号は、「出荷可能」のイベントで写したものである
+  it "受注番号の写しで並べ、そのカーソルで続きを返す" do
+    flowed = graphql("{ supplier { shipmentRequests { nodes { id salesOrder { orderNo } } } } }")
+      .dig("data", "supplier", "shipmentRequests", "nodes").sole
+    expect(flowed.dig("salesOrder", "orderNo")).to eq("SO-000001")
+    later, earlier = Tenancy.with_tenant(supplier.id) { %w[SO-000009 SO-000000].map { FactoryBot.create(:shipment_request, sales_order_no: _1) } }
+
+    expect(request_ids({ field: "ORDER_NO", direction: "ASC" })).to eq([ earlier.id, flowed["id"], later.id ])
+    expect(request_ids({ field: "ORDER_NO", direction: "DESC" })).to eq([ later.id, flowed["id"], earlier.id ])
+  end
+
+  # 出荷予定日は有効な出荷指示の値で、取り消した指示しか無い出荷依頼は空として最後に並ぶ
+  it "有効な出荷指示の出荷予定日で並べ、指示の無い出荷依頼を最後に置き、そのカーソルで続きを返す" do
+    flowed = graphql("{ supplier { shipmentRequests { nodes { id } } } }").dig("data", "supplier", "shipmentRequests", "nodes").sole["id"]
+    early, late, cancelled = Tenancy.with_tenant(supplier.id) do
+      [ Date.new(2026, 10, 1), Date.new(2026, 10, 20), Date.new(2026, 10, 2) ].map do |planned_date|
+        FactoryBot.create(:shipping_instruction, planned_date:).shipment_request
+      end.tap { |requests| requests.last.instructions.sole.update!(status: "cancelled") }
+    end
+
+    expect(request_ids({ field: "PLANNED_DATE", direction: "ASC" })).to eq([ early.id, flowed, late.id, cancelled.id ])
+    expect(request_ids({ field: "PLANNED_DATE", direction: "DESC" })).to eq([ late.id, flowed, early.id, cancelled.id ])
+  end
 end

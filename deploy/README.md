@@ -111,7 +111,7 @@ ssh raspi kubectl wait -n factory-ops-rails --for=condition=complete job/migrate
 ssh raspi kubectl rollout status -n factory-ops-rails deployment/web --timeout=10m
 ```
 
-一覧のために別のコンテキストへ値を写す表（在庫の品目の写し）を足すマイグレーションは、写しを埋めない（`docs/adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）。次の毎日の作り直しがシードで写しを作るまで、在庫の画面の品目のコードと名前での並べ替えと検索が当たらない。作者は、待たずに埋めるときだけ、適用の後に `ssh raspi kubectl exec -n factory-ops-rails deployment/web -- bin/rails read_models:rebuild` を流す。アプリのロールで動き、テナントごとに足した数と書き直した数を出す。
+一覧のために別のコンテキストへ値を写す表か列（在庫の品目の写し、出荷依頼の受注番号の写し）を足すマイグレーションは、写しを埋めない（`docs/adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）。次の毎日の作り直しがシードで写しを作るまで、在庫の画面の品目のコードと名前での並べ替えと検索が当たらず、受注番号で並べた出荷依頼の画面では、写しの空の出荷依頼が末尾に並ぶ。作者は、待たずに埋めるときだけ、適用の後に `ssh raspi kubectl exec -n factory-ops-rails deployment/web -- bin/rails read_models:rebuild` を流す。アプリのロールで動き、テナントごとに、品目の写しを足した数と書き直した数と、出荷依頼の受注番号を書き直した数を出す。
 
 `migrate` の Job は spec を変えられないので、2 回目からの適用では、適用の前に `ssh raspi kubectl delete job migrate -n factory-ops-rails --ignore-not-found` で消す。消さずに適用すると `field is immutable` で失敗する。`jobs` は、初回の適用で `migrate` が表を作り終えるまで、起動に失敗して再起動を繰り返す。
 

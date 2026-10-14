@@ -29,6 +29,22 @@ module Fulfillment
       to_values(with_status(requests.order(:due_date, :id).limit(DUE_WITHIN_LIMIT)))
     end
 
+    # 受注 ID ごとの受注番号（Sales::SalesOrders.order_numbers の値）を、いまのテナントの出荷依頼の受注番号の写しへ書き、
+    # 書き直した数を返す（rake タスク read_models:rebuild が呼ぶ。docs/adr/011）。値の同じ写しは書き直さないので、写しが元と一致していれば 0 になる。
+    # 操作者のいない入口なので、テナントの設定を求め、所有テナントを Current のテナントで明示して書く
+    # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。組に他社の受注の ID が混ざっても、他社の出荷依頼に当たらない
+    def self.put_order_numbers(order_numbers)
+      Tenancy.require_tenant!
+      return 0 if order_numbers.empty?
+
+      ShipmentRequest.lease_connection.exec_update(<<~SQL, "Fulfillment::ShipmentRequests.put_order_numbers",
+        UPDATE shipment_requests r SET sales_order_no = p.order_no, updated_at = $3
+        FROM jsonb_each_text($2::jsonb) AS p(sales_order_id, order_no)
+        WHERE r.owner_tenant_id = $1 AND r.sales_order_id = p.sales_order_id::uuid AND r.sales_order_no IS DISTINCT FROM p.order_no
+      SQL
+        [ Current.tenant_id, JSON.generate(order_numbers), Time.current ])
+    end
+
     def self.lines_for(actor, request_ids)
       lines = Scope.call(actor, ShipmentRequestLine.where(shipment_request_id: request_ids)).order(:id).map { to_value(ShipmentRequestLineValue, _1) }
       request_ids.index_with { [] }.merge(lines.group_by(&:shipment_request_id))
@@ -60,12 +76,21 @@ module Fulfillment
     end
 
     # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。
-    # 得意先の名前は取引関係の公開 API の副問い合わせから引き、状況は業務の進み順の位置で並べる
+    # 得意先の名前は取引関係の公開 API の副問い合わせから引き、状況は業務の進み順の位置で並べる。
+    # 受注番号は、出荷が受注に依存しないので、「出荷可能」のイベントから写した列で並べる。
+    # 出荷予定日は有効な出荷指示の値で、状況の式と同じ条件で引く。有効な指示は出荷依頼ごとに 1 件（部分一意索引）なので、行ごとに高々 1 行になる
     def self.order_columns(actor)
       requests = ShipmentRequest.arel_table
       { due_date: [ requests[:due_date], :date ],
         customer_name: [ Partnerships::Directory.tenant_names_sql(actor).lookup(:name, :tenant_id, requests[:buyer_tenant_id]), :string ],
-        status: [ Page::Sort.rank(ShipmentRequestStatus.expression, ShipmentRequestStatus::SORT_ORDER), :integer ] }
+        status: [ Page::Sort.rank(ShipmentRequestStatus.expression, ShipmentRequestStatus::SORT_ORDER), :integer ],
+        order_no: [ requests[:sales_order_no], :string ],
+        planned_date: [ planned_date, :date ] }
+    end
+
+    def self.planned_date
+      instructions = ShippingInstruction.active.where(ShippingInstruction.arel_table[:shipment_request_id].eq(ShipmentRequest.arel_table[:id]))
+      Arel::Nodes::Grouping.new(instructions.select(:planned_date).arel)
     end
 
     def self.with_status(relation) = relation.select(ShipmentRequest.arel_table[Arel.star], ShipmentRequestStatus.expression.as("status"))
@@ -79,6 +104,6 @@ module Fulfillment
     end
 
     def self.to_value(klass, record) = klass.new(**record.slice(*klass.members.map(&:to_s)).symbolize_keys)
-    private_class_method :order_columns, :filtered, :with_status, :to_values, :to_value
+    private_class_method :order_columns, :planned_date, :filtered, :with_status, :to_values, :to_value
   end
 end

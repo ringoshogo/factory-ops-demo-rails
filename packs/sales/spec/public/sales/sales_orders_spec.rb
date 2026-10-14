@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # ダッシュボードの受注の件数。受注一覧と同じ導出で、7 つの状況ごとに 0 件も含めて数え、取消済も数える
 # （docs/architecture/graphql-schema.md「読み取りの一覧」）
@@ -132,6 +133,39 @@ RSpec.describe Sales::SalesOrders do
 
       expect(list_ids(order_by: [ { field: :status, direction: :asc } ])).to eq([ [ awaiting, received, shipped, cancelled ].map(&:id), 4 ])
       expect(list_ids(order_by: [ { field: :status, direction: :desc } ])).to eq([ [ cancelled, shipped, received, awaiting ].map(&:id), 4 ])
+    end
+  end
+
+  # 出荷依頼の受注番号の写しを作り直すタスクが読む（docs/adr/011）。操作者のいない入口で、所有テナントを明示して読む
+  describe ".order_numbers" do
+    it "いまのテナントの受注の ID ごとの受注番号を返す" do
+      own = Tenancy.with_tenant(supplier.id) { %w[SO-000002 SO-000001].map { FactoryBot.create(:sales_order, order_no: _1) } }
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:sales_order, order_no: "SO-000001") }
+
+      expect(Tenancy.with_tenant(supplier.id) { described_class.order_numbers }).to eq(own.to_h { [ _1.id, _1.order_no ] })
+    end
+
+    it "テナントの設定の外では例外にする" do
+      expect { described_class.order_numbers }.to raise_error(Tenancy::MissingTenant)
+    end
+
+    # RLS が他社の受注を隠すので、所有の条件を外しても上の example は落ちない。RLS の SELECT と UPDATE を開き、
+    # 他社の受注が見える状態で確かめる（docs/guides/testing.md「行列テストとの分担」）
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社の受注が見えても、自社の受注だけを返す" do
+        own = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:sales_order, order_no: "SO-000001") }
+        theirs = Tenancy.with_tenant(other.id) { FactoryBot.create(:sales_order, order_no: "SO-000009") }
+
+        Tenancy.with_tenant(supplier.id) do
+          cross_read!
+          # 対照：開いた後は他社の受注が見える
+          expect(Sales::SalesOrder.where(id: [ own.id, theirs.id ]).pluck(:id)).to contain_exactly(own.id, theirs.id)
+
+          expect(described_class.order_numbers).to eq(own.id => "SO-000001")
+        end
+      end
     end
   end
 

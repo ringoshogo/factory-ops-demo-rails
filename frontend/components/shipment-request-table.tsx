@@ -79,7 +79,7 @@ export function ShipmentRequestTable({
                 (a): RowAction => ({ label: a.label, variant: a.variant, onSelect: () => open(a.kind, target(row)) }),
               );
               const content: Record<string, ReactNode> = {
-                orderNo: (
+                ORDER_NO: (
                   <TextLink href={`/supplier/sales-orders/${row.salesOrder.id}`} className="rounded-sm font-semibold">
                     {row.salesOrder.orderNo}
                   </TextLink>
@@ -88,7 +88,7 @@ export function ShipmentRequestTable({
                 DUE_DATE: (
                   <DueDate due={row.dueDate} open={OPEN_SHIPMENT_REQUEST_STATUSES.includes(row.status)} businessDate={businessDate} />
                 ),
-                planned: <DateText iso={row.plannedDate} businessDate={businessDate} />,
+                PLANNED_DATE: <DateText iso={row.plannedDate} businessDate={businessDate} />,
                 quantity: row.quantity,
                 STATUS: <StatusBadge style={SHIPMENT_REQUEST_STATUS[row.status]} value={row.status} />,
                 actions: actions.length > 0 ? <RowActions name={`${row.salesOrder.orderNo} の操作`} actions={actions} /> : null,

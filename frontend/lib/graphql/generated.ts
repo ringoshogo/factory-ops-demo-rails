@@ -130,7 +130,13 @@ export type ItemOrderField =
   /** 品目コード */
   | 'CODE'
   /** 品目名 */
-  | 'NAME';
+  | 'NAME'
+  /** 安全在庫。在庫の行の無い品目は空 */
+  | 'SAFETY_STOCK'
+  /** 単位 */
+  | 'UNIT'
+  /** 今日の販売単価 */
+  | 'UNIT_PRICE';
 
 export type OrderDirection =
   /** 昇順 */
@@ -327,6 +333,10 @@ export type ShipmentRequestOrderField =
   | 'CUSTOMER_NAME'
   /** 出荷期限 */
   | 'DUE_DATE'
+  /** 受注番号 */
+  | 'ORDER_NO'
+  /** 有効な出荷指示の出荷予定日。指示の無い出荷依頼は空 */
+  | 'PLANNED_DATE'
   /** 状況。業務の進み順 */
   | 'STATUS';
 
