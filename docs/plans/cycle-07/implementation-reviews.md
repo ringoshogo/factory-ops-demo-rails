@@ -518,3 +518,76 @@ bin/check-open-items --due M50   # 通った
 ### 残件の処理
 
 引当先が M50 の行は、着手の前と PR の前に台帳を読んだ。OI-186（`decided`、流用元が並べるほかの列を足す作者の判断）は作るもの 1・8 で、OI-193（`judgment`、受注番号をイベントで運んで写す）は作るもの 3〜5 で、OI-194（`judgment`、品目の画面の安全在庫の列）は作るもの 8 で、計画のとおりに反映した。実装で決めたことを OI-199・OI-200（`judgment`）に、壊して落ちる記録で rspec が止まったことを IB-123 に、実装レビューの違和感を IB-124・IB-125 に積んだ。作者の判断の受け口（`decisions.md`）の D-1（1024px のはみ出しの扱い）を OI-200 に、D-2（M47 と Dependabot のマージ。差分の範囲は変わらない）を PR の差分の範囲に反映した。
+
+## M33 の残り：取消依頼のボタンと、取消済の伝票の合計の表示
+
+`m33-rest`（base は `main`）。M50 の `m50-sort-more` の先端 `b2fd138` から切った。M50（#88）は着手の後に main に入ったが、M33 の残りの差分は `b2fd138..` のままにした（取りまとめ役の判断の受け口の D-2）。作者の画面の指摘を待つ OI-177 は作らない（D-1）。
+
+### 実装の記録
+
+#### 計画との違い
+
+- 回答を待つ依頼がある発注にボタンを出さない条件（`cancellationPending`）も、画面から `canRequestCancellation` へ移した。画面の「できること」を 1 つの関数で決める、受注側の `sales-order-flow.ts` と同じ置き方にするためである。計画の取消依頼のボタンの段落に書いた。
+- `totalAmountText` は、伝票の種類と状況を `totalAmountText(total, kind, status)` で受け、種類ごとに状況の型を決める（受注の種類に発注の状況を渡すと型検査が落ちる）。取消の状況の集合は、`statuses.ts` に `CANCELLED_SALES_ORDER_STATUSES`・`CANCELLED_PURCHASE_ORDER_STATUSES` として置いた。
+- E2E の世界に足したのは、品番の対応の無い明細 1 つの発注を受注側が取り消した 1 組（受注は取消済、発注は受注側により取消）である。取り決めを OI-201（`judgment`）に積み、計画に書いた。世界の取消依頼の手順は引き当ててから依頼するので、照合待ちの受注に使えないからである。`spec/scenarios/demo_world_spec.rb` に、この 1 組が世界にあることを確かめる example を足した。
+- かんばんのカードの合計の欄に `data-testid="card-total"` を付け、E2E はカードの合計の文字をそのまま比べる。計画に書いた。
+- 計画の受注の確かめに加え、発注一覧の取消のタブで、同じ組の発注の合計の欄が「取消」と出ることを E2E で確かめた（4 か所目の呼び出し元）。計画に書いた。
+- 「照合待ち」「確定待ち」を種類で `git grep` し、`context-map.md`「発注の連結と品番の照合」・`graphql-schema.md`「ページングと N+1」・M45 の節の作るもの・`kanban-board.tsx` の型のコメントに取消の場合を足した。取消依頼のボタンの状況は、サイクル 06 の末に `context-map.md`「取消の流れ」に書かれていて、直すものは無かった。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：
+
+- `frontend/lib/purchase-order-flow.test.ts`：ボタンを出す集合をいまの画面のまま（`INBOUND` を含む）`purchase-order-flow.ts` に移した後、集合を変える前に流した（2 tests, 1 failed）。`INBOUND` の発注で隠す example が `expected true to be false` で落ちた。
+- `frontend/lib/format.test.ts`：`totalAmountText` が状況を受ける前に流した（4 tests, 2 failed）。`CANCELLED` の受注で `expected '照合待ち' to be '取消'`、発注のすべての値の確かめが `CANCELLED: expected '確定待ち' to be '取消'` で落ちた。
+- `spec/scenarios/demo_world_spec.rb` の、照合待ちのまま取り消した受注と発注を持つ example：世界に 1 組を足す前の `lib/demo_world.rb` で流した（1 example, 1 failure）。取消済の受注の合計が `expected [27300, 42000] to include nil` で落ちた。
+
+壊して落ちる記録：壊すファイルを一時ファイルの置き場に複製してから壊し、複製から戻した（`8c9d89d` の作業ツリー）。戻した後に同じテストを流し、すべて通った。
+
+| 確かめるテスト | 壊したもの | 落ちたもの |
+|---|---|---|
+| `purchase-order-flow.test.ts` | 出す集合から `ACCEPTED` を外す | 2（すべての値の example が `ACCEPTED: expected false to be true`、回答待ちの example の対照） |
+| 同上 | `cancellationPending` を見ない | 1（回答待ちの example） |
+| `format.test.ts` | 取消の集合から `SUPPLIER_CANCELLED` を外す | 1（発注のすべての値の example が `SUPPLIER_CANCELLED: expected '確定待ち' to be '取消'`） |
+| 同上 | 取消の分岐を外す（空なら待ちの文言だけを返す） | 2（受注と発注の空の合計の example） |
+| E2E の `admin-only.spec.ts` の発注詳細の example | 出す集合に `INBOUND` を戻す | 1（入荷予定の発注で `取消を依頼する` が 1 つ出る） |
+| E2E の `list-pagination.spec.ts` の受注合計の example と取消の example | 取消の分岐を外す | 2（末尾に「取消」が並ばない。取消済のタブの合計が `["照合待ち", "27,300 円", "42,000 円"]`） |
+
+E2E の 2 行は、1 回の実行で 2 つを同時に壊し、それぞれが別の example を落とすことを見た（9 passed、3 failed。落ちたのは上の 3 つだけ）。手元の DB が混んでいたので、この実行と下の「E2E」の 2 回目は、`playwright.config.ts` の期待の待ちを手元でだけ 30 秒に延ばして流し、commit していない。
+
+### 確かめたこと
+
+#### E2E
+
+`frontend` で `E2E_DATABASE=factory_ops_m33_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` を Node 22.23.3 で流した。手元のマシンはほかの担当の作業で混み（load average 10〜17）、Rails の 1 回の GraphQL の要求が DB で 4 秒かかった。ログインのボタンを押した後、移った先の画面を 5 秒で出せず、ログインする example が落ちた（IB-117 と同じ落ち方）。
+
+| 回 | 版 | 対象 | 結果 | ログイン以外で落ちたもの |
+|---|---|---|---|---|
+| 1 | `8c9d89d` の作業ツリー | 全体 | 52 failed・26 skipped・20 passed | なし（52 件すべてがログインの後の URL の 5 秒の待ち） |
+| 2 | 同上 | `list-pagination.spec.ts`・`admin-only.spec.ts` | 12 failed | なし（同上） |
+| 3 | 同上（期待の待ちを手元でだけ 30 秒） | `list-pagination.spec.ts`・`admin-only.spec.ts`・`counts.spec.ts` | 15 passed | なし |
+
+全体の通過は、PR の CI の `e2e` で確かめる（下の「手元で流したもの」の後に書く）。
+
+#### 手元で流したもの
+
+Ruby 3.4.11・PostgreSQL 18.6・Node 22.23.3 で流した。
+
+```sh
+TEST_DATABASE=factory_ops_m33_test bin/ci   # 8c9d89d の作業ツリーで、すべての工程が通った。rspec は 3103 examples, 0 failures
+TEST_DATABASE=factory_ops_m33_test bundle exec rspec spec/scenarios/demo_world_spec.rb   # 16 examples, 0 failures
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 150 tests passed
+bin/check-open-items --due M33   # 計画どおり、OI-177 の 1 行だけを出して落ちた
+```
+
+`bin/check-open-items --due M33` の出力は次の 1 行だけだった。OI-177 は作者の画面の指摘を待つ行で、計画の「残りの完了条件」のとおり、OI-177 だけを次のサイクルへ移す。
+
+```
+docs/plans/open-items.md:185: 引当先が M33 の OI-177 が open のまま残っている
+```
+
+分岐の網羅率の警告は 0 件だった（`bin/ci` の工程。基準は `b2fd138`）。
+
+### 残件の処理
+
+引当先が M33 の行は、着手の前と PR の前に台帳を読んだ。OI-178（`decided`、出荷の前だけボタンを出す作者の判断）は取消依頼のボタンで、OI-192（`decided`、取消済の伝票の合計に「取消」）は取消済の伝票の合計の表示で、計画のとおりに反映した。OI-177（`open`）は作者の指摘を待つので作っていない。実装で決めたことを OI-201（`judgment`）に積んだ。作者の判断の受け口（`decisions.md`）の D-1（OI-177 を作らない）と D-2（M50 のマージ。差分の範囲は変わらない）を読んだ。
