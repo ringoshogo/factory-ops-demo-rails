@@ -125,6 +125,20 @@ RSpec.describe "入口の行列", type: :request do
     expect(missing.keys).to eq([])
   end
 
+  # 並べ替えを持つ一覧は、並べ替えの引数ごとに変種の行を持つ（docs/guides/testing.md「行列テストとの分担」）。
+  # thenBy を受け取るフィールドはスキーマから集める
+  it "thenBy を受け取るフィールドは、すべて thenBy を渡す変種の行を持つ" do
+    fields = schema_entries.select { |path| FactoryOpsSchema.get_field(*path.split(".")).arguments.key?("thenBy") }
+    covered = MatrixExpectations::GRAPHQL.filter_map do |key, entry|
+      field = self.class.field_key(key)
+      selections = self.class.selections_named(GraphQL.parse(entry[:query]).definitions.sole.selections, field.split(".").last)
+      field if selections.any? { |selection| selection.arguments.any? { _1.name == "thenBy" } }
+    end
+
+    expect(fields).to include("SupplierView.salesOrders", "BuyerView.purchaseOrders", "SupplierView.items")
+    expect(fields - covered).to eq([])
+  end
+
   # 絞り込みの変種の行が、世界の行を実際に絞ることを確かめる。当たる行が無いか全行が当たると、絞り込みの scope の抜けが
   # RLS の SELECT を開いた 2 回目の比較に出ない
   MatrixExpectations::GRAPHQL.select { |key, _entry| key.end_with?("#filter") }.each do |key, entry|

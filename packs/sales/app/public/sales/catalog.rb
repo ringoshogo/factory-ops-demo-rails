@@ -5,8 +5,8 @@ module Sales
     # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）
     ORDER_COLUMNS = { code: [ Item.arel_table[:code], :string ], name: [ Item.arel_table[:name], :string ] }.freeze
 
-    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。filter の keyword で品目コードか品目名を検索する
-    def self.items(actor, first:, after:, order_by: nil, filter: {})
+    # order_by は { field:, direction: } の配列で、1 つ目の列から順に並べる。空なら作った順の新しいものから並べる。filter の keyword で品目コードか品目名を検索する
+    def self.items(actor, first:, after:, order_by: [], filter: {})
       Page.of(searched(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |items|
         to_values(actor, items)
       end

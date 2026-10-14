@@ -139,6 +139,37 @@ RSpec.describe "カタログの GraphQL", type: :request do
       expect(graphql_body(query, direction: "DESC", after:)["errors"].map { _1["message"] }).to eq([ "Invalid cursor" ])
     end
 
+    # thenBy が無ければ、名前の同じ品目は主キーの順（作った順）に並び、コードの降順と食い違う
+    it "orderBy の列の値が同じ行を thenBy の列で並べ、そのカーソルで続きを返す" do
+      %w[N-1 N-2].each { |code| Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code:, name: "六角ナット") } }
+      login_as(supplier_member)
+      query = <<~GRAPHQL
+        query($after: String) {
+          supplier { items(first: 1, after: $after, orderBy: { field: NAME, direction: ASC }, thenBy: [{ field: CODE, direction: DESC }],
+            filter: { keyword: "六角ナット" }) { nodes { code } pageInfo { hasNextPage endCursor } } }
+        }
+      GRAPHQL
+
+      first = graphql_body(query).dig("data", "supplier", "items")
+      expect(first&.fetch("nodes")).to eq([ { "code" => "N-2" } ])
+      second = graphql_body(query, after: first.dig("pageInfo", "endCursor")).dig("data", "supplier", "items")
+      expect(second.fetch("nodes")).to eq([ { "code" => "N-1" } ])
+      expect(second.dig("pageInfo", "hasNextPage")).to be(false)
+    end
+
+    it "orderBy を省いた thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
+      login_as(supplier_member)
+      query = "query($orderBy: ItemOrder, $thenBy: [ItemOrder!]) { supplier { items(orderBy: $orderBy, thenBy: $thenBy) { totalCount } } }"
+      code = { field: "CODE", direction: "ASC" }
+      messages = ->(variables) { graphql_body(query, **variables)["errors"]&.map { _1["message"] } }
+
+      expect(messages.call(thenBy: [ code ])).to eq([ "thenBy requires orderBy" ])
+      expect(messages.call(orderBy: code, thenBy: [ { field: "CODE", direction: "DESC" } ])).to eq([ "orderBy and thenBy repeat a field" ])
+      # 対照：orderBy があり、別の列なら通る
+      expect(graphql_body(query, orderBy: code, thenBy: [ { field: "NAME", direction: "DESC" } ]))
+        .to eq("data" => { "supplier" => { "items" => { "totalCount" => 2 } } })
+    end
+
     it "keyword は 100 文字ちょうどを受け付け、101 文字はトップレベルのエラーにする" do
       login_as(supplier_member)
       query = "query($keyword: String) { supplier { items(filter: { keyword: $keyword }) { totalCount } } }"

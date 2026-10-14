@@ -2,9 +2,9 @@ module Purchasing
   # 発注側が自社の発注を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
   # 状況と合計金額は、行と一緒に PurchaseOrderStatus と PurchaseOrderAmount の SQL の式で読む
   module PurchaseOrders
-    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
+    # order_by は { field:, direction: } の配列で、1 つ目の列から順に並べる。空なら作った順の新しいものから並べる。
     # filter は受注側と、両端を含む発注日の範囲と、状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
-    def self.list(actor, first:, after:, order_by: nil, filter: {})
+    def self.list(actor, first:, after:, order_by: [], filter: {})
       Page.of(filtered(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, order_columns(actor)),
         columns:) { to_values(_1) }
     end

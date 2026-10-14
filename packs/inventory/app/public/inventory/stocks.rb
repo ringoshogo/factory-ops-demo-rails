@@ -19,11 +19,11 @@ module Inventory
       item_name: [ LABELS[:name], :string ]
     }.freeze
 
-    # order_by は { field:, direction: } で、省けば作った順の新しいものから並べる。
+    # order_by は { field:, direction: } の配列で、1 つ目の列から順に並べる。空なら作った順の新しいものから並べる。
     # filter の below_safety_stock が真なら、ダッシュボードの安全在庫（below_safety_stock）と同じ条件で絞る。
     # filter の keyword は、品目の一覧の keyword と同じ規則で、品目の写しのコードか名前を検索する（Keyword）。
     # 写しの無い在庫は、品目のコードと名前で並べると最後に置かれ、keyword には当たらない
-    def self.list(actor, first:, after:, order_by: nil, filter: {})
+    def self.list(actor, first:, after:, order_by: [], filter: {})
       relation = filtered(labeled(Scope.call(actor, Stock.all)), **filter)
       Page.of(relation, first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |stocks|
         stocks.map { to_value(_1) }

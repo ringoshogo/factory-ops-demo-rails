@@ -1,5 +1,5 @@
 import type { ShipmentRequestFilter, ShipmentRequestOrderField, ShipmentRequestStatus } from "@/lib/graphql/generated";
-import { pageArgs, parseEnumList, parseSort, single, type Sort } from "@/lib/list";
+import { pageArgs, parseEnumList, parseSort, single, sortArgs, type Sort } from "@/lib/list";
 import { SHIPMENT_REQUEST_STATUS_ORDER } from "@/lib/statuses";
 
 /**
@@ -50,7 +50,7 @@ export function shipmentRequestListVariables(q: ShipmentRequestListQuery, params
   };
   return {
     ...pageArgs(params),
-    orderBy: q.sort,
+    ...sortArgs(q.sort),
     filter: q.status ? { statuses: [q.status] } : withTab(q.tab),
     allFilter: withTab("all"),
     openFilter: withTab("open"),

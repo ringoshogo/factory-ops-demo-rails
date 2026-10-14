@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { SALES_ORDER_STATUS, SALES_ORDER_STATUS_ORDER } from "../lib/statuses";
 import { login } from "./support/world";
 
 // 一覧は 1 ページ (20 件) ずつ読み、並べ替えと件数はサーバーが行う。E2E の世界の品目は 22 件で、1 ページを超える
@@ -111,6 +112,55 @@ test("受注一覧を取引先の名前と受注合計で並べ、照合待ち�
   await expect(page.getByTestId("order-total")).toHaveText("照合待ち");
   await page.goto("/supplier/dashboard");
   await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`)).toContainText("照合待ち");
+});
+
+/** URL の sort と dir。 */
+function sortOf(page: Page): (string | null)[] {
+  const params = new URL(page.url()).searchParams;
+  return [params.get("sort"), params.get("dir")];
+}
+
+test("受注一覧の見出しを Shift を押して押すと 2 つ目の並べる列を足し、見出しに番号が出て、状況の同じ行が取引先の名前の降順に並ぶ", async ({ page }, testInfo) => {
+  await login(page, testInfo, "supplier_admin");
+  await page.goto("/supplier/sales-orders");
+  const statusHead = page.getByRole("columnheader", { name: "状況" });
+  const customerHead = page.getByRole("columnheader", { name: "取引先" });
+  const customer = customerHead.getByRole("button");
+
+  await statusHead.getByRole("button").click();
+  await expect(page).toHaveURL(/sort=status&dir=asc/);
+  await customer.click({ modifiers: ["Shift"] });
+  await expect.poll(() => sortOf(page)).toEqual(["status,customer_name", "asc,asc"]);
+  await customer.click({ modifiers: ["Shift"] });
+  await expect.poll(() => sortOf(page)).toEqual(["status,customer_name", "asc,desc"]);
+  // ブラウザは Shift を押したクリックで、前のクリックの位置からの文字を選ぶ。見出しはその既定の動きを止める
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+
+  // 番号は並びの順に出る。aria-sort は 1 つ目の列にだけ付け、2 つ目の列は見えない文字で順番と向きを添え、ボタンの名前は変えない
+  await expect(statusHead.locator("[data-sort-rank]")).toHaveText("1");
+  await expect(customerHead.locator("[data-sort-rank]")).toHaveText("2");
+  await expect(statusHead).toHaveAttribute("aria-sort", "ascending");
+  await expect(customerHead).not.toHaveAttribute("aria-sort");
+  await expect(customerHead).toContainText("並べ替え 2 番目・降順");
+  await expect(customer).toHaveAccessibleName("取引先");
+
+  // 1 ページ目の行は状況の業務の進み順に並び、状況の同じ行は取引先の名前の降順に並ぶ。E2E の世界の受注の取引先は 2 社で、
+  // 降順は主キーの順とも食い違うので、thenBy が効かなければ並びが崩れる。受注日は世界のどの受注も同じで、確かめにならない
+  const labels = SALES_ORDER_STATUS_ORDER.map((s) => SALES_ORDER_STATUS[s].label);
+  const statuses = (await column(page, 5)).map((text) => labels.findIndex((label) => text.startsWith(label)));
+  const customers = await column(page, 2);
+  expect(statuses).not.toContain(-1);
+  expect(statuses).toEqual([...statuses].sort((a, b) => a - b));
+  const pairs = statuses.slice(1).map((s, i) => ({ same: s === statuses[i], before: customers[i], after: customers[i + 1] }));
+  expect(pairs.filter((p) => p.same && byJapanese(p.before, p.after) < 0)).toEqual([]);
+  // 対照：状況の同じ行に 2 社が並ぶまとまりがある
+  expect(pairs.some((p) => p.same && p.before !== p.after)).toBe(true);
+
+  // Shift を押した Enter も、2 つ目の列の向きを進める (降順の次は並びから外す)
+  await customer.focus();
+  await customer.press("Shift+Enter");
+  await expect.poll(() => sortOf(page)).toEqual(["status", "asc"]);
+  await expect(page.locator("[data-sort-rank]")).toHaveCount(0);
 });
 
 test("在庫の画面で品目名の一部を検索すると、URL の q が変わって当たる在庫だけが件数と一緒に出て、品目コードの並べ替えと安全在庫の絞り込みを重ねられる", async ({ page }, testInfo) => {

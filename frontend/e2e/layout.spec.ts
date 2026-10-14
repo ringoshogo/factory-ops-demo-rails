@@ -43,6 +43,9 @@ for (const screen of screenPlans()) {
       await expect(page.locator("main h1").first()).toBeVisible();
       // かんばんの寸法を測る画面では、カードが描かれていることを先に確かめる。描かれないと、測る対象が無いまま通る
       if (screen.route === "/supplier/dashboard") expect(await page.getByTestId("kanban-card").count()).toBeGreaterThan(0);
+      // 複数の列の並びの変種では、見出しの番号が並びの列の数だけ描かれていることを先に確かめる
+      const sorts = new URLSearchParams(screen.variant).get("sort")?.split(",") ?? [];
+      if (sorts.length > 1) await expect(page.locator("main thead [data-sort-rank]")).toHaveCount(sorts.length);
       await settle(page);
       const at = `${label} @${width}`;
       await expectNoPageOverflow(page, at);
