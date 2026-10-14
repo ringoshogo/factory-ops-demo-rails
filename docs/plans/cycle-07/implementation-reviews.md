@@ -513,6 +513,8 @@ bin/check-open-items --due M50   # 通った
 
 分岐の網羅率の警告は 0 件だった（`bin/ci` の工程）。1024px の直しと証跡の後の `53bef21` でも `bin/ci` を流し、すべての工程が通った（rspec は 3102 examples, 0 failures、分岐の網羅率の警告は 0 件）。`53bef21` の PR の CI（#88）はすべて通った（`test` 5 分 57 秒、`e2e` 3 分 30 秒、`images` 2 分 20 秒。`publish` は PR なので skip）。
 
+実装レビューの直しの後も、`b565125` の作業ツリーで `TEST_DATABASE=factory_ops_m50_test bin/ci` を流し、すべての工程が通った（rspec は 3102 examples, 0 failures、分岐の網羅率の警告は 0 件）。`b565125` の PR の CI はすべて通った（`test` 5 分 40 秒、`e2e` 3 分 32 秒、`images` 2 分 4 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38526234593)）。
+
 ### 残件の処理
 
 引当先が M50 の行は、着手の前と PR の前に台帳を読んだ。OI-186（`decided`、流用元が並べるほかの列を足す作者の判断）は作るもの 1・8 で、OI-193（`judgment`、受注番号をイベントで運んで写す）は作るもの 3〜5 で、OI-194（`judgment`、品目の画面の安全在庫の列）は作るもの 8 で、計画のとおりに反映した。実装で決めたことを OI-199・OI-200（`judgment`）に、壊して落ちる記録で rspec が止まったことを IB-123 に、実装レビューの違和感を IB-124・IB-125 に積んだ。作者の判断の受け口（`decisions.md`）の D-1（1024px のはみ出しの扱い）を OI-200 に、D-2（M47 と Dependabot のマージ。差分の範囲は変わらない）を PR の差分の範囲に反映した。
