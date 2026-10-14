@@ -599,7 +599,7 @@ type AuditLog {
 |---|---|
 | `buyer.suppliers`・`buyer.supplier` | `Partnerships::Directory.for_buyer`・`for_buyer_supplier` |
 | `SupplierPartnership.catalog` | `Sales::PublishedCatalog.items` |
-| `buyer.purchaseOrders`・`buyer.purchaseOrder` | `Purchasing::PurchaseOrders` |
+| `buyer.purchaseOrders`・`buyer.purchaseOrder` | `Purchasing::PurchaseOrders`（取引先の名前で並べるときは、取引関係の `Partnerships::Directory.tenant_names_sql` が返す副問い合わせを結ぶ） |
 | `PurchaseOrder.lines`・`cancellationRequests`・`inboundShipments` | `Purchasing::PurchaseOrders`（発注 ID をまとめて渡す） |
 | `InboundShipment.lines`・`inspection` | `Purchasing::PurchaseOrders.inbound_shipment_lines_for`・`inspections_for`（入荷 ID をまとめて渡す。検収数量は入荷の明細の値に含める） |
 | `PurchaseOrder.supplierShipments` | `Fulfillment::PartnerShipments.for_purchase_orders` |
@@ -613,12 +613,12 @@ type AuditLog {
 | `supplier.partnerships` | `Partnerships::Directory.for_supplier` |
 | `supplier.items`・`supplier.item`・`Item` | `Sales::Catalog` |
 | `supplier.partMappings` | `Sales::PartMappings` |
-| `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す） |
+| `supplier.salesOrders`・`supplier.salesOrder`・`SalesOrder.lines` | `Sales::SalesOrders`（状況と引当数量は、受注の公開 API が在庫の `Inventory::Allocation` から得て返す。取引先の名前で並べるときは、取引関係の `Partnerships::Directory.tenant_names_sql` が返す副問い合わせを結ぶ） |
 | `SalesOrder.cancellationReviews` | `Sales::CancellationReviews.for_sales_orders`（受注 ID をまとめて渡す） |
 | `SalesOrder.customer` | `Partnerships::Directory.tenants` |
 | `SalesOrder.shipmentRequest` | `Fulfillment::ShipmentRequests.for_sales_orders` |
 | `supplier.stocks`・`Item.stock`・`supplier.stockMovements` | `Inventory::Stocks` |
-| `supplier.shipmentRequests`・`ShipmentRequest.instruction`・`shipment` | `Fulfillment::ShipmentRequests` |
+| `supplier.shipmentRequests`・`ShipmentRequest.instruction`・`shipment` | `Fulfillment::ShipmentRequests`（取引先の名前で並べるときは、取引関係の `Partnerships::Directory.tenant_names_sql` が返す副問い合わせを結ぶ） |
 | `ShipmentRequest.salesOrder`・`ShipmentRequestLine.salesOrderLine` | `Sales::SalesOrders` |
 | `supplier.billingTerms` | `Billing::Terms` |
 | `supplier.billableItems`・`Invoice.items` | `Billing::BillableItems`（`billableItems` は未請求の明細だけを返す。取引先でないテナントで絞ると空） |

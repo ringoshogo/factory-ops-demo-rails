@@ -104,11 +104,11 @@
 | `stocks` | `item_id`→・`on_hand`・`allocated`・`safety_stock` | `(owner, item_id)` 一意。`on_hand >= allocated >= 0`（有効在庫が負にならない）を CHECK 制約で守る |
 | `allocations`（引当） | `sales_order_line_id`→・`item_id`・`quantity`・`status`（`active` / `released` / `consumed`） | `sales_order_line_id` 一意。`(owner, item_id)` で `stocks` を参照する |
 | `stock_movements`（在庫移動履歴） | `item_id`・`type`（`inbound` / `outbound` / `allocate` / `deallocate` / `ship`）・`quantity`（正の数）・`reason`・`allocation_id` | 追記だけ。増減の向きは `type` が決める。`allocation_id` は引当を動かす移動（`allocate` / `deallocate` / `ship`）にだけ入る |
-| `item_labels`（品目の写し） | `item_id`・`code`・`name` | `(owner, item_id)` 一意。受注の品目への外部キーは張らない |
+| `item_labels`（品目の写し） | `item_id`→・`code`・`name` | `(owner, item_id)` 一意。受注の品目への外部キーは張らない |
 
 在庫の数量（`on_hand`・`allocated`）を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。安全在庫（`safety_stock`）は数量ではないので、移動履歴を残さずに `Inventory::Stock#change_safety_stock!` だけで変える。これを呼ぶ公開 API は、シードと E2E の世界の準備のための `Inventory::Stocks.set_safety_stock` だけで、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（「RLS」の `Partnerships::Onboarding.register` と同じ条件）。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。行の無い品目の在庫は空として返す。
 
-品目の写しは、在庫の一覧を品目のコードと名前で並べ、検索するためだけに持つ、受注の品目（`items`）の写しである。在庫は受注に依存しないので、受注の品目を結べない。品目のコードか名前を書く受注の公開 API（`Sales::Catalog.save`・`Sales::Catalog.bulk_upsert`）が、同じトランザクションで在庫の公開 API `Inventory::ItemLabels.put` を呼んで写す。既存の DB と、写しを書く経路の抜けは、元から作り直す rake タスク `read_models:rebuild` で埋める。写しの無い在庫は拒まず、一覧で品目のコードと名前で並べると最後に置き、検索には当てない。外部キーを張らない理由と、写しの抜けを一致の spec で守ることは `../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md` にある。
+品目の写しは、在庫の一覧を品目のコードと名前で並べ、検索するためだけに持つ、受注の品目（`items`）の写しである。在庫は受注に依存しないので、受注の品目を結べない。品目のコードか名前を書く受注の公開 API（`Sales::Catalog.save`・`Sales::Catalog.bulk_upsert`）が、同じトランザクションで在庫の公開 API `Inventory::ItemLabels.put` を呼んで写す。既存の DB と、写しを書く経路の抜けは、元から作り直す rake タスク `read_models:rebuild` で埋める。写しの無い在庫は拒まず、一覧で品目のコードと名前で並べると最後に置き、検索には当てない。写しの `item_id` は受注の品目を指すコンテキストをまたぐ参照なので、外部キーを張らない（「全テーブルに共通の規則」）。在庫から写しへも外部キーを張らず、写しの抜けを一致の spec で守る理由は `../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md` 決定 2 にある。
 
 引当は、受注明細ごとに 1 行を持ち、未引当の量を有効在庫の範囲で足していく。有効在庫が足りなければ、引き当てられた分だけ引き当て、残りは次の引当で埋める。解除（`released`）と消費（`consumed`）は終わりの状態で、その明細は引き当て直さない。受注明細 ID ごとの引当数量は、解除した引当を数えない。安全在庫を下回るとは、有効在庫が `safety_stock` より小さいことをいう。
 

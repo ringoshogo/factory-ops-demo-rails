@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 単体 | `packs/*/spec`（`packs/*/spec/concurrency` を除く） | 1 つのパッケージの公開 API・モデル・policy・状況の導出。DB は使うが、GraphQL とイベントの配送は通さない | — |
 | 結合 | `spec/requests`・`spec/contracts` | GraphQL の入口から公開 API までの配線、イベントの配送表と受け手のつながり | — |
-| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト、シードと E2E の世界（`DemoWorld`）を公開 API とイベントで作り切れること | 50% を超えたら |
+| シナリオ | `spec/scenarios`・`spec/concurrency`・`packs/*/spec/concurrency` | 下の重要シナリオと競合テスト、シードと E2E の世界（`DemoWorld`）を公開 API とイベントで作り切れること、一覧のために写した値が元と一致すること（`spec/scenarios/read_model_copies_spec.rb`） | 50% を超えたら |
 | ガード | `spec/matrix`・`spec/graphql`・`spec/db`・`spec/packwerk`・`spec/jobs`・`spec/notifications`・`spec/platform`・`spec/rubocop`・`spec/bin` | 構造の規則（列挙テスト・行列テスト・到達可能性・テナントの強制・外部への作用の呼び出し元）と、`bin/` の検査のスクリプト | 数えない |
 
 割合は、単体・結合・シナリオの 3 つの層の example の数で数える。ガードは、表・型・入口の数に比例して増えるので、割合に数えない。
@@ -83,7 +83,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 1. `self.use_transactional_tests = false` にする。example ごとのトランザクションの中では、接続が 1 本に固定され、2 つの接続にならない。
 2. 先の操作を `hold_open` で、コミットせずに開いたままにする。
-3. 後の操作を `in_thread` で別の接続から始め、`blocked_on_lock?(後のスレッド, by: 先のスレッド)` で、後の接続が先の接続のロックを待っていることを確かめる。補助は 2 つの接続の pid を控え、`pg_blocking_pids` で待ちの相手を確かめるので、無関係な接続の待ちを数えない。待たずに終わる操作は、ロックで直列になっていない。
+3. 後の操作を `in_thread` で別の接続から始め、`blocked_on_lock?(後のスレッド, by: 先のスレッド)` で、後の接続が先の接続のロックを待っていることを確かめる。補助は 2 つの接続の pid を控え、`pg_blocking_pids` で待ちの相手を確かめるので、無関係な接続の待ちを数えない。待たずに終わる操作は、ロックで直列になっていない。操作の途中で止めるためにスレッドの間で値を受け渡して待つ（`Queue#pop` など）ときは、`ConcurrencyHelpers::WAIT_SECONDS` の期限を付ける。期限が無いと、止める包みを外したときや先の操作が途中で失敗したときに待ち続け、手順 5 の後始末に届かない。
 4. 先の操作を `commit` でコミットさせ、後の操作の結果を `finish` で受け取る。どちらもスレッドの例外を送出し直すので、先の操作のコミットの失敗も隠れない。
 5. 作った業務の行を、example の後で `delete_owned_rows` に消させる。補助は、開いたままのトランザクションをすべて閉じさせ、スレッドが終わったことを確かめてから、所有ロールの接続でそのテナントの業務の行と、そのテナントの ID を引数に含むジョブ（イベントのジョブと送信のジョブ）を消す。アプリのロールの接続では、RLS が他のテナントの行を隠すので消せない。確定した請求書と、それに結んだ集計と明細、販売単価の行（`item_prices`）は、所有ロールの削除もトリガーが拒む（[data-model.md「請求（`billing`）」](../architecture/data-model.md#請求billing)、[ADR 006](../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md) 決定 3）ので、補助は後始末のトランザクションの中だけその表のトリガーを止めて消し、コミットの前に戻す。スレッドが終わらなければ、行を消さずに失敗する。消した後に、`owner_tenant_id` を持つ表（残す表を除く）にそのテナントの行が残っていれば、渡す表の書き漏らしとして失敗する。`delete_owned_rows` を最後まで終えずに終わった `:concurrency` の example は、`spec/support/concurrency.rb` の設定の `after` が落とす。この補助は、`:concurrency` のメタデータと同じく `spec/rails_helper.rb` が読み込むので、spec のファイルで読み込まなくても効く。呼び忘れた example がコミットしたイベントのジョブは、テナントで絞らない `deliver_enqueued_events` に後の example で拾われ、離れた example の失敗になるからである。このガードは、渡すテナントの漏れ（factory が暗に作ったテナント）は捕まえない。`spec/concurrency/cleanup_guard_spec.rb` が、後始末を呼ばない example と、`after` があっても後始末を終えない example が落ちることを確かめる。
 
@@ -97,7 +97,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 
 シナリオは、2 社のユーザーとしてログインし、GraphQL の入口を通して操作する。イベントは、Active Job のアダプタを `:solid_queue` のまま、`deliver_enqueued_events` で受け手まで流す（[ADR 005](../adr/005-イベントのジョブをトランザクション内で登録する.md) 決定 6）。補助は `spec/support/scenarios.rb` にある。`deliver_enqueued_events` は、シードと同じ `DemoWorld::Jobs`（`lib/demo_world/jobs.rb`）で流すので、テストとシードでジョブの流し方と後始末が食い違わない。
 
-イベントの受け手を足す人と、受注・発注・出荷依頼・取り込みの状況の値を足す人は、`DemoWorld` の世界も合わせる。`spec/contracts/receivers_spec.rb` は、シードの世界を作る間にすべての受け手へイベントが届くことを対照にして、受け手の戻り値を確かめる。`spec/scenarios/demo_world_spec.rb` は、E2E の世界が状況の止まっていられる全値の行を持つことを確かめる。世界を合わせないと、受け手や状況を足した変更でこの 2 つが落ちる。
+イベントの受け手を足す人と、受注・発注・出荷依頼・取り込みの状況の値を足す人は、`DemoWorld` の世界も合わせる。`spec/contracts/receivers_spec.rb` は、シードの世界を作る間にすべての受け手へイベントが届くことを対照にして、受け手の戻り値を確かめる。`spec/scenarios/demo_world_spec.rb` は、E2E の世界が状況の止まっていられる全値の行を持つことを確かめる。世界を合わせないと、受け手や状況を足した変更でこの 2 つが落ちる。品目のコードか名前を書く公開 API を足す人は、同じトランザクションで在庫の写しを書き（`Inventory::ItemLabels.put`）、その経路を `DemoWorld` が通るようにするか、`spec/scenarios/read_model_copies_spec.rb` にその経路で品目を変えた後に作り直しが何も書かないことを確かめる example を足す。一致の spec は、`DemoWorld` と、そこに書いた経路しか捕まえないからである（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md` 決定 2）。
 
 `spec/rails_helper.rb` は、`spec/scenarios` のファイルに `:scenario` のメタデータを、置き場から付ける。テストを書く人が手でタグを付けないので、付け忘れで `bundle exec rspec --tag scenario` から漏れることがない。同じ置き場の `demo_world_spec.rb`・`seeds_spec.rb`（シードと E2E の世界）も `--tag scenario` で流れる。`spec/spec_helper.rb` は `config.fail_if_no_examples = true` にし、絞り込みの結果が 0 件の実行を失敗にする。rspec-core 3.13 には、この設定に当たるコマンドラインの引数が無い。
 
@@ -140,7 +140,7 @@ BASE_REF=origin/<向き先のブランチ> bin/check-branch-coverage
 - 設定は example の中で `MatrixCrossRead.on!` が `SET LOCAL` と同じ形で入れ、example のセーブポイントと一緒に戻る。ロールや DB の既定には書かない
 - ポリシーの SQL は `spec/support` にだけ置き、`lib/tenant_table.rb` とマイグレーションには置かない。アプリのロールは `app.*` の設定を自由に変えられるので、本番に載れば全テナントの行を読む抜け道になるからである。`structure.sql` に混ざれば `bin/check-structure` が、消し忘れれば `spec/db/tenant_enforcement_spec.rb`（テナントの表のポリシーは `owner_write` と 6 つの表の `partner_read` だけ）が落とす
 - `spec/matrix/matrix_world_spec.rb` が、2 回目が空振りしないことを確かめる。設定を `on` にした生 SQL がどの表でも全ペルソナの行を読み、ダッシュボードの 4 つの公開 API から scope を外すと、公開 API の値も入口の要求の応答も他社の行で変わることである。世界は、どのペルソナにもダッシュボードの各集計に当たる行と、一覧の絞り込みに当たる行を持つ
-- 件数も 2 回目の比較にかけるため、コネクションを返すフィールドの行は、問い合わせで `totalCount` を読む。並べ替えと絞り込みを持つ一覧は、両方を渡す変種の行（`"SupplierView.salesOrders#filter"` の形）を持つ。`spec/matrix/graphql_matrix_spec.rb` が、コネクションを返すフィールドをスキーマから集めて行の問い合わせが `totalCount` を選ぶことと、変種の行の絞り込みがどのペルソナでも 0 件より多く、絞らない一覧の件数より少ない件数に絞ることを確かめる。当たる行が無いか全行が当たると、絞り込みの scope の抜けが 2 回目の比較に出ないからである。状況でも絞る変種の行（受注・発注・出荷依頼）は、状況を外した件数より少なく絞ることも確かめる。列の絞り込みだけで世界が絞れるので、列には当たり状況で外れる行が世界に無くても、前の確かめは通るからである。絞り込みの項目を足す人は、`MatrixWorld#add_filter_rows` に当たる行と外れる行を足す
+- 件数も 2 回目の比較にかけるため、コネクションを返すフィールドの行は、問い合わせで `totalCount` を読む。並べ替えと絞り込みを持つ一覧は、両方を渡す変種の行（`"SupplierView.salesOrders#filter"` の形）を持つ。`spec/matrix/graphql_matrix_spec.rb` が、コネクションを返すフィールドをスキーマから集めて行の問い合わせが `totalCount` を選ぶことと、変種の行の絞り込みがどのペルソナでも 0 件より多く、絞らない一覧の件数より少ない件数に絞ることを確かめる。当たる行が無いか全行が当たると、絞り込みの scope の抜けが 2 回目の比較に出ないからである。状況でも絞る変種の行（受注・発注・出荷依頼）は、状況を外した件数より少なく絞ることも確かめる。列の絞り込みだけで世界が絞れるので、列には当たり状況で外れる行が世界に無くても、前の確かめは通るからである。絞り込みの項目を足す人は、`MatrixWorld#add_filter_rows` に当たる行と外れる行を足す。別のコンテキストの副問い合わせで並べる列（取引先の名前）を足す人は、その列で並べる変種の行（`"SupplierView.salesOrders#orderByName"` の形）を足す。結ぶ条件を誤って 2 行以上が当たると、どのペルソナの応答も SQL のエラーになって落ちる
 - 1 つのテストの DB で、行列の spec と「RLS の SELECT と UPDATE を開く」の文脈を使う spec を、同時に 2 つの実行から流さない。ポリシーの名前は実行ごとに変わらないので、後から足す実行は「ポリシーがすでにある」で失敗する。並行で流すときは、別名のテストの DB を使う。途中で止めた実行が残したポリシーも同じ失敗になるので、ほかに流している実行が無いことを確かめてから `bin/rails runner -e test 'require "./spec/support/matrix_world"; MatrixCrossRead.remove!'` で外す
 - 表の行列（`table_matrix_spec.rb`）には掛けない。表の行列は生 SQL で RLS そのものを確かめるからである
 
