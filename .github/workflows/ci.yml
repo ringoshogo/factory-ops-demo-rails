@@ -181,6 +181,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # npm ci は直接の依存の peer の不一致しか止めず、入れ子の依存（eslint-config-next が入れるプラグインなど）の
+      # peer の範囲から外れた更新を入れたまま通る。入れた木を読み、範囲に合わない依存があれば落とす
+      - name: Check dependency tree
+        run: npm ls --all
+
       - name: Check generated GraphQL types
         run: npm run codegen:check
 
@@ -263,34 +268,7 @@ jobs:
           path: frontend/test-results/
           retention-days: 7
 
-  # PR がイメージに入るもの（Dockerfile・依存・本番の設定・マニフェスト・このワークフロー）を変えたかを決める。
-  # それ以外の PR では images のジョブを流さない。images はイメージに入るものだけを確かめ、依存が変わって
-  # GitHub Actions のキャッシュが外れると数分延びるからである（docs/guides/config.md「CI の工程」）。アプリのコードを本番の環境で読み込めることは、test のジョブが eager_load で確かめる
-  image_inputs:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    outputs:
-      changed: ${{ steps.diff.outputs.changed }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Check whether image inputs changed
-        id: diff
-        env:
-          BASE_REF: origin/${{ github.base_ref }}
-        run: |
-          pattern='^(Dockerfile|\.dockerignore|Gemfile|Gemfile\.lock|\.ruby-version|vendor/|bin/(docker-entrypoint|thrust|rails|jobs)$|config/(application|boot|environment|puma|database|queue|recurring)\.(rb|yml)$|config/environments/production\.rb$|config/initializers/|deploy/|frontend/(Dockerfile|Dockerfile\.dockerignore|package\.json|package-lock\.json|next\.config\.mjs|security-headers\.json)$|db/seeds/demo_accounts\.json$|\.github/workflows/ci\.yml$)'
-          if git diff --name-only "$(git merge-base "$BASE_REF" HEAD)" HEAD | grep -qE "$pattern"; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  # 公開の配置のマニフェストを照らす。kubectl が入った amd64 のランナーで流し、arm64 のランナーのイメージに頼らない。
-  # 1 分で終わるので、image_inputs で絞らずに PR と main への push の両方で流す
+  # 公開の配置のマニフェストを照らす。kubectl が入った amd64 のランナーで流し、arm64 のランナーのイメージに頼らない
   manifests:
     runs-on: ubuntu-24.04
     steps:
@@ -307,10 +285,9 @@ jobs:
           "$RUNNER_TEMP/kubeconform" -strict -summary "$RUNNER_TEMP/rendered.yaml"
 
   # 公開の配置の 2 つのイメージを、arm64 のランナーで linux/arm64 のまま組み立てて確かめる（docs/adr/009 決定 6、deploy/README.md）。
-  # GHCR には置かない（publish のジョブが置く）。main への push では毎回流すので、PR で流さなかった変更も main で確かめる
+  # GHCR には置かない（publish のジョブが置く）。キャッシュが空でも test のジョブより短く終わるので、PR を絞らずに毎回流す
+  # （docs/guides/config.md「CI の工程」）
   images:
-    needs: image_inputs
-    if: ${{ !cancelled() && (github.event_name == 'push' || needs.image_inputs.outputs.changed == 'true') }}
     runs-on: ubuntu-24.04-arm
     env:
       API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
@@ -352,17 +329,14 @@ jobs:
 
   # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
-  # ジョブの if: は、ジョブの名前を並べずに needs.*.result で決める。名前を並べると、needs に足したジョブを
-  # if: に足し忘れたときに、そのジョブが落ちても push する。!cancelled() を書くのは、状態の関数が無いと GitHub が
-  # 暗黙の success() を足し、push では skip される image_inputs から依存の連なりで publish も skip されるからである。
-  # needs.*.result に skipped が無いことはジョブの段の条件にせず、最初のステップで確かめる。ジョブの段の if: では、
-  # needs の先で skip された image_inputs が skipped として見え、push のたびに publish が skip される。ステップの段では
-  # 直接の needs だけが見えるので、needs のジョブが skip されたときは、組み立てる前に publish を落とす。
+  # ジョブの if: に状態の関数を書かず、GitHub が足す暗黙の success() に任せる。success() は needs のどれかが落ちた・
+  # 取り消された・skip されたときに偽になるので、ジョブの名前を並べずに、確かめていない commit のイメージを置かない。
+  # どのジョブも契機を絞らないので、push で skip されるジョブは無く、success() が publish を誤って止めることは無い。
   # ログインと push のステップの if: は、main 以外のブランチへの push で publish が走っても GHCR に何も置かないためで、
   # ワークフローの契機を一時に広げて publish の条件を確かめるときにも、この if: でステップが skip される
   publish:
     needs: [ scan_ruby, lint, test, frontend, e2e, manifests, images ]
-    if: ${{ github.event_name == 'push' && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -371,12 +345,6 @@ jobs:
       API_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/api:${{ github.sha }}
       FRONTEND_IMAGE: ghcr.io/ringoshogo/factory-ops-demo-rails/frontend:${{ github.sha }}
     steps:
-      - name: Fail if a needed job was skipped
-        if: contains(needs.*.result, 'skipped')
-        run: |
-          echo "::error::publish の needs のジョブが skip された。確かめていない commit のイメージを置かないので落とす"
-          exit 1
-
       - name: Checkout code
         uses: actions/checkout@v7
 
