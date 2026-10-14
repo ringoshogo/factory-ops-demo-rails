@@ -6,7 +6,7 @@ import { pageArgs, parseEnumList, parseSort, single, sortArgs, type Sort } from 
  * クライアント部品 (絞り込み) の両方が import するので、next/headers を読み込まない。
  */
 
-export const ITEM_SORT_FIELDS: readonly ItemOrderField[] = ["CODE", "NAME"];
+export const ITEM_SORT_FIELDS: readonly ItemOrderField[] = ["CODE", "NAME", "UNIT", "UNIT_PRICE", "SAFETY_STOCK"];
 
 /** 品目の一覧。検索の語は API が前後の空白を除くので、空白だけなら送らない。 */
 export function itemListVariables(params: URLSearchParams) {

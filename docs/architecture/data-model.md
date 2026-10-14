@@ -129,7 +129,7 @@ DB の既定の照合順序は、公式の `postgres` のイメージが initdb 
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `shipment_requests`（「出荷可能」の写し） | `sales_order_id`→・`buyer_tenant_id`→・`source_purchase_order_id`→・`due_date`・`cancelled_at` | `sales_order_id` 一意 |
+| `shipment_requests`（「出荷可能」の写し） | `sales_order_id`→・`sales_order_no`（受注番号の写し。一覧を受注番号で並べる）・`buyer_tenant_id`→・`source_purchase_order_id`→・`due_date`・`cancelled_at` | `sales_order_id` 一意。`sales_order_no` は空を許し、受注番号を運ぶ前の既存の行は `bin/rails read_models:rebuild` が埋める（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`） |
 | `shipment_request_lines` | `sales_order_line_id`→・`source_purchase_order_line_id`→・`item_id`→・`quantity` | `sales_order_line_id` 一意 |
 | `shipping_holds`（出荷停止） | `sales_order_id`→・`source_cancellation_review_id`→・`released_at` | `source_cancellation_review_id` 一意。解除前の停止を受注ごとに 1 件に限らない（「イベントの届く順の入れ替わり」） |
 | `shipping_instructions`（出荷指示） | `shipment_request_id`・`planned_date`・`status`（`active` / `cancelled`） | 有効な指示は出荷依頼ごとに 1 件（部分一意索引） |
@@ -316,7 +316,7 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 | 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID、発注 ID、発注側・受注側テナント | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
 | 受注取消 | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
 | 出荷取消 | 受注 → 出荷 | 受注 ID、受注側テナント、取消を承認した審査 ID（審査を経ない取消では空）、出荷可能を出したか | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
-| 出荷可能 | 受注 → 出荷 | 受注 ID、受注側・発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
+| 出荷可能 | 受注 → 出荷 | 受注 ID、受注番号、受注側・発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
 | 出荷停止 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds` | `source_cancellation_review_id` 一意 |
 | 出荷停止解除 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds.released_at` | 空のときだけ書く。停止の行が無ければ解除済みの行を作る |
 | 出荷計上 | 出荷 → 受注・購買 | 出荷実績 ID、受注 ID、発注 ID、受注側・発注側テナント、出荷日、明細（受注明細 ID・発注明細 ID・数量） | 受注：`shipped_at`／購買：`inbound_shipments`・明細 | 受注：空のときだけ書く／購買：`shipment_id` 一意 |
@@ -325,6 +325,8 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 | 請求書発行 | 請求 → 購買 | 請求書 ID、受注側・発注側テナント、請求番号、締め期間、発行日、金額、明細（発注明細 ID・品目名・単価・数量・税率・金額） | `received_invoices`・明細 | `invoice_id` 一意 |
 
 「出荷計上」は受注と購買の両方へ同じ値を運ぶ。購買は、受注 ID と受注明細 ID を保存しない。
+
+イベントに項目を足す人は、足す前に登録したジョブのペイロードがその項目を持たないことに備え、そのイベントの型の `from_payload` で既定の値を補う。`new` は全項目を求めたままにし、発行元が項目を渡し忘れたら例外にする。補った既定の値（「出荷可能」の受注番号の空）を写した行は、作り直しのタスク（`bin/rails read_models:rebuild`）が埋める。作り直しの後に足す前のジョブが届くと、空の写しが次の作り直しまで残るので、既存の DB では、足す前のジョブを配り終えてから作り直しを流す（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）。
 
 イベントのジョブは、引数とペイロードとは別に、付帯情報を直列化の最上位の項目（`"app_metadata"`）に持つ。`Contracts.publish` が、イベントごとに `event_id`（UUIDv7）・イベントの名前・相関 ID・因果 ID・発行元のテナント ID・宛先テナント ID・発行時刻を入れる。付帯情報は、ログの文脈（相関 ID でテナントをまたぐ一連の処理を引く）、監査ログのイベントの受信の行、配送の遅れの計測に使い、受け手の業務の判断には使わない。受け手が書く表の冪等キーは、上の表のとおり業務の ID で取り、`event_id` では取らない。発行元が同じ業務の出来事で 2 回発行しても、結果を 1 つにするためである。
 

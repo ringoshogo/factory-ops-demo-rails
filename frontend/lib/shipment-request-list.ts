@@ -22,7 +22,13 @@ export const SHIPMENT_REQUEST_TABS: readonly {
 /** 出荷も取消もしていない出荷依頼の状況。期限に文言を添えるかどうかを決める。 */
 export const OPEN_SHIPMENT_REQUEST_STATUSES = SHIPMENT_REQUEST_TABS.find((t) => t.tab === "open")!.statuses!;
 
-export const SHIPMENT_REQUEST_SORT_FIELDS: readonly ShipmentRequestOrderField[] = ["CUSTOMER_NAME", "DUE_DATE", "STATUS"];
+export const SHIPMENT_REQUEST_SORT_FIELDS: readonly ShipmentRequestOrderField[] = [
+  "ORDER_NO",
+  "CUSTOMER_NAME",
+  "DUE_DATE",
+  "PLANNED_DATE",
+  "STATUS",
+];
 
 export type ShipmentRequestListQuery = {
   tab: ShipmentRequestTab;

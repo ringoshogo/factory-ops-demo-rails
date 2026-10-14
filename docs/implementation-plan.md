@@ -1889,8 +1889,9 @@ cd frontend && npm run test:e2e
    | `supplier.shipmentRequests` | `ORDER_NO` | 出荷依頼に写した受注番号（作るもの 3） |
    | `supplier.shipmentRequests` | `PLANNED_DATE` | 有効な出荷指示の出荷予定日。状況の式が出荷指示を読むのと同じ条件で、出荷依頼ごとに 1 行を引くスカラーの副問い合わせ。出荷指示の無い出荷依頼は空 |
 
-   - 単価の式：受注の公開 API `Sales::ItemPrices` に、品目ごとに今日の単価の行を 1 つ引くスカラーの副問い合わせを 1 つ置き、並べ替えはそれを使う。条件は `price_at` と同じ scope（所有の scope・`valid_on`・`current`）で組み、今日は Ruby の `Sales::ItemPrice.today` をバインドの値で渡す（SQL の `CURRENT_DATE` は DB の時刻帯で決まるので使わない。M32）。表示（`Sales::Catalog` が `price_at` を `fetch` で読み、`Item.unitPrice` は空を許さない）と同じく、どの品目にも今日の単価の行があることを前提にする。`catalog_spec.rb` の一覧の example で、単価で並べた順と、返った `unit_price` の値の順が一致することを確かめ、2 つの読み方が食い違えば落ちるようにする
+   - 単価の式：受注の公開 API `Sales::ItemPrices` に、品目ごとに今日の単価の行を 1 つ引くスカラーの副問い合わせ（`today_price(actor, item_id)`）を 1 つ置き、並べ替えはそれを使う。条件は `price_at` と同じ scope（所有の scope・`valid_on`・`current`）で組み、今日は Ruby の `Sales::ItemPrice.today` をバインドの値で渡す（SQL の `CURRENT_DATE` は DB の時刻帯で決まるので使わない。M32）。表示（`Sales::Catalog` が `price_at` を `fetch` で読み、`Item.unitPrice` は空を許さない）と同じく、どの品目にも今日の単価の行があることを前提にする。`catalog_spec.rb` の一覧の example で、単価で並べた順と、返った `unit_price` の値の順が一致することを確かめ、2 つの読み方が食い違えば落ちるようにする
    - カーソルの型：単価は `bigint` まで入りうる（M45 の作るもの 2）ので、`Page::Sort` の型を M45 の合計と同じ `:decimal` にする。`:integer` は `integer` の範囲しか受け付けず、2,147,483,647 を超える単価の品目がページの境目に来ると、正しいカーソルが `Invalid cursor` になる。単位は `:string`、安全在庫は `:integer`（在庫の列が `integer`）、受注番号は `:string`、出荷予定日は `:date` である
+   - 照合順序：単位と受注番号の写しの列は、DB の既定の照合順序のまま並べる（OI-199）
 
 2. 安全在庫の副問い合わせ：在庫の公開 API `Inventory::Stocks.safety_stocks_sql(actor)` が、品目 ID と安全在庫の副問い合わせを `SqlSubquery.of` で返す。`Inventory::Allocation.active_quantities_sql` と同じく、操作者の scope を掛けた後に SQL の文字列にし、役割の名前（`item_id`・`safety_stock`）を返す。受注は在庫に依存しているので、依存の向きは変わらない。
 3. 受注番号の写し：イベント `Contracts::SalesOrderReadyForShipment` に `sales_order_no` を足し、受注（`Sales::OrderAllocation`）が出すときに受注番号を入れる。出荷依頼の表に `sales_order_no`（null を許す）を足し、出荷の受け手が出荷依頼を作るときに写す。受注番号は受注を作った後に変わらないので、写した後に書き直す経路は要らない（判断「出荷依頼の受注番号を、どう並べるか」）。足す前に登録されたジョブのペイロードは `sales_order_no` を持たない。そこで、このイベントの型の `from_payload` だけが、ペイロードに `sales_order_no` が無ければ空を足してから作る。`new` は全項目を求めたままにし、発行元が受注番号を渡し忘れたら例外になるようにする。`packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb` に、項目を省いたペイロードを `from_payload` で読んだイベントを受けた受け手が、受注番号の空の出荷依頼を作る example を足す。`packs/sales/spec/public/sales/order_allocation_spec.rb` に、出す「出荷可能」が受注番号を持つ example を足す。イベントを `new` で直に作る spec（`packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb`・`sales_event_receiver_lock_spec.rb` と、`git grep SalesOrderReadyForShipment.new` で当たるもの）にも `sales_order_no` を渡す。
@@ -1901,7 +1902,7 @@ cd frontend && npm run test:e2e
    - `put_order_numbers` に他社の出荷依頼の受注 ID を含む組を渡しても、`cross_read!` の後に他社の出荷依頼を書かず、書き直した数にも数えない（`packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb`）。出荷依頼の受注 ID はテナントをまたいで一意（`index_shipment_requests_on_sales_order_id`）なので、他社の名義で同じ受注 ID の出荷依頼は作れず、正しい組からは他社の行に当たらない。守るのは、組の誤り（作り直しのタスクが別のテナントの組を渡すこと）に対してである
    - `Sales::SalesOrders.order_numbers` が、`cross_read!` の後に他社の受注が見えても、自社の受注だけを返す（`packs/sales/spec/public/sales/sales_orders_spec.rb`）
 7. 行列テスト：入口の行列に、品目を単価と安全在庫で、出荷依頼を出荷予定日で並べる変種の行を足す。3 つとも、行ごとに 1 行を引くスカラーの副問い合わせで、結ぶ条件を書き誤って 2 行以上が当たると SQL のエラーになり、1 回目の比較で落ちる（M45 の作るもの 6 と同じ）。単位と受注番号は品目か出荷依頼の表の列で、結ぶ表を足さない。所有の条件の抜けは、品目 ID と出荷依頼 ID が他社の行と重ならないので、この行では捕まらず、作るもの 6 の単体が捕まえる。
-8. 画面：品目（画面 10）の単位・単価の見出しと、出荷依頼（画面 9）の受注番号・出荷予定日の見出しを、並べ替えの対象にする。品目の画面に「安全在庫」の列を足し（いまは有効在庫だけを出す。OI-194）、並べ替えの対象にする。画面の問い合わせ `SupplierItems` は、すでに `Item.stock` の `safetyStock` を選んでいる。URL の値を変数に写す関数（`frontend/lib/supplier-master-lists.ts` の `ITEM_SORT_FIELDS`、`frontend/lib/shipment-request-list.ts` の `SHIPMENT_REQUEST_SORT_FIELDS`）に足し、品目の画面の「単価・税率・在庫は API で並べられない」のコメントを直す。M47 の Shift の操作は、足した列にもそのまま効く。
+8. 画面：品目（画面 10）の単位・単価の見出しと、出荷依頼（画面 9）の受注番号・出荷予定日の見出しを、並べ替えの対象にする。品目の画面に「安全在庫」の列を足し（いまは有効在庫だけを出す。OI-194）、並べ替えの対象にする。列が増えて 1024px で表がパネルに収まらないので、1024〜1279px では並べ替えの対象でない「税率」と「有効在庫」の列を隠す（OI-200）。画面の問い合わせ `SupplierItems` は、すでに `Item.stock` の `safetyStock` を選んでいる。URL の値を変数に写す関数（`frontend/lib/supplier-master-lists.ts` の `ITEM_SORT_FIELDS`、`frontend/lib/shipment-request-list.ts` の `SHIPMENT_REQUEST_SORT_FIELDS`）に足し、品目の画面の「単価・税率・在庫は API で並べられない」のコメントを直す。M47 の Shift の操作は、足した列にもそのまま効く。
 9. 互換：足すのは、enum の値と、null を許す表の列と、省いてよいイベントの項目だけなので、`bin/check-schema-compat` は通す。
 
 テナントの境界：書き込みは、出荷依頼の 1 つの列と、それを埋める作り直しの入口だけを足す。作り直しの入口は所有テナントを明示し、受け手はいまと同じく宛先テナントの名義で書く。読み取りは、いまの公開 API の scope を掛けた relation に、式と副問い合わせの結合と並びを足すだけで、RLS と policy は変えない。コンテキストの境界：受注は、依存している在庫の公開 API の副問い合わせを結ぶ。出荷は受注番号をイベントで受け取り、受注を参照しない。作り直しで受注と出荷の組を渡すのはルートのタスクだけである。
@@ -1923,10 +1924,10 @@ cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm
 cd frontend && npm run test:e2e
 ```
 
-期待の不一致で最初に落とすのは、`spec/requests/catalog_spec.rb` の、`orderBy: { field: SAFETY_STOCK, direction: DESC }` で品目の一覧を読み、安全在庫の多い順に並び、在庫の行の無い品目が最後に来ることを確かめる example と、`spec/requests/supplier_shipments_spec.rb` の、`orderBy: { field: ORDER_NO, direction: ASC }` で出荷依頼の一覧を読み、受注番号の順に並ぶことを確かめる example である（列を足す前は引数の検証のエラーが返り、期待した並びと食い違う）。E2E（`frontend/e2e/list-pagination.spec.ts`）に、出荷依頼の受注番号の見出しを押すと URL の `sort` が `order_no` になって受注番号の順に並び、品目の単価の見出しを Shift を押して押すと（1 つ目の並びを単位にして）URL が 2 つの並びになり、単位の同じ品目が単価の順に並ぶことを確かめる example を足す。見出しの列の一覧（`ITEM_SORT_FIELDS`・`SHIPMENT_REQUEST_SORT_FIELDS`）から足した列を外すと、この example が落ちる。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
+期待の不一致で最初に落とすのは、`spec/requests/catalog_spec.rb` の、`orderBy: { field: SAFETY_STOCK, direction: DESC }` で品目の一覧を読み、安全在庫の多い順に並び、在庫の行の無い品目が最後に来ることを確かめる example と、単位（`orderBy`）と単価（`thenBy`）で並べる example と、`spec/requests/supplier_shipments_spec.rb` の、`orderBy: { field: ORDER_NO, direction: ASC }` で出荷依頼の一覧を読み、受注番号の順に並ぶことを確かめる example と、出荷予定日で並べ、有効な出荷指示の無い出荷依頼が最後に来ることを確かめる example である（列を足す前は引数の検証のエラーが返り、期待した並びと食い違う）。どれも 1 件ずつのページで最後までたどり、足した列のカーソルで続きを読む。E2E（`frontend/e2e/list-pagination.spec.ts`）に、出荷依頼の受注番号の見出しを押すと URL の `sort` が `order_no` になって受注番号の順に並び、品目の単価の見出しを Shift を押して押すと（1 つ目の並びを単位にして）URL が 2 つの並びになり、単位の同じ品目が単価の順に並ぶことを確かめる example を足す。見出しの列の一覧（`ITEM_SORT_FIELDS`・`SHIPMENT_REQUEST_SORT_FIELDS`）から足した列を外すと、この example が落ちる。ほかは、次の壊して落ちる記録を spec ごとに証跡の「実装の記録」に残す。
 
 - `UNIT_PRICE` の型を `:integer` にすると、`catalog_spec.rb` の、2,147,483,647 を超える単価の品目をページの境目に置いて次のページを読む example が `Invalid cursor` で落ちる
-- 単価の式から `current` の条件を外すと、訂正した単価を持つ品目を訂正の前の単価で並べ、`catalog_spec.rb` の単価で並べる example が落ちる。`valid_on` の今日を別の日に替えると、予約した改定を持つ品目の example が落ちる
+- 単価の式から `current` の条件を外すと、訂正で閉じた行と訂正の後の行がどちらも今日を含むので、訂正した単価を持つ品目に 2 行が当たり、`catalog_spec.rb` の訂正と予約した改定の example が SQL のエラー（2 行以上）で落ちる。`valid_on` の今日を別の日に替えると、予約した改定を持つ品目の同じ example が並びの食い違いで落ちる
 - 出荷予定日の式から有効な出荷指示に限る条件を外すと、取り消した出荷指示を持つ出荷依頼の example が SQL のエラー（2 行以上）か並びの食い違いで落ちる
 - 受け手で受注番号を写さないと、`read_model_copies_spec.rb` の世界を作った直後の example が落ちる（書き直しが 1 以上）。発行元（`Sales::OrderAllocation`）から受注番号を外すと、`order_allocation_spec.rb` の受注番号を持つ example が落ちる
 - 安全在庫の副問い合わせから scope を外すと、上の所有の条件の example が落ちる
@@ -1935,7 +1936,7 @@ cd frontend && npm run test:e2e
 
 **実装する文書の節**：`architecture/graphql-schema.md`「ページングと N+1」・「認可：宣言の無い型・リゾルバ・mutation は拒否する」、`architecture/data-model.md`「出荷（`fulfillment`）」、`architecture/context-map.md`「コンテキスト間の関係」、`adr/010` 決定 2、`adr/011`
 
-**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に足した列と、受注番号を出荷依頼の写しで並べることを書き、「認可」の操作者のいない入口の一覧に `Sales::SalesOrders.order_numbers` と `Fulfillment::ShipmentRequests.put_order_numbers` を書く。`architecture/data-model.md`「出荷（`fulfillment`）」の出荷依頼の表に `sales_order_no` を、`architecture/context-map.md`「コンテキスト間の関係」の受注 → 出荷の行に受注番号を運ぶことを書く。`adr/011` に、イベントで運んだ値の写しも作り直しのタスクで埋めることを足す。`lib/tasks/read_models.rake` の冒頭のコメントと `desc` を、2 つの写しに直す。`README.md`「開発環境」の `read_models:rebuild` の文に、出荷依頼の受注番号を足す。
+**文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に足した列と、受注番号を出荷依頼の写しで並べることを書き、「認可」の操作者のいない入口の一覧に `Sales::SalesOrders.order_numbers` と `Fulfillment::ShipmentRequests.put_order_numbers` を書く。`architecture/data-model.md`「出荷（`fulfillment`）」の出荷依頼の表に `sales_order_no` を、「イベントの受け口と冪等キー」の「出荷可能」の運ぶ値に受注番号と、イベントに項目を足すときに `from_payload` で既定の値を補う規則を、`architecture/context-map.md`「コンテキスト間の関係」の受注 → 出荷の行に受注番号を運ぶことを書く。`adr/011` に、イベントで運んだ値の写しも作り直しのタスクで埋めることを足す。`lib/tasks/read_models.rake` の冒頭のコメントと `desc` を、2 つの写しに直す。`README.md`「開発環境」と `deploy/README.md` の `read_models:rebuild` の文に、出荷依頼の受注番号と、受注番号を運ぶ前に登録したジョブを配り終えてから流すことを足す。
 
 ## M33 フロントエンド
 

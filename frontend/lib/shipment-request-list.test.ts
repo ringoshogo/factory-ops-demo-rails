@@ -23,9 +23,11 @@ describe("出荷依頼一覧の URL を変数に写す", () => {
     expect(parse("tab=open&status=SHIPPED").q.tab).toBe("all");
   });
 
-  it("並べ替えは出荷期限だけを受け、ほかの列の値は既定の並びにする", () => {
+  it("並べ替えは API で並べられる列を受け、数量の値は既定の並びにする", () => {
     expect(parse("sort=due_date&dir=asc").variables.orderBy).toEqual({ field: "DUE_DATE", direction: "ASC" });
-    expect(parse("sort=order_no&dir=asc").variables.orderBy).toBeNull();
+    expect(parse("sort=order_no&dir=asc").variables.orderBy).toEqual({ field: "ORDER_NO", direction: "ASC" });
+    expect(parse("sort=planned_date&dir=desc").variables.orderBy).toEqual({ field: "PLANNED_DATE", direction: "DESC" });
+    expect(parse("sort=quantity&dir=asc").variables.orderBy).toBeNull();
   });
 
   it("不正なタブと状況は絞らない", () => {

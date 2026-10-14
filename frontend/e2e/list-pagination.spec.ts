@@ -171,6 +171,35 @@ test("受注一覧の見出しを Shift を押して押すと 2 つ目の並べ�
   await expect(page.locator("[data-sort-rank]")).toHaveCount(0);
 });
 
+test("出荷依頼の受注番号の見出しを押すと受注番号の順に並び、品目の単価の見出しを Shift を押して押すと、単位の同じ品目が単価の順に並ぶ", async ({ page }, testInfo) => {
+  await login(page, testInfo, "supplier_admin");
+  await page.goto("/supplier/shipment-requests");
+  // 出荷は受注に依存しないので、受注番号は「出荷可能」のイベントで写した値で並ぶ。表示は受注の値で、並びと食い違えば崩れる
+  await page.getByRole("columnheader", { name: "受注番号" }).getByRole("button").click();
+  await expect.poll(() => sortOf(page)).toEqual(["order_no", "asc"]);
+  await expect(page.getByRole("columnheader", { name: "受注番号" })).toHaveAttribute("aria-sort", "ascending");
+  const orderNos = await column(page, 1);
+  // 伝票番号は桁をそろえた ASCII の文字列なので、文字列の順が番号の順になる
+  expect(orderNos).toEqual([...orderNos].sort());
+  // 対照：並びを確かめられるだけの出荷依頼がある
+  expect(new Set(orderNos).size).toBeGreaterThan(1);
+
+  await page.goto("/supplier/items?sort=unit&dir=asc");
+  await page.getByRole("columnheader", { name: "単価" }).getByRole("button").click({ modifiers: ["Shift"] });
+  await expect.poll(() => sortOf(page)).toEqual(["unit,unit_price", "asc,asc"]);
+  await expect(page.getByRole("columnheader", { name: "単価" }).locator("[data-sort-rank]")).toHaveText("2");
+
+  // 単位の同じ品目はひとまとまりに並び、まとまりの中は単価の昇順に並ぶ。E2E の世界の品目は単位が「個」の品目が多く、
+  // 単価は作った順と食い違うので、thenBy が効かなければ並びが崩れる
+  const units = await column(page, 3);
+  const prices = (await column(page, 4)).map((text) => Number(text.replace(/[^0-9]/g, "")));
+  expect(runs(units)).toEqual([...new Set(units)]);
+  const pairs = units.slice(1).map((u, i) => ({ same: u === units[i], before: prices[i], after: prices[i + 1] }));
+  expect(pairs.filter((p) => p.same && p.before > p.after)).toEqual([]);
+  // 対照：単位の同じ品目に、単価の違う組がある
+  expect(pairs.some((p) => p.same && p.before !== p.after)).toBe(true);
+});
+
 test("在庫の画面で品目名の一部を検索すると、URL の q が変わって当たる在庫だけが件数と一緒に出て、品目コードの並べ替えと安全在庫の絞り込みを重ねられる", async ({ page }, testInfo) => {
   await login(page, testInfo, "supplier_admin");
   await page.goto("/supplier/stocks");

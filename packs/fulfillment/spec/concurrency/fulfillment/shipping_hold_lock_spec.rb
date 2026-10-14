@@ -15,7 +15,7 @@ RSpec.describe Fulfillment::SalesEventReceiver do
     Contracts::ShippingHeld.new(cancellation_review_id: SecureRandom.uuid, sales_order_id:, supplier_tenant_id: supplier.id)
   end
   let(:ready) do
-    Contracts::SalesOrderReadyForShipment.new(sales_order_id:, supplier_tenant_id: supplier.id, buyer_tenant_id: buyer.id,
+    Contracts::SalesOrderReadyForShipment.new(sales_order_id:, sales_order_no: "SO-000042", supplier_tenant_id: supplier.id, buyer_tenant_id: buyer.id,
       purchase_order_id: SecureRandom.uuid, due_date: "2026-10-31",
       lines: [ { "sales_order_line_id" => SecureRandom.uuid, "purchase_order_line_id" => SecureRandom.uuid,
         "item_id" => SecureRandom.uuid, "quantity" => 4 } ])

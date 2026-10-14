@@ -88,6 +88,21 @@ module MatrixExpectations
       variables: ->(_world) { { orderBy: { field: "NAME", direction: "ASC" }, thenBy: [ { field: "CODE", direction: "DESC" } ] } },
       expect: EVERYONE
     },
+    # 今日の単価と安全在庫は、品目ごとに 1 行を引くスカラーの副問い合わせで並べる。結ぶ条件を書き誤り、品目ごとに 2 行以上を引くと、
+    # SQL のエラーになって落ちる。所有の条件の抜けは、品目 ID が他社と重ならないのでここでは捕まらず、
+    # packs/sales/spec/public/sales/catalog_spec.rb が、他社の名義で自社の品目 ID を指す在庫の行で捕まえる
+    "SupplierView.items#orderByUnitPrice" => {
+      role: :member,
+      query: "query($orderBy: ItemOrder) { supplier { items(orderBy: $orderBy) { totalCount nodes { id unitPrice } } } }",
+      variables: ->(_world) { { orderBy: { field: "UNIT_PRICE", direction: "DESC" } } },
+      expect: EVERYONE
+    },
+    "SupplierView.items#orderBySafetyStock" => {
+      role: :member,
+      query: "query($orderBy: ItemOrder) { supplier { items(orderBy: $orderBy) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "SAFETY_STOCK", direction: "ASC" } } },
+      expect: EVERYONE
+    },
     "SupplierView.item" => {
       role: :member,
       query: "query($id: ID!) { supplier { item(id: $id) { id } } }",
@@ -346,6 +361,14 @@ module MatrixExpectations
       role: :member,
       query: "query($orderBy: ShipmentRequestOrder) { supplier { shipmentRequests(orderBy: $orderBy) { totalCount nodes { id customer { name } } } } }",
       variables: ->(_world) { { orderBy: { field: "CUSTOMER_NAME", direction: "ASC" } } },
+      expect: EVERYONE
+    },
+    # 出荷予定日は、出荷依頼ごとに有効な出荷指示を 1 行引くスカラーの副問い合わせで並べる。結ぶ条件を書き誤り、2 行以上を引くと、
+    # SQL のエラーになって落ちる
+    "SupplierView.shipmentRequests#orderByPlannedDate" => {
+      role: :member,
+      query: "query($orderBy: ShipmentRequestOrder) { supplier { shipmentRequests(orderBy: $orderBy) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "PLANNED_DATE", direction: "ASC" } } },
       expect: EVERYONE
     },
     "SupplierView.shipmentRequests#thenBy" => {

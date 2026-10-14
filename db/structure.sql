@@ -1165,7 +1165,8 @@ CREATE TABLE public.shipment_requests (
     due_date date,
     cancelled_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    sales_order_no character varying
 );
 
 ALTER TABLE ONLY public.shipment_requests FORCE ROW LEVEL SECURITY;
@@ -4837,6 +4838,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261014200000'),
 ('20261014100000'),
 ('20261014000000'),
 ('20261013000100'),

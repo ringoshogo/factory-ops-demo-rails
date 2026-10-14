@@ -38,6 +38,24 @@ RSpec.describe Inventory::Stocks do
 
   # シードと E2E の世界の準備のための安全在庫の設定。自社の在庫の行だけを変え、数量と移動履歴には触れない。
   # 本番の環境では DEMO_WORLD_ENABLED=1 のときだけ呼べる（docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
+  # 受注の品目の一覧が安全在庫で並べるために結ぶ副問い合わせ。他社の在庫を使わないことは、RLS を開いた
+  # packs/sales/spec/public/sales/catalog_spec.rb が確かめる
+  describe ".safety_stocks_sql" do
+    it "自社の在庫の品目 ID と安全在庫を、役割の名前の列で返す" do
+      own = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:stock, safety_stock: 7) }
+      Tenancy.with_tenant(other.id) { FactoryBot.create(:stock, safety_stock: 9) }
+
+      rows = Tenancy.with_tenant(supplier.id) do
+        subquery = described_class.safety_stocks_sql(actor)
+        table = subquery.as("s")
+        ActiveRecord::Base.lease_connection.select_rows(
+          Arel::SelectManager.new(table).project(subquery.column(table, :item_id), subquery.column(table, :safety_stock)).to_sql
+        )
+      end
+      expect(rows).to eq([ [ own.item_id, 7 ] ])
+    end
+  end
+
   describe ".set_safety_stock" do
     let!(:own) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:stock, on_hand: 10, safety_stock: 3) } }
     let!(:theirs) { Tenancy.with_tenant(other.id) { FactoryBot.create(:stock, on_hand: 10, safety_stock: 3) } }

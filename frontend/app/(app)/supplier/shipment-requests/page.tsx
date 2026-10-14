@@ -23,15 +23,15 @@ const ALL = { value: "", label: "すべて" };
 
 // 並べ替えの見出しは API の orderBy の field から作る
 const SORT = sortColumns<ShipmentRequestOrderField>(
-  { CUSTOMER_NAME: "取引先", DUE_DATE: "出荷期限", STATUS: "状況" },
+  { ORDER_NO: "受注番号", CUSTOMER_NAME: "取引先", DUE_DATE: "出荷期限", PLANNED_DATE: "出荷予定日", STATUS: "状況" },
   { CUSTOMER_NAME: { truncate: true } },
 );
 
 const COLUMNS: Column<ShipmentRequestOrderField>[] = [
-  { key: "orderNo", label: "受注番号" },
+  SORT.ORDER_NO,
   SORT.CUSTOMER_NAME,
   SORT.DUE_DATE,
-  { key: "planned", label: "出荷予定日" },
+  SORT.PLANNED_DATE,
   { key: "quantity", label: "数量", numeric: true },
   SORT.STATUS,
   { key: "actions", label: "操作" },

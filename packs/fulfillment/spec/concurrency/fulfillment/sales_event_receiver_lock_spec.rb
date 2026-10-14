@@ -8,7 +8,7 @@ RSpec.describe Fulfillment::SalesEventReceiver do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }
   let(:event) do
-    Contracts::SalesOrderReadyForShipment.new(sales_order_id: SecureRandom.uuid, supplier_tenant_id: supplier.id,
+    Contracts::SalesOrderReadyForShipment.new(sales_order_id: SecureRandom.uuid, sales_order_no: "SO-000042", supplier_tenant_id: supplier.id,
       buyer_tenant_id: buyer.id, purchase_order_id: SecureRandom.uuid, due_date: "2026-10-31",
       lines: [ { "sales_order_line_id" => SecureRandom.uuid, "purchase_order_line_id" => SecureRandom.uuid,
         "item_id" => SecureRandom.uuid, "quantity" => 4 } ])

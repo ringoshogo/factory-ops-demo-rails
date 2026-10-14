@@ -438,7 +438,7 @@ Active Record の関連は、どの段にも当たらない。関連はコンテ
 以下、2 段目と 3 段目を述べる。
 
 - **可視範囲（scope）**：各コンテキストの policy の `relation_scope` に置く。コンテキストの公開 API は、操作者を必須の引数に取り、内部で scope を掛けてから値を返す。操作者を渡さずにレコードを返す公開 API は作らない。scope は所有の条件を明示し、RLS に任せない。自社のデータを返す scope は `owner_tenant_id` が操作者のテナントであることを、経路 3 の scope は `buyer_tenant_id` が操作者のテナントであることと権限付与を条件にする。RLS は経路 1〜3 の相手の行も返すので、RLS に任せると、受注側の一覧や ID 指定の入口に相手の公開品目・取引関係・出荷が自社の物として混ざる。型の `show?` も同じ条件で判定する。
-- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。ログインの `Partnerships::Authentication.authenticate` は RLS の外で動く認証専用の関数でメールアドレスから引き、シードと E2E の準備がテナントを作る `Partnerships::Onboarding.register` は、作ったテナントの中でだけユーザーを書く。同じ準備が、作った世界をもう一度作らないために引く `Partnerships::Onboarding.tenant_id(code:)` も、テナントが決まる前の入口で、テナントの ID だけを返す。どちらも、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（`Platform::DemoWorldGate`）。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）。在庫の品目の写しを書く `Inventory::ItemLabels.put` と、それを元から作り直す `Sales::Catalog.rebuild_item_labels`（rake タスク `read_models:rebuild` が呼ぶ）も、この入口の公開 API で、件数だけを返す。`put` は品目の保存と取り込み（操作者のいる入口）の中からも呼ばれるが、写しは誰が保存しても同じ値になるので、操作者を取らない（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）
+- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。ログインの `Partnerships::Authentication.authenticate` は RLS の外で動く認証専用の関数でメールアドレスから引き、シードと E2E の準備がテナントを作る `Partnerships::Onboarding.register` は、作ったテナントの中でだけユーザーを書く。同じ準備が、作った世界をもう一度作らないために引く `Partnerships::Onboarding.tenant_id(code:)` も、テナントが決まる前の入口で、テナントの ID だけを返す。どちらも、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（`Platform::DemoWorldGate`）。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）。在庫の品目の写しを書く `Inventory::ItemLabels.put` と、それを元から作り直す `Sales::Catalog.rebuild_item_labels`（rake タスク `read_models:rebuild` が呼ぶ）も、この入口の公開 API で、件数だけを返す。同じタスクが出荷依頼の受注番号の写しを作り直すために呼ぶ `Sales::SalesOrders.order_numbers`（受注の ID と受注番号の組を返す）と `Fulfillment::ShipmentRequests.put_order_numbers`（書き直した数を返す）も、この入口の公開 API である。`put` は品目の保存と取り込み（操作者のいる入口）の中からも呼ばれるが、写しは誰が保存しても同じ値になるので、操作者を取らない（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）
 - **型・入口・操作ごとの規則**：GraphQL の基底クラスが、宣言された policy の規則を評価する。
 
 policy は、コンテキストの公開 API として `packs/<パッケージ>/app/public/<名前空間>/` に置く。GraphQL 層は、公開 API が返す値に対して同じ policy の規則を評価する。scope と規則が同じ policy クラスにあるので、可視範囲の定義は 1 か所に保たれる（`decisions.md` 2 章「可視範囲」）。
@@ -812,21 +812,24 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`・`thenBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。`orderBy` が 1 つ目の並べ替えの列、`thenBy` が 2 つ目からの列で、合わせて 3 つまで並べる。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前）か、一覧のパッケージに写した表（在庫の品目のコードと名前。`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`・`thenBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。`orderBy` が 1 つ目の並べ替えの列、`thenBy` が 2 つ目からの列で、合わせて 3 つまで並べる。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前・品目の安全在庫）か、一覧のパッケージに写した値（在庫の品目のコードと名前・出荷依頼の受注番号。`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
 
 | 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） |
 |---|---|---|
 | `supplier.salesOrders` | `ORDER_NO`・`ORDER_DATE`・`DUE_DATE`・`CUSTOMER_NAME`・`TOTAL_AMOUNT`・`STATUS` | `customerTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
 | `buyer.purchaseOrders` | `ORDER_NO`・`ORDER_DATE`・`DESIRED_DELIVERY_ON`・`SUPPLIER_NAME`・`TOTAL_AMOUNT`・`STATUS` | `supplierTenantId`、`orderDateFrom`・`orderDateTo`、`statuses` |
-| `supplier.shipmentRequests` | `DUE_DATE`・`CUSTOMER_NAME`・`STATUS` | `statuses` |
+| `supplier.shipmentRequests` | `ORDER_NO`・`DUE_DATE`・`PLANNED_DATE`・`CUSTOMER_NAME`・`STATUS` | `statuses` |
 | `supplier.stocks` | `ITEM_CODE`・`ITEM_NAME`・`ON_HAND`・`ALLOCATED`・`AVAILABLE`（`on_hand - allocated`）・`SAFETY_STOCK` | `belowSafetyStock`、`keyword` |
 | `supplier.stockMovements` | — | `types` |
-| `supplier.items` | `CODE`・`NAME` | `keyword` |
+| `supplier.items` | `CODE`・`NAME`・`UNIT`・`UNIT_PRICE`・`SAFETY_STOCK` | `keyword` |
 
-- 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。
+- 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。出荷依頼の `ORDER_NO` は、出荷が受注に依存しないので、「出荷可能」のイベントで運んで出荷依頼に写した受注番号（`shipment_requests.sales_order_no`、`data-model.md`「出荷（`fulfillment`）」）で並べる。表示の受注番号は、いまと同じく `ShipmentRequest.salesOrder` から受注の値を出す。写しの空の出荷依頼（作り直しのタスクを流す前の既存の DB）は、値の無い行として最後に並ぶ。
 - 取引先の名前（`CUSTOMER_NAME`・`SUPPLIER_NAME`）は、取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が返すテナントの ID と名前の副問い合わせから、伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）の行の名前を、行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べる。結合と違い、結ぶ条件を書き誤って 2 行以上が当たると、行を増やさずに SQL のエラーになる。名前は `tenants.name` の照合順序 `ja-x-icu` で並べ、流用元の画面の `Intl.Collator("ja")` と同じ規則の並びになる（同じと言える範囲は `data-model.md`「文字列の照合順序」）。名前全体の読みの順ではなく、よく使う漢字はその漢字の音読みの順に並ぶ。
 - 合計金額（`TOTAL_AMOUNT`）は、明細の数量と単価の積の和を、受注は `Sales::SalesOrderAmount`、発注は `Purchasing::PurchaseOrderAmount` の SQL の式で計算して並べる。単価の無い明細（受注は品番照合待ち、発注は受注確定の前）が 1 つでもあれば、合計は空になり、値の無い行として最後に並ぶ。一覧の `totalAmount` も同じ式を読むので、空の合計は、どの画面でも金額の代わりに空の理由（「照合待ち」・「確定待ち」）を出し、一部の合計を出さない（`frontend/lib/format.ts` の `totalAmountText`）。単価は `bigint` の上限まで入りうるので、積と和は `numeric` で計算する。和は、明細の件数の上限（100）・数量の上限（`integer`）・単価の上限（`bigint`）の積を超えないので 31 桁に収まる。
 - 状況（`STATUS`）は、状況の式の値を業務の進み順の位置で並べる（「状況の enum」）。
+- 品目の単価（`UNIT_PRICE`）は、受注の公開 API `Sales::ItemPrices.today_price` が返す、品目ごとに今日の単価の行を 1 つ引くスカラーの副問い合わせで並べる。条件は表示の `Item.unitPrice` が読む `price_at` と同じで、今日は Ruby の `Sales::ItemPrice.today` で渡す。単価は `bigint` まで入りうるので、カーソルには合計金額と同じく 10 進の文字列で書く。
+- 品目の安全在庫（`SAFETY_STOCK`）は、在庫の公開 API `Inventory::Stocks.safety_stocks_sql` が操作者の scope を掛けて返す品目 ID と安全在庫の副問い合わせから、品目 ID の行を引くスカラーの副問い合わせで並べる。在庫の行の無い品目は、値の無い行として最後に並ぶ。
+- 出荷依頼の出荷予定日（`PLANNED_DATE`）は、有効な出荷指示の出荷予定日を、状況の式が出荷指示を読むのと同じ条件で出荷依頼ごとに 1 行引くスカラーの副問い合わせで並べる。有効な出荷指示の無い出荷依頼は、値の無い行として最後に並ぶ。
 - 在庫の品目コードと品目名（`ITEM_CODE`・`ITEM_NAME`）と在庫の `keyword` は、在庫のパッケージの品目の写し（`item_labels`、`data-model.md`「在庫（`inventory`）」）を、所有テナントと品目 ID の組で外部結合して読む。品目 ID だけで結ぶと、RLS が他社の写しを見せたときに、他社の名義で同じ品目 ID を指す写しを並びと検索に使う。写しの無い在庫は、値の無い行として最後に並び、`keyword` には当たらない。品目名（品目の一覧の `NAME` と在庫の `ITEM_NAME`）も、列の照合順序 `ja-x-icu` で取引先の名前と同じ規則の並びになる。
 - 受注日と発注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す。
 - `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ scope で絞る（「読み取りの一覧」の安全在庫）。偽か省いたときは絞らない。
@@ -861,7 +864,7 @@ enum PurchaseOrderOrderField { ORDER_NO ORDER_DATE DESIRED_DELIVERY_ON SUPPLIER_
 input PurchaseOrderFilter { supplierTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date, statuses: [PurchaseOrderStatus!] }
 
 input ShipmentRequestOrder { field: ShipmentRequestOrderField!, direction: OrderDirection! }
-enum ShipmentRequestOrderField { DUE_DATE CUSTOMER_NAME STATUS }
+enum ShipmentRequestOrderField { DUE_DATE CUSTOMER_NAME STATUS ORDER_NO PLANNED_DATE }
 input ShipmentRequestFilter { statuses: [ShipmentRequestStatus!] }
 
 input StockOrder { field: StockOrderField!, direction: OrderDirection! }
@@ -871,13 +874,13 @@ input StockFilter { belowSafetyStock: Boolean, keyword: String }
 input StockMovementFilter { types: [StockMovementType!] }
 
 input ItemOrder { field: ItemOrderField!, direction: OrderDirection! }
-enum ItemOrderField { CODE NAME }
+enum ItemOrderField { CODE NAME UNIT UNIT_PRICE SAFETY_STOCK }
 input ItemFilter { keyword: String }
 ```
 
 `orderBy` を省いた一覧は、主キーの UUIDv7 で作成順の新しいものから並べ、主キーをカーソルにする。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。取り込みの失敗した行（`Import.rowErrors`）は、行番号の昇順に並べ、行番号をカーソルにする。
 
-`orderBy` を渡した一覧は「列 1、列 2、…、主キー」の組で並べ、列ごとに向きを持ち、主キーを最後の列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、列ごとに向きによらず後ろに置く。カーソルの後ろの行は、「ある列より前の列がすべてカーソルと同じ値で、その列がカーソルより後」のどれかか、「すべての列が同じ値で、主キーが後」である。前の列が同じことは、空どうしも同じとみなす `IS NOT DISTINCT FROM` で比べる（`=` で比べると、前の列の値が空の行で、後ろの列がカーソルより後の行が抜ける）。列ごとの「後」は、カーソルの値が空なら無く、値があれば「値が後か、値が空」である。列が 1 つなら、後ろは、カーソルの値が空なら「値が空で主キーが後のもの」だけになり、値があれば「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、列ごとの名前・向き・値を順に並べ、最後に主キーを置いた配列を JSON にして Base64 で包んだ不透明な文字列である。列が 1 つなら、名前・向き・値・主キーの 4 つになる。合計金額の値は、`bigint` を超えうるので JSON の数にせず整数の 10 進の文字列で書き、読むときは 31 桁までの数字だけを受け付ける。形の誤ったカーソルと、別の並べ替え（列の数・名前・向きのどれかの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
+`orderBy` を渡した一覧は「列 1、列 2、…、主キー」の組で並べ、列ごとに向きを持ち、主キーを最後の列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、列ごとに向きによらず後ろに置く。カーソルの後ろの行は、「ある列より前の列がすべてカーソルと同じ値で、その列がカーソルより後」のどれかか、「すべての列が同じ値で、主キーが後」である。前の列が同じことは、空どうしも同じとみなす `IS NOT DISTINCT FROM` で比べる（`=` で比べると、前の列の値が空の行で、後ろの列がカーソルより後の行が抜ける）。列ごとの「後」は、カーソルの値が空なら無く、値があれば「値が後か、値が空」である。列が 1 つなら、後ろは、カーソルの値が空なら「値が空で主キーが後のもの」だけになり、値があれば「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、列ごとの名前・向き・値を順に並べ、最後に主キーを置いた配列を JSON にして Base64 で包んだ不透明な文字列である。列が 1 つなら、名前・向き・値・主キーの 4 つになる。合計金額と品目の単価の値は、`bigint` を超えうるか `bigint` まで入るので JSON の数にせず整数の 10 進の文字列で書き、読むときは 31 桁までの数字だけを受け付ける。形の誤ったカーソルと、別の並べ替え（列の数・名前・向きのどれかの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
 
 `thenBy` は、`orderBy` を省いて渡すか、`orderBy` と合わせて 4 つ以上の列になるか、同じ `field` を 2 回書くと、引数の検証でトップレベルのエラーにする（`Resolvers::SortArguments`）。列を 3 つまでにするのは、カーソルの後ろの条件が列の数の 2 乗で長くなるからで、サーバーの上限は `Page::MAX_SORTS` に、画面の見出しで足せる列の数は `frontend/lib/list.ts` の `MAX_SORTS` にあり、`spec/graphql/sort_arguments_spec.rb` が 2 つを同じ値に保つ。2 つ目からの列を、`orderBy` をリストに変えずに別の引数で足したのは、`orderBy` の型を変えると比較器が破壊的な変更に分類するからである（`../implementation-plan.md` M47 の判断）。画面は、一覧の見出しを Shift を押して押すと 2 つ目からの列を足し、ダッシュボードのかんばんは、未完了の受注の列を希望納期と受注番号の順に読む。
 

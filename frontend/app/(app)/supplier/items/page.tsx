@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { TextLink } from "@/components/app-link";
-import { ColumnHeads, sortColumns, sortCell, type Column } from "@/components/columns";
+import { columnClass, ColumnHeads, sortColumns, sortCell, type Column } from "@/components/columns";
 import { FilterBar, SearchForm } from "@/components/filter-bar";
 import { ItemDialog, PublishButton } from "@/components/item-forms";
 import { ListError } from "@/components/list-error";
@@ -15,16 +15,22 @@ import { UNREACHABLE_MESSAGE } from "@/lib/graphql/user-errors";
 import { nodesOf, parseSort, single, sortParams, toParams, type SearchParams } from "@/lib/list";
 import { ITEM_SORT_FIELDS, itemListVariables } from "@/lib/supplier-master-lists";
 
-// 並べ替えの見出しは API の orderBy の field から作る。単価・税率・在庫は API で並べられないので、ただの見出しにする
-const SORT = sortColumns<ItemOrderField>({ CODE: "品目コード", NAME: "品目名" }, { CODE: { truncate: true }, NAME: { truncate: true } });
+// 並べ替えの見出しは API の orderBy の field から作る。税率と有効在庫は API で並べられないので、ただの見出しにする。
+// 2 つは 1024〜1279px で隠し、表をパネルに収める (税率は編集のダイアログに、有効在庫は在庫の画面にある)。
+// API で並べられない列なので、URL の sort に書かれても既定の並びになり、隠れた列で並ぶことは無い
+const SORT = sortColumns<ItemOrderField>(
+  { CODE: "品目コード", NAME: "品目名", UNIT: "単位", UNIT_PRICE: "単価", SAFETY_STOCK: "安全在庫" },
+  { CODE: { truncate: true }, NAME: { truncate: true }, UNIT_PRICE: { numeric: true }, SAFETY_STOCK: { numeric: true } },
+);
 
 const COLUMNS: Column<ItemOrderField>[] = [
   SORT.CODE,
   SORT.NAME,
-  { key: "unit", label: "単位" },
-  { key: "unitPrice", label: "単価", numeric: true },
-  { key: "tax", label: "税率", numeric: true },
-  { key: "available", label: "有効在庫", numeric: true },
+  SORT.UNIT,
+  SORT.UNIT_PRICE,
+  { key: "tax", label: "税率", numeric: true, narrowHidden: true },
+  { key: "available", label: "有効在庫", numeric: true, narrowHidden: true },
+  SORT.SAFETY_STOCK,
   { key: "published", label: "カタログ" },
 ];
 
@@ -87,16 +93,17 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                       </TextLink>
                     ),
                     NAME: item.name,
-                    unit: item.unit,
-                    unitPrice: yen(item.unitPrice),
+                    UNIT: item.unit,
+                    UNIT_PRICE: yen(item.unitPrice),
                     tax: `${item.taxRatePercent}%`,
                     available: item.stock ? formatNumber(item.stock.available) : "—",
+                    SAFETY_STOCK: item.stock ? formatNumber(item.stock.safetyStock) : "—",
                     published: <StatusBadge style={item.published ? PUBLISHED : UNPUBLISHED} />,
                   };
                   return (
                     <TableRow key={item.id} data-testid="list-row">
                       {COLUMNS.map((c) => (
-                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} {...sortCell(c, sort)}>
+                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} className={columnClass(c)} {...sortCell(c, sort)}>
                           {content[c.key]}
                         </TableCell>
                       ))}

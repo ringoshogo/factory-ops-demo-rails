@@ -25,6 +25,7 @@ module Sales
     def self.publish_ready(order, lines)
       Contracts.publish(Contracts::SalesOrderReadyForShipment.new(
         sales_order_id: order.id,
+        sales_order_no: order.order_no,
         supplier_tenant_id: order.owner_tenant_id,
         buyer_tenant_id: order.customer_tenant_id,
         purchase_order_id: order.source_purchase_order_id,

@@ -36,10 +36,10 @@ RSpec.describe Sales::OrderAllocation do
     expect(ready).to eq([ Contracts::SalesOrderReadyForShipment ])
   end
 
-  it "出荷可能は、出荷が出荷計上で返す発注明細 ID と、宛先を決める受注側テナントを運ぶ" do
+  it "出荷可能は、出荷が出荷計上で返す発注明細 ID と、宛先を決める受注側テナントと、一覧を並べる受注番号を運ぶ" do
     stock_in(5)
     expect(Contracts).to receive(:publish) do |event|
-      expect(event.to_payload).to include("sales_order_id" => order.id, "supplier_tenant_id" => supplier.id,
+      expect(event.to_payload).to include("sales_order_id" => order.id, "sales_order_no" => order.order_no, "supplier_tenant_id" => supplier.id,
         "buyer_tenant_id" => order.customer_tenant_id, "purchase_order_id" => order.source_purchase_order_id)
       expect(event.lines.map { _1["purchase_order_line_id"] }).to eq(order.lines.map(&:source_purchase_order_line_id))
     end

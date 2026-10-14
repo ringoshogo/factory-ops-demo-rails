@@ -2,12 +2,9 @@ module Sales
   # 受注側が自社の品目カタログを読み書きする（docs/architecture/graphql-schema.md「読み取りの一覧」「mutation の一覧」）。
   # 品目の値の単価は、今日の単価を item_prices から引く（docs/adr/006 決定 5）
   module Catalog
-    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）
-    ORDER_COLUMNS = { code: [ Item.arel_table[:code], :string ], name: [ Item.arel_table[:name], :string ] }.freeze
-
     # order_by は { field:, direction: } の配列で、1 つ目の列から順に並べる。空なら作った順の新しいものから並べる。filter の keyword で品目コードか品目名を検索する
     def self.items(actor, first:, after:, order_by: [], filter: {})
-      Page.of(searched(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, ORDER_COLUMNS)) do |items|
+      Page.of(searched(Scope.call(actor, :own), **filter), first:, after:, sort: Page::Sort.of(order_by, order_columns(actor))) do |items|
         to_values(actor, items)
       end
     end
@@ -122,6 +119,18 @@ module Sales
       OperationResult.success(to_values(actor, [ item ]).first)
     end
 
+    # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。単価は今日の単価の副問い合わせで、bigint まで入るので
+    # カーソルの型を :decimal にする（:integer は integer の範囲しか受け付けず、それを超える単価の品目がページの境目に来るとカーソルを拒む）。
+    # 安全在庫は在庫の公開 API の副問い合わせから引き、在庫の行の無い品目は空になる
+    def self.order_columns(actor)
+      items = Item.arel_table
+      { code: [ items[:code], :string ],
+        name: [ items[:name], :string ],
+        unit: [ items[:unit], :string ],
+        unit_price: [ ItemPrices.today_price(actor, items[:id]), :decimal ],
+        safety_stock: [ Inventory::Stocks.safety_stocks_sql(actor).lookup(:safety_stock, :item_id, items[:id]), :integer ] }
+    end
+
     # 品目コードか品目名を検索する。規則は在庫の一覧の検索と同じ Keyword にある
     def self.searched(relation, keyword: nil) = Keyword.search(relation, keyword, Item.arel_table[:code], Item.arel_table[:name])
 
@@ -135,6 +144,6 @@ module Sales
         ItemValue.new(**item.slice(*(ItemValue.members - [ :unit_price ]).map(&:to_s)).symbolize_keys, unit_price: prices.fetch(item.id))
       end
     end
-    private_class_method :searched, :label, :to_values
+    private_class_method :order_columns, :searched, :label, :to_values
   end
 end

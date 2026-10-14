@@ -157,6 +157,53 @@ RSpec.describe "カタログの GraphQL", type: :request do
       expect(second.dig("pageInfo", "hasNextPage")).to be(false)
     end
 
+    # 1 件ずつのページで最後までたどった品目コード。ページの境目ごとに、その並べ替えのカーソルで続きを読む。
+    # 並べ替えを受け付けなければ、data が無く nil を返す
+    def item_codes(order)
+      query = <<~GRAPHQL
+        query($after: String, $orderBy: ItemOrder, $thenBy: [ItemOrder!]) {
+          supplier { items(first: 1, after: $after, orderBy: $orderBy, thenBy: $thenBy) { nodes { code } pageInfo { hasNextPage endCursor } } }
+        }
+      GRAPHQL
+      codes = []
+      after = nil
+      loop do
+        page = graphql_body(query, after:, **order).dig("data", "supplier", "items")
+        break unless page
+
+        codes.concat(page.fetch("nodes").map { _1["code"] })
+        break codes unless page.dig("pageInfo", "hasNextPage")
+
+        after = page.dig("pageInfo", "endCursor")
+      end
+    end
+
+    # 安全在庫は在庫のパッケージの値で、在庫の行の無い品目（A-1）は空として、向きによらず最後に並ぶ
+    it "orderBy の安全在庫で並べ、在庫の行の無い品目を最後に置き、そのカーソルで続きを返す" do
+      Tenancy.with_tenant(supplier.id) do
+        FactoryBot.create(:stock, item_id: published.id, safety_stock: 3)
+        FactoryBot.create(:item, code: "C-1").tap { FactoryBot.create(:stock, item_id: _1.id, safety_stock: 8) }
+      end
+      login_as(supplier_member)
+
+      expect(item_codes(orderBy: { field: "SAFETY_STOCK", direction: "DESC" })).to eq(%w[C-1 B-1 A-1])
+      expect(item_codes(orderBy: { field: "SAFETY_STOCK", direction: "ASC" })).to eq(%w[B-1 C-1 A-1])
+    end
+
+    # 単価は今日の販売単価で並ぶ。単位の同じ品目（個）を単価の降順に並べ、単位の違う品目（箱）は後ろに来る
+    it "orderBy の単位と thenBy の今日の単価で並べ、そのカーソルで続きを返す" do
+      Tenancy.with_tenant(supplier.id) do
+        FactoryBot.create(:item, code: "C-1", unit: "箱", unit_price: 50)
+        FactoryBot.create(:item, code: "D-1", unit: "個", unit_price: 500)
+        FactoryBot.create(:item, code: "E-1", unit: "個", unit_price: 80)
+      end
+      login_as(supplier_member)
+
+      # A-1・B-1 は単位が個で、単価が既定の 120
+      expect(item_codes(orderBy: { field: "UNIT", direction: "ASC" }, thenBy: [ { field: "UNIT_PRICE", direction: "DESC" } ]))
+        .to eq(%w[D-1 A-1 B-1 E-1 C-1])
+    end
+
     it "orderBy を省いた thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
       login_as(supplier_member)
       query = "query($orderBy: ItemOrder, $thenBy: [ItemOrder!]) { supplier { items(orderBy: $orderBy, thenBy: $thenBy) { totalCount } } }"
