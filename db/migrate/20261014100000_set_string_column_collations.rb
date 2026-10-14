@@ -12,17 +12,14 @@ class SetStringColumnCollations < ActiveRecord::Migration[8.1]
     [ :item_labels, :name ] => "ja-x-icu"
   }.freeze
 
-  # 照合順序を変えると表を書き直し、items の (owner_tenant_id, code) の一意索引を作り直す。strong_migrations はこれを
-  # 安全な型の変更に数えずに止める。表は小さく、公開の配置は毎日 DB ごと作り直すので、書き直す間のロックを許す（docs/adr/001）
+  # 照合順序を変えると、表を ACCESS EXCLUSIVE でロックし、items の (owner_tenant_id, code) の一意索引を作り直す。
+  # strong_migrations 2.8 は長さを変えない varchar の型の変更を安全に数え、照合順序を見ないので止めない。
+  # 表は小さく、公開の配置は毎日 DB ごと作り直すので、このロックを許す（docs/adr/001）
   def up
-    safety_assured do
-      COLLATIONS.each { |(table, column), collation| change_column table, column, :string, collation: }
-    end
+    COLLATIONS.each { |(table, column), collation| change_column table, column, :string, collation: }
   end
 
   def down
-    safety_assured do
-      COLLATIONS.each_key { |table, column| change_column table, column, :string, collation: "default" }
-    end
+    COLLATIONS.each_key { |table, column| change_column table, column, :string, collation: "default" }
   end
 end
