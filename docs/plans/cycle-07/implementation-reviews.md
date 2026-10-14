@@ -346,6 +346,8 @@ bin/check-commit-refs            # 通った
 
 `bin/ci` の 1 回目（`f29bd10`）は、公開 API の単体の spec が `order_by:` に 1 つの列のハッシュを渡したまま 17 件落ち（3051 examples, 17 failures）、`04df574` で直した。分岐の網羅率の警告は 0 件だった。
 
+実装の記録を載せた `87214b0` の PR の CI はすべて通った（`test` 6 分 8 秒、`e2e` 3 分 29 秒、`images` 1 分 57 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38511905424)）。
+
 ### 残件の処理
 
 引当先が M47 の行は、着手の前と PR の前に台帳を読んだ。OI-187（`decided`、見出しで 2 つ目からの列を足す作者の判断）は作るもの 4 で、OI-195（`judgment`、Shift の操作の細部）は計画のとおりに反映した。実装で決めたことを OI-198（`judgment`）に、Chromium でしか確かめられないことを IB-121 に積んだ。作者の判断の受け口（`decisions.md`）に、M47 への判断は書かれていなかった。
