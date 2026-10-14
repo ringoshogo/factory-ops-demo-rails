@@ -40,6 +40,9 @@ export const SALES_ORDER_STATUS_ORDER: readonly SalesOrderStatus[] = [
   "CANCELLED",
 ];
 
+/** 取り消した受注の状況。合計の空の理由を、待ちではなく取消として出す (totalAmountText)。 */
+export const CANCELLED_SALES_ORDER_STATUSES: readonly SalesOrderStatus[] = ["CANCELLED"];
+
 export const PURCHASE_ORDER_STATUS: Record<PurchaseOrderStatus, StatusStyle> = {
   SENT: { label: "送信済み", tone: "received" },
   AWAITING_SUPPLIER_CONFIRMATION: { label: "受注側で確認中", tone: "partial" },
@@ -59,6 +62,9 @@ export const PURCHASE_ORDER_STATUS_ORDER: readonly PurchaseOrderStatus[] = [
   "CANCELLED",
   "SUPPLIER_CANCELLED",
 ];
+
+/** 取り消した発注の状況。発注側の取消と受注側の取消の両方を含む。 */
+export const CANCELLED_PURCHASE_ORDER_STATUSES: readonly PurchaseOrderStatus[] = ["CANCELLED", "SUPPLIER_CANCELLED"];
 
 export const SHIPMENT_REQUEST_STATUS: Record<ShipmentRequestStatus, StatusStyle> = {
   READY: { label: "出荷待ち", tone: "allocated" },

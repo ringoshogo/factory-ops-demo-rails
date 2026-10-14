@@ -145,7 +145,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                       />
                     ),
                     lines: `${o.lines.length} 件`,
-                    TOTAL_AMOUNT: totalAmountText(o.totalAmount, "purchaseOrder"),
+                    TOTAL_AMOUNT: totalAmountText(o.totalAmount, "purchaseOrder", o.status),
                   };
                   return (
                     <TableRow key={o.id} data-testid="list-row">

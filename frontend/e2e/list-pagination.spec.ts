@@ -68,7 +68,7 @@ test("並べ替えの見出しを押すと、URL の sort・dir と並びが変�
   await expect(page).toHaveURL(/sort=name&dir=asc/);
 });
 
-/** 受注一覧の n 列目 (1 から) のセルの文字。 */
+/** 一覧の n 列目 (1 から) のセルの文字。 */
 async function column(page: Page, n: number): Promise<string[]> {
   return rows(page).locator(`td:nth-child(${n})`).allInnerTexts();
 }
@@ -76,7 +76,22 @@ async function column(page: Page, n: number): Promise<string[]> {
 /** 続けて同じ値が並ぶところを 1 つにまとめる。 */
 const runs = (values: readonly string[]) => values.filter((v, i) => i === 0 || values[i - 1] !== v);
 
-test("受注一覧を取引先の名前と受注合計で並べ、照合待ちの受注は末尾に並び、一覧・詳細・かんばんのどれでも「照合待ち」と出る", async ({ page }, testInfo) => {
+/** 一覧の n 列目 (1 から) のセルの文字がちょうど text の行のうち、最初の行の詳細へのリンク。 */
+const rowLink = (page: Page, n: number, text: string) =>
+  rows(page)
+    .filter({ has: page.locator(`td:nth-child(${n})`, { hasText: new RegExp(`^${text}$`) }) })
+    .first()
+    .getByRole("link");
+
+/** 伝票の詳細へのリンクの、道の末尾の ID。 */
+async function idOf(link: ReturnType<Page["getByRole"]>): Promise<string> {
+  return (await link.getAttribute("href"))!.split("/").at(-1)!;
+}
+
+// 合計の無い受注の欄の文字。品番照合待ちの受注は「照合待ち」、照合待ちのまま取り消した受注は「取消」
+const NO_TOTAL = ["照合待ち", "取消"];
+
+test("受注一覧を取引先の名前と受注合計で並べ、合計の無い受注は末尾に並び、照合待ちの受注は一覧・詳細・かんばんのどれでも「照合待ち」と出る", async ({ page }, testInfo) => {
   await login(page, testInfo, "supplier_admin");
   await page.goto("/supplier/sales-orders");
 
@@ -98,20 +113,48 @@ test("受注一覧を取引先の名前と受注合計で並べ、照合待ち�
   await page.getByRole("columnheader", { name: "受注合計" }).getByRole("button").click();
   await expect(page).toHaveURL(/sort=total_amount&dir=asc/);
   const totals = await column(page, 6);
-  const awaitingFrom = totals.indexOf("照合待ち");
-  expect(awaitingFrom).toBeGreaterThan(0);
-  expect(totals.slice(awaitingFrom).every((t) => t === "照合待ち")).toBe(true);
-  const amounts = totals.slice(0, awaitingFrom).map((t) => BigInt(t.replace(/[^0-9]/g, "")));
+  const noTotalFrom = totals.findIndex((t) => NO_TOTAL.includes(t));
+  expect(noTotalFrom).toBeGreaterThan(0);
+  expect(totals.slice(noTotalFrom).every((t) => NO_TOTAL.includes(t))).toBe(true);
+  // 末尾には、照合待ちの受注も、照合待ちのまま取り消した受注も並ぶ
+  expect(new Set(totals.slice(noTotalFrom))).toEqual(new Set(NO_TOTAL));
+  const amounts = totals.slice(0, noTotalFrom).map((t) => BigInt(t.replace(/[^0-9]/g, "")));
   expect(amounts).toEqual([...amounts].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
 
-  // 末尾の照合待ちの受注を、詳細とかんばんのカードでも見る
-  const link = rows(page).last().getByRole("link");
-  const href = await link.getAttribute("href");
-  const orderId = href!.split("/").at(-1)!;
+  // 一覧で「照合待ち」と出た受注を、詳細とかんばんのカードでも見る。末尾の行は取り消した受注のことがあるので、文字で選ぶ
+  const link = rowLink(page, 6, "照合待ち");
+  const orderId = await idOf(link);
   await link.click();
   await expect(page.getByTestId("order-total")).toHaveText("照合待ち");
   await page.goto("/supplier/dashboard");
-  await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`)).toContainText("照合待ち");
+  await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`).getByTestId("card-total")).toHaveText("照合待ち");
+});
+
+test("照合待ちのまま取り消した受注と発注は、取消済のタブ・詳細・かんばんの合計の欄に「取消」と出る", async ({ browser }, testInfo) => {
+  const page = await (await browser.newContext()).newPage();
+  await login(page, testInfo, "supplier_admin");
+  await page.goto("/supplier/sales-orders?tab=cancelled");
+  const totals = await column(page, 6);
+  expect(totals).toContain("取消");
+  // 対照：単価の決まった明細だけの受注は、取り消しても合計を金額で出す
+  expect(totals.some((t) => t.endsWith(" 円"))).toBe(true);
+
+  const link = rowLink(page, 6, "取消");
+  const orderId = await idOf(link);
+  await link.click();
+  await expect(page.getByTestId("order-total")).toHaveText("取消");
+  // かんばんの取消済の列にも、同じ受注のカードが「取消」と出る
+  await page.goto("/supplier/dashboard");
+  await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`).getByTestId("card-total")).toHaveText("取消");
+
+  // 発注側の一覧では、受注側により取り消した発注の合計の欄に「取消」と出る
+  const buyer = await (await browser.newContext()).newPage();
+  await login(buyer, testInfo, "granted_buyer_admin");
+  await buyer.goto("/buyer/purchase-orders?tab=cancelled");
+  const purchaseTotals = await column(buyer, 7);
+  expect(purchaseTotals).toContain("取消");
+  expect(purchaseTotals.some((t) => t.endsWith(" 円"))).toBe(true);
+  expect(purchaseTotals).not.toContain("確定待ち");
 });
 
 /** URL の sort と dir。 */

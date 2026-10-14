@@ -93,7 +93,7 @@ export function SalesOrderDetail({ order, businessDate, admin }: { order: Order;
         <div>
           <dt className="text-muted-foreground">受注合計（税抜き）</dt>
           <dd data-testid="order-total" className="tabular-nums">
-            {totalAmountText(order.totalAmount, "salesOrder")}
+            {totalAmountText(order.totalAmount, "salesOrder", order.status)}
           </dd>
         </div>
       </dl>

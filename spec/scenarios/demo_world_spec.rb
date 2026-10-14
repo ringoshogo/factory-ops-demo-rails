@@ -135,6 +135,18 @@ RSpec.describe DemoWorld do
         .to include(start_with(DemoWorld::LONG_BUYER_NAME))
     end
 
+    # 合計の欄の「取消」（frontend/lib/format.ts の totalAmountText）を、E2E が一覧・詳細・かんばんで確かめる受注と発注
+    it "品番照合待ちのまま取り消した、合計を持たない受注と発注を持つ" do
+      buyer = actor_of(world, "granted_buyer_admin")
+      sales_orders = as(supplier) { Sales::SalesOrders.list(_1, first: 100, after: nil).values }
+      purchase_orders = as(buyer) { Purchasing::PurchaseOrders.list(_1, first: 100, after: nil).values }
+
+      expect(sales_orders.select { _1.status == :cancelled }.map(&:total_amount)).to include(nil, be_positive)
+      expect(purchase_orders.select { _1.status == :supplier_cancelled }.map(&:total_amount)).to include(nil, be_positive)
+      # 対照：取り消していない受注にも、合計を持たない照合待ちの受注がある
+      expect(sales_orders.select { _1.status == :awaiting_part_match }.map(&:total_amount)).to include(nil)
+    end
+
     # 画面の一覧は 1 ページに 20 件を読む。E2E の一覧のページの確かめ（frontend/e2e/list-pagination.spec.ts）は、
     # 品目が 1 ページを超えて 2 ページ目まで続くことを当てにする
     it "品目は 22 件で、画面の 1 ページ（20 件）を超える" do

@@ -45,14 +45,29 @@ test("発注詳細の検収と取消依頼", async ({ browser }, testInfo) => {
   const admin = await as(browser, testInfo, "granted_buyer_admin");
   const member = await as(browser, testInfo, "granted_buyer_member");
   const inbound = await firstDetail(admin, "/buyer/purchase-orders?tab=inbound", "/buyer/purchase-orders/");
+  // 取消依頼は出荷の前の発注にだけ出す。回答を待つ依頼のある発注には重ねて出さないので、印の無い行を選ぶ
+  await admin.goto("/buyer/purchase-orders?status=ACCEPTED");
+  const accepted = await admin
+    .getByTestId("list-row")
+    .filter({ hasNot: admin.getByTestId("status-mark") })
+    .first()
+    .locator('a[href^="/buyer/purchase-orders/"]')
+    .first()
+    .getAttribute("href");
+  expect(accepted, "印の無い受注済の発注がある").toBeTruthy();
 
   await admin.goto(inbound);
   await expect(admin.getByRole("button", { name: "検収する" })).toBeVisible();
+  // 入荷予定の発注は出荷した後なので、取消依頼を出さない
+  await expect(admin.getByRole("button", { name: "取消を依頼する" })).toHaveCount(0);
+  await admin.goto(accepted!);
   await expect(admin.getByRole("button", { name: "取消を依頼する" })).toBeVisible();
 
   await member.goto(inbound);
   await expect(member.getByTestId("inbound-shipment").first()).toBeVisible();
   await expect(member.getByRole("button", { name: "検収する" })).toHaveCount(0);
+  await member.goto(accepted!);
+  await expect(member.getByTestId("order-line").first()).toBeVisible();
   await expect(member.getByRole("button", { name: "取消を依頼する" })).toHaveCount(0);
 });
 
