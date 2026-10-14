@@ -273,20 +273,49 @@ TEST_DATABASE=factory_ops_m49_test bin/ci   # すべての工程が通った。r
 
 `m47-multi-sort`（base は `main`、PR #87）。M49 の `m49-collations` の先端 `e89ba05` から切った。M49（#86）は着手の後に main にマージされたので、M47 の差分は `e89ba05..` である。
 
-実装レビューはまだ受けていない。
+Codex も Claude も Go だった。どちらの系統も、`e89ba05..5a8bbc8` の diff を `5a8bbc8` の版で読んだ。Codex は手元の DB への接続を実行の環境に拒まれ、rspec・E2E・CI は証跡の記録を前提にし、`Page` のカーソルの後ろの条件を式を評価する代わりのオブジェクトで 516 とおりの境目について確かめ、`list.ts` の純関数を壊して落ちることを確かめた。Claude は `factory_ops_m47_review_test` で完了条件の spec と `purchase_orders_spec.rb` を流し（1674 examples, 0 failures）、副問い合わせ・空を含む合計・状況を組み合わせた 3 とおりの 3 つの列の並びを 1 件ずつのページで最後までたどり、1 ページで読んだ並びと一致することを確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Medium 1） | 出していない（High が無かった） |
+| Claude | Go（Medium 2、Low 3） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘（R2・R3） |
+| 参照の維持 | 指摘（R1） | 指摘（R4・R5） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | R1：証跡の「計画との違い」が計画の作るもの 4 の「操作」「表示」を直したと書くが、計画の節は直っていない（OI-198 の形、Shift を押した Enter、番号の幅のセルの空け方）。公開 API の `order_by:` の配列と、上限の example を発注の一覧で確かめることも計画の節に無い | 計画の節を直す文の置き換えの手順が、後ろの置き換えで止まって前の置き換えを書き出さずに終わっていた。作るもの 1 に公開 API の配列と `Page::Sort.of` の確かめを、作るもの 2 に上限ちょうどと上限 + 1 を発注の一覧で確かめることを、作るもの 4 の「操作」に OI-198 の形と Shift を押した Enter を、「表示」に番号の幅のセルの空け方と変種の URL を書いた。`git grep` で「立つ見込み」「同じ列は 昇順 → 降順 → 既定の並び）。Shift」が計画に残らないことを確かめた | この節を載せた commit |
+| Medium | Claude | R2：`nextSort` の上限ちょうど（並びが 2 つのときに Shift で 3 つ目を足せること）の example が無い | `list.test.ts` の 3 つの並びの example に、2 つから 3 つ目を足す期待を足した。`current.length < MAX_SORTS - 1` に壊すと落ちることを確かめた | 同上 |
+| Low | Claude | R3：かんばんの example は引当済の列しか見ず、ほかの未完了の列から `thenBy` を外しても落ちない | `dashboard_spec.rb` に、`SupplierKanban.graphql` の 7 つの列の `orderBy` と `thenBy` を文書から読んで確かめる example を足した。受注済の列だけから `thenBy` を外すと落ちることを確かめた | 同上 |
+| Low | Claude | R4：`graphql-schema.md` が上限を `Page::MAX_SORTS` の 1 か所と書くが、画面にも `list.ts` の `MAX_SORTS` がある | 文書を 2 か所の形に直し、`spec/graphql/sort_arguments_spec.rb` に 2 つが同じ値であることを確かめる example を足した。画面の値を 4 に壊すと落ちることを確かめた | 同上 |
+| Low | Claude | R5：`sortable-head.tsx` に `onKeyDown` を置かない理由が無く、IB-121 が Shift を押した Enter を挙げていない | `onClick` の前に理由のコメントを書き、IB-121 に Shift を押した Enter も Chromium でしか確かめていないことを足した | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：`Page::Sort.of` に前の形（1 つの列のハッシュ）を渡すと `TypeError` で落ちる → 配列でない `order_by` を `ArgumentError`（`not a list`）にし、`page_spec.rb` に example を足した。確かめを外すと落ちることを確かめた
+- Claude 2：品目と在庫の画面が `parseSort` を画面と変数の関数で 2 回呼ぶ → 同じ純関数を同じ値に 2 回呼ぶだけで、結果は食い違わないので扱わない
+- Claude 3：IB-106（複数の列の効き目を画面で見せるか）は、見出しの操作と E2E で一部に答えた → サイクル末の台帳の棚卸しで IB-106 を読み直す材料として、ここに書く
+- Claude 4：`graphql-schema.md` の SDL のブロックで、`salesOrders(...)` の行が型の外に単独で置かれていた → `type SupplierView { … }` の中に置いた
+- Claude 5：2 つ目からの列の見出しのアクセシブル名が、見えない文字を含んで長くなる → 計画のとおり（ボタンの名前は変えず、列の見出しで順番と向きを伝える）なので扱わない
 
 ### 実装の記録
 
 #### 計画との違い
 
-- 公開 API（`Sales::SalesOrders.list` など 5 つ）の `order_by:` を、`{ field:, direction: }` の配列にした。`Page::Sort.of` が配列を受け取って `Sort` の配列を返し、`Page.of` の `sort:` も配列にしたからである。計画は `Page.of` の形だけを書き、公開 API の引数の形を書いていなかった。単体の spec が 1 つの列のハッシュを渡していたのを、`bin/ci` の 1 回目（`f29bd10`、3051 examples, 17 failures）で見つけ、`04df574` で配列に直した。
+- 公開 API（`Sales::SalesOrders.list` など 5 つ）の `order_by:` を、`{ field:, direction: }` の配列にした。`Page::Sort.of` が配列を受け取って `Sort` の配列を返し、`Page.of` の `sort:` も配列にしたからである。計画は `Page.of` の形だけを書き、公開 API の引数の形を書いていなかった。単体の spec が 1 つの列のハッシュを渡していたのを、`bin/ci` の 1 回目（`f29bd10`、3051 examples, 17 failures）で見つけ、`04df574` で配列に直した。計画の作るもの 1 に書いた（実装レビューの R1 で直した）。
 - 引数の検証は、5 つのリゾルバが `include` する `Resolvers::SortArguments` に置いた。`sort_arguments <型>Order` が `orderBy` と `thenBy` の引数とリゾルバの検証を足す。`Page::Sort.of` も、列の重なりと 4 つ以上の列を引数の誤り（`ArgumentError`）にする。GraphQL の外から公開 API を呼ぶ入口（spec・シード）でも同じ上限を守るためで、上限は `Page::MAX_SORTS` の 1 か所にある。
 - Shift を押さずに見出しを押したときの向きを、並びがその列 1 つのときだけ進め、並びが 2 つ以上なら並びにある列もその列 1 つの昇順にした。計画は並びが 2 つ以上のときの向きを決めていなかった。計画の作るもの 4 の「操作」を直し、OI-198（`judgment`）に積んだ。
 - 番号の出る数値の列のセルは、矢印の幅に番号の幅を足して右に空ける（`components/ui/table.tsx` の `SORT_RANK_SLOT`、`components/columns.tsx` の `sortCell`）。番号を矢印に重ねて幅を取らない形にすると、受注一覧の最後の列（受注合計）の番号が表の右端からはみ出す。寸法の E2E の変種を `?sort=status,total_amount&dir=asc,desc` にし、2 つ目の列を数値の最後の列にして、そろえと番号の収まりを測る。`e2e/support/table-align.ts` に、番号が矢印の右にあり見出しのセルに収まる確かめを足した。計画の作るもの 4 の「表示」を直した。
 - E2E の文字の選択の確かめを、`window.getSelection()` が空であることに加えて、document で受けた `mousedown` の `defaultPrevented` で確かめる形にした。Chromium はボタンの上の Shift を押したクリックで文字を選ばず、Shift を押した `mousedown` の既定の動きを止めるのを外しても、表の文字を押してから Shift を押して見出しを押しても、選ばれた文字は空のままだった（`e2e/list-pagination.spec.ts` で 2 回、静的な表で 1 回確かめた）。計画の作るもの 4 の「文字の選択」と完了条件を直し、Chromium でしか確かめられないことを IB-121 に積んだ。
 - Shift を押した Enter で、クリックの `shiftKey` が Chromium で立つことを E2E で確かめたので、`onKeyDown` は置かなかった。計画の作るもの 4 の「操作」を直した。
 - 計画の作るもの 5 の外で、`spec/matrix/graphql_matrix_spec.rb` に、`thenBy` を受け取るフィールドをスキーマから集め、どれも `thenBy` を渡す変種の行を持つことを確かめる example を足した。変種の行の規則を `guides/testing.md` に書くだけでは、一覧を足した人が行を足し忘れても何も落ちないからである。計画の作るもの 5 に足した。
-- 計画の作るもの 2 の外で、`spec/requests/purchase_orders_spec.rb` に、`orderBy` と `thenBy` を合わせて 3 つの列を受け付け、4 つをトップレベルのエラーにする example を足した。品目の一覧は列が 2 つしかなく、上限ちょうどと上限 + 1 を確かめられないからである。
+- 計画の作るもの 2 の外で、`spec/requests/purchase_orders_spec.rb` に、`orderBy` と `thenBy` を合わせて 3 つの列を受け付け、4 つをトップレベルのエラーにする example を足した。品目の一覧は列が 2 つしかなく、上限ちょうどと上限 + 1 を確かめられないからである。計画の作るもの 2 に書いた（実装レビューの R1 で直した）。
 - 前の形（「並べ替えの列は 1 つ」「`page_sort_value`」「同じ列は 昇順 → 降順 → 既定の並び」）を `git grep` し、`graphql-schema.md`「ページングと N+1」、計画の M39 の節（M47 で `thenBy` を足したと時点を書いた）、`sortable-head.tsx`・`list.ts` のコメントを直した。残るのは証跡（`docs/plans/`）と、作者の判断の行（OI-187）の内容の欄だけである。
 
 #### RED と、壊して落ちる記録

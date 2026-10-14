@@ -242,6 +242,8 @@ RSpec.describe Page do
       expect(Page::Sort.of(order.call(:request_id, :action, :target_type), columns).map(&:name)).to eq(%w[request_id action target_type])
       expect { Page::Sort.of(order.call(:request_id, :action, :target_type, :actor_type), columns) }.to raise_error(ArgumentError)
       expect { Page::Sort.of(order.call(:request_id, :request_id), columns) }.to raise_error(ArgumentError)
+      # 1 つの列のハッシュを渡すと、列の配列と取り違えずに引数の誤りにする
+      expect { Page::Sort.of({ field: :request_id, direction: :asc }, columns) }.to raise_error(ArgumentError, /not a list/)
     end
   end
 

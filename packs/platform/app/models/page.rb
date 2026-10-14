@@ -22,8 +22,10 @@ class Page
   # type はカーソルの値の型（:string・:date・:integer・:decimal）、direction は :asc か :desc。:decimal は 0 以上の整数の値に限る
   Sort = Data.define(:name, :expression, :type, :direction) do
     # order_by は { field:, direction: } の配列で、1 つ目の列から順に並べる。nil は空の配列と同じく、空の配列を返す。
-    # columns は並べてよい列の名前ごとの [式, 型] で、無い列・同じ列の重なり・MAX_SORTS を超える数は引数の誤りにする
+    # columns は並べてよい列の名前ごとの [式, 型] で、配列でない order_by・無い列・同じ列の重なり・MAX_SORTS を超える数は引数の誤りにする
     def self.of(order_by, columns)
+      raise ArgumentError, "order_by is not a list: #{order_by.class}" unless order_by.nil? || order_by.is_a?(Array)
+
       order_by = order_by.to_a
       raise ArgumentError, "too many order fields: #{order_by.size}" if order_by.size > MAX_SORTS
       raise ArgumentError, "repeated order field" unless order_by.uniq { _1.fetch(:field) }.size == order_by.size

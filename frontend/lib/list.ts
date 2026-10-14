@@ -35,7 +35,7 @@ export type SortKey<F extends string> = { field: F; direction: OrderDirection };
 /** 並べる列の並び。1 つ目の列から順に並べる。空の並びは既定の並び (orderBy も thenBy も渡さない)。 */
 export type Sort<F extends string> = readonly SortKey<F>[];
 
-/** 並べる列の数の上限。API の orderBy と thenBy を合わせた上限と同じ。 */
+/** 並べる列の数の上限。API の orderBy と thenBy を合わせた上限と同じ値にする (spec/graphql/sort_arguments_spec.rb が確かめる)。 */
 export const MAX_SORTS = 3;
 
 /**

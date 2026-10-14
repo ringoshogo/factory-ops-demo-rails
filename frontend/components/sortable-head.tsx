@@ -41,6 +41,7 @@ export function SortableHead<F extends string>({
         onMouseDown={(e) => {
           if (e.shiftKey) e.preventDefault();
         }}
+        // Shift を押した Enter は、ブラウザがキーボードから作るクリックに shiftKey を載せるので、onKeyDown は置かない
         onClick={(e) => router.replace(sortHref(pathname, params, nextSort(state, field, e.shiftKey)), { scroll: false })}
         className={`hover:text-foreground inline-flex items-center ${SORT_ICON.gap} rounded-sm ${dir ? "text-foreground" : ""}`}
       >

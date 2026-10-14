@@ -105,6 +105,17 @@ RSpec.describe "受注側のダッシュボード", type: :request do
     expect(query(kanban).dig("supplier", "allocated", "nodes").map { _1["orderNo"] }.first(2)).to eq(%w[SO-K00001 SO-K00002])
   end
 
+  # 上の example は引当済の列の並びだけを見るので、ほかの列の並べ替えの引数は文書で確かめる
+  it "かんばんの画面の問い合わせは、未完了の 4 つの列を希望納期と受注番号の昇順で、終わった 3 つの列を受注番号の降順で読む" do
+    columns = GraphQL.parse(Rails.root.join("frontend/graphql/supplier/SupplierKanban.graphql").read).definitions.sole.selections.sole.selections
+    open = [ "orderBy: {field: DUE_DATE, direction: ASC}", "thenBy: [{field: ORDER_NO, direction: ASC}]" ]
+    done = [ "orderBy: {field: ORDER_NO, direction: DESC}" ]
+
+    expect(columns.to_h { |column| [ column.alias, column.arguments.select { %w[orderBy thenBy].include?(_1.name) }.map(&:to_query_string) ] })
+      .to eq("awaitingPartMatch" => open, "received" => open, "partiallyAllocated" => open, "allocated" => open,
+        "shipped" => done, "inspected" => done, "cancelled" => done)
+  end
+
   it "安全在庫を下回る在庫を、品目コードの昇順で上限の件数まで返す" do
     stub_const("Types::SupplierDashboardType::STOCKS_LIMIT", 2)
     stock_below("AXLE-1")

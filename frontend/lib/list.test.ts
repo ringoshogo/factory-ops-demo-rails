@@ -87,7 +87,8 @@ describe("nextSort: 見出しを押したときの次の並び", () => {
     expect(nextSort([], "DUE_DATE", true)).toEqual([asc("DUE_DATE")]);
   });
 
-  it("並びが 3 つのときに、並びに無い列を Shift を押して押しても変えない。並びにある列の向きは進める", () => {
+  it("並びが 2 つのときは Shift を押して 3 つ目の列を足し、3 つのときに並びに無い列を Shift を押して押しても変えない。並びにある列の向きは進める", () => {
+    expect(nextSort([asc("STATUS"), desc("ORDER_NO")], "DUE_DATE", true)).toEqual([asc("STATUS"), desc("ORDER_NO"), asc("DUE_DATE")]);
     const three = [asc("STATUS"), desc("ORDER_NO"), asc("DUE_DATE")];
     expect(nextSort(three, "ORDER_DATE", true)).toEqual(three);
     expect(nextSort(three, "DUE_DATE", true)).toEqual([asc("STATUS"), desc("ORDER_NO"), desc("DUE_DATE")]);
