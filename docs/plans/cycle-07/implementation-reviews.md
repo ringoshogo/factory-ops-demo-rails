@@ -263,6 +263,8 @@ TEST_DATABASE=factory_ops_m49_test bin/ci   # すべての工程が通った。r
 
 `e73974b` の PR の CI はすべて通った（`test` 6 分 25 秒、`e2e` 2 分 44 秒、`images` 2 分 13 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38505414473)）。CI の PostgreSQL のサービスでも `collations_spec.rb` の版の example が通った。
 
+実装レビューの直しの後も、`66ff186` の作業ツリーで `TEST_DATABASE=factory_ops_m49_test bin/ci` を流し、すべての工程が通った（rspec は 2989 examples, 0 failures、分岐の網羅率の警告は 0 件）。`bin/check-open-items --due M49` と `bin/check-commit-refs` も通った。`66ff186` の PR の CI はすべて通った（`test` 5 分 31 秒、`e2e` 3 分 2 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38506018083)）。
+
 ### 残件の処理
 
 引当先が M49 の行は、着手の前と PR の前と実装レビューの直しの前に台帳を読んだ。OI-190（`decided`、名前の列を `ja-x-icu` にする作者の判断）は作るもの 1・4 で反映した。IB-77（品目コードの列の照合順序）と IB-110（`TEST_DATABASE` を渡した worktree の `bin/ci`）は M49 で実装した。M49 で作者に確かめることを OI-197（`judgment`）に、実装で見つけたことを IB-117・IB-118 に、実装レビューの違和感を IB-119・IB-120 に積んだ。作者の判断の受け口（`decisions.md`）に、M49 への判断は書かれていなかった。
