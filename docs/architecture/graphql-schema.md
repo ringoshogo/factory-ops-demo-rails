@@ -824,13 +824,13 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 | `supplier.items` | `CODE`・`NAME` | `keyword` |
 
 - 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。
-- 取引先の名前（`CUSTOMER_NAME`・`SUPPLIER_NAME`）は、取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が返すテナントの ID と名前の副問い合わせから、伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）の行の名前を、行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べる。結合と違い、結ぶ条件を書き誤って 2 行以上が当たると、行を増やさずに SQL のエラーになる。名前は DB の照合順序のまま並べ、読みの順（五十音）にしない。
+- 取引先の名前（`CUSTOMER_NAME`・`SUPPLIER_NAME`）は、取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が返すテナントの ID と名前の副問い合わせから、伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）の行の名前を、行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べる。結合と違い、結ぶ条件を書き誤って 2 行以上が当たると、行を増やさずに SQL のエラーになる。名前は `tenants.name` の照合順序 `ja-x-icu` で並べ、流用元の画面の `Intl.Collator("ja")` と同じ規則の並びになる（同じと言える範囲は `data-model.md`「文字列の照合順序」）。名前全体の読みの順ではなく、よく使う漢字はその漢字の音読みの順に並ぶ。
 - 合計金額（`TOTAL_AMOUNT`）は、明細の数量と単価の積の和を、受注は `Sales::SalesOrderAmount`、発注は `Purchasing::PurchaseOrderAmount` の SQL の式で計算して並べる。単価の無い明細（受注は品番照合待ち、発注は受注確定の前）が 1 つでもあれば、合計は空になり、値の無い行として最後に並ぶ。一覧の `totalAmount` も同じ式を読むので、空の合計は、どの画面でも金額の代わりに空の理由（「照合待ち」・「確定待ち」）を出し、一部の合計を出さない（`frontend/lib/format.ts` の `totalAmountText`）。単価は `bigint` の上限まで入りうるので、積と和は `numeric` で計算する。和は、明細の件数の上限（100）・数量の上限（`integer`）・単価の上限（`bigint`）の積を超えないので 31 桁に収まる。
 - 状況（`STATUS`）は、状況の式の値を業務の進み順の位置で並べる（「状況の enum」）。
-- 在庫の品目コードと品目名（`ITEM_CODE`・`ITEM_NAME`）と在庫の `keyword` は、在庫のパッケージの品目の写し（`item_labels`、`data-model.md`「在庫（`inventory`）」）を、所有テナントと品目 ID の組で外部結合して読む。品目 ID だけで結ぶと、RLS が他社の写しを見せたときに、他社の名義で同じ品目 ID を指す写しを並びと検索に使う。写しの無い在庫は、値の無い行として最後に並び、`keyword` には当たらない。
+- 在庫の品目コードと品目名（`ITEM_CODE`・`ITEM_NAME`）と在庫の `keyword` は、在庫のパッケージの品目の写し（`item_labels`、`data-model.md`「在庫（`inventory`）」）を、所有テナントと品目 ID の組で外部結合して読む。品目 ID だけで結ぶと、RLS が他社の写しを見せたときに、他社の名義で同じ品目 ID を指す写しを並びと検索に使う。写しの無い在庫は、値の無い行として最後に並び、`keyword` には当たらない。品目名（品目の一覧の `NAME` と在庫の `ITEM_NAME`）も、列の照合順序 `ja-x-icu` で取引先の名前と同じ規則の並びになる。
 - 受注日と発注日の範囲は両端を含む。`orderDateFrom` が `orderDateTo` より後なら、空を返す。
 - `belowSafetyStock` が真なら、ダッシュボードの `stocksBelowSafetyStock` と同じ scope で絞る（「読み取りの一覧」の安全在庫）。偽か省いたときは絞らない。
-- `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目（在庫の一覧は、その品目の在庫）に絞る。大文字と小文字を区別せず、`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。2 つの一覧の規則は `Keyword`（`packs/platform`）の 1 か所にあり、2 つの入力型は同じ上限（`Keyword::MAX_LENGTH`）を読む。
+- `keyword` は、前後の空白（全角の空白を含む）を除いた文字列を、品目コードか品目名に含む品目（在庫の一覧は、その品目の在庫）に絞る。大文字と小文字を、ASCII の外の文字と全角の英字でも区別せず（列の照合順序による。`data-model.md`「文字列の照合順序」）、全角と半角は区別する。`%`・`_` は文字として扱う。空の文字列は絞らない。100 文字を超える `keyword` は、引数の検証でトップレベルのエラーにする。2 つの一覧の規則は `Keyword`（`packs/platform`）の 1 か所にあり、2 つの入力型は同じ上限（`Keyword::MAX_LENGTH`）を読む。
 - `types` と `statuses` の空の配列は 0 件を返し、省くか `null` なら絞らない。
 - 複数の絞り込みを同時に渡すと、すべてに当たる行に絞る。
 

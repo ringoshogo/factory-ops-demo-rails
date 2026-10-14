@@ -98,11 +98,12 @@ module Sales
     # 品目を FOR SHARE で読み、写しを書き終えるまで save と bulk_upsert の行ロックを待たせる。待たせないと、ここが古い名前を
     # 読んだ後に保存が新しい名前と写しを書き、ここが古い名前で写しを上書きする。
     # ロックは bulk_upsert と同じ品目コードの順に取り、並んでも行き詰まらないようにする。bulk_upsert は Ruby の文字列の比べ方
-    # （バイトの順）で並べるので、DB の照合順序（en_US.utf8 では a-1 が B-1 より前）ではなく、バイトの順の照合順序 "C" で並べる
+    # （バイトの順）で並べ、品目コードの列の照合順序 pg_c_utf8 もコードポイントの順（UTF-8 ではバイトの順と同じ）で並べるので、
+    # 列の順で読めば同じ順になる（docs/architecture/data-model.md「文字列の照合順序」）
     def self.rebuild_item_labels
       Tenancy.require_tenant!
       Item.transaction(requires_new: true) do
-        items = Item.where(owner_tenant_id: Current.tenant_id).order(Arel.sql('items.code COLLATE "C"')).lock("FOR SHARE")
+        items = Item.where(owner_tenant_id: Current.tenant_id).order(:code).lock("FOR SHARE")
           .pluck(:id, :code, :name)
         Inventory::ItemLabels.put(items.map { label(*_1) })
       end

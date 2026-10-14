@@ -147,3 +147,124 @@ cd frontend && npm ci && npm ls --all > /dev/null   # 終了コード 0（Node 2
 ### 残件の処理
 
 引当先が M48 の行は、着手の前と PR の前に台帳を読んだ。どちらの時点でも無かった。OI-184（作者の確認で「M48 で簡単にできるかを確かめる」）の結果の欄に、M48 で戻した形と 2 つの実行の URL を書いた。IB-104・IB-113 は M48 で実装し、IB-17 の試行の標本は上の壊して落ちる記録である。IB-17 の効いたとする基準の判定の材料は、この節の冒頭の実装レビューの結果に書いた。実装レビューの違和感は IB-116 に積んだ。
+
+## M49 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする
+
+`m49-collations`（base は `main`、PR #86）。M48 の `m48-ci-deps-check` の先端 `abc9bd6` から切った。M48（#84）は着手の後に main にマージされたので、M49 の差分は `abc9bd6..` である。
+
+Codex も Claude も Go だった。どちらの系統も、`abc9bd6..64e3cc7` の diff を `64e3cc7` の版で読んだ。Codex は手元の DB への接続を実行の環境に拒まれ、rspec・E2E・CI は証跡の記録を前提にし、Ruby の文字列の順とコードポイントの順の一致を 10,020 個の文字列で確かめた。Claude は 200 個の文字列で `String#sort` と `ORDER BY … COLLATE pg_c_utf8` の一致を確かめ、`factory_ops_m49_test` で `item_labels.code` を既定に戻して spec を流した（R1）。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Low 1） | 出していない（High が無かった） |
+| Claude | Go（Low 3） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘（R3） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘（R1） |
+| 参照の維持 | 指摘（R1） | 指摘（R2） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Low | Claude | R1：`item_labels.code` を DB の既定に戻しても、振る舞いを確かめる example が落ちない（在庫の `ITEM_CODE` の品目コードがどちらの照合順序でも同じ順） | `inventory_spec.rb` に、`a-4` を足して在庫を品目コードで並べると品目の一覧と同じバイトの順（`a-4` が最後）になる example を足した。`item_labels.code` を既定に戻すと落ちる行を壊して落ちる記録に足した | この節を載せた commit |
+| Low | Claude | R2：`collations_spec.rb` の版の example のコメントが、計画の前の形（索引を作り直してから記録を改める）を書く | 手順の中身を書かずに `config.md`「照合順序の版」を指す形にした | 同上 |
+| Low | Claude | R3：M48 の節にある「残件の処理」が無い | 下に「残件の処理」を足した | 同上 |
+| Low | Codex | R1：`data-model.md` と `graphql-schema.md` が、名前の並びが `Intl.Collator("ja")` と同じになると無条件に書く。計画は spec と E2E の名前の組に限り、`Intl.Collator` が同じ順位とする文字（は／ハ、Ａ／A）の前後は PostgreSQL がバイトの順で決める | `data-model.md`「文字列の照合順序」に、同じと言える範囲（確かめた名前の組まで。ICU の版の違いと同じ順位の文字の前後は言わない）を書き、`graphql-schema.md`・`handoff.md`・マイグレーションと spec のコメントを「同じ規則で並べる」に直した。特定の名前の組を確かめる spec のコメントは、その組では同じ並びなのでそのままにした | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：`data-model.md` の表が `item_labels.code` を行ロックの順を決める列に入れるが、理由は `items` の話だけ → 行の種類を「行ロックの順を決める列と、その写し」にし、写しは在庫の一覧の並びと検索を品目の一覧とそろえるためと書いた
+- Claude 2：CI と手元は `postgres:18` の動くタグで、公開の配置は `postgres:18.6` に固定しており、ICU の版が別になりうる → IB-119
+- Claude 3：`deploy/README.md` の作り直しの Job の名前が、同じ日に手で流していると重なる → 既存の手順（「作り直しが飛ばされた日」）と同じ付け方で、重なれば `kubectl create job` が落ちて気付くので、扱わない
+- Claude 4：`handoff.md` は「`_test` で終わる」、`config.md` は「`_test` を区切りとして含める」と書く → `handoff.md` を `config.md` の言い方にそろえた
+- Codex 1：`logging_spec.rb` の `ensure` の削除を外しても、次の実行の冒頭の削除が補うので何も落ちない → IB-120
+- Codex 2：OI-190 の内容の欄と IB-77・IB-110 の説明に、変える前の状態が残る → IB-116（M48 で積んだ、`decided` の行の内容の欄が前の形を今の形として書く）と同じ種類として、IB-116 で扱う
+
+### 実装の記録
+
+#### 計画との違い
+
+- 完了条件の `TEST_DATABASE` の名前を `factory_ops_m49` から `factory_ops_m49_test` にした（`31a476a`）。行列の spec（`spec/support/matrix_cross_read.rb`）は、全行を読ませるポリシーを足す前に DB の名前が `_test` を区切りとして含むかを見て、含まなければ止まる。`factory_ops_m49` で流すと `packs/sales/spec/public/sales/catalog_spec.rb` の 1 件がこの拒否で落ちた。計画の完了条件、`guides/config.md`「database.yml：同じ DB に 2 つのロールで接続する」、`handoff.md`「開発環境」に名前の付け方を書いた。
+- マイグレーションを `safety_assured` で包まなかった（`fc545f5`）。strong_migrations 2.8 の PostgreSQL の型の変更の判定（`StrongMigrations::Adapters::PostgreSQLAdapter#change_type_safe?`）は、長さを変えない `varchar` を照合順序を見ずに安全に数える。包まない形で `RAILS_ENV=test bin/rails runner` から照合順序を変える `change_column` を流すと、strong_migrations は止めず、アプリのロールの権限の無さで SQL が落ちた。ロックと索引の作り直しを許す理由はコメントに書いた。計画の作るもの 1 を直し、止めないことを IB-118 に積んだ。
+- 照合順序の版の記録の改め方（判断「名前の列の照合順序を何にするか」の版の扱い）を、`template1` で `REFRESH VERSION` を流してから業務の DB を消して作り直す形にした。計画は、`template1` とアプリの DB で索引を作り直してから流すと書いていた。`template1` には表が無く、作り直した DB は `template1` の記録を写し、索引を新しい ICU で作るからである。作り直さずに残す DB だけを、索引を作り直してから改める形にした。計画の版の扱いを直し、OI-197（judgment）に積んだ。
+- 作るもの 4 の在庫の `ITEM_NAME` の example を足すのに合わせて、既存の 2 つの example の品目名の並びの期待を `ja-x-icu` の並び（平座金が六角の 2 つより前）に直した。`spec/requests/inventory_spec.rb` の「品目コードと品目名で並べる」（RED に含めた）と、`packs/inventory/spec/public/inventory/stocks_spec.rb` の「品目コードと品目名と ID の組で並べ…」（`bin/ci` の 1 回目で落ちて見つけた。`0b3871b`）である。
+- 計画の作るもの 3・4 の外で、`packs/sales/spec/public/sales/catalog_spec.rb` に、品目の一覧を品目名で 2 件ずつのページで並べる example を足した。`items.name` を並べる example が無く、3 つの名前の列のそれぞれを既定に戻して落ちる記録（完了条件）を `items.name` で取れなかったからである。検索の example は、品目の一覧（`items`）と在庫の一覧（`item_labels`）の両方に置いた。
+- E2E の世界の取引先の名前（`東海産機システム株式会社 第二工場 …` と `北関東オートメーション株式会社`）は、先頭の漢字のコードポイントの順（北が先）と音読みの順（東が先）が逆の組だったので、`DemoWorld` の名前を替えなかった。
+- 前の形（「`COLLATE "C"`」「照合順序 `"C"`」）は、`git grep` で証跡（`docs/plans/`）と計画の M49 の節の文書に残すことの文のほかに 0 件である。計画の M46 の節の作り直しの文は、M46 は式で照合順序を指定し、M49 で列の照合順序に移したと時点を書いた。「`en_US`」は、`data-model.md`「文字列の照合順序」の DB の既定の説明と、競合テストの言語の照合順序の例と、計画の M49 の節と証跡に残る。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：spec を足し、マイグレーションと実装を変える前（`abc9bd6` の作業ツリー）に、`log/events.log` の無い worktree で `TEST_DATABASE=factory_ops_m49_test` を渡して流した（62 examples, 5 failures）。
+
+- `spec/platform/collations_spec.rb` の 5 つの列の照合順序：`expected: {"item_labels.code" => "pg_c_utf8", … "tenants.name" => "ja-x-icu"} got: {"item_labels.code" => "default", …}`（5 つとも `default`）
+- `spec/requests/purchase_orders_spec.rb` の受注側の名前の 1 件ずつのページ：`expected: [{"orderNo" => "PO-000002", "supplier" => {"name" => "青嵐精機工業"}}] got: [{"orderNo" => "PO-000001", "supplier" => {"name" => "東和商事"}}]`
+- `spec/requests/inventory_spec.rb` の品目名の並び：`expected: [["W-3", "N-2", "B-1"], 3] got: [["N-2", "B-1", "W-3"], 3]`
+- `spec/requests/inventory_spec.rb` の品目名の 1 件ずつのページ：`expected: ["W-3", "N-2", "B-1"] got: ["N-2", "B-1", "W-3"]`
+- `spec/platform/logging_spec.rb` の別の DB のプロセスの example：`expect(File).to exist(shared)` で `expected File to exist`（親のファイルを `log/events.log` の固定のまま、読む前にファイルがあることを期待として確かめる形にした）
+
+`collations_spec.rb` の版の example と、検索の 2 つの example（品目と在庫）は、変える前の振る舞いと同じことを確かめるので、変える前も通った。下の壊して落ちる記録で RED に代える。`catalog_spec.rb` の品目名の並びの example は GREEN の後に足したので、同じく下の記録で RED に代える。
+
+列の照合順序は、`factory_ops_m49_test` の表で 1 つずつ `ALTER TABLE … ALTER COLUMN … TYPE character varying COLLATE …` で壊して spec を流し、元の照合順序に戻した（`31a476a` の作業ツリー）。版は、スーパーユーザーで `pg_collation.collversion` を書き換えて流し、`pg_collation_actual_version` に戻した。`events_log_path` は、ファイルを複製してから壊し、複製から戻した。
+
+| 確かめる example | 壊したもの | 落ちたもの |
+|---|---|---|
+| `item_labels_rebuild_lock_spec.rb` の `B-1`・`a-1` | `items.code` を DB の既定（`en_US.utf8`）に戻す（作り直しの式には照合順序が無い） | 1（この example。`B-1` の保存が作り直しを待たない：`expected true got false`） |
+| `catalog_spec.rb` の検索（品目） | `items.code` を `"C"` にする | 1（この example。`ä-` が `Ä-1` に当たらない） |
+| `inventory_spec.rb` の検索（在庫） | `item_labels.code` を `"C"` にする | 1（この example） |
+| `purchase_orders_spec.rb` の受注側の名前の 1 件ずつのページ | `tenants.name` を既定に戻す | 1（この example） |
+| `catalog_spec.rb` の品目名の並び | `items.name` を既定に戻す | 1（この example。`spec/requests/catalog_spec.rb` と合わせて流した） |
+| `inventory_spec.rb` の品目名の並びと 1 件ずつのページ | `item_labels.name` を既定に戻す | 2（この 2 つ。`item_labels_spec.rb` と合わせて流した） |
+| `stocks_spec.rb` の品目名の並び | `item_labels.name` を既定に戻す（`0b3871b` の作業ツリー） | 1（この example） |
+| `inventory_spec.rb` の品目コードのバイトの順（実装レビューの Claude R1 で足した） | `item_labels.code` を既定に戻す（直しを載せた版で） | 1（この example。`a-4` が先に来る） |
+| `catalog_spec.rb` の検索（品目） | `items.name` を `"C"` にする | 2（この example の `ａｂｃ` と、品目名の並び） |
+| `inventory_spec.rb` の検索（在庫） | `item_labels.name` を `"C"` にする | 3（この example の `ａｂｃ` と、品目名の 2 つ） |
+| `collations_spec.rb` の版 | `factory_ops_m49_test` の `ja-x-icu` の `collversion` を `153.0` に書き換える | 1（この example） |
+| `logging_spec.rb` の別の DB のプロセス | `Platform::Logging.events_log_path` が `TEST_DATABASE` を見ずに `log/events.log` を返す | 2（この example の `not_to include("spec.other_process")` と、パスの example） |
+| E2E の受注一覧の取引先の名前の並び | `db/structure.sql` の `tenants.name` から照合順序を外し、E2E の DB を作り直す | 1（`list-pagination.spec.ts` の受注一覧の example） |
+| E2E の品目の一覧の名前の並び | `db/structure.sql` の `items.name` から照合順序を外す | 1（`list-pagination.spec.ts` の品目の一覧の example） |
+
+戻した後に同じ spec を流し、すべて通った（56 examples, 0 failures）。`item_labels_rebuild_lock_spec.rb` は、戻した後に 5 回続けて流し、5 回とも通った。
+
+### 確かめたこと
+
+#### 公開の配置のイメージの照合順序
+
+`deploy/postgres.yaml` の `postgres:18.6` を手元に取り、空のクラスタを起こして `template1` で引いた。手元の `compose.yaml` の `postgres:18` も同じダイジェストで、手元の DB の `SELECT version()` も同じだった。
+
+```sh
+docker pull postgres:18.6   # postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336、arm64
+docker run -d --rm -e POSTGRES_PASSWORD=… postgres:18.6
+psql -U postgres -d template1 -Atc "SELECT version()"
+# PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+psql -U postgres -d template1 -Atc "SELECT collname, collprovider, collversion, pg_collation_actual_version(oid) FROM pg_collation WHERE collname IN ('ja-x-icu','pg_c_utf8') ORDER BY collname"
+# ja-x-icu|i|153.128.46|153.128.46
+# pg_c_utf8|b|1|1
+```
+
+#### E2E
+
+`frontend` で `E2E_DATABASE=factory_ops_m49_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` を Node 22.23.3 で流した（E2E の DB を、ほかの担当の `factory_ops_e2e` と分けた）。`31a476a` の作業ツリーで 4 回流し、`npm ci` の直後の 1 回目だけ、`admin-only.spec.ts` の 3 件がログインの後の画面の移りを 5 秒で待ち切れずに落ちた（`Received string: "http://127.0.0.1:3201/"`。同じ回の前の 2 件は 10 秒と 17 秒かかった）。`admin-only.spec.ts` だけを流し直すと 5 件とも通り、2〜4 回目は 67 passed・25 skipped だった。照合順序の変更はログインの経路に触れないので、手元の最初の実行の遅さによるものとして IB-117 に積んだ。
+
+#### 手元で流したもの
+
+`0b3871b` の作業ツリー（`log/events.log` の無い worktree）で、Ruby 3.4.11・PostgreSQL 18.6 で流した。
+
+```sh
+bundle exec rspec packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb packs/sales/spec/public/sales/catalog_spec.rb packs/inventory/spec/public/inventory/item_labels_spec.rb spec/requests/catalog_spec.rb spec/requests/inventory_spec.rb spec/requests/purchase_orders_spec.rb   # 54 examples, 0 failures
+bundle exec rspec spec/platform/collations_spec.rb   # 2 examples, 0 failures
+TEST_DATABASE=factory_ops_m49_test bundle exec rspec spec/platform/logging_spec.rb   # 29 examples, 0 failures
+TEST_DATABASE=factory_ops_m49_test bin/ci   # すべての工程が通った。rspec は 2988 examples, 0 failures
+```
+
+`bin/ci` の 1 回目（`31a476a`）は、`stocks_spec.rb` の品目名の並びの期待で 1 件落ち（2988 examples, 1 failure）、`0b3871b` で直した。実装の記録を載せた `e73974b` でも `TEST_DATABASE=factory_ops_m49_test bin/ci` を流し、すべての工程が通った（2988 examples, 0 failures）。`bin/ci` の後も `log/events.log` はできなかった。分岐の網羅率の警告は 0 件だった。`bin/check-open-items --due M49` と `bin/check-commit-refs` も通った。
+
+`e73974b` の PR の CI はすべて通った（`test` 6 分 25 秒、`e2e` 2 分 44 秒、`images` 2 分 13 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38505414473)）。CI の PostgreSQL のサービスでも `collations_spec.rb` の版の example が通った。
+
+実装レビューの直しの後も、`66ff186` の作業ツリーで `TEST_DATABASE=factory_ops_m49_test bin/ci` を流し、すべての工程が通った（rspec は 2989 examples, 0 failures、分岐の網羅率の警告は 0 件）。`bin/check-open-items --due M49` と `bin/check-commit-refs` も通った。`66ff186` の PR の CI はすべて通った（`test` 5 分 31 秒、`e2e` 3 分 2 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38506018083)）。
+
+### 残件の処理
+
+引当先が M49 の行は、着手の前と PR の前と実装レビューの直しの前に台帳を読んだ。OI-190（`decided`、名前の列を `ja-x-icu` にする作者の判断）は作るもの 1・4 で反映した。IB-77（品目コードの列の照合順序）と IB-110（`TEST_DATABASE` を渡した worktree の `bin/ci`）は M49 で実装した。M49 で作者に確かめることを OI-197（`judgment`）に、実装で見つけたことを IB-117・IB-118 に、実装レビューの違和感を IB-119・IB-120 に積んだ。作者の判断の受け口（`decisions.md`）に、M49 への判断は書かれていなかった。

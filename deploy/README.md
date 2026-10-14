@@ -182,6 +182,21 @@ ssh raspi kubectl create job -n factory-ops-rails --from=cronjob/daily-reset man
 
 飛ばされたかは、`ssh raspi kubectl get jobs -n factory-ops-rails -l app=daily-reset` にその日の Job が無いことで分かる。
 
+### PostgreSQL のイメージを上げたとき
+
+作者は、`postgres.yaml` のイメージのタグを上げて適用したら、名前の列の照合順序 `ja-x-icu` の版を確かめる（`docs/guides/config.md`「照合順序の版」）。毎日の作り直しは、新しい DB に `template1` の版の記録を写すので、作り直しでは古い記録が改まらない。
+
+```sh
+ssh raspi kubectl exec -n factory-ops-rails deployment/postgres -- psql -U postgres -d template1 -Atc "SELECT collversion, pg_collation_actual_version(oid) FROM pg_collation WHERE collname = 'ja-x-icu'"
+```
+
+2 つの版が等しければ何もしない。違えば、`template1` の記録を改めてから、手順 3 と同じく作り直しを手で流す。作り直しが業務の DB を消して作り、改めた記録を写し、索引を新しい ICU で作る。
+
+```sh
+ssh raspi kubectl exec -n factory-ops-rails deployment/postgres -- psql -U postgres -d template1 -c 'ALTER COLLATION pg_catalog."ja-x-icu" REFRESH VERSION'
+ssh raspi kubectl create job -n factory-ops-rails --from=cronjob/daily-reset manual-reset-$(date +%Y%m%d)
+```
+
 ### 送らないメール
 
 公開の配置のアカウントのメールアドレスは実在しないので、通知のメールは外へ送らず、`web`・`jobs`・`daily-reset` の Pod の `/rails/tmp/mails` にファイルで書く（`NOTIFICATIONS_PROVIDER=file_system`）。置き場は Pod と一緒に消える。

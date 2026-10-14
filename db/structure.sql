@@ -689,8 +689,8 @@ CREATE TABLE public.item_labels (
     id uuid DEFAULT uuidv7() NOT NULL,
     owner_tenant_id uuid NOT NULL,
     item_id uuid NOT NULL,
-    code character varying NOT NULL,
-    name character varying NOT NULL,
+    code character varying NOT NULL COLLATE pg_catalog.pg_c_utf8,
+    name character varying NOT NULL COLLATE pg_catalog."ja-x-icu",
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
 );
@@ -740,8 +740,8 @@ COMMENT ON TABLE public.item_prices IS '[受注] 販売単価の履歴。有効�
 CREATE TABLE public.items (
     id uuid DEFAULT uuidv7() NOT NULL,
     owner_tenant_id uuid NOT NULL,
-    code character varying NOT NULL,
-    name character varying NOT NULL,
+    code character varying NOT NULL COLLATE pg_catalog.pg_c_utf8,
+    name character varying NOT NULL COLLATE pg_catalog."ja-x-icu",
     unit character varying NOT NULL,
     tax_rate_percent integer DEFAULT 10 NOT NULL,
     published boolean DEFAULT false NOT NULL,
@@ -1849,7 +1849,7 @@ COMMENT ON TABLE public.stocks IS '[在庫] 品目ごとの在庫。手持ち・
 CREATE TABLE public.tenants (
     id uuid DEFAULT uuidv7() NOT NULL,
     code character varying NOT NULL,
-    name character varying NOT NULL,
+    name character varying NOT NULL COLLATE pg_catalog."ja-x-icu",
     partner_code character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL
@@ -4837,6 +4837,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261014100000'),
 ('20261014000000'),
 ('20261013000100'),
 ('20261013000000'),
