@@ -384,3 +384,94 @@ bin/check-commit-refs            # 通った
 ### 残件の処理
 
 引当先が M47 の行は、着手の前と PR の前に台帳を読んだ。OI-187（`decided`、見出しで 2 つ目からの列を足す作者の判断）は作るもの 4 で、OI-195（`judgment`、Shift の操作の細部）は計画のとおりに反映した。実装で決めたことを OI-198（`judgment`）に、Chromium でしか確かめられないことを IB-121 に積んだ。作者の判断の受け口（`decisions.md`）に、M47 への判断は書かれていなかった。
+
+## M50 品目と出荷依頼の一覧を、流用元が並べるほかの列でも並べる
+
+`m50-sort-more`（base は `main`）。M47 の `m47-multi-sort` の先端 `336d798` から切った。M47（#87）は着手の時点で作者のマージ前なので、M50 の差分は `336d798..` である。
+
+（実装レビューの判定は、レビューの後にここへ書く）
+
+### 実装の記録
+
+#### 計画との違い
+
+- 単価の副問い合わせを `Sales::ItemPrices.today_price(actor, item_id)` と名付け、計画の作るもの 1 に名前を書いた。
+- 計画は、単価の式から `current` の条件を外すと「訂正の前の単価で並べ」て落ちると書いていた。訂正で閉じた行と訂正の後の行はどちらも今日を含むので、実際は訂正した品目に 2 行が当たり、SQL のエラー（`PG::CardinalityViolation`）で落ちる。計画の完了条件の壊して落ちる記録の文を直した。
+- 期待の不一致で最初に落とす request spec に、計画の 2 つ（安全在庫・受注番号）のほかに、単位と単価で並べる example と、出荷予定日で並べる example を足した。どれも 1 件ずつのページで最後までたどり、足した列のカーソルで続きを読む。計画の完了条件に書いた。
+- `packs/inventory/spec/public/inventory/stocks_spec.rb` に、`safety_stocks_sql` が自社の在庫の品目 ID と安全在庫を役割の名前の列で返す example を足した。所有の条件は、計画のとおり `catalog_spec.rb` の RLS を開いた example が確かめる。
+- 単位と受注番号の写しの列の照合順序を決めていなかったので、DB の既定のままにし、OI-199（`judgment`）に積んで計画の作るもの 1 に書いた。
+- 作り直しのタスク（`lib/tasks/read_models.rake`）は、テナントごとに品目の写しの行と受注番号の行を 1 行ずつ出し、最後に合計を 2 行出す。品目の写しと受注番号の写しは、同じ `Tenancy.with_tenant` の中で作り直す。
+- 一致の spec（`read_model_copies_spec.rb`）は、作り直しの数をテナントごとの [品目の写しを足した数, 書き直した数, 受注番号を書き直した数] で読む形にし、受注番号の写しを空にし、書き換えてから流す対照を別の example に置いた。最初の example（世界を作った直後）は、3 つの数がどれも 0 であることを確かめる。
+- 出荷依頼の画面の表の列のキーを、受注番号と出荷予定日の並べ替えの見出しにするため、`orderNo`・`planned` から `ORDER_NO`・`PLANNED_DATE` に変えた（`components/shipment-request-table.tsx`）。品目の画面の単位と単価も同じく `UNIT`・`UNIT_PRICE` にした。
+- 品目の画面は、安全在庫の列を足し、単位と単価を並べ替えの見出しにすると、1024px で表がパネルを 89px はみ出し、`layout.spec.ts` が落ちた（E2E の 1 回目）。取りまとめ役の判断（`decisions.md` の D-1）で、1024〜1279px では並べ替えの対象でない「税率」と「有効在庫」の列を隠す形にし（`components/columns.tsx` の `narrowHidden` と `columnClass`。並べ替えの見出しの列は隠さない）、OI-200（`judgment`）に積んで計画の作るもの 8 に書いた。2 つの列は API で並べられないので、URL の `sort` に書かれても既定の並びになることを `supplier-master-lists.test.ts` が確かめる。
+- 前の形を `git grep` し、品目の画面の「単価・税率・在庫は API で並べられない」のコメント、`graphql-schema.md`「ページングと N+1」の 2 つの一覧の列と SDL、`testing.md`「行列テストとの分担」の副問い合わせで並べる列の例、`README.md`・`deploy/README.md` の作り直しの文を直した。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：マイグレーションを足し、spec を足し、実装を変える前（`336d798` の作業ツリー）に `bundle exec rspec spec/requests/catalog_spec.rb spec/requests/supplier_shipments_spec.rb` を流した（24 examples, 4 failures）。並べ替えの enum に値が無く、引数の検証のエラーで `data` が無いので、どれも 1 ページ目で `nil` が返った。
+
+- `catalog_spec.rb` の安全在庫で並べる example：`expected: ["C-1", "B-1", "A-1"] got: nil`
+- `catalog_spec.rb` の単位と単価で並べる example：`expected: ["D-1", "A-1", "B-1", "E-1", "C-1"] got: nil`
+- `supplier_shipments_spec.rb` の受注番号で並べる example：`expected: [<3 つの ID>] got: nil`
+- `supplier_shipments_spec.rb` の出荷予定日で並べる example：`expected: [<4 つの ID>] got: nil`
+
+並べ替えの列を足した後、受け手が受注番号を写す前は、受注番号の example が、計上まで流した出荷依頼（写しが空）を最後に並べて落ちた（`expected: [earlier, flowed, later] got: [earlier, later, flowed]`）。
+
+壊して落ちる記録：壊すファイルを一時ファイルの置き場に複製してから壊し、複製から戻した（`5c1a6d8` の前の作業ツリー）。戻した後に同じ spec を流し、すべて通った。
+
+| 確かめる example | 壊したもの | 落ちたもの |
+|---|---|---|
+| `catalog_spec.rb` の、2,147,483,647 を超える単価の品目がページの境目に来る example | `UNIT_PRICE` のカーソルの型を `:integer` にする | 1（この example。`NoMatchingPatternError` から `Invalid cursor`） |
+| `catalog_spec.rb` の、訂正した単価と予約した改定の example | 単価の式から `current` を外す | 1（この example。`PG::CardinalityViolation`） |
+| 同上 | 単価の式の `valid_on` の今日を明日にする | 1（この example。`got: [["B-1", "C-1", "A-1"], 3]`。予約した改定の 10 で並ぶ） |
+| `shipment_requests_spec.rb` の、取り消した出荷指示を持つ出荷依頼の example と、`supplier_shipments_spec.rb` の出荷予定日の example | 出荷予定日の式から有効な出荷指示に限る条件を外す | 2（単体は SQL のエラー、request は取り消した指示の日で並ぶ食い違い） |
+| `read_model_copies_spec.rb` の世界を作った直後の example | 受け手で受注番号を写さない | 6（`read_model_copies_spec.rb` の 4 つ（どれも `supplier: [0, 0, 10]`）、受け手の写しの example、受注番号の request の example） |
+| `order_allocation_spec.rb` の、出荷可能が受注番号を持つ example | 発行元が `sales_order_no` を渡さない | 2（`new` が引数の誤りにし、引当の 2 つの example が落ちる） |
+| 同上 | 発行元が受注番号の代わりに空を渡す | 1（この example） |
+| `catalog_spec.rb` の、他社の名義で自社の品目 ID を指す在庫の行を並びに使わない example | 安全在庫の副問い合わせから scope を外す | 1（この example。`got: ["B-1", "A-1"]`） |
+| `sales_orders_spec.rb` の、RLS を開いても自社の受注だけを返す example | `order_numbers` から所有の条件を外す | 1（この example。他社の受注が混ざる） |
+| `shipment_requests_spec.rb` の、組に他社の出荷依頼の受注 ID が混ざる example | `put_order_numbers` の UPDATE から所有の条件を外す | 1（この example） |
+| `shipment_requests_spec.rb` の、受注番号の違う出荷依頼だけを書き直す example | `put_order_numbers` から `IS DISTINCT FROM` を外す | 1（この example。`expected: 2 got: 3`） |
+| `sales_event_receiver_spec.rb` の、受注番号を持たないペイロードの example | イベントの型の `from_payload` を外す | 1（この example。`ArgumentError`） |
+| 行列の `SupplierView.shipmentRequests#orderByPlannedDate` | 出荷予定日の副問い合わせから出荷依頼との相関の条件を外す | 10（この行の全ペルソナ。`PG::CardinalityViolation`） |
+| 行列の `SupplierView.items#orderByUnitPrice` | 単価の副問い合わせから品目との相関の条件を外す | 10（この行の全ペルソナ） |
+| 行列の `SupplierView.items#orderBySafetyStock` | 安全在庫の `lookup` の値を副問い合わせ自身の品目 ID にする | 10（この行の全ペルソナ。`PG::CardinalityViolation`） |
+| E2E の出荷依頼の受注番号と品目の単価の example | `SHIPMENT_REQUEST_SORT_FIELDS` から `ORDER_NO` を外す | 1（この example。受注番号の見出しの `aria-sort` が `ascending` にならない） |
+| 同上 | `ITEM_SORT_FIELDS` から `UNIT_PRICE` を外す | 1（この example。単価の見出しに 2 番目の番号が出ない） |
+
+`catalog_spec.rb` を丸ごと流して `current` を外した壊し方を確かめると、落ちた example の後の RLS を開くグループで rspec が止まった（2 回、200 秒で打ち切り）。落ちた example を含む `describe` だけを流して記録をとり、止まることを IB-123 に積んだ。
+
+E2E の壊して落ちる記録は、`list-pagination.spec.ts` を丸ごと流した。どの回も、各ワーカーの最初の example が、ログインのボタンを押した後 5 秒で画面が移らずに落ちることがあった（下の「E2E」）。上の表の 2 件は、その落ち方ではなく、表に書いた期待で落ちた。
+
+### 確かめたこと
+
+#### E2E
+
+`frontend` で `E2E_DATABASE=factory_ops_m50_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` を Node 22.23.3 で流した。手元のマシンはほかの担当の作業で混み（load average 7〜15）、各ワーカーの最初の example が、ログインのボタンを押した後 5 秒で画面が移らずに落ちることがあった（IB-117 と同じ落ち方。`list-pagination.spec.ts` だけを 3 回流すと、3 回とも 2〜3 件がこれで落ち、ほかの example はすべて通った）。
+
+| 回 | 版 | 結果 | ログイン以外で落ちたもの |
+|---|---|---|---|
+| 1 | `5c1a6d8` | 26 failed・26 skipped・45 passed | `layout.spec.ts` の品目の画面の 1024px（表のはみ出し。上の計画との違いで直した） |
+| 2 | 1024px の直しの後の作業ツリー | 5 failed・26 skipped・66 passed | `list-pagination.spec.ts` の受注一覧の Shift の example（M47）が、Shift を押した後の URL を 5 秒待って `status` のままだった |
+| 3 | 同上 | 1 failed・26 skipped・70 passed | なし |
+
+2 回目の Shift の example は、M50 が変えていない受注一覧の画面の example で、`list-pagination.spec.ts` だけを流した 6 回と 3 回目では通った。マシンの混み具合による待ちの時間切れとみて、ここに記録する。
+
+#### 手元で流したもの
+
+Ruby 3.4.11・PostgreSQL 18.6・Node 22.23.3 で流した。
+
+```sh
+TEST_DATABASE=factory_ops_m50_test bin/ci   # 5c1a6d8 の作業ツリーで、すべての工程が通った。rspec は 3102 examples, 0 failures
+TEST_DATABASE=factory_ops_m50_test bundle exec rspec <完了条件の 1 行目の 6 つの spec>   # 88 examples, 0 failures
+TEST_DATABASE=factory_ops_m50_test bundle exec rspec spec/scenarios/read_model_copies_spec.rb spec/matrix spec/requests/catalog_spec.rb spec/requests/supplier_shipments_spec.rb spec/graphql/query_budget_spec.rb   # 1647 examples, 0 failures
+bin/check-schema-compat   # bin/ci の工程で通った（破壊的な変更 0 件。足したのは enum の値だけ）
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 146 tests passed
+bin/check-open-items --due M50   # 通った
+```
+
+分岐の網羅率の警告は 0 件だった（`bin/ci` の工程）。
+
+### 残件の処理
+
+引当先が M50 の行は、着手の前と PR の前に台帳を読んだ。OI-186（`decided`、流用元が並べるほかの列を足す作者の判断）は作るもの 1・8 で、OI-193（`judgment`、受注番号をイベントで運んで写す）は作るもの 3〜5 で、OI-194（`judgment`、品目の画面の安全在庫の列）は作るもの 8 で、計画のとおりに反映した。実装で決めたことを OI-199・OI-200（`judgment`）に、壊して落ちる記録で rspec が止まったことを IB-123 に積んだ。作者の判断の受け口（`decisions.md`）の D-1（1024px のはみ出しの扱い）を OI-200 に、D-2（M47 と Dependabot のマージ。差分の範囲は変わらない）を PR の差分の範囲に反映した。

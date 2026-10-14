@@ -6,6 +6,8 @@ import { sortRank, type Sort } from "@/lib/list";
  * 表の列の定義。見出しとセルを同じ定義から描き、key を 2 回書かない。`sort` は API の orderBy の field の値で、
  * 持つ列だけが並べ替えの見出しになる。API で並べられない列は並べ替えの対象にしない (画面で並べると、
  * 1 ページの中だけが並び、ページをまたいだ並びと食い違う)。`numeric` は見出しとセルの両方に、`truncate` はセルに渡す。
+ * `narrowHidden` は、1024〜1279px で見出しとセルを隠す列 (列の多い表を、そこでパネルに収める)。並べ替えの見出しの列は隠さない。
+ * 隠した列で並べていると、並びの理由が画面から消えるからである。
  */
 export type Column<F extends string = string> = {
   key: string;
@@ -13,7 +15,13 @@ export type Column<F extends string = string> = {
   sort?: F;
   numeric?: boolean;
   truncate?: boolean;
+  narrowHidden?: boolean;
 };
+
+/** `narrowHidden` の列の見出しとセルに付ける class。1024px 未満では表が横にスクロールするので隠さない。`sort` を持つ列には付けない。 */
+export function columnClass<F extends string>(c: Column<F>) {
+  return c.narrowHidden && !c.sort ? "lg:hidden xl:table-cell" : undefined;
+}
 
 /**
  * 並べ替えの見出しにする列を、API の orderBy の field の一覧から作る。`labels` は field ごとの見出しの文字で、
@@ -36,7 +44,7 @@ export function ColumnHeads<F extends string>({ columns, state }: { columns: rea
     c.sort ? (
       <SortableHead key={c.key} label={c.label} field={c.sort} state={state} numeric={c.numeric} />
     ) : (
-      <TableHead key={c.key} numeric={c.numeric}>
+      <TableHead key={c.key} numeric={c.numeric} className={columnClass(c)}>
         {c.label}
       </TableHead>
     ),
