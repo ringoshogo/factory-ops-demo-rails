@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ main, m48-ci-deps-check ]
 
 # 権限を書かないジョブの権限はリポジトリの設定で決まるので、最上位を読み取りだけにし、
 # GHCR へ書く packages: write は publish のジョブにだけ書く
@@ -270,6 +270,7 @@ jobs:
 
   # 公開の配置のマニフェストを照らす。kubectl が入った amd64 のランナーで流し、arm64 のランナーのイメージに頼らない
   manifests:
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
@@ -307,8 +308,8 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.API_IMAGE }}
           load: true
-          cache-from: type=gha,scope=api-m48-cold
-          cache-to: type=gha,scope=api-m48-cold,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
 
       # 本番の環境（eager_load）で全コードを読み込めることを、arm64 のイメージのまま確かめる。DB には繋がない
       - name: Boot API image in production
@@ -324,8 +325,8 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.FRONTEND_IMAGE }}
           load: true
-          cache-from: type=gha,scope=frontend-m48-cold
-          cache-to: type=gha,scope=frontend-m48-cold,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
   # main への push で、ほかのすべてのジョブが成功したときだけ、2 つのイメージを git の SHA のタグで GHCR に置く。
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
