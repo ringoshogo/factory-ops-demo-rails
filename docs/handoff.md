@@ -88,7 +88,7 @@
 
 - `export PATH="$HOME/.rbenv/shims:/opt/homebrew/opt/libpq/bin:$PATH"`（Ruby 3.4.11、pg_dump 18。この版にする理由は `Dockerfile` の `RUBY_VERSION` の直前のコメントにある）
 - DB は `docker compose up -d --wait`（PostgreSQL 18、ポート 5433）
-- rspec の全件は手元で約 2 分かかる。テストを並行して流すときは、別名の一時 DB を使う。M49 を終えるまでは、`TEST_DATABASE` を渡すと `bin/ci` の `spec/platform/logging_spec.rb` の 1 件が落ちる（IB-110）ので、`bin/ci` だけはほかに rspec を流している担当がいないことを確かめてから既定の DB で流す
+- rspec の全件は手元で約 2 分かかる。テストを並行して流すときは、`TEST_DATABASE=<名前>_test bin/ci` のように、`_test` で終わる別名の一時 DB を使う（`guides/config.md`「database.yml：同じ DB に 2 つのロールで接続する」）
 - 画面（`frontend/`）は Node 22 系で動かす。手元の E2E はホストの Chrome で流す（`README.md`「画面」）
 - GitHub の操作（push・PR）は、`GH_TOKEN=$(gh auth token -u ringoshogo)` を付けて個人アカウントで行う。gh の既定のアカウントは別のアカウントで、そのままでは push できない。`gh auth switch` は gh の既定のアカウントを変えてしまうので使わない
 

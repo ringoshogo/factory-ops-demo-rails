@@ -111,9 +111,20 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 - 表を作るタスクの後に、同じ rake ファイルの `db:grant_app_role` がアプリのロールへ権限を付与する。
 - 本番の `owner` は、環境変数 `DB_OWNER_USER` を渡したプロセスにだけ現れる。所有ロールの資格情報を渡す工程は [data-model.md「RLS」](../architecture/data-model.md#rls) にある。
 
-test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられる。E2E は `factory_ops_e2e` を渡し、rspec のテスト DB と分ける。E2E の準備（`lib/tasks/e2e.rake`）は DB を作り直すので、同じ DB を使うと rspec の DB を消す。準備は、`TEST_DATABASE` が無いか rspec のテスト DB の名前なら止まる。
+test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられる。E2E は `factory_ops_e2e` を渡し、rspec のテスト DB と分ける。E2E の準備（`lib/tasks/e2e.rake`）は DB を作り直すので、同じ DB を使うと rspec の DB を消す。準備は、`TEST_DATABASE` が無いか rspec のテスト DB の名前なら止まる。rspec を別の DB で並べて流すときは、名前に `_test` を区切りとして含める（`factory_ops_m49_test` の形）。行列の spec（`spec/support/matrix_cross_read.rb`）は、全行を読ませるポリシーを足す前に DB の名前を見て、テストの DB と分からなければ止まるからである。
 
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
+
+### 照合順序の版
+
+名前の列の照合順序 `ja-x-icu`（[data-model.md「文字列の照合順序」](../architecture/data-model.md#文字列の照合順序)）は ICU が実装し、ICU の版が上がると並びが変わりうる。PostgreSQL は、照合順序ごとに作ったときの ICU の版を `pg_collation.collversion` に記録し、イメージの ICU の版（`pg_collation_actual_version`）と違えば、その照合順序を使うたびに警告を出す。記録は DB ごとにあり、新しい DB は `template1` の記録を写す。そのため、DB を消して作り直しても、`template1` の記録が古ければ古い版のまま残る。
+
+PostgreSQL のイメージを上げた人は、クラスタ（手元の `compose.yaml` のボリューム、公開の配置の PVC）ごとに、次の順で記録を改める。CI は毎回新しいクラスタを作るので、記録と実際の版が食い違わない。手元では、`spec/platform/collations_spec.rb` が食い違いを落とす。
+
+1. `template1` で `ALTER COLLATION pg_catalog."ja-x-icu" REFRESH VERSION` を流す。`template1` には表が無いので、記録だけを改めてよい。手元は `PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d template1 -c 'ALTER COLLATION pg_catalog."ja-x-icu" REFRESH VERSION'`、公開の配置は `deploy/README.md`「PostgreSQL のイメージを上げたとき」にある
+2. 業務の DB を消して作り直す。作り直した DB は、`template1` の改めた記録を写し、索引を新しい ICU で作る。手元は `bin/rails db:drop db:prepare` と `bin/rails db:test:prepare`（`TEST_DATABASE` で使う DB も、それぞれの名前で）を流す。公開の配置は、作り直しを手で 1 回流す
+
+作り直さずに残す DB で記録を改めるときは、`ja-x-icu` の列を使う索引を `REINDEX` してから `REFRESH VERSION` を流す。索引の並びは作ったときの ICU の版で決まり、記録だけを改めると、古い並びの索引を新しい並びで引いて、一意の検査と検索を誤る。
 
 ### application.rb の schema_format：structure.sql に保存する
 
@@ -154,7 +165,7 @@ strong_migrations は、本番で表をロックしかねない変更（列の�
 
 ログの出口は 2 つある。
 
-- **`Rails.event`**：Rails 8.1 は、コントローラ・ジョブの計装を構造化イベント（`action_controller.request_started`・`active_job.completed` など）として `Rails.event` に出す。イベントをログに書く購読者は付属しないので、`initializers/event_log.rb` が `Platform::JsonLogSubscriber`（`packs/platform/lib/platform/`）を登録する。購読者は 1 件のイベントを `name`・`payload`・`tags`・`context`・`timestamp` の 1 行にし、本番では標準出力に、開発とテストでは `log/events.log` に書く。`TEST_DATABASE` で別の DB に向けたプロセス（E2E の Rails、並べて流す rspec）は、DB ごとのファイル（`log/events.<DB の名前>.log`）に書く。同じファイルに書くと、ログの spec（`spec/platform/logging_spec.rb`）が読む末尾にほかのプロセスの行が混ざる。
+- **`Rails.event`**：Rails 8.1 は、コントローラ・ジョブの計装を構造化イベント（`action_controller.request_started`・`active_job.completed` など）として `Rails.event` に出す。イベントをログに書く購読者は付属しないので、`initializers/event_log.rb` が `Platform::JsonLogSubscriber`（`packs/platform/lib/platform/`）を登録する。購読者は 1 件のイベントを `name`・`payload`・`tags`・`context`・`timestamp` の 1 行にし、本番では標準出力に、開発とテストでは `log/events.log` に書く。`TEST_DATABASE` で別の DB に向けたプロセス（E2E の Rails、並べて流す rspec）は、DB ごとのファイル（`log/events.<DB の名前>.log`）に書く。同じファイルに書くと、ログの spec（`spec/platform/logging_spec.rb`）が読む末尾にほかのプロセスの行が混ざる。ログの spec も、自分のプロセスが書くファイルを `Platform::Logging.events_log_path` で引いて読むので、`TEST_DATABASE` を渡して流す rspec は `log/events.log` を要らない。
 - **`Rails.logger`**：本番とテストでは、`Platform::JsonLogFormatter` を付けたロガーにし、残る文字列の行も JSON にして、同じ文脈を `context` に入れる。ロガーは `ActiveSupport::TaggedLogging` で包まない。TaggedLogging はタグを文字列としてメッセージに混ぜてから書式に渡すので、要求 ID などはタグにせず、文脈から `context` の項目に入れる。
 
 ### イベントごとに書く項目

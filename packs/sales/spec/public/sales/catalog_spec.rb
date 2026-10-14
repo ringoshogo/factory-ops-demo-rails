@@ -98,6 +98,24 @@ RSpec.describe Sales::Catalog do
       expect(items(filter: { keyword: nil })[1]).to eq(3)
     end
 
+    # 品目名の列の照合順序 ja-x-icu は、漢字を音読みの順（平のヘイが六のロクより前）で並べ、流用元の Intl.Collator("ja") と
+    # 同じ並びになる。コードポイントの順では六角の 2 つが先になる。2 件ずつのページの境目のカーソルも同じ照合順序で比べる
+    it "品目名を、漢字の音読みの順に並べる" do
+      [ [ "N-2", "六角ナット M8" ], [ "B-1", "六角ボルト M8" ], [ "W-3", "平座金 M8" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
+
+      expect(items(order_by: { field: :name, direction: :asc })).to eq([ %w[W-3 N-2 B-1], 3 ])
+    end
+
+    # 品目コードの列（pg_c_utf8）は ASCII の外の文字も、品目名の列（ja-x-icu）は全角の英字も、大文字と小文字を区別せずに探す。
+    # 全角と半角は別の文字として扱う
+    it "keyword は、ASCII の外の文字と全角の英字の大文字と小文字を区別せず、全角と半角は区別する" do
+      [ [ "Ä-1", "ＡＢＣ継手" ], [ "Ö-2", "abc 継手" ] ].each { |code, name| FactoryBot.create(:item, code:, name:) }
+
+      expect(items(filter: { keyword: "ä-" })).to eq([ %w[Ä-1], 1 ])
+      expect(items(filter: { keyword: "ａｂｃ" })).to eq([ %w[Ä-1], 1 ])
+      expect(items(filter: { keyword: "ABC" })).to eq([ %w[Ö-2], 1 ])
+    end
+
     it "keyword の % と _ と \\ は、ワイルドカードではなく文字として扱う" do
       [ "50%OFF", "A_1", "A\\1", "AB1", "500FF" ].each { FactoryBot.create(:item, code: _1) }
 

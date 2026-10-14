@@ -158,6 +158,29 @@ RSpec.describe "発注登録と受注の連結", type: :request do
           { "orderNo" => "PO-000003", "supplier" => { "name" => "青嵐精機工業" } } ])
     end
 
+    # 名前の列の照合順序 ja-x-icu は、漢字を音読みの順（青嵐のセイが東和のトウより前）で並べ、流用元の Intl.Collator("ja") と
+    # 同じ並びになる。コードポイントの順では東和商事が先になる。ページの境目のカーソルも同じ照合順序で比べる
+    it "受注側の名前を、漢字の音読みの順に 1 件ずつのページで並べる" do
+      other = FactoryBot.create(:tenant, name: "東和商事")
+      order("PO-000001", other, [ [ 1, 120 ] ])
+      order("PO-000002", supplier, [ [ 1, 120 ] ])
+      login_as(buyer_member)
+      query = <<~GRAPHQL
+        query($after: String) {
+          buyer { purchaseOrders(first: 1, after: $after, orderBy: { field: SUPPLIER_NAME, direction: ASC }) {
+            nodes { orderNo supplier { name } } pageInfo { hasNextPage endCursor }
+          } }
+        }
+      GRAPHQL
+
+      first = graphql_body(query).dig("data", "buyer", "purchaseOrders")
+      expect(first.fetch("nodes")).to eq([ { "orderNo" => "PO-000002", "supplier" => { "name" => "青嵐精機工業" } } ])
+      expect(first.dig("pageInfo", "hasNextPage")).to be(true)
+      second = graphql_body(query, after: first.dig("pageInfo", "endCursor")).dig("data", "buyer", "purchaseOrders")
+      expect(second.fetch("nodes")).to eq([ { "orderNo" => "PO-000001", "supplier" => { "name" => "東和商事" } } ])
+      expect(second.dig("pageInfo", "hasNextPage")).to be(false)
+    end
+
     it "bigint の上限を超える合計を 10 進の文字列で返し、受注確定の前の明細を含む発注の合計は空にする" do
       order("PO-000001", supplier, [ [ 3, 2**63 - 1 ] ])
       order("PO-000002", supplier, [ [ 1, nil ] ])

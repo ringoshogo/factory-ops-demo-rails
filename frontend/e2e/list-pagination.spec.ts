@@ -14,6 +14,9 @@ async function names(page: Page): Promise<string[]> {
   return rows(page).locator("td:nth-child(2)").allInnerTexts();
 }
 
+/** 流用元の画面が名前を並べる比べ方。DB の名前の列の照合順序 ja-x-icu と同じ並びになる。 */
+const byJapanese = new Intl.Collator("ja").compare;
+
 test("品目の一覧を名前の昇順で 2 ページ目まで読むと、1 ページ目と重ならず、合わせて totalCount の件数になる", async ({ page }, testInfo) => {
   await login(page, testInfo, "supplier_admin");
   await page.goto("/supplier/items?sort=name&dir=asc");
@@ -32,7 +35,8 @@ test("品目の一覧を名前の昇順で 2 ページ目まで読むと、1 ペ
 
   expect(first.filter((code) => second.includes(code))).toEqual([]);
   expect(new Set([...first, ...second]).size).toBe(total);
-  // 名前の並びは DB の照合順序で決まり、画面の照合順序とは一致しないので、名前の順は比べない。名前も重ならない
+  // 2 ページを続けた名前の並びは、流用元の Intl.Collator("ja") で並べた並びと等しい。名前も重ならない
+  expect([...firstNames, ...secondNames]).toEqual([...firstNames, ...secondNames].sort(byJapanese));
   expect(firstNames.filter((name) => secondNames.includes(name))).toEqual([]);
   // 2 ページ目に次は無く、最初のページへ戻れる
   await expect(page.getByTestId("next-page")).toHaveCount(0);
@@ -75,8 +79,9 @@ test("受注一覧を取引先の名前と受注合計で並べ、照合待ち�
   await login(page, testInfo, "supplier_admin");
   await page.goto("/supplier/sales-orders");
 
-  // 世界の受注の得意先は 2 社。名前の並びは DB の照合順序で決まるので、画面の照合順序とは比べない。
-  // 同じ得意先の受注がまとまり、降順でまとまりの順が逆になる。絞り込みにも「取引先」のボタンがあるので、見出しの中から探す
+  // 世界の受注の得意先は 2 社で、名前の先頭の漢字のコードポイントの順と音読みの順が逆になる組。
+  // 同じ得意先の受注がまとまり、まとまりの順は流用元の Intl.Collator("ja") で並べた順で、降順で逆になる。
+  // 絞り込みにも「取引先」のボタンがあるので、見出しの中から探す
   const customer = page.getByRole("columnheader", { name: "取引先" }).getByRole("button");
   await expect(customer).toBeVisible();
   await customer.click();
@@ -84,6 +89,7 @@ test("受注一覧を取引先の名前と受注合計で並べ、照合待ち�
   await expect(page.getByRole("columnheader", { name: "取引先" })).toHaveAttribute("aria-sort", "ascending");
   const ascending = runs(await column(page, 2));
   expect(ascending).toHaveLength(2);
+  expect(ascending).toEqual([...ascending].sort(byJapanese));
   await customer.click();
   await expect(page).toHaveURL(/sort=customer_name&dir=desc/);
   expect(runs(await column(page, 2))).toEqual([...ascending].reverse());

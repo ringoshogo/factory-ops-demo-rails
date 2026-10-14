@@ -145,7 +145,7 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 - イベントの登録：`packs/contracts/app/public/contracts.rb` の `Contracts.publish` だけが、トランザクションの中で `Contracts::EventJob`（`packs/contracts/app/public/contracts/event_job.rb`）を登録する。外で登録するとカスタム Cop `lib/rubocop/cop/factory_ops/event_job_enqueue.rb` と実行時の検査が落とす。outbox は置かない
 - 冪等キー：受け手ごとに業務の ID の一意制約で取る（例：受注の `source_purchase_order_id`、`packs/sales/app/public/sales/purchase_order_translator.rb`）
 - 在庫の同期：`Inventory::Allocation`（`packs/inventory/app/public/inventory/allocation.rb`）を受注と出荷が同じトランザクションで呼び、有効在庫が負にならないことを行ロックと CHECK 制約で守る
-- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（照合順序 `"C"`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
+- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
 - 引当の行を直列化の点にする：出荷の計上は `active` の引当だけを消費し、受注の取消は消費済みの引当を解除しない。同時に進んでもどちらか一方だけが成立する
 - 組の勧告ロック：`Partnerships::Access.lock_pair!` が、受注側と発注側の組ごとに PostgreSQL の勧告ロック（`pg_advisory_xact_lock`）を取り、発注の登録と、取引関係の失効・権限の撤回を直列にする。照合と対応表の登録は `Sales::PartMatching.lock`（`packs/sales/app/models/sales/part_matching.rb`）で直列にする
 

@@ -92,12 +92,15 @@ RSpec.describe "ログの出口と書式" do
     end
 
     # E2E の Rails は、同じ test の環境を TEST_DATABASE で別の DB に向けて動く。同じファイルに書くと、rspec と同時に流したときに
-    # 上の example が読む末尾に E2E の行が混ざる
-    it "TEST_DATABASE で別の DB を使うプロセスの Rails.event は、log/events.log ではなく DB ごとのファイルに書く" do
-      shared = Rails.root.join("log/events.log")
+    # 上の example が読む末尾に E2E の行が混ざる。
+    # 比べる相手は、この rspec のプロセスが書くファイルにする。rspec 自身も TEST_DATABASE で別の DB に向いていることがあり、
+    # そのときは log/events.log を書かず、ほかのプロセスが作らなければファイルが無い
+    it "TEST_DATABASE で別の DB を使うプロセスの Rails.event は、このプロセスとは別の DB ごとのファイルに書く" do
+      own = Platform::Logging.events_log_path(Rails.root)
       separate = Rails.root.join("log/events.spec_other_process.log")
       FileUtils.rm_f(separate)
-      before = File.read(shared)
+      expect(File).to exist(own)
+      before = File.read(own)
       script = <<~RUBY
         require "./config/application"
         Rails.application.initialize!
@@ -108,7 +111,7 @@ RSpec.describe "ログの出口と書式" do
       output, status = Open3.capture2e(env, RbConfig.ruby, "-e", script, chdir: Rails.root.to_s)
 
       expect(status).to be_success, output
-      expect(File.read(shared).delete_prefix(before)).not_to include("spec.other_process")
+      expect(File.read(own).delete_prefix(before)).not_to include("spec.other_process")
       expect(File.read(separate).lines.map { JSON.parse(_1)["name"] }).to eq(%w[spec.other_process])
     ensure
       FileUtils.rm_f(separate)

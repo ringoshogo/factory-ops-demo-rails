@@ -67,7 +67,7 @@
 
 | テーブル | 主な列 | 制約 |
 |---|---|---|
-| `tenants` | `code`・`name`・`partner_code`（取引用コード） | `code`・`partner_code` 一意。`partner_code` は推測できない無作為の値で、受注側が取引関係を結ぶ相手の指定に使う。テナント列を持たない（取引先の名前の表示に使う） |
+| `tenants` | `code`・`name`（照合順序 `ja-x-icu`）・`partner_code`（取引用コード） | `code`・`partner_code` 一意。`partner_code` は推測できない無作為の値で、受注側が取引関係を結ぶ相手の指定に使う。テナント列を持たない（取引先の名前の表示に使う） |
 | `users` | `owner_tenant_id`・`email`・`name`・`role`（`admin` / `member`）・`password_digest`（bcrypt）・`session_version`（セッションの世代） | `email` 一意。小文字に揃えて保存する。`session_version` はログアウトで進み（共有のデモのアカウントの配置の `SHARED_DEMO_ACCOUNTS=1` では進まない。`graphql-schema.md`「1 回のリクエストがたどる道」1）、`password_digest` を書き換えるとトリガーが進める。世代の違うセッションは拒まれる（`graphql-schema.md`「1 回のリクエストがたどる道」1） |
 | `partnerships` | `owner_tenant_id`（受注側）・`buyer_tenant_id`（発注側）・`status`（`active` / `revoked`）・`revoked_at` | 有効な関係（`status = 'active'`）の中で `(owner_tenant_id, buyer_tenant_id)` 一意。自分自身との関係は不可。`status` と `revoked_at` は一致する |
 | `partnership_grants` | `partnership_id`・`permission`（`view_catalog` / `place_orders` / `view_shipments`） | `(partnership_id, permission)` 一意。取引関係と同じ所有テナント |
@@ -78,6 +78,19 @@
 
 答えを使って書き込む操作は、問い合わせの前に、受注側と発注側の組のアドバイザリロック（`Partnerships::Access.lock_pair!`。`permitted?` に `lock: true` を渡すと取る）をトランザクションの終わりまで取る。取引関係の失効と権限の付与・撤回も、変える前に同じロックを取る（`context-map.md`「取引関係の失効」）。ロックのキーは組を表す文字列のハッシュにする。別の組とキーが衝突しても、互いを待たせるだけで、判定は誤らない。
 
+## 文字列の照合順序
+
+DB の既定の照合順序は、公式の `postgres` のイメージが initdb で決める `en_US.utf8` である。伝票番号のように ASCII の英数字と記号だけを持つ列は、並びが環境で変わってもページの中で食い違わないので、既定のままにする。実装者は、次の 2 種類の列に、列の定義で照合順序を持たせる。
+
+| 列の種類 | 照合順序 | 列 | 理由 |
+|---|---|---|---|
+| 文字列のキーで行ロックの順を決める列 | `pg_c_utf8` | `items.code`・`item_labels.code` | 取り込み（`Sales::Catalog.bulk_upsert`）は、品目を Ruby の文字列の比べ方（バイトの順）で並べてロックする。`pg_c_utf8` はコードポイントの順で、UTF-8 ではバイトの順と同じなので、コードの順で品目を読んでロックする SQL が、照合順序を書かずに取り込みと同じ順になる。`"C"` も同じ順だが、ASCII の外の文字の大文字と小文字を `ILIKE` で区別する |
+| 画面に並べる名前の列 | `ja-x-icu` | `tenants.name`・`items.name`・`item_labels.name` | 流用元の画面の `Intl.Collator("ja")` と同じ並び（かなを五十音の順、よく使う漢字を音読みの順）にする。名前全体の読みの順ではない |
+
+一覧の並べる式とキーセットのカーソルの比べ方は、列の照合順序をそのまま使い、式に照合順序を書かない。式に書くと、並べる式とカーソルの比べ方の両方に同じ照合順序を書くことになり、片方を書き忘れるとページの境目で行が抜けるか重なる。取引先の名前のスカラーの副問い合わせ（`Partnerships::Directory.tenant_names_sql`）も、`tenants.name` の照合順序を引き継ぐ。
+
+どちらの照合順序も決定的なので、`LIKE` と `ILIKE` が使え、一覧の検索（`Keyword`）は ASCII の外の文字と全角の英字でも大文字と小文字を区別しない。全角と半角は別の文字として扱う。`ja-x-icu` は ICU の版が上がると並びが変わりうるので、PostgreSQL のイメージを上げた人は `../guides/config.md`「照合順序の版」の手順を流す。列の照合順序と、DB が記録した版がイメージの版と等しいことは、`spec/platform/collations_spec.rb` が確かめる。
+
 ## 各コンテキストのテーブル
 
 以下の表は、`id`・`owner_tenant_id`・時刻列と、親子の複合外部キーを省略する。「→」は、外部キーを張らない ID 参照を表す。
@@ -86,7 +99,7 @@
 
 | テーブル | 主な列 | 制約・冪等キー |
 |---|---|---|
-| `items`（品目カタログ） | `code`・`name`・`unit`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意 |
+| `items`（品目カタログ） | `code`（照合順序 `pg_c_utf8`）・`name`（照合順序 `ja-x-icu`）・`unit`・`tax_rate_percent`（8 / 10、既定 10）・`published`（既定は非公開） | `(owner, code)` 一意 |
 | `item_prices`（販売単価の履歴） | `item_id`・`unit_price`・`valid_period`（`daterange`、有効期間）・`recorded_period`（`tstzrange`、記録期間）・`reason`・`recorded_by_user_id` | 単価は 0 以上。記録期間は始まりを含み終わりを含まない。記録期間が終わっていない行同士は、同じ品目で有効期間が重ならない（排他制約）。記録期間を閉じる以外の UPDATE と、DELETE はトリガーが拒む |
 | `customer_part_mappings`（得意先品番の対応表） | `customer_tenant_id`→・`customer_part_number`・`item_id` | `(owner, customer_tenant_id, customer_part_number)` 一意。取引先は自社が受注側の取引関係（失効したものを含む）の相手に限る。受注を作る照合と対応表の登録は、取引先ごとの勧告ロック（`pg_advisory_xact_lock`）で直列にし、ロックを取ってから対応表を読む。直列にしないと、照合待ちの受注がコミットされる前に登録が終わり、照合のやり直しから漏れる |
 | `sales_orders` | `order_no`・`customer_tenant_id`→・`source_purchase_order_id`→・`order_date`・`due_date`・`confirmed_at`・`shipped_at`・`inspected_at`・`cancelled_at` | `source_purchase_order_id` 一意（連結の冪等キー）。取消と出荷は両立しない。検収は出荷の後 |
@@ -104,7 +117,7 @@
 | `stocks` | `item_id`→・`on_hand`・`allocated`・`safety_stock` | `(owner, item_id)` 一意。`on_hand >= allocated >= 0`（有効在庫が負にならない）を CHECK 制約で守る |
 | `allocations`（引当） | `sales_order_line_id`→・`item_id`・`quantity`・`status`（`active` / `released` / `consumed`） | `sales_order_line_id` 一意。`(owner, item_id)` で `stocks` を参照する |
 | `stock_movements`（在庫移動履歴） | `item_id`・`type`（`inbound` / `outbound` / `allocate` / `deallocate` / `ship`）・`quantity`（正の数）・`reason`・`allocation_id` | 追記だけ。増減の向きは `type` が決める。`allocation_id` は引当を動かす移動（`allocate` / `deallocate` / `ship`）にだけ入る |
-| `item_labels`（品目の写し） | `item_id`→・`code`・`name` | `(owner, item_id)` 一意。受注の品目への外部キーは張らない |
+| `item_labels`（品目の写し） | `item_id`→・`code`（照合順序 `pg_c_utf8`）・`name`（照合順序 `ja-x-icu`） | `(owner, item_id)` 一意。受注の品目への外部キーは張らない |
 
 在庫の数量（`on_hand`・`allocated`）を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。安全在庫（`safety_stock`）は数量ではないので、移動履歴を残さずに `Inventory::Stock#change_safety_stock!` だけで変える。これを呼ぶ公開 API は、シードと E2E の世界の準備のための `Inventory::Stocks.set_safety_stock` だけで、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（「RLS」の `Partnerships::Onboarding.register` と同じ条件）。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。行の無い品目の在庫は空として返す。
 

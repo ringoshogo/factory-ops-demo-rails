@@ -101,9 +101,42 @@ RSpec.describe "在庫と引当", type: :request do
       expect(graphql_body(query, keyword: "あ" * 101)["errors"].map { _1["message"] }).to eq([ "keyword is too long (maximum is 100)" ])
     end
 
+    # 品目名の列の照合順序 ja-x-icu は、漢字を音読みの順（平のヘイが六のロクより前）で並べ、流用元の Intl.Collator("ja") と
+    # 同じ並びになる。コードポイントの順では六角の 2 つが先になる
     it "品目コードと品目名で並べる" do
       expect(stocks(orderBy: { field: "ITEM_CODE", direction: "ASC" })).to eq([ %w[B-1 N-2 W-3], 3 ])
-      expect(stocks(orderBy: { field: "ITEM_NAME", direction: "ASC" })).to eq([ %w[N-2 B-1 W-3], 3 ])
+      expect(stocks(orderBy: { field: "ITEM_NAME", direction: "ASC" })).to eq([ %w[W-3 N-2 B-1], 3 ])
+    end
+
+    it "品目名を、漢字の音読みの順に 1 件ずつのページで並べ、ページの境目で抜けも重なりもしない" do
+      query = <<~GRAPHQL
+        query($after: String) {
+          supplier { stocks(first: 1, after: $after, orderBy: { field: ITEM_NAME, direction: ASC }) {
+            nodes { item { code } } pageInfo { hasNextPage endCursor }
+          } }
+        }
+      GRAPHQL
+      codes = []
+      after = nil
+      loop do
+        page = graphql_body(query, after:).dig("data", "supplier", "stocks")
+        codes.concat(page.fetch("nodes").map { _1.dig("item", "code") })
+        break unless page.dig("pageInfo", "hasNextPage")
+
+        after = page.dig("pageInfo", "endCursor")
+      end
+
+      expect(codes).to eq(%w[W-3 N-2 B-1])
+    end
+
+    # 品目コードの列（pg_c_utf8）は ASCII の外の文字も、品目名の列（ja-x-icu）は全角の英字も、大文字と小文字を区別せずに探す。
+    # 全角と半角は別の文字として扱う
+    it "keyword は、ASCII の外の文字と全角の英字の大文字と小文字を区別せず、全角と半角は区別する" do
+      { "Ä-4" => "ＡＢＣ継手", "Ö-5" => "abc 継手" }.each { |code, name| adjust("INBOUND", 1, item_id: save_item(code, name)) }
+
+      expect(stocks(filter: { keyword: "ä-" })).to eq([ %w[Ä-4], 1 ])
+      expect(stocks(filter: { keyword: "ａｂｃ" })).to eq([ %w[Ä-4], 1 ])
+      expect(stocks(filter: { keyword: "ABC" })).to eq([ %w[Ö-5], 1 ])
     end
   end
 end
