@@ -455,7 +455,7 @@ E2E の壊して落ちる記録は、`list-pagination.spec.ts` を丸ごと流�
 | 2 | 1024px の直しの後の作業ツリー | 5 failed・26 skipped・66 passed | `list-pagination.spec.ts` の受注一覧の Shift の example（M47）が、Shift を押した後の URL を 5 秒待って `status` のままだった |
 | 3 | 同上 | 1 failed・26 skipped・70 passed | なし |
 
-2 回目の Shift の example は、M50 が変えていない受注一覧の画面の example で、`list-pagination.spec.ts` だけを流した 6 回と 3 回目では通った。マシンの混み具合による待ちの時間切れとみて、ここに記録する。
+2 回目の Shift の example は、M50 が変えていない受注一覧の画面の example で、`list-pagination.spec.ts` だけを流したどの回（壊して落ちる記録の回を含めて 7 回）と、3 回目では通った。マシンの混み具合による待ちの時間切れとみて、ここに記録する。
 
 #### 手元で流したもの
 
