@@ -1,6 +1,6 @@
 query SupplierKanban {
   supplier {
-    awaitingPartMatch: salesOrders(first: 10, filter: { statuses: [AWAITING_PART_MATCH] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+    awaitingPartMatch: salesOrders(first: 10, filter: { statuses: [AWAITING_PART_MATCH] }, orderBy: { field: DUE_DATE, direction: ASC }, thenBy: [{ field: ORDER_NO, direction: ASC }]) {
       totalCount
       nodes {
         id
@@ -13,7 +13,7 @@ query SupplierKanban {
         shipmentRequest { id status }
       }
     }
-    received: salesOrders(first: 10, filter: { statuses: [RECEIVED] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+    received: salesOrders(first: 10, filter: { statuses: [RECEIVED] }, orderBy: { field: DUE_DATE, direction: ASC }, thenBy: [{ field: ORDER_NO, direction: ASC }]) {
       totalCount
       nodes {
         id
@@ -26,7 +26,7 @@ query SupplierKanban {
         shipmentRequest { id status }
       }
     }
-    partiallyAllocated: salesOrders(first: 10, filter: { statuses: [PARTIALLY_ALLOCATED] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+    partiallyAllocated: salesOrders(first: 10, filter: { statuses: [PARTIALLY_ALLOCATED] }, orderBy: { field: DUE_DATE, direction: ASC }, thenBy: [{ field: ORDER_NO, direction: ASC }]) {
       totalCount
       nodes {
         id
@@ -39,7 +39,7 @@ query SupplierKanban {
         shipmentRequest { id status }
       }
     }
-    allocated: salesOrders(first: 10, filter: { statuses: [ALLOCATED] }, orderBy: { field: DUE_DATE, direction: ASC }) {
+    allocated: salesOrders(first: 10, filter: { statuses: [ALLOCATED] }, orderBy: { field: DUE_DATE, direction: ASC }, thenBy: [{ field: ORDER_NO, direction: ASC }]) {
       totalCount
       nodes {
         id

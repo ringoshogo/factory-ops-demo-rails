@@ -812,7 +812,7 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 
 ## ページングと N+1
 
-一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。並べ替えの列は 1 つである。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前）か、一覧のパッケージに写した表（在庫の品目のコードと名前。`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
+一覧は Relay のコネクションで返し、ページングの引数は `first`・`after` だけにする（前へは辿らない）。どのコネクションも件数 `totalCount` を持つ。件数は絞り込んだ一覧の行の数で、`first`・`after` に左右されない。ほかに一覧が持つ引数は、親を ID で選ぶもの（`partMappings(customerTenantId:)`・`stockMovements(itemId:)`・`billableItems(customerTenantId:)`）、監査ログの絞り込み（`AuditLogFilter`）、画面（`../implementation-plan.md` M33）が一覧を 1 ページずつ読むための並べ替え（`orderBy`・`thenBy`）と絞り込み（`filter`）である。並べ替えと絞り込みを持つ一覧は次の表のとおりで、ほかの一覧は件数だけを持つ。`orderBy` が 1 つ目の並べ替えの列、`thenBy` が 2 つ目からの列で、合わせて 3 つまで並べる。同じパッケージの値（一覧の表の列と、そこから計算する合計金額と状況）は SQL の式で並べる。別のコンテキストの値は、相手の表を直に結合せず、相手の公開 API が返す副問い合わせ（取引先の名前）か、一覧のパッケージに写した表（在庫の品目のコードと名前。`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）で並べる。相手の表を直に結合すると、相手の scope と列の名前が一覧のパッケージに出て、公開 API が値を返す境界（「1 回のリクエストがたどる道」3）を越えるからである。受注・発注・出荷依頼は、導出した状況でも絞る（`statuses`、「状況の enum」）。
 
 | 一覧 | 並べ替えの列（`<型>OrderField`） | 絞り込み（`<型>Filter`） |
 |---|---|---|
@@ -847,6 +847,11 @@ type SalesOrderConnection {
 "どちらの向きでも、並べ替えの列の値の無い行を最後に置く"
 enum OrderDirection { ASC DESC }
 
+type SupplierView {
+  "orderBy が 1 つ目の列、thenBy が 2 つ目からの列。thenBy の型は orderBy と同じ入力型のリストで、ほかの 4 つの一覧も同じ形で持つ"
+  salesOrders(first: Int, after: String, orderBy: SalesOrderOrder, thenBy: [SalesOrderOrder!], filter: SalesOrderFilter): SalesOrderConnection!
+}
+
 input SalesOrderOrder { field: SalesOrderOrderField!, direction: OrderDirection! }
 enum SalesOrderOrderField { ORDER_NO ORDER_DATE DUE_DATE CUSTOMER_NAME TOTAL_AMOUNT STATUS }
 input SalesOrderFilter { customerTenantId: ID, orderDateFrom: ISO8601Date, orderDateTo: ISO8601Date, statuses: [SalesOrderStatus!] }
@@ -872,7 +877,9 @@ input ItemFilter { keyword: String }
 
 `orderBy` を省いた一覧は、主キーの UUIDv7 で作成順の新しいものから並べ、主キーをカーソルにする。ただし相手側の型の一覧は、相手の内部の ID をカーソルに出さないため、型を識別する値で並べてカーソルにする（`SupplierPartnership.catalog` は品目コードの昇順）。取り込みの失敗した行（`Import.rowErrors`）は、行番号の昇順に並べ、行番号をカーソルにする。
 
-`orderBy` を渡した一覧は「列の値、主キー」の組で並べ、主キーを列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、向きによらず最後に置く。そのため、カーソルの値が空なら後ろは「値が空で主キーが後のもの」だけになり、値があれば後ろは「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、並べ替えの列の名前・向き・列の値・主キーを JSON にして Base64 で包んだ不透明な文字列である。合計金額の値は、`bigint` を超えうるので JSON の数にせず整数の 10 進の文字列で書き、読むときは 31 桁までの数字だけを受け付ける。形の誤ったカーソルと、別の並べ替え（列か向きの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
+`orderBy` を渡した一覧は「列 1、列 2、…、主キー」の組で並べ、列ごとに向きを持ち、主キーを最後の列と同じ向きに並べる。列の値が同じ行がページの境目をまたいでも、行は抜けも重なりもしない。値の無い行（希望納期の無い受注など）は、列ごとに向きによらず後ろに置く。カーソルの後ろの行は、「ある列より前の列がすべてカーソルと同じ値で、その列がカーソルより後」のどれかか、「すべての列が同じ値で、主キーが後」である。前の列が同じことは、空どうしも同じとみなす `IS NOT DISTINCT FROM` で比べる（`=` で比べると、前の列の値が空の行で、後ろの列がカーソルより後の行が抜ける）。列ごとの「後」は、カーソルの値が空なら無く、値があれば「値が後か、値が空」である。列が 1 つなら、後ろは、カーソルの値が空なら「値が空で主キーが後のもの」だけになり、値があれば「値が後のもの、値が同じで主キーが後のもの、値が空のもの」になる。カーソルは、列ごとの名前・向き・値を順に並べ、最後に主キーを置いた配列を JSON にして Base64 で包んだ不透明な文字列である。列が 1 つなら、名前・向き・値・主キーの 4 つになる。合計金額の値は、`bigint` を超えうるので JSON の数にせず整数の 10 進の文字列で書き、読むときは 31 桁までの数字だけを受け付ける。形の誤ったカーソルと、別の並べ替え（列の数・名前・向きのどれかの違うもの、`orderBy` の有無の違うもの）で作ったカーソルは、どれもトップレベルのエラー（`Invalid cursor`）にする。
+
+`thenBy` は、`orderBy` を省いて渡すか、`orderBy` と合わせて 4 つ以上の列になるか、同じ `field` を 2 回書くと、引数の検証でトップレベルのエラーにする（`Resolvers::SortArguments`）。列を 3 つまでにするのは、カーソルの後ろの条件が列の数の 2 乗で長くなるからで、サーバーの上限は `Page::MAX_SORTS` に、画面の見出しで足せる列の数は `frontend/lib/list.ts` の `MAX_SORTS` にあり、`spec/graphql/sort_arguments_spec.rb` が 2 つを同じ値に保つ。2 つ目からの列を、`orderBy` をリストに変えずに別の引数で足したのは、`orderBy` の型を変えると比較器が破壊的な変更に分類するからである（`../implementation-plan.md` M47 の判断）。画面は、一覧の見出しを Shift を押して押すと 2 つ目からの列を足し、ダッシュボードのかんばんは、未完了の受注の列を希望納期と受注番号の順に読む。
 
 公開 API は、操作者・件数・カーソル（並べ替えと絞り込みを持つ一覧は、それも）を受け取り、1 ページ分の値・値ごとのカーソル・次のページの有無・件数を `Page`（`packs/platform`）で返す。公開 API は scope と絞り込みを掛けた relation を `Page.of` に渡し、`Page` はページの行と件数を同じ relation から引く。ページと件数で scope と絞り込みを別々に書くと、片方だけ scope が抜けても単体の spec では気づきにくいからである。`Page` は、行と件数を初めて読まれたときに引く。`totalCount` だけを選ぶ問い合わせ（画面のタブの件数）は、件数の 1 つの SQL だけを流し、ページの行も値への写しも読まない。`Page` を作った `Tenancy.with_tenant` の外で行か件数を読むと、`Tenancy::MissingTenant` にする。テナントの設定の無い接続では、RLS が行を隠して空のページを黙って返すからである。リゾルバは公開 API を呼ぶブロックを `Connections::PagedQuery` に包んで返し、`Connections::PagedConnection` が、上限で丸めた件数とカーソルを渡してブロックを呼ぶ。形の誤ったカーソルは、トップレベルのエラーにする。
 

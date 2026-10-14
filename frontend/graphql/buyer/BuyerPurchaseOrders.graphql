@@ -2,6 +2,7 @@ query BuyerPurchaseOrders(
   $first: Int
   $after: String
   $orderBy: PurchaseOrderOrder
+  $thenBy: [PurchaseOrderOrder!]
   $filter: PurchaseOrderFilter
   $allFilter: PurchaseOrderFilter
   $openFilter: PurchaseOrderFilter
@@ -12,7 +13,7 @@ query BuyerPurchaseOrders(
   supplier { dashboard { businessDate } }
   buyer {
     suppliers { supplier { id name } }
-    purchaseOrders(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+    purchaseOrders(first: $first, after: $after, orderBy: $orderBy, thenBy: $thenBy, filter: $filter) {
       totalCount
       nodes {
         id

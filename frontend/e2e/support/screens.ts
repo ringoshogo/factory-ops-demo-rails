@@ -9,7 +9,7 @@ import type { Persona } from "./world";
  *
  * 表の行は、その画面を開く役 (受注側の画面は受注側の管理者、発注側の画面は全権限の付与がある発注側の管理者。
  * ログインの画面は役を持たず、ログインせずに開く) と、動的な [id] を決める一覧の画面 (その一覧の最初の行のリンクを開く)、
- * 同じ画面のタブの変種を持つ。
+ * 同じ画面のタブと並びの変種を持つ。
  */
 type Plan = { persona?: Persona; from?: string; variants?: string[] };
 
@@ -19,7 +19,8 @@ const PLANS: Record<string, Plan> = {
   "/audit-logs": { persona: "supplier_admin" },
   "/missing": { persona: "supplier_admin" },
   "/supplier/dashboard": { persona: "supplier_admin" },
-  "/supplier/sales-orders": { persona: "supplier_admin" },
+  // 2 つの列の並びの変種は、見出しの番号を測る。2 つ目の列を数値の最後の列にし、番号の幅を空けたセルのそろえも測る
+  "/supplier/sales-orders": { persona: "supplier_admin", variants: ["", "?sort=status,total_amount&dir=asc,desc"] },
   "/supplier/sales-orders/[id]": { persona: "supplier_admin", from: "/supplier/sales-orders" },
   "/supplier/part-mappings": { persona: "supplier_admin" },
   "/supplier/stocks": { persona: "supplier_admin", variants: ["", "?tab=movements"] },
@@ -67,7 +68,7 @@ export function screenPlans(): Screen[] {
 
 /** 画面の名前 (スクリーンショットのファイル名に使う)。 */
 export const screenName = (s: Screen) =>
-  `${s.route.replace(/^\//, "").replace(/[/[\]]+/g, "_").replace(/_+$/, "") || "login"}${s.variant.replace(/[?=&]/g, "_")}`;
+  `${s.route.replace(/^\//, "").replace(/[/[\]]+/g, "_").replace(/_+$/, "") || "login"}${s.variant.replace(/[?=&,]/g, "_")}`;
 
 /** 画面を開く。動的な [id] は、一覧の画面の最初の行のリンクから決める。 */
 export async function openScreen(page: Page, s: Screen): Promise<void> {

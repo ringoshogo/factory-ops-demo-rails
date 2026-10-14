@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, TextLink } from "@/components/app-link";
-import { ColumnHeads, sortColumns, type Column } from "@/components/columns";
+import { ColumnHeads, sortColumns, sortCell, type Column } from "@/components/columns";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { DateText, DueDate } from "@/components/date-text";
 import { FilterBar } from "@/components/filter-bar";
@@ -150,7 +150,7 @@ export default async function PurchaseOrdersPage({ searchParams }: { searchParam
                   return (
                     <TableRow key={o.id} data-testid="list-row">
                       {COLUMNS.map((c) => (
-                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} sortable={Boolean(c.sort)}>
+                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} {...sortCell(c, q.sort)}>
                           {content[c.key]}
                         </TableCell>
                       ))}

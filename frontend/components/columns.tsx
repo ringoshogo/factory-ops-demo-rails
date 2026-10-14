@@ -1,6 +1,6 @@
 import { SortableHead } from "@/components/sortable-head";
 import { TableHead } from "@/components/ui/table";
-import type { Sort } from "@/lib/list";
+import { sortRank, type Sort } from "@/lib/list";
 
 /**
  * 表の列の定義。見出しとセルを同じ定義から描き、key を 2 回書かない。`sort` は API の orderBy の field の値で、
@@ -23,6 +23,11 @@ export function sortColumns<F extends string>(labels: Record<F, string>, extra: 
   return Object.fromEntries(
     (Object.keys(labels) as F[]).map((field) => [field, { key: field, label: labels[field], sort: field, ...extra[field] }]),
   ) as unknown as Record<F, Column<F>>;
+}
+
+/** 列のセルの並べ替えの属性。数値の列のセルは、見出しの矢印 (と、並べる列の番号) の幅を右に空けて、見出しの文字とそろえる。 */
+export function sortCell<F extends string>(c: Column<F>, state: Sort<F>) {
+  return { sortable: Boolean(c.sort), ranked: Boolean(c.sort && sortRank(state, c.sort)) };
 }
 
 /** 列の定義から見出しを描く。`sort` を持つ列は並べ替えの見出し、持たない列はただの見出しにする。 */

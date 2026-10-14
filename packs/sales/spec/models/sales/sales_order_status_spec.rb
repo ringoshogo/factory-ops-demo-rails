@@ -73,7 +73,7 @@ RSpec.describe Sales::SalesOrderStatus do
       received: order(allocated: [ 0 ])
     }
     sorted = lambda do |direction|
-      Sales::SalesOrders.list(actor, first: 100, after: nil, order_by: { field: :status, direction: }).values.map(&:status)
+      Sales::SalesOrders.list(actor, first: 100, after: nil, order_by: [ { field: :status, direction: } ]).values.map(&:status)
     end
 
     expected = %i[awaiting_part_match received partially_allocated allocated shipped inspected cancelled]

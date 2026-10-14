@@ -92,6 +92,30 @@ RSpec.describe "受注側のダッシュボード", type: :request do
       .to match_array(Types::SalesOrderStatusType.values.values.map(&:value))
   end
 
+  # 受注番号も主キーも作った順に増えるので、作った受注では主キーの順でも同じ並びになり、確かめにならない。
+  # 主キーの順と受注番号の順を逆にした 2 つの受注で確かめる。明細の無い受注の状況は引当済になる
+  it "かんばんの画面の問い合わせが、未完了の列の希望納期の同じ受注を受注番号の昇順に並べる" do
+    kanban = Rails.root.join("frontend/graphql/supplier/SupplierKanban.graphql").read
+    as_supplier do
+      { "00000000-0000-7000-8000-000000000002" => "SO-K00001", "00000000-0000-7000-8000-000000000001" => "SO-K00002" }.each do |id, order_no|
+        FactoryBot.create(:sales_order, id:, order_no:, due_date: today)
+      end
+    end
+
+    expect(query(kanban).dig("supplier", "allocated", "nodes").map { _1["orderNo"] }.first(2)).to eq(%w[SO-K00001 SO-K00002])
+  end
+
+  # 上の example は引当済の列の並びだけを見るので、ほかの列の並べ替えの引数は文書で確かめる
+  it "かんばんの画面の問い合わせは、未完了の 4 つの列を希望納期と受注番号の昇順で、終わった 3 つの列を受注番号の降順で読む" do
+    columns = GraphQL.parse(Rails.root.join("frontend/graphql/supplier/SupplierKanban.graphql").read).definitions.sole.selections.sole.selections
+    open = [ "orderBy: {field: DUE_DATE, direction: ASC}", "thenBy: [{field: ORDER_NO, direction: ASC}]" ]
+    done = [ "orderBy: {field: ORDER_NO, direction: DESC}" ]
+
+    expect(columns.to_h { |column| [ column.alias, column.arguments.select { %w[orderBy thenBy].include?(_1.name) }.map(&:to_query_string) ] })
+      .to eq("awaitingPartMatch" => open, "received" => open, "partiallyAllocated" => open, "allocated" => open,
+        "shipped" => done, "inspected" => done, "cancelled" => done)
+  end
+
   it "安全在庫を下回る在庫を、品目コードの昇順で上限の件数まで返す" do
     stub_const("Types::SupplierDashboardType::STOCKS_LIMIT", 2)
     stock_below("AXLE-1")

@@ -72,8 +72,8 @@ RSpec.describe Fulfillment::ShipmentRequests do
       a, b, c, d = [ nil, 3, 3, 1 ].map { request(_1) }
       request(1, tenant: other)
 
-      expect(list_ids(order_by: { field: :due_date, direction: :asc })).to eq([ [ d, b, c, a ].map(&:id), 4 ])
-      expect(list_ids(order_by: { field: :due_date, direction: :desc })).to eq([ [ c, b, d, a ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :due_date, direction: :asc } ])).to eq([ [ d, b, c, a ].map(&:id), 4 ])
+      expect(list_ids(order_by: [ { field: :due_date, direction: :desc } ])).to eq([ [ c, b, d, a ].map(&:id), 4 ])
       # 対照：並べ替えを省くと、作った順の新しいものから
       expect(list_ids).to eq([ [ d, c, b, a ].map(&:id), 4 ])
     end
@@ -87,9 +87,9 @@ RSpec.describe Fulfillment::ShipmentRequests do
         end
       end
 
-      expect(list_ids(order_by: { field: :customer_name, direction: :asc })).to eq([ [ b, a, c ].map(&:id), 3 ])
-      expect(list_ids(order_by: { field: :status, direction: :asc })).to eq([ [ c, b, a ].map(&:id), 3 ])
-      expect(list_ids(order_by: { field: :status, direction: :desc })).to eq([ [ a, b, c ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :customer_name, direction: :asc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :status, direction: :asc } ])).to eq([ [ c, b, a ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :status, direction: :desc } ])).to eq([ [ a, b, c ].map(&:id), 3 ])
     end
   end
 end

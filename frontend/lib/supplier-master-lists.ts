@@ -1,5 +1,5 @@
 import type { ItemOrderField, StockMovementType, StockOrderField } from "@/lib/graphql/generated";
-import { pageArgs, parseEnumList, parseSort, single, type Sort } from "@/lib/list";
+import { pageArgs, parseEnumList, parseSort, single, sortArgs, type Sort } from "@/lib/list";
 
 /**
  * 受注側の品目・在庫・移動履歴・品番の対応表の一覧の URL の値を、GraphQL の変数に写す。サーバー部品 (一覧) と
@@ -14,7 +14,7 @@ export function itemListVariables(params: URLSearchParams) {
   const sort: Sort<ItemOrderField> = parseSort(params, ITEM_SORT_FIELDS);
   return {
     ...pageArgs(params),
-    orderBy: sort,
+    ...sortArgs(sort),
     filter: keyword === "" ? null : { keyword },
   };
 }
@@ -38,7 +38,7 @@ export function stockListVariables(params: URLSearchParams) {
   const below = single(params, "below") === "1";
   return {
     ...pageArgs(params),
-    orderBy: parseSort(params, STOCK_SORT_FIELDS),
+    ...sortArgs(parseSort(params, STOCK_SORT_FIELDS)),
     filter:
       keyword === "" && !below
         ? null

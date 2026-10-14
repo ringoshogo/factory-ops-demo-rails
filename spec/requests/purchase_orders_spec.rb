@@ -181,6 +181,17 @@ RSpec.describe "発注登録と受注の連結", type: :request do
       expect(second.dig("pageInfo", "hasNextPage")).to be(false)
     end
 
+    it "orderBy と thenBy を合わせて 3 つの列までを受け付け、4 つはトップレベルのエラーにする" do
+      order("PO-000001", supplier, [ [ 1, 120 ] ])
+      login_as(buyer_member)
+      query = "query($thenBy: [PurchaseOrderOrder!]) " \
+        "{ buyer { purchaseOrders(orderBy: { field: STATUS, direction: ASC }, thenBy: $thenBy) { totalCount } } }"
+      then_by = %w[SUPPLIER_NAME ORDER_DATE TOTAL_AMOUNT].map { { field: _1, direction: "DESC" } }
+
+      expect(graphql_body(query, thenBy: then_by.first(2))).to eq("data" => { "buyer" => { "purchaseOrders" => { "totalCount" => 1 } } })
+      expect(graphql_body(query, thenBy: then_by)["errors"]&.map { _1["message"] }).to eq([ "orderBy and thenBy accept at most 3 fields" ])
+    end
+
     it "bigint の上限を超える合計を 10 進の文字列で返し、受注確定の前の明細を含む発注の合計は空にする" do
       order("PO-000001", supplier, [ [ 3, 2**63 - 1 ] ])
       order("PO-000002", supplier, [ [ 1, nil ] ])

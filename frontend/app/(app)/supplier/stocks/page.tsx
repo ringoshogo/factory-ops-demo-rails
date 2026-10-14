@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { TextLink } from "@/components/app-link";
-import { ColumnHeads, sortColumns, type Column } from "@/components/columns";
+import { ColumnHeads, sortColumns, sortCell, type Column } from "@/components/columns";
 import { DateText } from "@/components/date-text";
 import { FilterBar, SearchForm } from "@/components/filter-bar";
 import { FilterMenu } from "@/components/filter-menu";
@@ -15,10 +15,10 @@ import { formatNumber } from "@/lib/format";
 import { SupplierStockMovementsDocument, SupplierStocksDocument, type StockOrderField } from "@/lib/graphql/generated";
 import { query } from "@/lib/graphql/request";
 import { UNREACHABLE_MESSAGE } from "@/lib/graphql/user-errors";
-import { nodesOf, single, toParams, type SearchParams } from "@/lib/list";
+import { nodesOf, parseSort, single, sortParams, toParams, type SearchParams } from "@/lib/list";
 import { patchHref } from "@/lib/query";
 import { STOCK_MOVEMENT_TYPE } from "@/lib/statuses";
-import { STOCK_MOVEMENT_TYPES, stockListVariables, stockMovementVariables } from "@/lib/supplier-master-lists";
+import { STOCK_MOVEMENT_TYPES, STOCK_SORT_FIELDS, stockListVariables, stockMovementVariables } from "@/lib/supplier-master-lists";
 
 // 並べ替えの見出しは API の orderBy の field から作る。品目のコードと名前は、API が在庫に写した品目の写しで並べる
 const SORT = sortColumns<StockOrderField>(
@@ -70,6 +70,8 @@ export default async function StocksPage({ searchParams }: { searchParams: Promi
 }
 
 async function Stocks({ params }: { params: URLSearchParams }) {
+  const sort = parseSort(params, STOCK_SORT_FIELDS);
+  const kept = sortParams(sort);
   const variables = stockListVariables(params);
   const result = await query(SupplierStocksDocument, variables);
   const error = result.kind === "unreachable" ? UNREACHABLE_MESSAGE : result.kind === "error" ? result.message : null;
@@ -80,10 +82,10 @@ async function Stocks({ params }: { params: URLSearchParams }) {
       <FilterBar count={stocks ? stocks.totalCount : null}>
         <SearchForm defaultValue={single(params, "q") ?? ""} placeholder="コード・品目名で検索">
           {/* 送っても並べ替えと安全在庫の絞り込みを保つ。検索を変えると 1 ページ目に戻る (after を送らない) */}
-          {variables.orderBy && (
+          {kept.sort && kept.dir && (
             <>
-              <input type="hidden" name="sort" value={variables.orderBy.field.toLowerCase()} />
-              <input type="hidden" name="dir" value={variables.orderBy.direction.toLowerCase()} />
+              <input type="hidden" name="sort" value={kept.sort} />
+              <input type="hidden" name="dir" value={kept.dir} />
             </>
           )}
           {variables.filter?.belowSafetyStock && <input type="hidden" name="below" value="1" />}
@@ -109,7 +111,7 @@ async function Stocks({ params }: { params: URLSearchParams }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <ColumnHeads columns={COLUMNS} state={variables.orderBy} />
+                  <ColumnHeads columns={COLUMNS} state={sort} />
                   <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -141,7 +143,7 @@ async function Stocks({ params }: { params: URLSearchParams }) {
                   return (
                     <TableRow key={s.item.id} data-testid="list-row">
                       {COLUMNS.map((c) => (
-                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} sortable={Boolean(c.sort)}>
+                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} {...sortCell(c, sort)}>
                           {content[c.key]}
                         </TableCell>
                       ))}

@@ -1,5 +1,5 @@
 import type { PurchaseOrderFilter, PurchaseOrderOrderField, PurchaseOrderStatus } from "@/lib/graphql/generated";
-import { pageArgs, parseDate, parseEnumList, parseSort, single, type Sort } from "@/lib/list";
+import { pageArgs, parseDate, parseEnumList, parseSort, single, sortArgs, type Sort } from "@/lib/list";
 import { PURCHASE_ORDER_STATUS_ORDER } from "@/lib/statuses";
 
 /**
@@ -78,7 +78,7 @@ export function purchaseOrderListVariables(q: PurchaseOrderListQuery, params: UR
   };
   return {
     ...pageArgs(params),
-    orderBy: q.sort,
+    ...sortArgs(q.sort),
     filter: q.status ? { ...base, statuses: [q.status] } : withTab(q.tab),
     allFilter: withTab("all"),
     openFilter: withTab("open"),

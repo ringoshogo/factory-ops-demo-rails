@@ -9,9 +9,9 @@ RSpec.describe Page do
 
   def create_log(**attributes) = tenancy { FactoryBot.create(:audit_log, **attributes) }
 
-  def request_id_sort(direction) = Page::Sort.of({ field: :request_id, direction: }, request_id: [ AuditLog.arel_table[:request_id], :string ])
+  def request_id_sort(direction) = Page::Sort.of([ { field: :request_id, direction: } ], request_id: [ AuditLog.arel_table[:request_id], :string ])
 
-  def page(first:, after: nil, sort: nil)
+  def page(first:, after: nil, sort: [])
     tenancy do
       described_class.of(AuditLog.all, first:, after:, sort:) { |rows| rows.map(&:id) }.then do |page|
         { values: page.values, cursors: page.cursors, has_next_page: page.has_next_page }
@@ -55,7 +55,7 @@ RSpec.describe Page do
     end
 
     it "列から計算する式でも並べ、カーソルに式の値を書く" do
-      length = Page::Sort.of({ field: :request_id_length, direction: :desc },
+      length = Page::Sort.of([ { field: :request_id_length, direction: :desc } ],
         request_id_length: [ Arel::Nodes::NamedFunction.new("length", [ AuditLog.arel_table[:request_id] ]), :integer ])
       longer = create_log(request_id: "r-10")
 
@@ -67,7 +67,70 @@ RSpec.describe Page do
       first = page(first: 2)
 
       expect(first[:cursors]).to eq(first[:values])
-      expect(walk(first: 2, sort: nil).flatten).to eq(logs.values.flatten.map(&:id).sort.reverse)
+      expect(walk(first: 2, sort: []).flatten).to eq(logs.values.flatten.map(&:id).sort.reverse)
+    end
+  end
+
+  describe "複数の列と id の組でたどる" do
+    # 監査ログの action は空にできないので、"-" を空と読み替えた式を 2 つ目の列にする
+    let(:columns) do
+      table = AuditLog.arel_table
+      { request_id: [ table[:request_id], :string ], target_type: [ table[:target_type], :string ],
+        action: [ Arel::Nodes::NamedFunction.new("NULLIF", [ table[:action], Arel::Nodes.build_quoted("-") ]), :string ] }
+    end
+
+    def sort(*order) = Page::Sort.of(order.map { |field, direction| { field:, direction: } }, columns)
+
+    def create_logs(*rows) = rows.map { |request_id, action, target_type = "Item"| create_log(request_id:, action:, target_type:) }
+
+    it "向きの違う 2 つの列で、1 つ目の列の値が同じ行を 2 つ目の列の向きで並べ、値の無い行をその中の後ろに置く。行は抜けも重なりもしない" do
+      logs = create_logs([ "r-1", "a" ], [ "r-1", "b" ], [ "r-1", "-" ], [ "r-1", "b" ], [ "r-2", "a" ])
+
+      expect(walk(first: 2, sort: sort(%i[request_id asc], %i[action desc])))
+        .to eq([ [ logs[3].id, logs[1].id ], [ logs[0].id, logs[2].id ], [ logs[4].id ] ])
+    end
+
+    # 1 つ目の列が空どうしの行は、空どうしを同じとみなして 2 つ目の列で並べる。= で比べると、カーソルの後ろの行が抜ける
+    it "1 つ目の列の値が空の行がページの境目をまたいでも、2 つ目の列の順に抜けも重なりもせずに並ぶ" do
+      logs = create_logs([ nil, "b" ], [ nil, "a" ], [ nil, "-" ], [ "r-1", "a" ], [ nil, "a" ])
+
+      expect(walk(first: 1, sort: sort(%i[request_id asc], %i[action asc])).flatten)
+        .to eq([ logs[3], logs[1], logs[4], logs[0], logs[2] ].map(&:id))
+    end
+
+    it "3 つ目の列は、前の 2 つの列がどちらも同じ行の中で並べ、id を 3 つ目の列と同じ向きに並べる" do
+      logs = create_logs([ "r-1", "a", "X" ], [ "r-1", "a", "Y" ], [ "r-1", "b", "Z" ], [ "r-1", "a", "Y" ], [ "r-2", "a", "Z" ])
+
+      expect(walk(first: 1, sort: sort(%i[request_id asc], %i[action asc], %i[target_type desc])).flatten)
+        .to eq([ logs[3], logs[1], logs[0], logs[2], logs[4] ].map(&:id))
+    end
+
+    it "カーソルは、列ごとの名前・向き・値を順に並べ、最後に id を置く" do
+      log = create_logs([ "r-1", "-" ]).sole
+
+      cursor = page(first: 1, sort: sort(%i[request_id asc], %i[action desc]))[:cursors].sole
+      expect(JSON.parse(Base64.urlsafe_decode64(cursor))).to eq([ "request_id", "asc", "r-1", "action", "desc", nil, log.id ])
+    end
+
+    it "列が 1 つのカーソルは、列の名前・向き・値・id の形のまま読み書きする" do
+      logs = create_logs([ "r-1", "a" ], [ "r-2", "a" ])
+      single = Base64.urlsafe_encode64(JSON.generate([ "request_id", "asc", "r-1", logs[0].id ]), padding: false)
+
+      expect(page(first: 1, sort: sort(%i[request_id asc]))[:cursors]).to eq([ single ])
+      expect(page(first: 1, after: single, sort: sort(%i[request_id asc]))[:values]).to eq([ logs[1].id ])
+    end
+
+    it "2 つ目の列の向きだけを変えたカーソルと、列の数の違うカーソルを拒む" do
+      create_logs([ "r-1", "a" ], [ "r-1", "b" ])
+      two = sort(%i[request_id asc], %i[action asc])
+      cursor = page(first: 1, sort: two)[:cursors].sole
+
+      # 対照：同じ並べ替えなら続きを読む
+      expect(page(first: 1, after: cursor, sort: two)[:values].size).to eq(1)
+      expect { page(first: 1, after: cursor, sort: sort(%i[request_id asc], %i[action desc])) }.to raise_error(Page::InvalidCursor)
+      expect { page(first: 1, after: cursor, sort: sort(%i[request_id asc])) }.to raise_error(Page::InvalidCursor)
+      single = page(first: 1, sort: sort(%i[request_id asc]))[:cursors].sole
+      expect { page(first: 1, after: single, sort: two) }.to raise_error(Page::InvalidCursor)
     end
   end
 
@@ -75,7 +138,7 @@ RSpec.describe Page do
     # 監査ログの表に金額の列は無いので、request_id の数字を numeric に読み替えて和の代わりにする
     let(:amount) { Arel::Nodes::NamedFunction.new("CAST", [ AuditLog.arel_table[:request_id].as(Arel.sql("numeric")) ]) }
 
-    def amount_sort(direction) = Page::Sort.of({ field: :amount, direction: }, amount: [ amount, :decimal ])
+    def amount_sort(direction) = Page::Sort.of([ { field: :amount, direction: } ], amount: [ amount, :decimal ])
 
     it "bigint の上限を超える和を、カーソルに 10 進の文字列で書き、往復しても行が抜けも重なりもしない" do
       huge = (2**63) * 3
@@ -105,7 +168,7 @@ RSpec.describe Page do
   describe "Page::Sort.rank" do
     it "式の値を、渡した一覧の中の位置で並べる" do
       logs = %w[b c a].map { create_log(request_id: _1) }
-      rank = Page::Sort.of({ field: :rank, direction: :asc }, rank: [ Page::Sort.rank(AuditLog.arel_table[:request_id], %i[c a b]), :integer ])
+      rank = Page::Sort.of([ { field: :rank, direction: :asc } ], rank: [ Page::Sort.rank(AuditLog.arel_table[:request_id], %i[c a b]), :integer ])
 
       expect(walk(first: 2, sort: rank).flatten).to eq([ logs[1], logs[2], logs[0] ].map(&:id))
     end
@@ -124,7 +187,7 @@ RSpec.describe Page do
     end
 
     it "列だけを変えたカーソルを拒む" do
-      other = Page::Sort.of({ field: :action, direction: :asc }, action: [ AuditLog.arel_table[:action], :string ])
+      other = Page::Sort.of([ { field: :action, direction: :asc } ], action: [ AuditLog.arel_table[:action], :string ])
 
       expect { page(first: 1, after: cursor, sort: other) }.to raise_error(Page::InvalidCursor)
     end
@@ -138,8 +201,8 @@ RSpec.describe Page do
 
     it "形の誤ったカーソルと、値の型が列と合わないカーソルを拒む" do
       id = SecureRandom.uuid
-      integer = Page::Sort.of({ field: :size, direction: :asc }, size: [ Arel::Nodes::NamedFunction.new("length", [ AuditLog.arel_table[:action] ]), :integer ])
-      date = Page::Sort.of({ field: :day, direction: :asc }, day: [ Arel::Nodes::NamedFunction.new("date", [ AuditLog.arel_table[:occurred_at] ]), :date ])
+      integer = Page::Sort.of([ { field: :size, direction: :asc } ], size: [ Arel::Nodes::NamedFunction.new("length", [ AuditLog.arel_table[:action] ]), :integer ])
+      date = Page::Sort.of([ { field: :day, direction: :asc } ], day: [ Arel::Nodes::NamedFunction.new("date", [ AuditLog.arel_table[:occurred_at] ]), :date ])
 
       [ "x", Base64.urlsafe_encode64("[", padding: false), forge("request_id", "asc", "r-1"), forge("request_id", "asc", "r-1", "x"),
         forge("request_id", "asc", 1, id), forge("request_id", "asc", "r\u0000", id) ].each do |after|
@@ -166,9 +229,21 @@ RSpec.describe Page do
     it "表に無い列と、ASC・DESC でない向きを引数の誤りにする" do
       columns = { request_id: [ AuditLog.arel_table[:request_id], :string ] }
 
-      expect(Page::Sort.of(nil, columns)).to be_nil
-      expect { Page::Sort.of({ field: :action, direction: :asc }, columns) }.to raise_error(ArgumentError)
-      expect { Page::Sort.of({ field: :request_id, direction: :up }, columns) }.to raise_error(ArgumentError)
+      expect(Page::Sort.of(nil, columns)).to eq([])
+      expect { Page::Sort.of([ { field: :action, direction: :asc } ], columns) }.to raise_error(ArgumentError)
+      expect { Page::Sort.of([ { field: :request_id, direction: :up } ], columns) }.to raise_error(ArgumentError)
+    end
+
+    it "列は 3 つまでを受け付け、4 つと、同じ列の重なりを引数の誤りにする" do
+      table = AuditLog.arel_table
+      columns = %i[request_id action target_type actor_type].index_with { [ table[_1], :string ] }
+      order = ->(*fields) { fields.map { { field: _1, direction: :asc } } }
+
+      expect(Page::Sort.of(order.call(:request_id, :action, :target_type), columns).map(&:name)).to eq(%w[request_id action target_type])
+      expect { Page::Sort.of(order.call(:request_id, :action, :target_type, :actor_type), columns) }.to raise_error(ArgumentError)
+      expect { Page::Sort.of(order.call(:request_id, :request_id), columns) }.to raise_error(ArgumentError)
+      # 1 つの列のハッシュを渡すと、列の配列と取り違えずに引数の誤りにする
+      expect { Page::Sort.of({ field: :request_id, direction: :asc }, columns) }.to raise_error(ArgumentError, /not a list/)
     end
   end
 

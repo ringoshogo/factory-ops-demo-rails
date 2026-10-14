@@ -268,3 +268,119 @@ TEST_DATABASE=factory_ops_m49_test bin/ci   # すべての工程が通った。r
 ### 残件の処理
 
 引当先が M49 の行は、着手の前と PR の前と実装レビューの直しの前に台帳を読んだ。OI-190（`decided`、名前の列を `ja-x-icu` にする作者の判断）は作るもの 1・4 で反映した。IB-77（品目コードの列の照合順序）と IB-110（`TEST_DATABASE` を渡した worktree の `bin/ci`）は M49 で実装した。M49 で作者に確かめることを OI-197（`judgment`）に、実装で見つけたことを IB-117・IB-118 に、実装レビューの違和感を IB-119・IB-120 に積んだ。作者の判断の受け口（`decisions.md`）に、M49 への判断は書かれていなかった。
+
+## M47 複数の列で並べる
+
+`m47-multi-sort`（base は `main`、PR #87）。M49 の `m49-collations` の先端 `e89ba05` から切った。M49（#86）は着手の後に main にマージされたので、M47 の差分は `e89ba05..` である。
+
+Codex も Claude も Go だった。どちらの系統も、`e89ba05..5a8bbc8` の diff を `5a8bbc8` の版で読んだ。Codex は手元の DB への接続を実行の環境に拒まれ、rspec・E2E・CI は証跡の記録を前提にし、`Page` のカーソルの後ろの条件を式を評価する代わりのオブジェクトで 516 とおりの境目について確かめ、`list.ts` の純関数を壊して落ちることを確かめた。Claude は `factory_ops_m47_review_test` で完了条件の spec と `purchase_orders_spec.rb` を流し（1674 examples, 0 failures）、副問い合わせ・空を含む合計・状況を組み合わせた 3 とおりの 3 つの列の並びを 1 件ずつのページで最後までたどり、1 ページで読んだ並びと一致することを確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Medium 1） | 出していない（High が無かった） |
+| Claude | Go（Medium 2、Low 3） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘（R2・R3） |
+| 参照の維持 | 指摘（R1） | 指摘（R4・R5） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | R1：証跡の「計画との違い」が計画の作るもの 4 の「操作」「表示」を直したと書くが、計画の節は直っていない（OI-198 の形、Shift を押した Enter、番号の幅のセルの空け方）。公開 API の `order_by:` の配列と、上限の example を発注の一覧で確かめることも計画の節に無い | 計画の節を直す文の置き換えの手順が、後ろの置き換えで止まって前の置き換えを書き出さずに終わっていた。作るもの 1 に公開 API の配列と `Page::Sort.of` の確かめを、作るもの 2 に上限ちょうどと上限 + 1 を発注の一覧で確かめることを、作るもの 4 の「操作」に OI-198 の形と Shift を押した Enter を、「表示」に番号の幅のセルの空け方と変種の URL を書いた。`git grep` で「立つ見込み」「同じ列は 昇順 → 降順 → 既定の並び）。Shift」が計画に残らないことを確かめた | この節を載せた commit |
+| Medium | Claude | R2：`nextSort` の上限ちょうど（並びが 2 つのときに Shift で 3 つ目を足せること）の example が無い | `list.test.ts` の 3 つの並びの example に、2 つから 3 つ目を足す期待を足した。`current.length < MAX_SORTS - 1` に壊すと落ちることを確かめた | 同上 |
+| Low | Claude | R3：かんばんの example は引当済の列しか見ず、ほかの未完了の列から `thenBy` を外しても落ちない | `dashboard_spec.rb` に、`SupplierKanban.graphql` の 7 つの列の `orderBy` と `thenBy` を文書から読んで確かめる example を足した。受注済の列だけから `thenBy` を外すと落ちることを確かめた | 同上 |
+| Low | Claude | R4：`graphql-schema.md` が上限を `Page::MAX_SORTS` の 1 か所と書くが、画面にも `list.ts` の `MAX_SORTS` がある | 文書を 2 か所の形に直し、`spec/graphql/sort_arguments_spec.rb` に 2 つが同じ値であることを確かめる example を足した。画面の値を 4 に壊すと落ちることを確かめた | 同上 |
+| Low | Claude | R5：`sortable-head.tsx` に `onKeyDown` を置かない理由が無く、IB-121 が Shift を押した Enter を挙げていない | `onClick` の前に理由のコメントを書き、IB-121 に Shift を押した Enter も Chromium でしか確かめていないことを足した | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：`Page::Sort.of` に前の形（1 つの列のハッシュ）を渡すと `TypeError` で落ちる → 配列でない `order_by` を `ArgumentError`（`not a list`）にし、`page_spec.rb` に example を足した。確かめを外すと落ちることを確かめた
+- Claude 2：品目と在庫の画面が `parseSort` を画面と変数の関数で 2 回呼ぶ → 同じ純関数を同じ値に 2 回呼ぶだけで、結果は食い違わないので扱わない
+- Claude 3：IB-106（複数の列の効き目を画面で見せるか）は、見出しの操作と E2E で一部に答えた → サイクル末の台帳の棚卸しで IB-106 を読み直す材料として、ここに書く
+- Claude 4：`graphql-schema.md` の SDL のブロックで、`salesOrders(...)` の行が型の外に単独で置かれていた → `type SupplierView { … }` の中に置いた
+- Claude 5：2 つ目からの列の見出しのアクセシブル名が、見えない文字を含んで長くなる → 計画のとおり（ボタンの名前は変えず、列の見出しで順番と向きを伝える）なので扱わない
+
+### 実装の記録
+
+#### 計画との違い
+
+- 公開 API（`Sales::SalesOrders.list` など 5 つ）の `order_by:` を、`{ field:, direction: }` の配列にした。`Page::Sort.of` が配列を受け取って `Sort` の配列を返し、`Page.of` の `sort:` も配列にしたからである。計画は `Page.of` の形だけを書き、公開 API の引数の形を書いていなかった。単体の spec が 1 つの列のハッシュを渡していたのを、`bin/ci` の 1 回目（`f29bd10`、3051 examples, 17 failures）で見つけ、`04df574` で配列に直した。計画の作るもの 1 に書いた（実装レビューの R1 で直した）。
+- 引数の検証は、5 つのリゾルバが `include` する `Resolvers::SortArguments` に置いた。`sort_arguments <型>Order` が `orderBy` と `thenBy` の引数とリゾルバの検証を足す。`Page::Sort.of` も、列の重なりと 4 つ以上の列を引数の誤り（`ArgumentError`）にする。GraphQL の外から公開 API を呼ぶ入口（spec・シード）でも同じ上限を守るためで、上限は `Page::MAX_SORTS` の 1 か所にある。
+- Shift を押さずに見出しを押したときの向きを、並びがその列 1 つのときだけ進め、並びが 2 つ以上なら並びにある列もその列 1 つの昇順にした。計画は並びが 2 つ以上のときの向きを決めていなかった。計画の作るもの 4 の「操作」を直し、OI-198（`judgment`）に積んだ。
+- 番号の出る数値の列のセルは、矢印の幅に番号の幅を足して右に空ける（`components/ui/table.tsx` の `SORT_RANK_SLOT`、`components/columns.tsx` の `sortCell`）。番号を矢印に重ねて幅を取らない形にすると、受注一覧の最後の列（受注合計）の番号が表の右端からはみ出す。寸法の E2E の変種を `?sort=status,total_amount&dir=asc,desc` にし、2 つ目の列を数値の最後の列にして、そろえと番号の収まりを測る。`e2e/support/table-align.ts` に、番号が矢印の右にあり見出しのセルに収まる確かめを足した。計画の作るもの 4 の「表示」を直した。
+- E2E の文字の選択の確かめを、`window.getSelection()` が空であることに加えて、document で受けた `mousedown` の `defaultPrevented` で確かめる形にした。Chromium はボタンの上の Shift を押したクリックで文字を選ばず、Shift を押した `mousedown` の既定の動きを止めるのを外しても、表の文字を押してから Shift を押して見出しを押しても、選ばれた文字は空のままだった（`e2e/list-pagination.spec.ts` で 2 回、静的な表で 1 回確かめた）。計画の作るもの 4 の「文字の選択」と完了条件を直し、Chromium でしか確かめられないことを IB-121 に積んだ。
+- Shift を押した Enter で、クリックの `shiftKey` が Chromium で立つことを E2E で確かめたので、`onKeyDown` は置かなかった。計画の作るもの 4 の「操作」を直した。
+- 計画の作るもの 5 の外で、`spec/matrix/graphql_matrix_spec.rb` に、`thenBy` を受け取るフィールドをスキーマから集め、どれも `thenBy` を渡す変種の行を持つことを確かめる example を足した。変種の行の規則を `guides/testing.md` に書くだけでは、一覧を足した人が行を足し忘れても何も落ちないからである。計画の作るもの 5 に足した。
+- 計画の作るもの 2 の外で、`spec/requests/purchase_orders_spec.rb` に、`orderBy` と `thenBy` を合わせて 3 つの列を受け付け、4 つをトップレベルのエラーにする example を足した。品目の一覧は列が 2 つしかなく、上限ちょうどと上限 + 1 を確かめられないからである。計画の作るもの 2 に書いた（実装レビューの R1 で直した）。
+- 前の形（「並べ替えの列は 1 つ」「`page_sort_value`」「同じ列は 昇順 → 降順 → 既定の並び」）を `git grep` し、`graphql-schema.md`「ページングと N+1」、計画の M39 の節（M47 で `thenBy` を足したと時点を書いた）、`sortable-head.tsx`・`list.ts` のコメントを直した。残るのは証跡（`docs/plans/`）と、作者の判断の行（OI-187）の内容の欄だけである。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：spec を足し、実装を変える前（`e89ba05` の作業ツリー）に流した。
+
+- `bundle exec rspec spec/requests/catalog_spec.rb spec/requests/dashboard_spec.rb spec/requests/purchase_orders_spec.rb`（32 examples, 4 failures）
+  - `catalog_spec.rb` の、名前の同じ品目を `thenBy` のコードの降順で並べる example：`expected: [{"code" => "N-2"}] got: nil`（`thenBy` を受け付けず、`data` が無い）
+  - `catalog_spec.rb` の、`orderBy` を省いた `thenBy` と同じ `field` の重なりをエラーにする example：`expected: ["thenBy requires orderBy"] got: ["Field 'items' doesn't accept argument 'thenBy'", "Variable $thenBy is declared by anonymous query but not used"]`
+  - `dashboard_spec.rb` の、かんばんの画面の問い合わせが希望納期の同じ受注を受注番号の昇順に並べる example：`expected: ["SO-K00001", "SO-K00002"] got: ["SO-K00002", "SO-K00001"]`
+  - `purchase_orders_spec.rb` の、3 つの列を受け付け 4 つをエラーにする example：`expected: {"data" => {"buyer" => {"purchaseOrders" => {"totalCount" => 1}}}} got: {"errors" => [… "Field 'purchaseOrders' doesn't accept argument 'thenBy'" …]}`
+- `frontend` で `npx vitest run lib/list.test.ts`（18 tests, 13 failed）。計画が挙げた Shift の example は `expected { field: 'ORDER_NO', direction: 'ASC' } to deeply equal [ { field: 'STATUS', …(1) }, …(1) ]`（いまの `nextSort` は Shift を受け取らず、列 1 つの並びに置き換える）。ほかの 12 件は、`parseSort` と `nextSort` が並びではなく 1 つの値を返す期待の不一致と、無い関数（`sortArgs`）の呼び出しで落ちた。`sortArgs` の example は読み込みの失敗でしか落ちていないので、下の壊して落ちる記録で RED に代える
+- E2E：実装の後に、`frontend` の実装のファイルと単体のテストを `e89ba05` に戻し（E2E の spec と API は新しいまま）、`E2E_DATABASE=factory_ops_m47_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- e2e/list-pagination.spec.ts` を流した（1 failed, 4 passed）。受注一覧の Shift の example が、`expected ["status,customer_name", "asc,asc"]` に `received ["customer_name", "asc"]` で落ちた（いまの見出しは Shift を受け取らず、取引先の列 1 つの並びにする）
+
+壊して落ちる記録：壊すファイルを一時ファイルの置き場に複製してから壊し、複製から戻した（`02e4561`〜`04df574` の作業ツリー）。戻した後に同じ spec を流し、すべて通った。
+
+| 確かめる example | 壊したもの | 落ちたもの |
+|---|---|---|
+| `page_spec.rb` の、1 つ目の列の値が空の行がページの境目をまたぐ example | 前の列が同じことの比べ方を `IS NOT DISTINCT FROM` から `=`（`InfixOperation`。空どうしを同じとみなさない）にする | 3（この example と、M39 の列 1 つの ASC・DESC の 2 つ。値の無い行どうしの後ろが抜ける） |
+| `page_spec.rb` の、向きの違う 2 つの列で 1 つ目の列の値が同じ行がページの境目をまたぐ example | 2 つ目からの列の「後」の比べ方の向きを入れ替える | 4（この example と、1 つ目の列が空の example、3 つの列の example、カーソルの拒否の example） |
+| `page_spec.rb` の、2 つ目の列の向きだけを変えたカーソルを拒む example | カーソルの読み取りで、2 つ目からの列の向きを比べない | 1（この example） |
+| `page_spec.rb` の、列が 1 つのカーソルを名前・向き・値・id の形で読み書きする example | カーソルの配列の先頭に id を置く | 5（この example と、複数の列のカーソルの形、金額のカーソルの 2 つ、形の誤ったカーソルの拒否） |
+| `page_spec.rb` の、`Page::Sort.of` が 3 つまでを受け付け 4 つと重なりを拒む example | `Page::Sort.of` の列の数と重なりの確かめを外す | 1（この example） |
+| `catalog_spec.rb` の、同じ `field` を 2 回書いた並べ替えをトップレベルのエラーにする example | `Resolvers::SortArguments::Validator` から重なりの確かめを外す | 1（この example） |
+| `catalog_spec.rb` の、`orderBy` を省いた `thenBy` をエラーにする example | 同じ検証で、`orderBy` が無いときに通す | 1（この example） |
+| `purchase_orders_spec.rb` の、4 つの列をエラーにする example | 同じ検証から列の数の確かめを外す | 1（この example） |
+| `dashboard_spec.rb` の、かんばんの未完了の列の example | `SupplierKanban.graphql` の未完了の 4 つの列から `thenBy` を外す | 1（この example。`got: ["SO-K00002", "SO-K00001"]`） |
+| `graphql_matrix_spec.rb` の、`thenBy` を受け取るフィールドが変種の行を持つ example | `"SupplierView.stocks#thenBy"` の行を消す | 1（この example。`got: ["SupplierView.stocks"]`） |
+| `list.test.ts` の、長さの違う `sort` と `dir` を既定の並びにする example | `parseSort` から並びの長さの比べ方を外す | 1（この example） |
+| `list.test.ts` の、同じ列を 2 回含む `sort` を既定の並びにする example | `parseSort` から同じ列の重なりの確かめを外す | 1（この example） |
+| `list.test.ts` の、並びが 3 つのときに Shift で列を足さない example | `nextSort` が 3 つのときも Shift で列を足す | 1（この example） |
+| E2E の受注一覧の Shift の example の並び | `sortArgs` が `thenBy` を渡さない | 1（この example。状況の同じ行に、取引先の名前が昇順に並ぶ組が残る） |
+| E2E の受注一覧の Shift の example の `mousedown` | Shift を押した `mousedown` の既定の動きを止めない | 1（この example。`defaultPrevented` が `false`） |
+| 同上の対照（Shift を押さないクリック） | すべての `mousedown` の既定の動きを止める | 1（この example。Shift を押さないクリックの `defaultPrevented` が `true`） |
+| E2E の寸法の受注一覧の 2 つの列の並びの変種 | 番号の出る数値の列のセルに、番号の幅を空けない（`SORT_ICON_SLOT` のまま） | 1（この変種。受注合計の各行で、セルの右端が見出しの文字の右端と 12px ずれる） |
+
+`sortArgs` の単体の example は、上の E2E と同じ壊し方（`thenBy` を渡さない）で `npx vitest run lib/list.test.ts lib/supplier-master-lists.test.ts` を流し、`list.test.ts` の `sortArgs` の example と、`supplier-master-lists.test.ts` の品目の一覧の変数の example の 2 件が落ちることを確かめた。
+
+### 確かめたこと
+
+#### E2E
+
+`frontend` で `E2E_DATABASE=factory_ops_m47_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e` を Node 22.23.3 で流した（E2E の DB を、ほかの担当の `factory_ops_e2e` と分けた）。`04df574` の作業ツリーで 70 passed・26 skipped だった。受注一覧の Shift の example は、Shift を押した Enter で 2 つ目の列が並びから外れることまで通った。
+
+#### 手元で流したもの
+
+`04df574` の作業ツリーで、Ruby 3.4.11・PostgreSQL 18.6・Node 22.23.3 で流した。
+
+```sh
+TEST_DATABASE=factory_ops_m47_test bin/ci   # すべての工程が通った。rspec は 3051 examples, 0 failures
+TEST_DATABASE=factory_ops_m47_test bundle exec rspec packs/platform/spec/models/page_spec.rb spec/requests/catalog_spec.rb spec/requests/dashboard_spec.rb spec/matrix spec/graphql/query_budget_spec.rb spec/graphql/query_complexity_spec.rb   # 1664 examples, 0 failures
+bin/check-schema-compat   # bin/ci の工程で通った（破壊的な変更 0 件）
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 145 tests passed
+bin/check-open-items --due M47   # 通った
+bin/check-commit-refs            # 通った
+```
+
+`bin/ci` の 1 回目（`f29bd10`）は、公開 API の単体の spec が `order_by:` に 1 つの列のハッシュを渡したまま 17 件落ち（3051 examples, 17 failures）、`04df574` で直した。分岐の網羅率の警告は 0 件だった。
+
+実装の記録を載せた `87214b0` の PR の CI はすべて通った（`test` 6 分 8 秒、`e2e` 3 分 29 秒、`images` 1 分 57 秒。`publish` は PR なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38511905424)）。
+
+実装レビューの直しの後も、`232eee7` の作業ツリーで `TEST_DATABASE=factory_ops_m47_test bin/ci` を流し、すべての工程が通った（rspec は 3053 examples, 0 failures、分岐の網羅率の警告は 0 件）。`frontend` の `codegen:check`・`lint`・`typecheck`・`test:unit`（145 tests passed）と、`bin/check-open-items --due M47`・`bin/check-commit-refs` も通った。`27f9d2f` の PR の CI はすべて通った（`test` 5 分 59 秒、`e2e` 3 分 27 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38514548779)）。
+
+`f5aa7e6` の PR の CI では、`images` の画面のイメージの組み立てが `next/font/google` の解決の失敗で落ち、落ちた job だけを流し直すと通った（[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38515148652)）。文書だけの commit で、前の 3 回は通っていたので、外部への接続によるものとして IB-122 に積んだ。
+
+### 残件の処理
+
+引当先が M47 の行は、着手の前と PR の前に台帳を読んだ。OI-187（`decided`、見出しで 2 つ目からの列を足す作者の判断）は作るもの 4 で、OI-195（`judgment`、Shift の操作の細部）は計画のとおりに反映した。実装で決めたことを OI-198（`judgment`）に、Chromium でしか確かめられないことを IB-121 に積んだ。作者の判断の受け口（`decisions.md`）に、M47 への判断は書かれていなかった。

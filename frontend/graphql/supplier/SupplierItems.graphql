@@ -1,6 +1,6 @@
-query SupplierItems($first: Int, $after: String, $orderBy: ItemOrder, $filter: ItemFilter) {
+query SupplierItems($first: Int, $after: String, $orderBy: ItemOrder, $thenBy: [ItemOrder!], $filter: ItemFilter) {
   supplier {
-    items(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+    items(first: $first, after: $after, orderBy: $orderBy, thenBy: $thenBy, filter: $filter) {
       totalCount
       nodes {
         id

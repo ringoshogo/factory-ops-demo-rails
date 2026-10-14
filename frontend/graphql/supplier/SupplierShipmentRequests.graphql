@@ -2,6 +2,7 @@ query SupplierShipmentRequests(
   $first: Int
   $after: String
   $orderBy: ShipmentRequestOrder
+  $thenBy: [ShipmentRequestOrder!]
   $filter: ShipmentRequestFilter
   $allFilter: ShipmentRequestFilter
   $openFilter: ShipmentRequestFilter
@@ -10,7 +11,7 @@ query SupplierShipmentRequests(
 ) {
   supplier {
     dashboard { businessDate }
-    shipmentRequests(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+    shipmentRequests(first: $first, after: $after, orderBy: $orderBy, thenBy: $thenBy, filter: $filter) {
       totalCount
       nodes {
         id

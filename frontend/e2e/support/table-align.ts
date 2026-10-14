@@ -5,7 +5,7 @@ import { expect, type Page } from "@playwright/test";
  *
  * - 数値の列だけ見出しもセルも右寄せ。ほかの列 (操作を含む) は左寄せ
  * - 見出しの**文字**とセルの中身の端が 1px 以内でそろう (左寄せの列は左端、右寄せの列は右端)
- * - ソートの矢印はどの列も文字の右
+ * - ソートの矢印はどの列も文字の右。複数の列で並べたときの番号は矢印の右で、見出しのセルに収まる
  * - 1280・1024 で表がパネル (main) に収まる (表の容器が横にスクロールしない)
  * - 長い文字の列は折り返さず、収まらなければ末尾を省略する。全文は title とアクセシブル名で読める
  *
@@ -26,6 +26,10 @@ type Column = {
   label: Edge | null;
   /** ソートの矢印。ソートできない見出しは null */
   icon: Edge | null;
+  /** 並べる列の番号。番号の無い見出しは null */
+  rank: Edge | null;
+  /** 見出しのセル */
+  th: Edge;
   cells: {
     align: string;
     content: Edge | null;
@@ -79,11 +83,14 @@ async function measure(page: Page): Promise<Measured[]> {
           ? [...button.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE)
           : [th];
         const svg = th.querySelector("svg");
+        const rank = th.querySelector("[data-sort-rank]");
         return {
           head: th.textContent ?? "",
           headAlign: getComputedStyle(th).textAlign,
           label: textEdge(labelNodes),
           icon: svg ? box(svg.getBoundingClientRect()) : null,
+          rank: rank ? box(rank.getBoundingClientRect()) : null,
+          th: box(th.getBoundingClientRect()),
           cells: rows.map((tr) => {
             const td = tr.children[i] as HTMLElement;
             const r = td.getBoundingClientRect();
@@ -144,6 +151,10 @@ export async function expectTablesAligned(page: Page, path: string, fit: boolean
       const num = isRight(col.headAlign);
       if (col.icon) {
         expect.soft(col.icon.left >= (col.label?.right ?? 0) - TOLERANCE, `${where}: 並べ替えの矢印が文字の右 (矢印 ${col.icon.left} / 文字の右端 ${col.label?.right})`).toBe(true);
+      }
+      if (col.rank) {
+        expect.soft(col.rank.left >= (col.icon?.right ?? 0) - TOLERANCE, `${where}: 並べる列の番号が矢印の右 (番号 ${col.rank.left} / 矢印の右端 ${col.icon?.right})`).toBe(true);
+        expect.soft(col.rank.right <= col.th.right + TOLERANCE, `${where}: 並べる列の番号が見出しのセルに収まる (番号 ${col.rank.right} / セルの右端 ${col.th.right})`).toBe(true);
       }
       for (const [r, cell] of col.cells.entries()) {
         const at = `${where} ${r + 1} 行目`;

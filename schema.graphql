@@ -184,7 +184,7 @@ type BillingTerm {
 
 type BuyerView {
   purchaseOrder(id: ID!): PurchaseOrder
-  purchaseOrders(after: String, filter: PurchaseOrderFilter, first: Int, orderBy: PurchaseOrderOrder): PurchaseOrderConnection!
+  purchaseOrders(after: String, filter: PurchaseOrderFilter, first: Int, orderBy: PurchaseOrderOrder, thenBy: [PurchaseOrderOrder!]): PurchaseOrderConnection!
   receivedInvoice(id: ID!): ReceivedInvoice
   receivedInvoices(after: String, first: Int): ReceivedInvoiceConnection!
   supplier(supplierTenantId: ID!): SupplierPartnership
@@ -2050,14 +2050,14 @@ type SupplierView {
   invoice(id: ID!): Invoice
   invoices(after: String, first: Int): InvoiceConnection!
   item(id: ID!): Item
-  items(after: String, filter: ItemFilter, first: Int, orderBy: ItemOrder): ItemConnection!
+  items(after: String, filter: ItemFilter, first: Int, orderBy: ItemOrder, thenBy: [ItemOrder!]): ItemConnection!
   partMappings(after: String, customerTenantId: ID, first: Int): PartMappingConnection!
   partnerships: [Partnership!]!
   salesOrder(id: ID!): SalesOrder
-  salesOrders(after: String, filter: SalesOrderFilter, first: Int, orderBy: SalesOrderOrder): SalesOrderConnection!
-  shipmentRequests(after: String, filter: ShipmentRequestFilter, first: Int, orderBy: ShipmentRequestOrder): ShipmentRequestConnection!
+  salesOrders(after: String, filter: SalesOrderFilter, first: Int, orderBy: SalesOrderOrder, thenBy: [SalesOrderOrder!]): SalesOrderConnection!
+  shipmentRequests(after: String, filter: ShipmentRequestFilter, first: Int, orderBy: ShipmentRequestOrder, thenBy: [ShipmentRequestOrder!]): ShipmentRequestConnection!
   stockMovements(after: String, filter: StockMovementFilter, first: Int, itemId: ID): StockMovementConnection!
-  stocks(after: String, filter: StockFilter, first: Int, orderBy: StockOrder): StockConnection!
+  stocks(after: String, filter: StockFilter, first: Int, orderBy: StockOrder, thenBy: [StockOrder!]): StockConnection!
 }
 
 type Tenant {

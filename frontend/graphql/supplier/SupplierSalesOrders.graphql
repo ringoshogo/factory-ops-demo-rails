@@ -2,6 +2,7 @@ query SupplierSalesOrders(
   $first: Int
   $after: String
   $orderBy: SalesOrderOrder
+  $thenBy: [SalesOrderOrder!]
   $filter: SalesOrderFilter
   $allFilter: SalesOrderFilter
   $openFilter: SalesOrderFilter
@@ -12,7 +13,7 @@ query SupplierSalesOrders(
   supplier {
     dashboard { businessDate }
     partnerships { id buyer { id name } }
-    salesOrders(first: $first, after: $after, orderBy: $orderBy, filter: $filter) {
+    salesOrders(first: $first, after: $after, orderBy: $orderBy, thenBy: $thenBy, filter: $filter) {
       totalCount
       nodes {
         id

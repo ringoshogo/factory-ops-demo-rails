@@ -57,7 +57,7 @@ RSpec.describe Purchasing::PurchaseOrderStatus do
       sent: order
     }
     sorted = lambda do |direction|
-      Purchasing::PurchaseOrders.list(actor, first: 100, after: nil, order_by: { field: :status, direction: }).values.map(&:status)
+      Purchasing::PurchaseOrders.list(actor, first: 100, after: nil, order_by: [ { field: :status, direction: } ]).values.map(&:status)
     end
 
     expected = %i[sent awaiting_supplier_confirmation accepted inbound inspected cancelled supplier_cancelled]

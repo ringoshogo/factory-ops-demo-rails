@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { TextLink } from "@/components/app-link";
-import { ColumnHeads, sortColumns, type Column } from "@/components/columns";
+import { ColumnHeads, sortColumns, sortCell, type Column } from "@/components/columns";
 import { FilterBar, SearchForm } from "@/components/filter-bar";
 import { ItemDialog, PublishButton } from "@/components/item-forms";
 import { ListError } from "@/components/list-error";
@@ -12,8 +12,8 @@ import { formatNumber, yen } from "@/lib/format";
 import { SupplierItemsDocument, type ItemOrderField } from "@/lib/graphql/generated";
 import { query } from "@/lib/graphql/request";
 import { UNREACHABLE_MESSAGE } from "@/lib/graphql/user-errors";
-import { nodesOf, single, toParams, type SearchParams } from "@/lib/list";
-import { itemListVariables } from "@/lib/supplier-master-lists";
+import { nodesOf, parseSort, single, sortParams, toParams, type SearchParams } from "@/lib/list";
+import { ITEM_SORT_FIELDS, itemListVariables } from "@/lib/supplier-master-lists";
 
 // 並べ替えの見出しは API の orderBy の field から作る。単価・税率・在庫は API で並べられないので、ただの見出しにする
 const SORT = sortColumns<ItemOrderField>({ CODE: "品目コード", NAME: "品目名" }, { CODE: { truncate: true }, NAME: { truncate: true } });
@@ -34,6 +34,8 @@ const UNPUBLISHED = { label: "非公開", tone: "received" } as const;
 // 品目の一覧。1 ページずつ読み、並べ替えと検索はサーバーが行う。検索の語と並べ替えは URL に載せる
 export default async function ItemsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = toParams(await searchParams);
+  const sort = parseSort(params, ITEM_SORT_FIELDS);
+  const kept = sortParams(sort);
   const variables = itemListVariables(params);
   const result = await query(SupplierItemsDocument, variables);
   const error = result.kind === "unreachable" ? UNREACHABLE_MESSAGE : result.kind === "error" ? result.message : null;
@@ -48,10 +50,10 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
       <FilterBar count={items ? items.totalCount : null}>
         <SearchForm defaultValue={single(params, "q") ?? ""} placeholder="コード・品目名で検索">
           {/* 送っても並べ替えを保つ。検索を変えると 1 ページ目に戻る (after を送らない) */}
-          {variables.orderBy && (
+          {kept.sort && kept.dir && (
             <>
-              <input type="hidden" name="sort" value={variables.orderBy.field.toLowerCase()} />
-              <input type="hidden" name="dir" value={variables.orderBy.direction.toLowerCase()} />
+              <input type="hidden" name="sort" value={kept.sort} />
+              <input type="hidden" name="dir" value={kept.dir} />
             </>
           )}
         </SearchForm>
@@ -65,7 +67,7 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
             <Table>
               <TableHeader>
                 <TableRow>
-                  <ColumnHeads columns={COLUMNS} state={variables.orderBy} />
+                  <ColumnHeads columns={COLUMNS} state={sort} />
                   <TableHead>操作</TableHead>
                 </TableRow>
               </TableHeader>
@@ -94,7 +96,7 @@ export default async function ItemsPage({ searchParams }: { searchParams: Promis
                   return (
                     <TableRow key={item.id} data-testid="list-row">
                       {COLUMNS.map((c) => (
-                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} sortable={Boolean(c.sort)}>
+                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} {...sortCell(c, sort)}>
                           {content[c.key]}
                         </TableCell>
                       ))}

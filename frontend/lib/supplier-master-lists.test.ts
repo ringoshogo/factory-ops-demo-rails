@@ -10,12 +10,17 @@ import {
 const p = (query: string) => new URLSearchParams(query);
 
 describe("品目の一覧の変数", () => {
-  it("検索の語を filter.keyword に、並べ替えを orderBy に写す", () => {
+  it("検索の語を filter.keyword に、並べ替えを orderBy と thenBy に写す", () => {
     expect(itemListVariables(p("q=ITM&sort=name&dir=desc&after=Mg"))).toEqual({
       first: 20,
       after: "Mg",
       orderBy: { field: "NAME", direction: "DESC" },
+      thenBy: null,
       filter: { keyword: "ITM" },
+    });
+    expect(itemListVariables(p("sort=name,code&dir=asc,desc"))).toMatchObject({
+      orderBy: { field: "NAME", direction: "ASC" },
+      thenBy: [{ field: "CODE", direction: "DESC" }],
     });
   });
 

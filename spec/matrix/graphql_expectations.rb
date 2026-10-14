@@ -79,6 +79,15 @@ module MatrixExpectations
       variables: ->(_world) { { orderBy: { field: "NAME", direction: "ASC" }, filter: { keyword: MatrixWorld::FILTER_ITEM_NAME } } },
       expect: EVERYONE
     },
+    # 2 つの列で並べる変種の行。並べ替えの引数ごとに変種の行を置く（docs/guides/testing.md「行列テストとの分担」）。結ぶ表も条件も足さないので、
+    # この行が捕まえる scope の抜けは無い
+    "SupplierView.items#thenBy" => {
+      role: :member,
+      query: "query($orderBy: ItemOrder, $thenBy: [ItemOrder!]) " \
+        "{ supplier { items(orderBy: $orderBy, thenBy: $thenBy) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "NAME", direction: "ASC" }, thenBy: [ { field: "CODE", direction: "DESC" } ] } },
+      expect: EVERYONE
+    },
     "SupplierView.item" => {
       role: :member,
       query: "query($id: ID!) { supplier { item(id: $id) { id } } }",
@@ -209,6 +218,13 @@ module MatrixExpectations
       variables: ->(_world) { { orderBy: { field: "SUPPLIER_NAME", direction: "ASC" } } },
       expect: EVERYONE
     },
+    "BuyerView.purchaseOrders#thenBy" => {
+      role: :member,
+      query: "query($orderBy: PurchaseOrderOrder, $thenBy: [PurchaseOrderOrder!]) " \
+        "{ buyer { purchaseOrders(orderBy: $orderBy, thenBy: $thenBy) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "STATUS", direction: "ASC" }, thenBy: [ { field: "SUPPLIER_NAME", direction: "DESC" } ] } },
+      expect: EVERYONE
+    },
     # 経路 3。自社の発注に連結した出荷が、有効な取引関係と view_shipments の付与がある発注側にだけ見え、
     # 付与があっても失効で閉じる。受注側の supplier の発注には連結した出荷が無い
     "PurchaseOrder.supplierShipments" => {
@@ -246,6 +262,13 @@ module MatrixExpectations
       variables: ->(_world) { { orderBy: { field: "CUSTOMER_NAME", direction: "DESC" } } },
       expect: EVERYONE
     },
+    "SupplierView.salesOrders#thenBy" => {
+      role: :member,
+      query: "query($orderBy: SalesOrderOrder, $thenBy: [SalesOrderOrder!]) " \
+        "{ supplier { salesOrders(orderBy: $orderBy, thenBy: $thenBy) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "STATUS", direction: "ASC" }, thenBy: [ { field: "CUSTOMER_NAME", direction: "DESC" } ] } },
+      expect: EVERYONE
+    },
     # 発注に連結した受注。発注側の granted_buyer にも見えない
     "SupplierView.salesOrder" => {
       role: :member,
@@ -271,6 +294,13 @@ module MatrixExpectations
       role: :member,
       query: "query($orderBy: StockOrder, $filter: StockFilter) { supplier { stocks(orderBy: $orderBy, filter: $filter) { totalCount nodes { onHand } } } }",
       variables: ->(_world) { { orderBy: { field: "ITEM_NAME", direction: "ASC" }, filter: { keyword: MatrixWorld::FILTER_ITEM_NAME } } },
+      expect: EVERYONE
+    },
+    "SupplierView.stocks#thenBy" => {
+      role: :member,
+      query: "query($orderBy: StockOrder, $thenBy: [StockOrder!]) " \
+        "{ supplier { stocks(orderBy: $orderBy, thenBy: $thenBy) { totalCount nodes { onHand } } } }",
+      variables: ->(_world) { { orderBy: { field: "ITEM_NAME", direction: "ASC" }, thenBy: [ { field: "AVAILABLE", direction: "DESC" } ] } },
       expect: EVERYONE
     },
     "SupplierView.stockMovements" => {
@@ -316,6 +346,13 @@ module MatrixExpectations
       role: :member,
       query: "query($orderBy: ShipmentRequestOrder) { supplier { shipmentRequests(orderBy: $orderBy) { totalCount nodes { id customer { name } } } } }",
       variables: ->(_world) { { orderBy: { field: "CUSTOMER_NAME", direction: "ASC" } } },
+      expect: EVERYONE
+    },
+    "SupplierView.shipmentRequests#thenBy" => {
+      role: :member,
+      query: "query($orderBy: ShipmentRequestOrder, $thenBy: [ShipmentRequestOrder!]) " \
+        "{ supplier { shipmentRequests(orderBy: $orderBy, thenBy: $thenBy) { totalCount nodes { id } } } }",
+      variables: ->(_world) { { orderBy: { field: "STATUS", direction: "ASC" }, thenBy: [ { field: "CUSTOMER_NAME", direction: "DESC" } ] } },
       expect: EVERYONE
     },
     # 出荷指示の無い出荷依頼に指示を作る

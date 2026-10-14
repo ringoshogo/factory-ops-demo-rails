@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { TextLink } from "@/components/app-link";
-import { ColumnHeads, type Column } from "@/components/columns";
+import { ColumnHeads, sortCell, type Column } from "@/components/columns";
 import { DateText, DueDate } from "@/components/date-text";
 import { useFulfillmentDialog, type FulfillmentKind, type FulfillmentTarget } from "@/components/fulfillment-dialog";
 import { RowActions, type RowAction } from "@/components/row-actions";
@@ -96,7 +96,7 @@ export function ShipmentRequestTable({
               return (
                 <TableRow key={row.id} data-testid="list-row">
                   {columns.map((c) => (
-                    <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} sortable={Boolean(c.sort)}>
+                    <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} {...sortCell(c, sort)}>
                       {content[c.key]}
                     </TableCell>
                   ))}

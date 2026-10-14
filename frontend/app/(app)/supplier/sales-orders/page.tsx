@@ -8,7 +8,7 @@ import { ListError } from "@/components/list-error";
 import { ListTabs } from "@/components/list-tabs";
 import { PageHeader } from "@/components/page-header";
 import { Pagination } from "@/components/pagination";
-import { ColumnHeads, sortColumns, type Column } from "@/components/columns";
+import { ColumnHeads, sortColumns, sortCell, type Column } from "@/components/columns";
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { totalAmountText } from "@/lib/format";
@@ -135,7 +135,7 @@ export default async function SalesOrdersPage({ searchParams }: { searchParams: 
                   return (
                     <TableRow key={o.id} data-testid="list-row">
                       {COLUMNS.map((c) => (
-                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} sortable={Boolean(c.sort)}>
+                        <TableCell key={c.key} numeric={c.numeric} truncate={c.truncate} {...sortCell(c, q.sort)}>
                           {content[c.key]}
                         </TableCell>
                       ))}
