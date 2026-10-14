@@ -379,6 +379,8 @@ bin/check-commit-refs            # 通った
 
 実装レビューの直しの後も、`232eee7` の作業ツリーで `TEST_DATABASE=factory_ops_m47_test bin/ci` を流し、すべての工程が通った（rspec は 3053 examples, 0 failures、分岐の網羅率の警告は 0 件）。`frontend` の `codegen:check`・`lint`・`typecheck`・`test:unit`（145 tests passed）と、`bin/check-open-items --due M47`・`bin/check-commit-refs` も通った。`27f9d2f` の PR の CI はすべて通った（`test` 5 分 59 秒、`e2e` 3 分 27 秒。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38514548779)）。
 
+`f5aa7e6` の PR の CI では、`images` の画面のイメージの組み立てが `next/font/google` の解決の失敗で落ち、落ちた job だけを流し直すと通った（[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38515148652)）。文書だけの commit で、前の 3 回は通っていたので、外部への接続によるものとして IB-122 に積んだ。
+
 ### 残件の処理
 
 引当先が M47 の行は、着手の前と PR の前に台帳を読んだ。OI-187（`decided`、見出しで 2 つ目からの列を足す作者の判断）は作るもの 4 で、OI-195（`judgment`、Shift の操作の細部）は計画のとおりに反映した。実装で決めたことを OI-198（`judgment`）に、Chromium でしか確かめられないことを IB-121 に積んだ。作者の判断の受け口（`decisions.md`）に、M47 への判断は書かれていなかった。
