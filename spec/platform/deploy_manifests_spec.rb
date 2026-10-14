@@ -113,6 +113,31 @@ RSpec.describe "公開の配置のマニフェスト" do
     end
   end
 
+  # 既定の 1 秒では、Pi 4 で取り込みを流す間にプローブが時間切れになり、liveness が続けて落ちてコンテナが作り直されうる。
+  # pg_isready は自分の待ち（-t）でも諦めるので、kubelet の時間切れより短くする
+  it "すべてのプローブが、既定の 1 秒より長い時間切れ（timeoutSeconds）を明示し、pg_isready はその内に自分で終わる" do
+    probes = workloads.flat_map do |document|
+      containers(document).flat_map do |container|
+        %w[startupProbe readinessProbe livenessProbe].filter_map { |kind| [ document.dig("metadata", "name"), kind, container[kind] ] if container[kind] }
+      end
+    end
+
+    expect(probes.map { _1.first(2) }).to contain_exactly(
+      %w[web startupProbe], %w[web readinessProbe], %w[web livenessProbe],
+      %w[frontend readinessProbe], %w[frontend livenessProbe],
+      %w[postgres readinessProbe], %w[postgres livenessProbe]
+    )
+    probes.each do |name, kind, probe|
+      timeout = probe["timeoutSeconds"]
+      expect(timeout).to be_a(Integer).and(be > 1), "#{name} の #{kind} の timeoutSeconds が #{timeout.inspect}"
+      command = probe.dig("exec", "command")
+      next unless command&.first == "pg_isready"
+
+      wait = command.each_cons(2).find { |flag, _| flag == "-t" }&.last
+      expect(wait && Integer(wait)).to be_between(1, timeout - 1), "#{name} の #{kind} の pg_isready -t が #{wait.inspect}"
+    end
+  end
+
   it "イメージはタグを固定し、latest を使わない。タグの無いイメージは kustomization.yaml の images でタグを決める" do
     images = kustomization.fetch("images").to_h { [ _1.fetch("name"), _1.fetch("newTag") ] }
 

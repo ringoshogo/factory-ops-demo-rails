@@ -567,3 +567,86 @@ E2E（`cd frontend && PLAYWRIGHT_CHANNEL=chrome npm run test:e2e`）は、画面
 ### 残件の処理
 
 着手の前に台帳を読み、引当先が M46 の行は OI-189（`decided`。作者の判断で、品目の保存と取り込みが同じトランザクションで在庫の公開 API を呼んで写す）だった。判断のとおり、`Sales::Catalog.save`・`bulk_upsert` が `Inventory::ItemLabels.put` を呼ぶ形で作った。OI-190（名前を DB の照合順序のまま並べる、`judgment`）は、品目の名前も同じく照合順序のまま並べた。
+
+## M41 の残り：公開の配置のプローブの時間切れを明示する
+
+`m41-probe-timeouts`（base は `main`、PR #81）。M46 の先端 `5439b97` から切った。#78〜#80 が未マージなので、PR の差分には M44〜M46 の後の commit も含まれる。M41 の残りの差分は `5439b97..` である。M41 の作者の実機の手順（作るもの 9 の手順 1〜6）は作者が流すので、この PR では流していない。結果が書かれるまで M41 は閉じず、公開しない（`implementation-plan.md` M41「作者が実機で確かめること」）。
+
+Codex も Claude も Conditional Go だった。どちらの系統も、`5439b97..f421a87` の diff を `f421a87` の版で読んだ。Codex はファイルを変えず、新しい example の本体をメモリの中で変えた YAML に当てて検出力を確かめた。Claude は `deploy_manifests_spec.rb` を手元で流し、マニフェストの複製を壊して戻した。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Conditional Go（Medium 2・Low 1） | 出していない（High が無かった） |
+| Claude | Conditional Go（Medium 2・Low 2） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R2） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘（R2） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R1） | 指摘（R4） |
+| 参照の維持 | 指摘（R3） | 指摘（R3） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex・Claude | Codex R2・Claude R1：RED と壊して落ちる記録を証跡に書かないまま、レビューに出した（`guides/dev-cycle.md`「実装レビュー」） | 規則から外れた。この節の「実装の記録」に、直す前の RED と、直しの後の版で壊して落ちる記録を書いた。直しの後の版は High が無いので読み直しに出していない | この節を載せた commit |
+| Medium | Claude | R2：`postgres` のプローブの `pg_isready` は自分でも既定の 3 秒で接続を諦め、kubelet の 5 秒を待たずに落ちる。手元の PostgreSQL 18 の `pg_isready --help` も `-t ... (default: 3)` と書く | 2 つのプローブに `-t 4` を渡し、kubelet の時間切れより少し短く待たせ、理由をコメントに書いた。計画のプローブの直しにも書いた | `315155b` |
+| Medium | Codex | R1：新しい example は、すべてを `timeoutSeconds: 1` に戻しても、`web` の startupProbe を消しても通る | example が、プローブの組（`web` の 3 つ、`frontend` と `postgres` の 2 つずつ）を計画から書いた一覧と比べ、時間切れが整数で 1 秒より長いことと、`pg_isready` の `-t` がその内であることを確かめるようにした。値を 5 に固定しなかったのは、作者の手順 4 で値を直すたびに spec を直さずに済ませ、守るものを「既定の 1 秒より長く明示する」に絞るためである | `315155b` |
+| Low | Claude | R4：同じ（`timeoutSeconds: 1` でも通る） | Codex R1 と同じ直し | `315155b` |
+| Low | Claude | R3：`handoff.md` の「決まっていないこと」に OI-181 が残る | 消した。`git grep OI-181` で、計画・`handoff.md` に作者を待つとした記述が残らないことを確かめた | `315155b` |
+| Low | Codex | R3：コメントが依拠する外部の既定値（時間切れの 1 秒）の原文の参照が無い | 計画のプローブの直しに、Kubernetes の Probe の API が `timeoutSeconds` の既定を 1 秒とすること（`periodSeconds` は 10 秒、`failureThreshold` は 3 回）を書いた。ADR は足さなかった。値は作者の手順 4 で直す見積もりで、比べた案を持つ判断ではないからである | `315155b` |
+
+違和感は次のように扱った。
+
+- Codex 1：`pg_isready` の 3 秒 → Claude R2 と同じ。上の表のとおり直した
+- Codex 2：`RESTARTS` が増えなくても、readiness の一時の失敗や 1 回だけの時間切れは分からない → 公開の配置で困るのは liveness の続けた失敗で作り直されることで、それは `RESTARTS` に出る。readiness の一時の失敗は Service から外れるだけなので、作者の手順は替えなかった
+- Codex 3・Claude 1：計画の「いまはどのプローブも書いていない」と、「値の差し替え」の行は答えが来たら替えるという文が、直した後の状態と合わない → どちらも直した（`315155b`）
+- Claude 2：同じ 1 行のコメントが 3 つのマニフェストと spec にある → どのファイルを開いた人にも理由が見えるので、そのままにした
+- Claude 3：`web.yaml` で、`/up` のコメントの下に続けて置いた 1 行が、startupProbe だけに掛かるように見える → 中身は 3 つのプローブのどれにも当てはまるので、そのままにした
+- Claude 4：5 秒が足りるかは実機でしか分からない → OI-182 と `deploy/README.md`「作者の手順」4 の `RESTARTS` で見る
+- Claude 5：startupProbe の `timeoutSeconds` を `periodSeconds`（5 秒）より上げると、起動の上限が 3 分から延びる → いまの値では 3 分のままなので、直さなかった
+
+### 実装の記録
+
+#### 計画との違い
+
+- `postgres` の `pg_isready` に `-t 4` を渡した（実装レビューの Claude R2）。計画は `timeoutSeconds: 5` だけを書いていたが、`pg_isready` が自分の既定の 3 秒で先に諦めると、`postgres` に効く猶予は 3 秒のままになるからである。計画のプローブの直しを、この形に合わせて直した。
+- example は「明示する」だけでなく、プローブの組と、時間切れが既定の 1 秒より長いことと、`pg_isready` の `-t` がその内であることを確かめる（実装レビューの Codex R1・Claude R4）。
+- `deploy/README.md`「作者の手順」4 は、取りまとめ役が作者の判断を書いた `4a14ee9` で `RESTARTS` を見ることを書いていたので、替えていない。
+
+#### RED と、壊して落ちる記録
+
+RED（期待の不一致で落ちたもの）：`spec/platform/deploy_manifests_spec.rb` に、すべてのプローブが `timeoutSeconds` を明示することを確かめる example を足し、マニフェストを変える前に流した（19 examples, 1 failure）。
+
+```
+Failure/Error: probes.each { |name, kind, probe| expect(probe["timeoutSeconds"]).to be_present, "#{name} の #{kind} が timeoutSeconds を書いていない" }
+  frontend の readinessProbe が timeoutSeconds を書いていない
+```
+
+直しの後の版（`315155b`）で、マニフェストを 1 か所ずつ壊し、`bundle exec rspec spec/platform/deploy_manifests_spec.rb` を流して、scratchpad に置いた複製から戻した。戻した後に `cmp` で元と一致することを確かめた。
+
+| 壊したもの | 落ちたもの |
+|---|---|
+| `web` の 3 つの `timeoutSeconds` を 1 にする | 1（`web の startupProbe の timeoutSeconds が 1`） |
+| `web` の startupProbe を消す（キーの名前を替える） | 1（プローブの組の比較） |
+| `frontend` の livenessProbe の `timeoutSeconds` を消す | 1（`frontend の livenessProbe の timeoutSeconds が nil`） |
+| `postgres` の livenessProbe の `pg_isready` から `-t 4` を消す | 1（`postgres の livenessProbe の pg_isready -t が nil`） |
+| `postgres` の `pg_isready` の `-t` を 5（`timeoutSeconds` と同じ）にする | 1（`postgres の readinessProbe の pg_isready -t が "5"`） |
+
+#### 手元で流したもの
+
+`315155b` の作業ツリーで、Ruby 3.4.11・PostgreSQL 18 で流した。
+
+```sh
+bundle exec rspec spec/platform/deploy_manifests_spec.rb spec/requests/sessions_spec.rb spec/platform/production_boot_spec.rb   # 33 examples, 0 failures
+bin/check-open-items --due M41                                                                                                # 通った
+bin/check-commit-refs                                                                                                         # 通った
+bin/ci                                                                                                                        # すべての工程が通った。rspec は 2981 examples, 0 failures
+kubectl kustomize deploy                                                                                                      # 7 つのプローブがどれも timeoutSeconds: 5 で描かれる
+```
+
+分岐の網羅率の警告は 0 件だった。kubeconform は手元に無いので、マニフェストの型の照合は CI の `manifests` のジョブで確かめた。
+
+### 残件の処理
+
+引当先が M41 の行は、OI-145〜OI-149・OI-181 が `decided`、OI-182・OI-183 が `judgment` で、`bin/check-open-items --due M41` が通る。OI-182 の判断（プローブの時間切れの明示）は、この節のとおり作った。作者の実機の確かめ（作るもの 9 の手順 1〜6）は台帳の行にせず、計画の M41 の「残り（サイクル 06）」の表の行のまま、作者が結果を PR か台帳に書くのを待つ。実装レビューから新しく積んだ残件と改善の候補は無い。

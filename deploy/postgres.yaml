@@ -91,16 +91,20 @@ spec:
             limits:
               cpu: 1000m
               memory: 512Mi
+          # 時間切れの既定の 1 秒では、Pi 4 で取り込みを流す間にプローブが落ち、liveness が続けて落ちるとコンテナが作り直される
+          # pg_isready は自分でも既定の 3 秒で諦めるので、-t で kubelet の時間切れより少し短く待たせる
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres"]
+              command: ["pg_isready", "-U", "postgres", "-t", "4"]
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres"]
+              command: ["pg_isready", "-U", "postgres", "-t", "4"]
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 5
           volumeMounts:
             # 18 のイメージはデータを /var/lib/postgresql/18/docker に置く。16 の /var/lib/postgresql/data に付けると PVC の外に書く
             - name: data

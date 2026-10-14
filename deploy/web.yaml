@@ -68,22 +68,26 @@ spec:
               cpu: 1000m
               memory: 512Mi
           # /up は DB に触れずに、アプリが起動したかだけを返す。Raspberry Pi で全コードを読み込む間は落とさない
+          # 時間切れの既定の 1 秒では、Pi 4 で取り込みを流す間にプローブが落ち、liveness が続けて落ちるとコンテナが作り直される
           startupProbe:
             httpGet:
               path: /up
               port: 3000
             periodSeconds: 5
+            timeoutSeconds: 5
             failureThreshold: 36
           readinessProbe:
             httpGet:
               path: /up
               port: 3000
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /up
               port: 3000
             periodSeconds: 20
+            timeoutSeconds: 5
           volumeMounts:
             - name: mails
               mountPath: /rails/tmp/mails

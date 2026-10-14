@@ -44,17 +44,20 @@ spec:
               cpu: 500m
               memory: 384Mi
           # ログインの画面（/）は Rails を呼ばずに描くので、Rails が作り直しで止まっている間も ready のままでいる
+          # 時間切れの既定の 1 秒では、Pi 4 で取り込みを流す間にプローブが落ち、liveness が続けて落ちるとコンテナが作り直される
           readinessProbe:
             httpGet:
               path: /
               port: 3000
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 20
+            timeoutSeconds: 5
 ---
 apiVersion: v1
 kind: Service
