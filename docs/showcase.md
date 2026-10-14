@@ -226,7 +226,7 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 **どこで守っているか**
 - `item_prices` の排他制約：記録期間が終わっていない行同士で、有効期間が重ならない
 - トリガー：記録期間を閉じる以外の UPDATE と、すべての DELETE を拒む
-- 単価の問い合わせを 1 つの公開 API `Sales::ItemPrices.price_at`（有効日と記録時点の 2 引数）に集める
+- 単価の値の問い合わせを 1 つの公開 API `Sales::ItemPrices.price_at`（有効日と記録時点の 2 引数）に集める。並べ替えの副問い合わせ（`Sales::ItemPrices.today_price`）も同じ条件で組む
 
 **どう確かめられるか**：`packs/sales/spec/db/item_prices_constraints_spec.rb`、`packs/sales/spec/public/sales/item_prices_spec.rb`
 
