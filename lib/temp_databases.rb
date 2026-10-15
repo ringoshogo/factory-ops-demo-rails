@@ -49,9 +49,11 @@ class TempDatabases
     config = ActiveRecord::Base.configurations.configs_for(env_name: "test", name: "owner").configuration_hash
     connection = PG.connect(host: config[:host], port: config[:port], user: config[:username], password: config[:password],
       dbname: "postgres")
-    yield connection
-  ensure
-    connection&.close
+    begin
+      yield connection
+    ensure
+      connection.close
+    end
   end
   private_class_method :with_maintenance_connection
 end
