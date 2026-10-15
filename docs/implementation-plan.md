@@ -124,7 +124,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M48 | CI で依存の木を確かめ、イメージの組み立てを PR のたびに流す | 入れ子の依存の peer の範囲から外れた更新の PR が CI で落ち、イメージの組み立てが条件の保守なしに PR ごとに確かめられる |
 | M49 | 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする | 品目コードの並びが Ruby の比べ方と列の定義でそろい、コードの順で取るロックが照合順序を知らずに書いても食い違わない。名前の並びが流用元の `Intl.Collator("ja")` と同じになる |
 | M51 | 手元の検証を止めるものを取り除く：E2E のログインの待ち、一時の DB の後片付け、RLS を開くグループの止まり | 一時の DB は名前を明示したときだけ消え、既定の DB と接続中の DB は消えない。ポリシーの足し外しがロックを待ち続けず、待たせた接続を示して落ちる |
-| M52 | テストの基盤のガードを足す：E2E の起動の時の読み込み | E2E の Rails を起動の時に読み込む変数を外すと、spec が落ちる |
+| M52 | テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:` | E2E の Rails を起動の時に読み込む変数を外すと、spec が落ちる。`publish` の `if:` を否定か論理和で迂回すると、spec が落ちる |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -164,7 +164,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M48 | M44 | `npm ls --all` を、M44 で取り込んだ依存の木と `groups` でまとめた PR に当てる。`image_inputs` と `publish` の形が M42 にある |
 | M49 | M46 | 照合順序を決める `item_labels.code`・`item_labels.name` と作り直しの式が M46 にあり、取引先の名前の副問い合わせが M45 にある |
 | M51 | M50・M33 の残り（サイクル 07） | ログインの待ちと `eager_load` を、M50 と M33 の残り（サイクル 07）が直した E2E の上で比べる。M50 の残りと M33 の残り（サイクル 08）より前に置く。壊して落ちる記録で止まった `catalog_spec.rb` の壊し方が M50 にある |
-| M52 | M51 | ガードを足す変数と、`start-rails.sh` の読み込みの形が M51 にある。サイクル 08 のサイクル末のブランチから切る |
+| M52 | M51 | ガードを足す変数と `start-rails.sh` の読み込みの形、`publish` の `if:` の `success()` が M51 にある。作るもの 3 は、#85 の担当を止める段落を含むブランチで書く |
 
 ---
 
@@ -2168,6 +2168,8 @@ bin/check-open-items --due M33
 
 残りの文書に残すこと（サイクル 08）：`architecture/context-map.md`「発注の連結と品番の照合」の合計金額の段落の、照合待ち・確定待ちのまま取り消した伝票の文に、詳細の明細の行も待ちの文言の代わりに取消の文言を出すことを足す。`handoff.md`「決まっていないこと」の画面の振る舞いの行の、明細の行の文言を作者に渡すとした文を、決まった形に直す。「品番照合待ち」「受注側の確定待ち」を種類で `git grep` し、画面の明細の行の規則を書いた文に取消の場合を足す。
 
+**残り（サイクル 09）**：OI-204 は、サイクル 08 で実装レビューまで終えた（`plans/cycle-08/implementation-reviews.md`「M33 の残り（サイクル 08）：取消済の伝票の明細の行の文言」）。作者の画面の指摘（OI-177）は来ていないので、上の規則のとおり、OI-177 だけをサイクル 09 へ移した。指摘が来たら、上の表の OI-177 の行の手順で直す。
+
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、作者の判断（OI-144）の値に入っていない列での並べ替え（OI-186。M50 で足す）、一覧の見出しで複数の列を指定する操作（OI-187。M47 で足す）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
 **実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
@@ -2295,6 +2297,8 @@ bin/check-open-items --due M41
 **残り（サイクル 07）**：プローブの直しは、サイクル 06 で実装レビューまで終えた（`plans/cycle-06/implementation-reviews.md`「M41 の残り：公開の配置のプローブの時間切れを明示する」）。残る作者の実機の手順（作るもの 9 の手順 1〜6）だけをサイクル 07 へ移し、`blocked-user` の行（OI-196）にして、`bin/check-open-items --due M41` が結果を待つようにした。作者が結果を PR か台帳に書いたら、取りまとめ役は、測った値でプローブの時間と requests と limits を直すか（OI-182）、PVC を移すか（OI-183）を確かめ、直すものがあれば差分をこの節の下に書いて実装レビューに通す。
 
 **残り（サイクル 08）**：作者の実機の手順の結果（OI-196）は、サイクル 07 の間に書かれなかったので、同じ形のままサイクル 08 へ移した。
+
+**残り（サイクル 09）**：作者の実機の手順の結果（OI-196）は、サイクル 08 の間にも書かれなかったので、同じ形のままサイクル 09 へ移した。移すのは 4 回目で、移し続けるか、サイクルの表から外して結果が書かれたときに入れ直すかを、作者に問うた（`plans/cycle-08/author-decisions.md` の 2）。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
@@ -2544,24 +2548,26 @@ cd frontend && npm run test:e2e   # 負荷の低い手元で、続けて 3 回
 
 **文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。`guides/config.md`「CI の工程」の、`publish` の `if:` に状態の関数を書かないとした文と、spec が確かめるものと spec で照らす例外に挙げた「`publish` の `if:` が状態の関数を含まないこと」を、`success()` を明示し、`failure`・`cancelled`・`always` を含まない形に直す。「状態の関数」「暗黙の」を種類で `git grep` し、前の形を書いた文を残さない。M48 の時点の記録（`handoff.md`「リポジトリの状態」の M48 の要約、証跡、OI-184 の結果の欄）は、その時点の形として直さない。
 
-## M52 テストの基盤のガードを足す：E2E の起動の時の読み込み
+## M52 テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`
 
-**目的**：サイクル 08 の逸脱検査（`plans/cycle-08/conformance.md` の D3）が、M51 で足した E2E の起動の時の読み込みの変数に、外すと落ちるガードの example が無いことを、`guides/dev-cycle.md`「テストから書く」の規則に反すると裁定した（OI-207）。変数を外しても手元の E2E は通るので、外した変更が黙って入る。業務の振る舞いは変えない。
+**目的**：M51 で足したテストの基盤と CI の守りに、外すか崩すと落ちるガードを足す。1 つ目は、サイクル 08 の逸脱検査（`plans/cycle-08/conformance.md` の D3）が、E2E の起動の時の読み込みの変数に外すと落ちる example が無いことを、`guides/dev-cycle.md`「テストから書く」の規則に反すると裁定したものである（OI-207）。変数を外しても手元の E2E は通るので、外した変更が黙って入る。2 つ目は、サイクル 08 の改善の探索で採用した IB-134 で、`publish` の `if:` の spec が、`needs` が落ちても `publish` を流す式（`success()` の否定や論理和）を通すことである（`plans/cycle-08/improvement.md`「裁定」）。3 つ目は、担当を止めるときに一時の DB を消す手順を、担当を止める段落に寄せる（OI-208）。業務の振る舞いは変えない。
 
 **作るもの**
 
-1. E2E の起動の時の読み込みのガード（OI-207）：`spec/platform/` に、子のプロセスで test の環境を起こし、`CI` を除いた環境で `E2E_EAGER_LOAD=1` を渡したときだけ `Rails.application.config.eager_load` が真になり、渡さないときは偽になる example を足す（前例：`spec/platform/production_boot_spec.rb` の `Open3`）。あわせて、`frontend/e2e/start-rails.sh` が Rails を起こす前に `E2E_EAGER_LOAD=1` を export することを照らす example を足す。条件を照らすのはファイルの文字列ではなく、子のプロセスで読んだ設定の値にする
+1. E2E の起動の時の読み込みのガード（OI-207）：`spec/platform/e2e_eager_load_spec.rb` に、子のプロセスで test の環境を起こし、`CI` を除いた環境で `E2E_EAGER_LOAD=1` を渡したときに `Rails.application.config.eager_load` が真になり、渡さないときは偽になる example を足す（前例：`spec/platform/production_boot_spec.rb` の `Open3`）。`test.rb` の側は、ファイルの文字列ではなく、子のプロセスで読んだ設定の値で照らす。`test.rb` は `.present?` で読むので値を問わないが、`start-rails.sh` が渡す値は `1` にそろえる。あわせて、`frontend/e2e/start-rails.sh` が `bin/rails` を呼ぶ行より前に `export E2E_EAGER_LOAD=1` を持つことを、スクリプトの行を読んで照らす example を足す。スクリプトは DB を作り直してサーバーを起こすので、spec の中で流さない
+2. `publish` の `if:` の迂回を止める（IB-134）：`spec/platform/ci_checks_spec.rb` の `publish` の `if:` の example に、`success()` の直前に否定（`!`）が無いことと、論理和（`||`）を含まないことの期待を足す。いまの期待（`success()` を含み、`failure`・`cancelled`・`always` を含まない）は残す。式の形は照らさず、含む・含まないで照らす方針（`guides/config.md`「CI の工程」）は変えない。example の名前と前のコメント、`config.md`「CI の工程」の spec が確かめるものの列挙も直す
+3. 担当を止める手順を 1 か所にする（OI-208）：`guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md` と `handoff.md`「開発環境」の参照も合わせる。このマイルストーンのブランチが #85 を含まないなら、取りまとめ役は計画レビューの前に引当先を書き換える
 
 **完了条件**
 
 ```sh
-bundle exec rspec spec/platform/e2e_eager_load_spec.rb   # 0 failures
+bundle exec rspec spec/platform/e2e_eager_load_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
 ```
 
-期待の不一致で最初に落とすのは、`config/environments/test.rb` の `eager_load` の条件から `E2E_EAGER_LOAD` を外した版で、変数を渡したのに `eager_load` が偽になる example である。壊して落ちる記録に、`test.rb` の条件から変数を外す、`start-rails.sh` の `export` を消す、の 2 つを書く。
+期待の不一致で最初に落とすのは、`config/environments/test.rb` の `eager_load` の条件から `E2E_EAGER_LOAD` を外した版で、変数を渡したのに `eager_load` が偽になる example である。作るもの 2 は、`ci.yml` をいまの形のままにして足した期待が通ることを確かめ、`if:` を `!success() && github.event_name == 'push'` にした版と `success() || github.event_name == 'push'` にした版で落ちることを、RED に代わる壊して落ちる記録にする（いまの `ci.yml` は迂回の形を持たないので、足した期待は書いた時点で通る）。壊して落ちる記録に、`test.rb` の条件から変数を外す、`start-rails.sh` の `export` を消す、`if:` の 2 つの迂回の形、の 4 つを書く。
 
-**範囲外**：ログインの待ちの値（OI-206）、手元の E2E の時間の比べ
+**範囲外**：ログインの待ちの値（OI-206）、手元の E2E の時間の比べ、一時の DB の削除のタスクが `TEST_DATABASE` の DB を拒むこと（IB-135）と、around の補助が拾う例外の範囲（IB-136。どちらもサイクル 08 の改善の探索で見送った）
 
-**実装する文書の節**：`guides/config.md`「環境ごとの設定」、`guides/dev-cycle.md`「テストから書く」
+**実装する文書の節**：`guides/config.md`「環境ごとの設定」「CI の工程」、`guides/dev-cycle.md`「テストから書く」「着手の前に」
 
-**文書に残すこと**：`guides/config.md`「環境ごとの設定」の `test.rb` の `eager_load` の箇条に、ガードの spec の置き場。
+**文書に残すこと**：`guides/config.md`「環境ごとの設定」の `test.rb` の `eager_load` の箇条に、ガードの spec の置き場。`guides/config.md`「CI の工程」の spec が確かめるものに、`publish` の `if:` が `success()` の否定と論理和を含まないこと。
