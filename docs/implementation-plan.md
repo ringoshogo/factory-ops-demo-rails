@@ -124,7 +124,7 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M48 | CI で依存の木を確かめ、イメージの組み立てを PR のたびに流す | 入れ子の依存の peer の範囲から外れた更新の PR が CI で落ち、イメージの組み立てが条件の保守なしに PR ごとに確かめられる |
 | M49 | 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする | 品目コードの並びが Ruby の比べ方と列の定義でそろい、コードの順で取るロックが照合順序を知らずに書いても食い違わない。名前の並びが流用元の `Intl.Collator("ja")` と同じになる |
 | M51 | 手元の検証を止めるものを取り除く：E2E のログインの待ち、一時の DB の後片付け、RLS を開くグループの止まり | 一時の DB は名前を明示したときだけ消え、既定の DB と接続中の DB は消えない。ポリシーの足し外しがロックを待ち続けず、待たせた接続を示して落ちる |
-| M52 | テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:` | E2E の Rails を起動の時に読み込む変数を外すと、spec が落ちる。`publish` の `if:` を否定か論理和で迂回すると、spec が落ちる |
+| M52 | テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`、テナントで包む around | E2E の Rails を起動の時に読み込む変数を外すと、spec が落ちる。`publish` の `if:` を否定か論理和で迂回すると、spec が落ちる。テナントで包んだ example が SQL のエラーで落ちても後ろのグループが止まらず、直に包む around を足すと spec が落ちる |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -164,7 +164,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M48 | M44 | `npm ls --all` を、M44 で取り込んだ依存の木と `groups` でまとめた PR に当てる。`image_inputs` と `publish` の形が M42 にある |
 | M49 | M46 | 照合順序を決める `item_labels.code`・`item_labels.name` と作り直しの式が M46 にあり、取引先の名前の副問い合わせが M45 にある |
 | M51 | M50・M33 の残り（サイクル 07） | ログインの待ちと `eager_load` を、M50 と M33 の残り（サイクル 07）が直した E2E の上で比べる。M50 の残りと M33 の残り（サイクル 08）より前に置く。壊して落ちる記録で止まった `catalog_spec.rb` の壊し方が M50 にある |
-| M52 | M51 | ガードを足す変数と `start-rails.sh` の読み込みの形、`publish` の `if:` の `success()` が M51 にある。作るもの 3 は、#85 の担当を止める段落を含むブランチで書く |
+| M52 | M51 | ガードを足す変数と `start-rails.sh` の読み込みの形、`publish` の `if:` の `success()`、外す `around_hook_errors.rb` と `MatrixCrossRead` の残ったトランザクションの検出が M51 にある。作るもの 3 は、`origin/main` をマージして #85 の担当を止める段落を取り込んでから書く |
 
 ---
 
@@ -2298,7 +2298,7 @@ bin/check-open-items --due M41
 
 **残り（サイクル 08）**：作者の実機の手順の結果（OI-196）は、サイクル 07 の間に書かれなかったので、同じ形のままサイクル 08 へ移した。
 
-**残り（サイクル 09）**：作者の実機の手順の結果（OI-196）は、サイクル 08 の間にも書かれなかったので、同じ形のままサイクル 09 へ移した。移すのは 4 回目で、移し続けるか、サイクルの表から外して結果が書かれたときに入れ直すかを、作者に問うた（`plans/cycle-08/author-decisions.md` の 2）。
+**残り（サイクル 09）**：作者の実機の手順の結果（OI-196）は、サイクル 08 の間にも書かれなかったので、同じ形のままサイクル 09 へ移した。移すのは 4 回目で、移し続けるか、サイクルの表から外して結果が書かれたときに入れ直すかを、作者に問うた（`plans/cycle-08/author-decisions.md` の 2）。作者は 2026-10-16 に、結果が来るまで毎サイクル移し続けると答えた（IB-133 の結果の欄）。作るものは変わらない。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
@@ -2548,27 +2548,36 @@ cd frontend && npm run test:e2e   # 負荷の低い手元で、続けて 3 回
 
 **文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。`guides/config.md`「CI の工程」の、`publish` の `if:` に状態の関数を書かないとした文と、spec が確かめるものと spec で照らす例外に挙げた「`publish` の `if:` が状態の関数を含まないこと」を、`success()` を明示し、`failure`・`cancelled`・`always` を含まない形に直す。「状態の関数」「暗黙の」を種類で `git grep` し、前の形を書いた文を残さない。M48 の時点の記録（`handoff.md`「リポジトリの状態」の M48 の要約、証跡、OI-184 の結果の欄）は、その時点の形として直さない。
 
-## M52 テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`
+## M52 テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`、テナントで包む around
 
-**目的**：M51 で足したテストの基盤と CI の守りに、外すか崩すと落ちるガードを足す。1 つ目は、サイクル 08 の逸脱検査（`plans/cycle-08/conformance.md` の D3）が、E2E の起動の時の読み込みの変数に外すと落ちる example が無いことを、`guides/dev-cycle.md`「テストから書く」の規則に反すると裁定したものである（OI-207）。変数を外しても手元の E2E は通るので、外した変更が黙って入る。2 つ目は、サイクル 08 の改善の探索で採用した IB-134 で、`publish` の `if:` の spec が、`needs` が落ちても `publish` を流す式（`success()` の否定や論理和）を通すことである（`plans/cycle-08/improvement.md`「裁定」）。3 つ目は、担当を止めるときに一時の DB を消す手順を、担当を止める段落に寄せる（OI-208）。4 つ目は、M51 で全 spec に効かせた around の補助を外し、送出しうる around を個別に直す（OI-205。作者の判断）。業務の振る舞いは変えない。
+**目的**：M51 で足したテストの基盤と CI の守りに、外すか崩すと落ちるガードを足し、M51 で全 spec に効かせた around の補助を、止まりの起きる around だけの直しに置き換える。1 つ目は、サイクル 08 の逸脱検査（`plans/cycle-08/conformance.md` の D3）が、E2E の起動の時の読み込みの変数に外すと落ちる example が無いことを、`guides/dev-cycle.md`「テストから書く」の規則に反すると裁定したものである（OI-207）。変数を外しても手元の E2E は通るので、外した変更が黙って入る。2 つ目は、サイクル 08 の改善の探索で採用した IB-134 で、`publish` の `if:` の spec が、`needs` が落ちても `publish` を流す式（`success()` の否定や論理和）を通すことである（`plans/cycle-08/improvement.md`「裁定」）。3 つ目は、担当を止めるときに一時の DB を消す手順を、担当を止める段落に寄せる（OI-208）。4 つ目は、作者の判断（OI-205 の (a)）で、全 spec に効く `spec/support/around_hook_errors.rb` を外し、example を包んで送出しうる around を個別に直す。全 spec に効く補助は、around が送出したときの rspec の出力の形を全体で変えるので、止まりの起きる around に直しを限る。業務の振る舞いは変えない。
 
 **作るもの**
 
 1. E2E の起動の時の読み込みのガード（OI-207）：`spec/platform/e2e_eager_load_spec.rb` に、子のプロセスで test の環境を起こし、`CI` を除いた環境で `E2E_EAGER_LOAD=1` を渡したときに `Rails.application.config.eager_load` が真になり、渡さないときは偽になる example を足す（前例：`spec/platform/production_boot_spec.rb` の `Open3`）。`test.rb` の側は、ファイルの文字列ではなく、子のプロセスで読んだ設定の値で照らす。`test.rb` は `.present?` で読むので値を問わないが、`start-rails.sh` が渡す値は `1` にそろえる。あわせて、`frontend/e2e/start-rails.sh` が `bin/rails` を呼ぶ行より前に `export E2E_EAGER_LOAD=1` を持つことを、スクリプトの行を読んで照らす example を足す。スクリプトは DB を作り直してサーバーを起こすので、spec の中で流さない
 2. `publish` の `if:` の迂回を止める（IB-134）：`spec/platform/ci_checks_spec.rb` の `publish` の `if:` の example に、`success()` の直前に否定（`!`）が無いことと、論理和（`||`）を含まないことの期待を足す。いまの期待（`success()` を含み、`failure`・`cancelled`・`always` を含まない）は残す。式の形は照らさず、含む・含まないで照らす方針（`guides/config.md`「CI の工程」）は変えない。example の名前と前のコメント、`config.md`「CI の工程」の spec が確かめるものの列挙も直す
-3. 担当を止める手順を 1 か所にする（OI-208）：`guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md` と `handoff.md`「開発環境」の参照も合わせる。このマイルストーンのブランチが #85 を含まないなら、取りまとめ役は計画レビューの前に引当先を書き換える
-4. around の補助を外して個別に直す（OI-205）：作者は、全 spec に効く補助（`spec/support/around_hook_errors.rb` と `spec/rails_helper.rb` の include）を外し、落ちた example を包む around だけを個別に直すと決めた（`plans/cycle-08/author-decisions.md` の 4）。補助を外し、`Tenancy.with_tenant { example.run }` のように example を包んで送出しうる around を数え上げ、送出しても rspec-rails の巻き戻しまで戻る形に個別に直す。IB-123 の止まり（around の中で SQL のエラーを起こした example の後ろのグループが止まる）を再現する example を足して、直した around で止まらないことを確かめる。`showcase.md` のテーマ 9 と `guides/testing.md`「行列テストとの分担」の補助の記述を、個別の直しに合わせて書き換える。直す形と数え上げの方法は計画レビューで決める
+3. 担当を止める手順を 1 か所にする（OI-208）：`guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md` と `handoff.md`「次にやること」の参照も合わせる。サイクル 08 の末のブランチ（このマイルストーンの土台）は #85 を含まない。担当は、作るもの 3 に入る前に `git merge origin/main` で #85 を取り込み、マージの commit を残す。取り込まずに同じ場所を書き換えると、main とぶつかる。2026-10-16 の時点で、土台の先端と `origin/main` は衝突なしにマージでき、取り込むのは #85 と Dependabot の lucide-react の更新（#77）の 2 つの変更である。衝突が出たら、作るもの 3 だけを止めて取りまとめ役に返す（`guides/dev-cycle.md`「前提が崩れたとき」）
+4. テナントで包む around を個別に直す（OI-205）：止まりの原因は、`around { |example| Tenancy.with_tenant(id) { example.run } }` の中で example が SQL のエラーで落ちると、rspec が `example.run` の中で例外を拾うので、`with_tenant` がそのまま中断したトランザクションのセーブポイントを解放しようとして around から送出し、外側の rspec-rails の around の巻き戻し（`after_teardown`）が飛ぶことである（`spec/support/around_hook_errors.rb` の冒頭のコメント）。次の形で直す
+   - 包みの補助：`spec/support/tenant_example.rb` に `TenantExample.run(example, tenant_id)` を置き、`Tenancy.with_tenant(tenant_id) { example.run; raise ActiveRecord::Rollback if example.exception }` の形で、落ちた example のときだけセーブポイントを巻き戻して抜ける。巻き戻した後は、中断したトランザクションが戻るので、`with_tenant` の後始末（`Tenancy.reset!`）も流れ、around は送出しない。通った example は、いまと同じくセーブポイントを解放して抜ける。通った example の `after_commit` の時機を変えないためである。`spec/rails_helper.rb` は、ほかの補助と同じく `require_relative` で読むだけで、`config.include` もフックも足さない
+   - 直す around：`Tenancy.with_tenant` で example を包む around を、すべて `around { |example| TenantExample.run(example, <テナント>) }` に書き換える。2026-10-16 の時点で 18 個（`packs/*/spec` の 17 ファイル。`adjustment_spec.rb` は 2 つ、`item_prices_spec.rb` は前に `foreign` を呼ぶ do の形）である。数は書き換える前に下のガードの example の失敗の一覧で数え、証跡に書く
+   - 直さない around：`example.run` の後で SQL を流さず、example の DB の状態で送出が変わらないもの（`Rails.event` の購読の解除、環境変数と設定の値の戻し、`Dir.mktmpdir` の後始末）と、rspec-rails の around より外側にある `spec/support/bullet.rb` の `config.around` は直さない。設定の段の around は、group を作るときに include より先に登録され、group の段の around は前に足されるので、外側に回る（rspec-core 3.13.6 の `lib/rspec/core/configuration.rb` の `configure_group` と `lib/rspec/core/hooks.rb` の `around`・`run_around_example_hooks_for`）。全 35 個の分け方は `plans/cycle-09/plan-review.md`「M52 の around の数え上げ」にある
+   - 数え上げのガード：`spec/platform/tenant_example_spec.rb` に、`spec/**/*.rb` と `packs/*/spec/**/*.rb` を Prism で読み、`around`・`prepend_around`・`append_around` の呼び出しのブロックの中に `with_tenant` か `transaction` の呼び出しがあれば、ファイルと行を並べて落とす example を足す。対照として、`TenantExample.run` を呼ぶ around が 1 つ以上あることと、`Tenancy.with_tenant` で包む around を書いた合成のソースで落ちることを、同じ example で確かめる。止まりの起きる around を後から足しても、このガードが落とす
+   - 止まりを再現する example：同じ spec に、`spec/platform/around_hook_errors_spec.rb` の内側の group を流す形（`example.run` を直に呼び、`NullReporter` に報告する）で、次の 2 つを置く。(i) 対照：`Tenancy.with_tenant` で直に包んだ around の中で `SELECT 1 / 0` で落ちた example の後、アプリと所有ロールの接続にトランザクションが 1 段ずつ残り、`MatrixCrossRead.with_policies` が「トランザクションが残っている」で失敗する（IB-123 の止まりの、M51 の後の出方）。(ii) `TenantExample.run` で包んだ around の中で同じく落ちた example は、失敗として報告され（SQL のエラーを飲み込まない）、次の example はトランザクションの 2 段とテナントの設定を持ち、終わった後は両方の接続のトランザクションが 0 段で、`MatrixCrossRead.with_policies` が通る。どちらも `ensure` で両方の接続を巻き戻す
+   - 外すもの：`spec/support/around_hook_errors.rb`、`spec/rails_helper.rb` の `require_relative` と `config.include` とその前のコメント、`spec/platform/around_hook_errors_spec.rb`。around の中で `skip` した example の巻き戻しの example は、`skip` を呼ぶ around が無いので移さない
 
 **完了条件**
 
 ```sh
-bundle exec rspec spec/platform/e2e_eager_load_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
+bundle exec rspec spec/platform/e2e_eager_load_spec.rb spec/platform/ci_checks_spec.rb spec/platform/tenant_example_spec.rb   # 0 failures
+git grep -n -e AroundHookErrors -e around_hook_errors -- spec packs   # 0 件
 ```
 
-期待の不一致で最初に落とすのは、`config/environments/test.rb` の `eager_load` の条件から `E2E_EAGER_LOAD` を外した版で、変数を渡したのに `eager_load` が偽になる example である。作るもの 2 は、`ci.yml` をいまの形のままにして足した期待が通ることを確かめ、`if:` を `!success() && github.event_name == 'push'` にした版と `success() || github.event_name == 'push'` にした版で落ちることを、RED に代わる壊して落ちる記録にする（いまの `ci.yml` は迂回の形を持たないので、足した期待は書いた時点で通る）。壊して落ちる記録に、`test.rb` の条件から変数を外す、`start-rails.sh` の `export` を消す、`if:` の 2 つの迂回の形、の 4 つを書く。
+期待の不一致で最初に落とすのは、作るもの 4 の数え上げのガードの example である。直す前のコードで、18 個の around を並べて落ちる。作るもの 1 と 2 は、M51 が作ったものに足すガードなので、書いた時点で通る。作るもの 1 は `test.rb` の条件から `E2E_EAGER_LOAD` を外す・`start-rails.sh` の `export` を消す、作るもの 2 は `if:` を `!success() && github.event_name == 'push'` にする・`success() || github.event_name == 'push'` にする、で落ちることを、RED に代わる壊して落ちる記録にする。作るもの 4 は、`TenantExample.run` から `raise ActiveRecord::Rollback if example.exception` を外すと止まりを再現する example の (ii) が落ちること、ガードの探す呼び出しの名前から `with_tenant` を外すと合成のソースの対照が落ちることを、壊して落ちる記録に書く。
 
-**範囲外**：ログインの待ちの値（OI-206）、手元の E2E の時間の比べ、一時の DB の削除のタスクが `TEST_DATABASE` の DB を拒むこと（IB-135）（サイクル 08 の改善の探索で見送った）。around の補助が拾う例外の範囲（IB-136）は、作るもの 4 で補助を外すので扱わない
+ほかに、M50 の壊し方（`packs/sales/app/public/sales/item_prices.rb` の `Sales::ItemPrices` の単価の式から `.current` を外す）で `bundle exec rspec packs/sales/spec/public/sales/catalog_spec.rb` を流し、壊した example の 1 件だけが落ちることを証跡に書く。直す前（補助を外し、around を直していない版）は、後ろの `cross_read!` の 2 つのグループも「トランザクションが残っている」で落ちる。
 
-**実装する文書の節**：`guides/config.md`「環境ごとの設定」「CI の工程」、`guides/dev-cycle.md`「テストから書く」「着手の前に」
+**範囲外**：ログインの待ちの値（OI-206）、手元の E2E の時間の比べ、一時の DB の削除のタスクが `TEST_DATABASE` の DB を拒むこと（IB-135）（サイクル 08 の改善の探索で見送った）。around の補助が拾う例外の範囲（IB-136）は、作るもの 4 で補助を外すので扱わない。本番の `Tenancy.with_tenant` は変えない。`example.run` の後で SQL を流さない around の送出（`Dir.mktmpdir` の後始末の失敗など）は、example の DB の状態で起きず、いまは止まりの事例が無いので扱わない
 
-**文書に残すこと**：`guides/config.md`「環境ごとの設定」の `test.rb` の `eager_load` の箇条に、ガードの spec の置き場。`guides/config.md`「CI の工程」の spec が確かめるものに、`publish` の `if:` が `success()` の否定と論理和を含まないこと。
+**実装する文書の節**：`guides/config.md`「環境ごとの設定」「CI の工程」、`guides/dev-cycle.md`「テストから書く」「着手の前に」、`guides/testing.md`「層への配分」「行列テストとの分担」
+
+**文書に残すこと**：`guides/config.md`「環境ごとの設定」の `test.rb` の `eager_load` の箇条に、ガードの spec の置き場。`guides/config.md`「CI の工程」の spec が確かめるものに、`publish` の `if:` が `success()` の否定と論理和を含まないこと。`guides/testing.md`「層への配分」に、example をテナントで包む around は `TenantExample.run` を通すことと、その理由（直に包むと、落ちた example の後に巻き戻しが飛び、後ろのグループが止まる）と、ガードの spec の置き場を書く。around を書く人の大半は単体の spec を書く人で、行列の節を読まないからである。`guides/testing.md`「行列テストとの分担」の所有ロールの接続の箇条は、`around_hook_errors.rb` の記述を「層への配分」の参照に置き換える。`showcase.md` のテーマ 9 の「1 つの example の失敗が後ろのテストを止めない」の箇条と「状態」を、個別の直しとガードに合わせて書き換える。書き換えた後に、`git grep -n -e AroundHookErrors -e around_hook_errors` が、計画の M51 の節と証跡と台帳のほかに当たらないことを確かめる。
