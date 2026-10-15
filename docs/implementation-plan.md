@@ -154,8 +154,8 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M45 | M40・M44 | 状況で並べる順位を M40 の状況の式から作る。積み重ねた PR の最上段の M44 のブランチから切る |
 | M46 | M45 | M45 が書き直す `architecture/graphql-schema.md`「ページングと N+1」の、別のコンテキストの値で並べる形に、在庫の列を足す。積み重ねた PR の M45 のブランチから切る |
 | M47 | M46・M49 | 2 つ目からの列に、M45・M46 で足した列も使う。取引先の名前を含む列の組の並びを、M49 が名前の列の照合順序を決めた後の形で確かめる |
-| M50 | M47 | 足す列を、M47 の Shift の操作でも並べる。M46 の作り直しのタスクと一致の spec に、出荷依頼の受注番号を足す |
-| M33 | M32・M40・M47・M50 | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る。残り（サイクル 07）は、M45〜M47・M50 が直した画面の上で、作者の指摘を直す |
+| M50 | M47（残りは M51） | 足す列を、M47 の Shift の操作でも並べる。M46 の作り直しのタスクと一致の spec に、出荷依頼の受注番号を足す。残り（サイクル 08）は、M51 がそろえた手元の E2E で単位の並びを確かめ、M51 と同じ `spec/requests/catalog_spec.rb` を直すので、その後に積む |
+| M33 | M32・M40・M47・M50（残り（サイクル 08）は M51・M50 の残り） | 画面が呼ぶ入口が M29 までに、一覧の並べ替え・絞り込み・件数が M40 までにそろい、E2E の世界を M32 の `DemoWorld` で作る。残り（サイクル 07）は、M45〜M47・M50 が直した画面の上で、作者の指摘を直す。残り（サイクル 08）は、M51 がそろえた手元の E2E で明細の行の文言を確かめ、M50 の残りと同じ `list-pagination.spec.ts` を直すので、その後に積む |
 | M41 | M33 | 画面のイメージを `frontend/` から作り、作り直しで M32 の `DemoWorld` を流す |
 | M42 | M41 | `images` のジョブと `image_inputs` の条件が M41 とサイクル 05 の再発防止にある |
 | M43 | M41 | 作り直しの `DemoReset` が M41 にある |
@@ -1893,7 +1893,7 @@ cd frontend && npm run test:e2e
 
    - 単価の式：受注の公開 API `Sales::ItemPrices` に、品目ごとに今日の単価の行を 1 つ引くスカラーの副問い合わせ（`today_price(actor, item_id)`）を 1 つ置き、並べ替えはそれを使う。条件は `price_at` と同じ scope（所有の scope・`valid_on`・`current`）で組み、今日は Ruby の `Sales::ItemPrice.today` をバインドの値で渡す（SQL の `CURRENT_DATE` は DB の時刻帯で決まるので使わない。M32）。表示（`Sales::Catalog` が `price_at` を `fetch` で読み、`Item.unitPrice` は空を許さない）と同じく、どの品目にも今日の単価の行があることを前提にする。`catalog_spec.rb` の一覧の example で、単価で並べた順と、返った `unit_price` の値の順が一致することを確かめ、2 つの読み方が食い違えば落ちるようにする
    - カーソルの型：単価は `bigint` まで入りうる（M45 の作るもの 2）ので、`Page::Sort` の型を M45 の合計と同じ `:decimal` にする。`:integer` は `integer` の範囲しか受け付けず、2,147,483,647 を超える単価の品目がページの境目に来ると、正しいカーソルが `Invalid cursor` になる。単位は `:string`、安全在庫は `:integer`（在庫の列が `integer`）、受注番号は `:string`、出荷予定日は `:date` である
-   - 照合順序：単位と受注番号の写しの列は、DB の既定の照合順序のまま並べる（OI-199）
+   - 照合順序：受注番号の写しの列は、DB の既定の照合順序のまま並べる。単位の列は、作者の判断（OI-199）で `ja-x-icu` にする（下の「残り（サイクル 08）」）
 
 2. 安全在庫の副問い合わせ：在庫の公開 API `Inventory::Stocks.safety_stocks_sql(actor)` が、品目 ID と安全在庫の副問い合わせを `SqlSubquery.of` で返す。`Inventory::Allocation.active_quantities_sql` と同じく、操作者の scope を掛けた後に SQL の文字列にし、役割の名前（`item_id`・`safety_stock`）を返す。受注は在庫に依存しているので、依存の向きは変わらない。
 3. 受注番号の写し：イベント `Contracts::SalesOrderReadyForShipment` に `sales_order_no` を足し、受注（`Sales::OrderAllocation`）が出すときに受注番号を入れる。出荷依頼の表に `sales_order_no`（null を許す）を足し、出荷の受け手が出荷依頼を作るときに写す。受注番号は受注を作った後に変わらないので、写した後に書き直す経路は要らない（判断「出荷依頼の受注番号を、どう並べるか」）。足す前に登録されたジョブのペイロードは `sales_order_no` を持たない。そこで、このイベントの型の `from_payload` だけが、ペイロードに `sales_order_no` が無ければ空を足してから作る。`new` は全項目を求めたままにし、発行元が受注番号を渡し忘れたら例外になるようにする。`packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb` に、項目を省いたペイロードを `from_payload` で読んだイベントを受けた受け手が、受注番号の空の出荷依頼を作る example を足す。`packs/sales/spec/public/sales/order_allocation_spec.rb` に、出す「出荷可能」が受注番号を持つ example を足す。イベントを `new` で直に作る spec（`packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb`・`sales_event_receiver_lock_spec.rb` と、`git grep SalesOrderReadyForShipment.new` で当たるもの）にも `sales_order_no` を渡す。
@@ -1940,7 +1940,27 @@ cd frontend && npm run test:e2e
 
 **文書に残すこと**：`architecture/graphql-schema.md`「ページングと N+1」に足した列と、受注番号を出荷依頼の写しで並べることを書き、「認可」の操作者のいない入口の一覧に `Sales::SalesOrders.order_numbers` と `Fulfillment::ShipmentRequests.put_order_numbers` を書く。`architecture/data-model.md`「出荷（`fulfillment`）」の出荷依頼の表に `sales_order_no` を、「イベントの受け口と冪等キー」の「出荷可能」の運ぶ値に受注番号と、イベントに項目を足すときに `from_payload` で既定の値を補う規則を、`architecture/context-map.md`「コンテキスト間の関係」の受注 → 出荷の行に受注番号を運ぶことを書く。`adr/011` に、イベントで運んだ値の写しも作り直しのタスクで埋めることを足す。`lib/tasks/read_models.rake` の冒頭のコメントと `desc` を、2 つの写しに直す。`README.md`「開発環境」と `deploy/README.md` の `read_models:rebuild` の文に、出荷依頼の受注番号と、受注番号を運ぶ前に登録したジョブを配り終えてから流すことを足す。
 
-**残り（サイクル 08）**：M50 は、サイクル 07 で実装レビューまで終えた（`plans/cycle-07/implementation-reviews.md`「M50 品目と出荷依頼の一覧を、流用元が並べるほかの列でも並べる」）。サイクル 07 の逸脱検査（`plans/cycle-07/conformance.md` の D1）が、品目の単位（`items.unit`）の照合順序を作者の判断と裁定したので、OI-199 を `blocked-user` にし、答えを待つ残りとしてサイクル 08 へ移した。種類は値の差し替えで、既定（DB の既定の照合順序のまま）で作ってある。作者が `ja-x-icu` を選んだら、M49 の作るもの 1 と同じ形のマイグレーションで `items.unit` を `ja-x-icu` にし、`spec/platform/collations_spec.rb` の列と照合順序の対応と、単位で並べる request spec の期待（「個 < 箱 < 本」）を足し、`architecture/data-model.md`「文字列の照合順序」の表に単位の列を足す。既定のままなら、同じ節に、名前でない短い語の列は既定のままにすると 1 文で書く。どちらでも、`bin/check-open-items --due M50` を通してから閉じる。
+**残り（サイクル 08）**：M50 は、サイクル 07 で実装レビューまで終えた（`plans/cycle-07/implementation-reviews.md`「M50 品目と出荷依頼の一覧を、流用元が並べるほかの列でも並べる」）。サイクル 07 の逸脱検査（`plans/cycle-07/conformance.md` の D1）が、品目の単位（`items.unit`）の照合順序を作者の判断と裁定したので、OI-199 を `blocked-user` にし、答えを待つ残りとしてサイクル 08 へ移した。種類は値の差し替えで、既定（DB の既定の照合順序のまま）で作ってある。作者は 2026-10-15 に (a) を選んだ（OI-199 の結果の欄）。品目の単位の列も `ja-x-icu` にし、流用元の `Intl.Collator("ja")` と同じ並び（個 < 箱 < 本）にする。「画面に並べる日本語の列は `ja-x-icu`」の規則に例外を作らない。受注番号の写し（`shipment_requests.sales_order_no`）は ASCII の伝票番号なので、既定のままにする。
+
+残りの作るもの：
+
+1. マイグレーション：M49 の作るもの 1（`db/migrate/20261014100000_set_string_column_collations.rb`）と同じ形の新しいマイグレーションで、`items.unit` を `ja-x-icu` にする。M49 のマイグレーションは書き換えない。`down` は `collation: "default"` に戻す。`items.unit` を含む索引は無く、照合順序の変更は表を ACCESS EXCLUSIVE でロックするだけである。strong_migrations が止めないことと、表が小さく公開の配置は毎日 DB ごと作り直すのでロックを許すことを、M49 と同じくコメントに書く。`db/structure.sql` を書き出し直す
+2. 照合順序の spec：`spec/platform/collations_spec.rb` の 1 つ目の example の列と照合順序の対応に `"items.unit" => "ja-x-icu"` を足し、example の名前とコメントを「画面に並べる日本語の列（名前と単位）」に直す
+3. 並びの spec：`spec/requests/catalog_spec.rb` に、単位が「個」「箱」「本」の 3 つの品目を、`orderBy: { field: UNIT, direction: ASC }` で `first: 1` ずつ最後まで読み、「個 < 箱 < 本」の順に並ぶことを確かめる example を足す。DB の既定の照合順序では「個 < 本 < 箱」に並ぶ（OI-199 の取りまとめ役の確かめ）。単位の境目のカーソルも、列の照合順序で比べる（`data-model.md`「文字列の照合順序」）。いまの単位と単価で並べる example（「個」と「箱」だけ）は、どちらの照合順序でも同じ順なので変えない
+4. E2E：`frontend/e2e/list-pagination.spec.ts` の、品目を単位と単価で並べる example に、1 ページ目に出た単位のまとまりの順が、流用元の比べ方（同じファイルの `byJapanese`）で並べた順と等しいことを足す。E2E の世界の品目の単位は「個」「本」「箱」「台」「袋」で（`lib/demo_world.rb` の `ITEMS`）、対照として、1 ページ目に 3 つ以上の単位が出ることを同じ example で先に確かめる
+
+期待の不一致で最初に落とすのは、作るもの 3 の「個 < 箱 < 本」の example（いまは「本」が「箱」より先に来る）と、作るもの 2 の対応の example（いまは `items.unit` が `default`）である。マイグレーションの `items.unit` を外すと、2 つの example が落ちることを、壊して落ちる記録に残す。E2E の足した期待も、マイグレーションの前の DB で流すと落ちることを確かめる。
+
+残りの完了条件：
+
+```sh
+bundle exec rspec spec/platform/collations_spec.rb spec/requests/catalog_spec.rb packs/sales/spec/public/sales/catalog_spec.rb   # 0 failures
+bin/check-structure
+cd frontend && npm run test:e2e
+bin/check-open-items --due M50
+```
+
+残りの文書に残すこと：`architecture/data-model.md`「文字列の照合順序」の表の「画面に並べる名前の列」の行を「画面に並べる日本語の列」にし、列に `items.unit` を、理由に単位も流用元と同じ並びにすることを足す。同じ文書の `items` の行の `unit` に照合順序 `ja-x-icu` を書く。`guides/config.md`「照合順序の版」の冒頭と `deploy/README.md` の版の確かめの文の「名前の列の照合順序」、`showcase.md` の名前とコードの並びの箇条を、単位を含む形に直す。「名前の列」を種類で `git grep` し、`ja-x-icu` の列を名前の列だけと書いた文（コード・spec のコメントを含む）を残さない。M49 の節の判断や前提の表のように、M49 の時点の決定を書いた文は直さない。
 
 ## M33 フロントエンド
 
@@ -2123,7 +2143,28 @@ bin/check-open-items --due M33
 
 残りの文書に残すこと：`architecture/context-map.md`「発注の連結と品番の照合」の合計金額の段落と、`architecture/graphql-schema.md`「ページングと N+1」の合計金額の箇条に、取り消した伝票は合計の代わりに「取消」を出すことを書く。「照合待ち」「確定待ち」を種類で `git grep` し、画面の規則を書いた文に取消の場合を足す。
 
-**残り（サイクル 08）**：OI-178 と OI-192 は、サイクル 07 で実装レビューまで終えた（`plans/cycle-07/implementation-reviews.md`「M33 の残り：取消依頼のボタンと、取消済の伝票の合計の表示」）。作者の画面の指摘（OI-177）は来ていないので、上の規則のとおり、OI-177 だけをサイクル 08 へ移した。指摘が来たら、上の表の OI-177 の行の手順で直す。取消済の伝票の詳細の明細の行の文言（IB-126）は、OI-177 と一緒に作者に渡す材料にする（`plans/cycle-07/author-decisions.md`）。
+**残り（サイクル 08）**：OI-178 と OI-192 は、サイクル 07 で実装レビューまで終えた（`plans/cycle-07/implementation-reviews.md`「M33 の残り：取消依頼のボタンと、取消済の伝票の合計の表示」）。作者の画面の指摘（OI-177）は来ていないので、上の規則のとおり、OI-177 だけをサイクル 08 へ移した。指摘が来たら、上の表の OI-177 の行の手順で直す。取消済の伝票の詳細の明細の行の文言（IB-126）は、OI-177 と一緒に作者に渡す材料にした（`plans/cycle-07/author-decisions.md`）。作者は 2026-10-15 に、明細の行も取消に合わせると決めた（OI-204 の結果の欄）。取り消した伝票はもう何も待たないので、OI-192 の理由が明細の行にも当てはまるからである。担当者は、OI-204 の直しを OI-177 の指摘を待たずに作り、実装レビューまで終える。OI-177 は `open` のまま残り、指摘が来なければ、上の規則のとおり次のサイクルへ移す。
+
+明細の行の取消の文言（OI-204）：いまは、受注詳細（`frontend/components/sales-order-detail.tsx`）が品目の無い明細に「品番照合待ち」を、発注詳細（`frontend/components/purchase-order-detail.tsx`）が品目名の写しの無い明細に「受注側の確定待ち」を、伝票の状況によらず出す。
+
+1. 文言の関数：`frontend/lib/format.ts` に、明細の待ちの文言を返す関数を `totalAmountText` の隣に置き、同じ取消の状況の集合（`CANCELLED`。`statuses.ts` の `CANCELLED_SALES_ORDER_STATUSES`・`CANCELLED_PURCHASE_ORDER_STATUSES`）で分ける。伝票の状況が取消なら取消の文言を、取消でなければいまと同じ「品番照合待ち」「受注側の確定待ち」を返す。取消の文言の既定は、受注が「品番未照合（取消）」、発注が「未確定（取消）」で、品目名の欄に何が無いかと、取り消したので待たないことを 1 つで言う。担当者は、画面で読んだうえで替えてよく、決めた文言を OI-204 の結果の欄に書く（作者の答えの「文言は実装で決め、この行に書く」）
+2. 画面：2 つの詳細の画面が、その関数に伝票の状況を渡して文言を出す。2 つの画面は、どちらも画面の問い合わせで伝票の状況を選んでいる。受注の待ちの文言の注意の色（`text-caution`）は、取消のときは付けず、ほかの欄と同じ控えめの色にする。待っていないものを注意の色で出さないためである
+3. 単体：`frontend/lib/format.test.ts` が、`SalesOrderStatus`・`PurchaseOrderStatus` のすべての値（`statuses.ts` の鍵から集める）について、関数が返す文言を確かめる。取消の状況で取消の文言を、ほかの状況で待ちの文言を返す
+4. E2E：`frontend/e2e/list-pagination.spec.ts` の、照合待ちのまま取り消した受注と発注の example に、受注詳細の明細の行（`order-line`）に取消の文言が出て「品番照合待ち」が出ないことと、発注側で同じ組の発注（受注側により取消。OI-201）の詳細を開き、明細の行に取消の文言が出て「受注側の確定待ち」が出ないことを足す。対照として、同じ example で、取り消していない品番照合待ちの受注の詳細の明細の行に「品番照合待ち」が出ることを先に確かめる（一覧の「照合待ち」と出た行から ID を取る。上の取消済の伝票の合計の表示と同じ）
+
+期待の不一致で最初に落とすのは、作るもの 3 の、`CANCELLED` の受注の明細に取消の文言を返すことを確かめる example である。関数を新しく置くので、担当者は先に、いまの 2 つの文言をそのまま返す関数を置いて 2 つの画面から呼ぶ形に直し（振る舞いは変えない）、その上でこの example を書いて落とす。関数が無いことによる読み込みの失敗は RED に数えない（`guides/dev-cycle.md`「テストから書く」）。取消の集合から `SUPPLIER_CANCELLED` を外すと単体が落ち、画面に状況を渡さずに待ちの文言を出す形に戻すと E2E が落ちることを、壊して落ちる記録に残す。
+
+残りの完了条件（サイクル 08）：
+
+```sh
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit
+cd frontend && npm run test:e2e
+bin/check-open-items --due M33
+```
+
+`bin/check-open-items --due M33` は、OI-177 が `open` の間は落ち、OI-177 の 1 行だけを出すことを期待する。
+
+残りの文書に残すこと（サイクル 08）：`architecture/context-map.md`「発注の連結と品番の照合」の合計金額の段落の、照合待ち・確定待ちのまま取り消した伝票の文に、詳細の明細の行も待ちの文言の代わりに取消の文言を出すことを足す。`handoff.md`「決まっていないこと」の画面の振る舞いの行の、明細の行の文言を作者に渡すとした文を、決まった形に直す。「品番照合待ち」「受注側の確定待ち」を種類で `git grep` し、画面の明細の行の規則を書いた文に取消の場合を足す。
 
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、作者の判断（OI-144）の値に入っていない列での並べ替え（OI-186。M50 で足す）、一覧の見出しで複数の列を指定する操作（OI-187。M47 で足す）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
@@ -2459,7 +2500,7 @@ cd frontend && npm run test:e2e
 
 ## M51 手元の検証を止めるものを取り除く：E2E のログインの待ち、一時の DB の後片付け、RLS を開くグループの止まり
 
-**目的**：サイクル 07 で、担当の手元の検証を止めた 3 つを、テストの基盤と開発の道具で取り除く。1 つ目は、手元の E2E がログインの後の URL を待つ期待の既定の 5 秒で落ち、M50 と M33 の残りが手元で全体を通せなかったことである（IB-117）。2 つ目は、`TEST_DATABASE`・`E2E_DATABASE` で作った一時の DB を消す入口が無く、作者が手で消していることである（IB-130）。3 つ目は、落ちた example の後に、共有の文脈「RLS の SELECT と UPDATE を開く」がポリシーを足す DDL がロックを待ち続け、rspec が止まることである（IB-123）。どれもサイクル 07 の改善の探索で採用した（`plans/cycle-07/improvement.md`）。あわせて、逸脱検査の要確認（OI-202）の example を足す。業務の振る舞いは変えない。
+**目的**：サイクル 07 で、担当の手元の検証を止めた 3 つを、テストの基盤と開発の道具で取り除く。1 つ目は、手元の E2E がログインの後の URL を待つ期待の既定の 5 秒で落ち、M50 と M33 の残りが手元で全体を通せなかったことである（IB-117）。2 つ目は、`TEST_DATABASE`・`E2E_DATABASE` で作った一時の DB を消す入口が無く、作者が手で消していることである（IB-130）。3 つ目は、落ちた example の後に、共有の文脈「RLS の SELECT と UPDATE を開く」がポリシーを足す DDL がロックを待ち続け、rspec が止まることである（IB-123）。どれもサイクル 07 の改善の探索で採用した（`plans/cycle-07/improvement.md`）。あわせて、逸脱検査の要確認（OI-202）の example を足し、作者の判断（OI-203）で、CI の `publish` の `if:` に `success()` を明示する。業務の振る舞いは変えない。
 
 **作るもの**
 
@@ -2469,6 +2510,7 @@ cd frontend && npm run test:e2e
 4. ポリシーの足し外しの待ちの上限（IB-123）：`spec/support/matrix_cross_read.rb` の `add!` と `remove!` のトランザクションで `SET LOCAL lock_timeout` を置く。打ち切ったときは、待たせている接続（`pg_locks` と `pg_stat_activity` から引く pid・状態・トランザクションの開始の時刻・対象の表）をメッセージに出す。`add!` の打ち切りはトランザクションごと巻き戻るので足し残しは出ない。`remove!` の打ち切りではポリシーが残るので、残ったことと外し方（`MatrixCrossRead.remove!` を手で流す）をメッセージに出す。値は、正常な実行で前のグループの後始末を待つ時間より長くする
 5. 止まった原因の記録（IB-123）：M50 の壊し方（`Sales::ItemPrices.today_price` の式から `current` を外す）で `packs/sales/spec/public/sales/catalog_spec.rb` を丸ごと流し、作るもの 4 のメッセージか、止まった状態で引いた `pg_stat_activity`・`pg_locks` で、どの接続がどのロックを持ち続けたかを証跡に書く。直しが補助の中で済めば同じマイルストーンで直し、本番の `Tenancy` かテストのトランザクションの包みを変える直しが要れば、このマイルストーンに足さずに台帳に行を起こす
 6. `thenBy` の空の配列（OI-202）：`spec/requests/catalog_spec.rb` に、`orderBy` を省いて `thenBy` を省く・空の配列にする・空でない配列にする、の 3 つで応答を比べる example を足す。空の配列を受け付けるか拒むかは、結果を見て `architecture/graphql-schema.md`「ページングと N+1」の文と `Resolvers::SortArguments` のどちらかを合わせる
+7. `publish` の `if:` の `success()`（OI-203）：`.github/workflows/ci.yml` の `publish` の `if:` を `success() && github.event_name == 'push'` にする。GitHub は状態の関数を含む `if:` に `success()` を足さないので、明示した `success()` が、いまの暗黙の `success()` と同じく、`needs` のどれかが落ちた・取り消された・skip されたときに `publish` を止める。守りを YAML の行で読めるようにするための変更で、振る舞いは変えない。`publish` の直前のコメントの「状態の関数を書かず、GitHub が足す暗黙の success() に任せる」を、明示する形と理由に直す。`spec/platform/ci_checks_spec.rb` の `if:` の example を、「ジョブの段の `if:` を持つのは `publish` だけで、`publish` の `if:` は `success()` を含み、`failure`・`cancelled`・`always` を含まない」に替え、example の前のコメント（状態の関数を書くと `success()` が外れる）も直す。式の形は照らさず、含む・含まないの条件で照らす（`guides/config.md`「CI の工程」）
 
 **判断**：手元の E2E の時間切れを、待ちを延ばすか、読み込みをそろえるか
 
@@ -2480,11 +2522,11 @@ cd frontend && npm run test:e2e
 **完了条件**
 
 ```sh
-bundle exec rspec spec/platform/temp_databases_spec.rb spec/matrix/cross_read_lock_spec.rb spec/requests/catalog_spec.rb   # 0 failures
+bundle exec rspec spec/platform/temp_databases_spec.rb spec/matrix/cross_read_lock_spec.rb spec/requests/catalog_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
 cd frontend && npm run test:e2e   # 負荷の低い手元で、続けて 3 回
 ```
 
-期待の不一致で最初に落とすのは、作るもの 4 の、別の接続で表のロックを持ったまま `add!` を呼ぶと、待ちの上限の内に、待たせている接続の pid を含むメッセージで落ちる example である。いまは上限が無く、時間の上限まで待つ（example に Ruby の側の打ち切りを付けて、待ち続けることを期待の不一致で落とす）。spec のパスは、マイルストーンの中で既存の置き場に合わせて決めてよく、決めたパスを計画の節と証跡に書く。
+期待の不一致で最初に落とすのは、作るもの 4 の、別の接続で表のロックを持ったまま `add!` を呼ぶと、待ちの上限の内に、待たせている接続の pid を含むメッセージで落ちる example である。いまは上限が無く、時間の上限まで待つ（example に Ruby の側の打ち切りを付けて、待ち続けることを期待の不一致で落とす）。spec のパスは、マイルストーンの中で既存の置き場に合わせて決めてよく、決めたパスを計画の節と証跡に書く。作るもの 7 は、`ci_checks_spec.rb` の替えた `if:` の example を、`ci.yml` を直す前に流して落とす（いまの `if:` は `success()` を含まない）。
 
 ほかに、次を確かめて証跡に書く。
 
@@ -2492,9 +2534,10 @@ cd frontend && npm run test:e2e   # 負荷の低い手元で、続けて 3 回
 - 作るもの 3：spec が、既定の 3 つの DB・名前の規則に合わない名前・開発と本番の環境を拒み、名前を明示しなければ消さないことを確かめ、対象の判定から既定の DB の除外か名前の条件を外すと落ちる。接続中の一時の DB を明示しても消えずに失敗する
 - 作るもの 4・5：M50 の壊し方で `catalog_spec.rb` を丸ごと流すと、外からの打ち切りなしに終わり、元の SQL のエラーと、打ち切ったグループの理由が出力に出る。その後の実行が、残ったポリシーやロックで止まらない。`lock_timeout` を外すと、最初に落とす example が時間の上限まで待つ
 - 作るもの 6：3 つの応答を証跡に書く
+- 作るもの 7：`publish` は main への push でしか流れないので、M48 の作るもの 3 と同じく、ワークフローの `on.push.branches` にこのマイルストーンのブランチを一時に足し、ブランチへの push で 2 つを見る。`needs` の 1 つ（`manifests`）に一時に `if: false` を足した push で `publish` が skip され（`ci_checks_spec.rb` の `if:` の example の期待も一時に `manifests` を含める）、`if: false` を外してすべての `needs` が成功する push で `publish` が流れる（ログインと push のステップは `github.ref` の条件で skip される）。2 つの実行の URL と、一時の契機を戻した commit で `on.push.branches` が `[ main ]` だけであることを証跡に書く。`ci_checks_spec.rb` の替えた example は、`if:` から `success()` を消すと落ち、`success()` を `always()` に替えると落ちる
 
 **範囲外**：画面の書体の取り方（IB-101。サイクル 07 の改善の探索で見送った）、E2E の世界の前提を確かめる spec（IB-109・IB-111。同じく見送った）、本番の `Tenancy` とテストのトランザクションの包みの変更
 
-**実装する文書の節**：`guides/testing.md`「行列テストとの分担」、`guides/config.md`「database.yml：同じ DB に 2 つのロールで接続する」「application.rb で変えたこと」、`guides/bin.md`、`README.md`「画面」、PostgreSQL 18 の文書の `DROP DATABASE` と `lock_timeout`、Playwright の文書の「Timeouts」
+**実装する文書の節**：`guides/testing.md`「行列テストとの分担」、`guides/config.md`「database.yml：同じ DB に 2 つのロールで接続する」「application.rb で変えたこと」「CI の工程」、`guides/bin.md`、`README.md`「画面」、PostgreSQL 18 の文書の `DROP DATABASE` と `lock_timeout`、Playwright の文書の「Timeouts」、GitHub の文書の「Workflow syntax for GitHub Actions」の `jobs.<job_id>.if`（状態の関数を含まない `if:` に `success()` を足すこと）と `jobs.<job_id>.needs`
 
-**文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。
+**文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。`guides/config.md`「CI の工程」の、`publish` の `if:` に状態の関数を書かないとした文と、spec が確かめるものと spec で照らす例外に挙げた「`publish` の `if:` が状態の関数を含まないこと」を、`success()` を明示し、`failure`・`cancelled`・`always` を含まない形に直す。「状態の関数」「暗黙の」を種類で `git grep` し、前の形を書いた文を残さない。
