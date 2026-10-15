@@ -108,7 +108,7 @@ DB の既定の照合順序は、公式の `postgres` のイメージが initdb 
 | `cancellation_reviews`（取消の審査） | `sales_order_id`・`source_cancellation_request_id`→・`requested_at`（取消依頼の登録時刻の写し）・`decision`（`approved` / `rejected`、空は審査中）・`decided_at`・`decided_by_user_id` | `source_cancellation_request_id` 一意。審査中は受注ごとに 1 件（部分一意索引）。決定と決定の時刻は、揃って空か揃って埋まる |
 | `inspection_records`（検収の記録） | `sales_order_line_id`・`shipment_id`→・`quantity`・`inspected_on` | `(shipment_id, sales_order_line_id)` 一意。数量は 0 以上 |
 
-販売単価は、有効期間と記録期間の 2 つの時間軸で持つ（`../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md`）。担当者が単価を変える操作は、改定の予約と訂正の 2 つだけで、どちらも現在の行の記録期間を閉じて新しい行を足す。行は書き換えない。単価を引く公開 API は `Sales::ItemPrices.price_at` の 1 つで、有効日と記録時点を取る。カタログは今日の単価を、受注の照合は受注日の単価を、いまの記録時点で引き、受注明細には単価と一緒にその有効日（`priced_on`）を写す。
+販売単価は、有効期間と記録期間の 2 つの時間軸で持つ（`../adr/006-販売単価を有効期間と記録期間の2軸で持つ.md`）。担当者が単価を変える操作は、改定の予約と訂正の 2 つだけで、どちらも現在の行の記録期間を閉じて新しい行を足す。行は書き換えない。単価の値を引く公開 API は `Sales::ItemPrices.price_at` の 1 つで、有効日と記録時点を取る。品目の一覧を今日の単価で並べる `Sales::ItemPrices.today_price` は、値ではなく同じ条件の副問い合わせを返す。カタログは今日の単価を、受注の照合は受注日の単価を、いまの記録時点で引き、受注明細には単価と一緒にその有効日（`priced_on`）を写す。
 
 ### 在庫（`inventory`）
 
