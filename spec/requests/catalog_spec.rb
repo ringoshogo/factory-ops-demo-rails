@@ -217,6 +217,19 @@ RSpec.describe "カタログの GraphQL", type: :request do
         .to eq("data" => { "supplier" => { "items" => { "totalCount" => 2 } } })
     end
 
+    # 画面（frontend/lib/list.ts）は空の thenBy を送らないが、API は空の配列を省いたときと同じに扱い、エラーにするのは
+    # orderBy を省いて空でない thenBy を渡したときだけにする（docs/architecture/graphql-schema.md「ページングと N+1」）
+    it "orderBy を省くと、thenBy を省いても空の配列にしても同じ一覧を返し、空でない thenBy だけをトップレベルのエラーにする" do
+      login_as(supplier_member)
+      query = "query($thenBy: [ItemOrder!]) { supplier { items(thenBy: $thenBy) { nodes { code } totalCount } } }"
+      omitted = graphql_body(query)
+
+      expect(omitted).to eq("data" => { "supplier" => { "items" => { "nodes" => [ { "code" => "A-1" }, { "code" => "B-1" } ], "totalCount" => 2 } } })
+      expect(graphql_body(query, thenBy: [])).to eq(omitted)
+      expect(graphql_body(query, thenBy: [ { field: "CODE", direction: "ASC" } ])["errors"]&.map { _1["message"] })
+        .to eq([ "thenBy requires orderBy" ])
+    end
+
     it "keyword は 100 文字ちょうどを受け付け、101 文字はトップレベルのエラーにする" do
       login_as(supplier_member)
       query = "query($keyword: String) { supplier { items(filter: { keyword: $keyword }) { totalCount } } }"
