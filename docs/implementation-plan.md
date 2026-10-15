@@ -162,7 +162,7 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M44 | M42 | 版を上げる `uses:` の行が、M42 が分けたジョブを含む。`package-lock.json` と `ci.yml` を変える PR で流れる `images` のジョブが、M42 で arm64 のランナーに移っている |
 | M48 | M44 | `npm ls --all` を、M44 で取り込んだ依存の木と `groups` でまとめた PR に当てる。`image_inputs` と `publish` の形が M42 にある |
 | M49 | M46 | 照合順序を決める `item_labels.code`・`item_labels.name` と作り直しの式が M46 にあり、取引先の名前の副問い合わせが M45 にある |
-| M51 | M50・M33 | ログインの待ちと `eager_load` を、M50 と M33 の残りが直した E2E の上で比べる。壊して落ちる記録で止まった `catalog_spec.rb` の壊し方が M50 にある |
+| M51 | M50・M33 の残り（サイクル 07） | ログインの待ちと `eager_load` を、M50 と M33 の残り（サイクル 07）が直した E2E の上で比べる。M50 の残りと M33 の残り（サイクル 08）より前に置く。壊して落ちる記録で止まった `catalog_spec.rb` の壊し方が M50 にある |
 
 ---
 
@@ -2148,9 +2148,9 @@ bin/check-open-items --due M33
 明細の行の取消の文言（OI-204）：いまは、受注詳細（`frontend/components/sales-order-detail.tsx`）が品目の無い明細に「品番照合待ち」を、発注詳細（`frontend/components/purchase-order-detail.tsx`）が品目名の写しの無い明細に「受注側の確定待ち」を、伝票の状況によらず出す。
 
 1. 文言の関数：`frontend/lib/format.ts` に、明細の待ちの文言を返す関数を `totalAmountText` の隣に置き、同じ取消の状況の集合（`CANCELLED`。`statuses.ts` の `CANCELLED_SALES_ORDER_STATUSES`・`CANCELLED_PURCHASE_ORDER_STATUSES`）で分ける。伝票の状況が取消なら取消の文言を、取消でなければいまと同じ「品番照合待ち」「受注側の確定待ち」を返す。取消の文言の既定は、受注が「品番未照合（取消）」、発注が「未確定（取消）」で、品目名の欄に何が無いかと、取り消したので待たないことを 1 つで言う。担当者は、画面で読んだうえで替えてよく、決めた文言を OI-204 の結果の欄に書く（作者の答えの「文言は実装で決め、この行に書く」）
-2. 画面：2 つの詳細の画面が、その関数に伝票の状況を渡して文言を出す。2 つの画面は、どちらも画面の問い合わせで伝票の状況を選んでいる。受注の待ちの文言の注意の色（`text-caution`）は、取消のときは付けず、ほかの欄と同じ控えめの色にする。待っていないものを注意の色で出さないためである
+2. 画面：2 つの詳細の画面が、その関数に伝票の状況を渡して文言を出す。2 つの画面は、どちらも画面の問い合わせで伝票の状況を選んでいる。受注の待ちの文言の注意の色（`text-caution`）は、取消のときは付けず、同じ行の得意先品番と同じ `text-muted-foreground` にする。待っていないものを注意の色で出さないためである
 3. 単体：`frontend/lib/format.test.ts` が、`SalesOrderStatus`・`PurchaseOrderStatus` のすべての値（`statuses.ts` の鍵から集める）について、関数が返す文言を確かめる。取消の状況で取消の文言を、ほかの状況で待ちの文言を返す
-4. E2E：`frontend/e2e/list-pagination.spec.ts` の、照合待ちのまま取り消した受注と発注の example に、受注詳細の明細の行（`order-line`）に取消の文言が出て「品番照合待ち」が出ないことと、発注側で同じ組の発注（受注側により取消。OI-201）の詳細を開き、明細の行に取消の文言が出て「受注側の確定待ち」が出ないことを足す。対照として、同じ example で、取り消していない品番照合待ちの受注の詳細の明細の行に「品番照合待ち」が出ることを先に確かめる（一覧の「照合待ち」と出た行から ID を取る。上の取消済の伝票の合計の表示と同じ）
+4. E2E：`frontend/e2e/list-pagination.spec.ts` の、照合待ちのまま取り消した受注と発注の example に、受注詳細の明細の行（`order-line`）に取消の文言が出て「品番照合待ち」が出ないことと、発注側で、発注一覧の取消のタブで合計の欄が「取消」と出た行（OI-201 の組の、受注側により取り消した発注）から ID を取って詳細を開き、明細の行に取消の文言が出て「受注側の確定待ち」が出ないことを足す。テナントをまたいで受注と発注の ID は対応づけられないので、受注側と同じく一覧の行から取る。対照として、同じ example で、取り消していない品番照合待ちの受注の詳細の明細の行に「品番照合待ち」が出ることと、取り消していない受注確定の前の発注の詳細の明細の行に「受注側の確定待ち」が出ることを先に確かめる（受注は一覧の「照合待ち」、発注は一覧の「確定待ち」と出た行から ID を取る。上の取消済の伝票の合計の表示と同じ）
 
 期待の不一致で最初に落とすのは、作るもの 3 の、`CANCELLED` の受注の明細に取消の文言を返すことを確かめる example である。関数を新しく置くので、担当者は先に、いまの 2 つの文言をそのまま返す関数を置いて 2 つの画面から呼ぶ形に直し（振る舞いは変えない）、その上でこの example を書いて落とす。関数が無いことによる読み込みの失敗は RED に数えない（`guides/dev-cycle.md`「テストから書く」）。取消の集合から `SUPPLIER_CANCELLED` を外すと単体が落ち、画面に状況を渡さずに待ちの文言を出す形に戻すと E2E が落ちることを、壊して落ちる記録に残す。
 
@@ -2506,10 +2506,10 @@ cd frontend && npm run test:e2e
 
 1. E2E の Rails の読み込み（IB-117）：`frontend/e2e/start-rails.sh` が E2E のための専用の変数（例：`E2E_EAGER_LOAD=1`）を渡し、`config/environments/test.rb` の `eager_load` の条件に足す。`CI` そのものは渡さない。手元の E2E の Rails も、CI と同じく起動の時にアプリを読み込んでから `/up` に答える
 2. ログインの期待の待ち（IB-117）：`frontend/e2e/support/world.ts` の `login` の `toHaveURL` にだけ、延ばした待ちを渡し、理由（ログインが済んで URL が変わったことを確かめるだけで、製品の競合の待ちではない）をコメントに書く。ほかの期待の待ちは既定の 5 秒のまま変えない。値は、下の比べで決める
-3. 一時の DB の一覧と削除（IB-130）：rake のタスクを 2 つ足す。一覧のタスクは、名前が `factory_ops_` で始まり、`_test` か `_e2e` を区切りとして含み、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）でない DB を、接続の有無と一緒に出す。削除のタスクは、名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続し、トランザクションの外で `DROP DATABASE` を `FORCE` なしで流す。既定の 3 つ・開発と本番の環境・名前の規則に合わない名前は拒む。接続中の DB は PostgreSQL が失敗させるので、そのまま失敗を出す。本番の環境では動かない
-4. ポリシーの足し外しの待ちの上限（IB-123）：`spec/support/matrix_cross_read.rb` の `add!` と `remove!` のトランザクションで `SET LOCAL lock_timeout` を置く。打ち切ったときは、待たせている接続（`pg_locks` と `pg_stat_activity` から引く pid・状態・トランザクションの開始の時刻・対象の表）をメッセージに出す。`add!` の打ち切りはトランザクションごと巻き戻るので足し残しは出ない。`remove!` の打ち切りではポリシーが残るので、残ったことと外し方（`MatrixCrossRead.remove!` を手で流す）をメッセージに出す。値は、正常な実行で前のグループの後始末を待つ時間より長くする
-5. 止まった原因の記録（IB-123）：M50 の壊し方（`Sales::ItemPrices.today_price` の式から `current` を外す）で `packs/sales/spec/public/sales/catalog_spec.rb` を丸ごと流し、作るもの 4 のメッセージか、止まった状態で引いた `pg_stat_activity`・`pg_locks` で、どの接続がどのロックを持ち続けたかを証跡に書く。直しが補助の中で済めば同じマイルストーンで直し、本番の `Tenancy` かテストのトランザクションの包みを変える直しが要れば、このマイルストーンに足さずに台帳に行を起こす
-6. `thenBy` の空の配列（OI-202）：`spec/requests/catalog_spec.rb` に、`orderBy` を省いて `thenBy` を省く・空の配列にする・空でない配列にする、の 3 つで応答を比べる example を足す。空の配列を受け付けるか拒むかは、結果を見て `architecture/graphql-schema.md`「ページングと N+1」の文と `Resolvers::SortArguments` のどちらかを合わせる
+3. 一時の DB の一覧と削除（IB-130）：rake のタスクを 2 つ足す。一覧のタスクは、名前が `factory_ops_` で始まり、`_test` か `_e2e` を区切りとして含み、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）でない DB を、接続の有無と一緒に出す。2 つのタスクは test の環境でだけ動き、`RAILS_ENV=test bin/rails <タスクの名前>` の形で呼ぶ（削除は名前を引数で渡す）。削除のタスクは、名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続し、トランザクションの外で `DROP DATABASE` を `FORCE` なしで流す。既定の 3 つ・開発と本番の環境・名前の規則に合わない名前は拒む。接続中の DB は PostgreSQL が失敗させるので、そのまま失敗を出す。本番の環境では動かない
+4. ポリシーの足し外しの待ちの上限（IB-123）：`spec/support/matrix_cross_read.rb` の `add!` と `remove!` のトランザクションで `SET LOCAL lock_timeout` を置く。打ち切ったときは、待たせている接続（pid・ロール・状態・トランザクションの開始の時刻・対象の表）をメッセージに出す。打ち切られたトランザクションの中では問い合わせを流せず、巻き戻した後は待ちが無いので `pg_blocking_pids` も空になる。そこで、巻き戻した後に、打ち切られた表の oid で `pg_locks` の取得済みのロックを引き、自分でない pid を拾う。PostgreSQL は、別のロールの接続の状態・開始の時刻・問い合わせを `pg_stat_activity` で隠す（PostgreSQL 18 の文書の「Viewing Statistics」。所有ロールは `pg_read_all_stats` を持たず、`BYPASSRLS` はこれに代わらない）ので、拾った pid の状態と開始の時刻は、その pid と同じロールの接続から引く。アプリのロールの pid はアプリのロールの接続（`ActiveRecord::Base`）から、所有ロールの pid は所有ロールの接続から引き、どちらの権限も広げない。引けなかった項目は、引けなかったとメッセージに書く。`add!` の打ち切りはトランザクションごと巻き戻るので足し残しは出ない。`remove!` の打ち切りではポリシーが残るので、残ったことと、ロックが解けた後に外す手順（貼って流せるコマンド）をメッセージに出す。その手順は、担当者が手元で 1 回流して動くことを確かめ、流したコマンドと結果を証跡に書く。値は、正常な全件の実行で `add!`・`remove!` にかかった時間を測り、その何倍にしたかと測った時間を証跡に書く
+5. 止まった原因の記録（IB-123）：M50 の壊し方（`Sales::ItemPrices.today_price` の式から `current` を外す）で `packs/sales/spec/public/sales/catalog_spec.rb` を丸ごと流し、作るもの 4 のメッセージか、止まった状態で引いた `pg_stat_activity`・`pg_locks` で、どの接続がどのロックを持ち続けたかを証跡に書く。直しが補助の中で済めば同じマイルストーンで直し、本番の `Tenancy` かテストのトランザクションの包みを変える直しが要れば、このマイルストーンに足さずに台帳に行を起こす。止まった状態の `pg_stat_activity` で、所有ロールの接続が表のロックを待っていなければ（たとえば Ruby の側で接続のプールを待っている）、`lock_timeout` では終わらないので、止まった場所を証跡に書いて取りまとめ役に返す（`guides/dev-cycle.md`「前提が崩れたとき」）
+6. `thenBy` の空の配列（OI-202）：`spec/requests/catalog_spec.rb` に、`orderBy` を省いて `thenBy` を省く・空の配列にする・空でない配列にする、の 3 つで応答を比べる example を足す。いまの検証（`Resolvers::SortArguments::Validator`）は `thenBy` が空なら先に通すので、空の配列を受け付け、省いたときと同じ応答を返す見込みである。既定は受け付ける形にそろえ、`architecture/graphql-schema.md`「ページングと N+1」の文を「`orderBy` を省いて空でない `thenBy` を渡すとエラー」に直す。画面（`frontend/lib/list.ts`）は空の配列を送らないので、振る舞いは変えない。3 つの応答が見込みと違えば、検証の側を直すかを取りまとめ役に返す
 7. `publish` の `if:` の `success()`（OI-203）：`.github/workflows/ci.yml` の `publish` の `if:` を `success() && github.event_name == 'push'` にする。GitHub は状態の関数を含む `if:` に `success()` を足さないので、明示した `success()` が、いまの暗黙の `success()` と同じく、`needs` のどれかが落ちた・取り消された・skip されたときに `publish` を止める。守りを YAML の行で読めるようにするための変更で、振る舞いは変えない。`publish` の直前のコメントの「状態の関数を書かず、GitHub が足す暗黙の success() に任せる」を、明示する形と理由に直す。`spec/platform/ci_checks_spec.rb` の `if:` の example を、「ジョブの段の `if:` を持つのは `publish` だけで、`publish` の `if:` は `success()` を含み、`failure`・`cancelled`・`always` を含まない」に替え、example の前のコメント（状態の関数を書くと `success()` が外れる）も直す。式の形は照らさず、含む・含まないの条件で照らす（`guides/config.md`「CI の工程」）
 
 **判断**：手元の E2E の時間切れを、待ちを延ばすか、読み込みをそろえるか
@@ -2522,22 +2522,22 @@ cd frontend && npm run test:e2e
 **完了条件**
 
 ```sh
-bundle exec rspec spec/platform/temp_databases_spec.rb spec/matrix/cross_read_lock_spec.rb spec/requests/catalog_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
+bundle exec rspec spec/platform/temp_databases_spec.rb spec/matrix/cross_read_spec.rb spec/requests/catalog_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
 cd frontend && npm run test:e2e   # 負荷の低い手元で、続けて 3 回
 ```
 
-期待の不一致で最初に落とすのは、作るもの 4 の、別の接続で表のロックを持ったまま `add!` を呼ぶと、待ちの上限の内に、待たせている接続の pid を含むメッセージで落ちる example である。いまは上限が無く、時間の上限まで待つ（example に Ruby の側の打ち切りを付けて、待ち続けることを期待の不一致で落とす）。spec のパスは、マイルストーンの中で既存の置き場に合わせて決めてよく、決めたパスを計画の節と証跡に書く。作るもの 7 は、`ci_checks_spec.rb` の替えた `if:` の example を、`ci.yml` を直す前に流して落とす（いまの `if:` は `success()` を含まない）。
+期待の不一致で最初に落とすのは、作るもの 4 の、アプリのロールの別の接続がテナントの表のロックを持ったまま `add!` を呼ぶと、待ちの上限の内に、待たせている接続の pid・状態・トランザクションの開始の時刻を含むメッセージで落ちる example である。いまは上限が無く、時間の上限まで待つ。example は `add!` を別のスレッドで呼び、`join` に時間の上限を付けて、待ち続けることを期待の不一致で落とす。打ち切った後は、`ensure` で、待っている所有ロールの pid を `pg_stat_activity` から引いて `pg_terminate_backend` で終わらせ、`OwnerConnection.connection_pool.disconnect!` を呼び、別の接続のロックを解き、2 つのポリシーが `pg_policies` に残っていないことを確かめる。待っていた DDL が、ロックが解けた後に開いたトランザクションのまま表のロックを持ち続け、後ろの spec を止めないためである。同じファイルに、`with_policies` のブロックの中で別の接続が表のロックを取り、ブロックを出たときの `remove!` が待ちの上限の内に、ポリシーが残ったことと外す手順を含むメッセージで落ちる example を足し、ロックを解いた後に、メッセージの手順で外すと次の `add!` が通ることを確かめる。置き場は、ポリシーの足し外しを確かめる既存の `spec/matrix/cross_read_spec.rb`（`use_transactional_tests = false` で所有ロールの接続を使う前例）にする（`guides/testing.md`「行列テストとの分担」は、行列の spec では別の接続を使わないとする）。手順を確かめるために `remove!` を直に呼ぶなら、同じファイルの「spec と補助は MatrixCrossRead.remove! を直に呼ばない」の対象から、この 1 つの example だけを名指しで外し、理由をコメントに書く。作るもの 7 は、`ci_checks_spec.rb` の替えた `if:` の example を、`ci.yml` を直す前に流して落とす（いまの `if:` は `success()` を含まない）。
 
 ほかに、次を確かめて証跡に書く。
 
 - 作るもの 1・2 の比べ：同じ版で、負荷の低い手元（load average がコア数未満）で、ワーカー 2 のまま、`eager_load` の有無とログインの待ちの値を替えて全体を流し、各ワーカーの最初のログインの時間（ボタンを押してから URL が変わるまで）と全体の時間を書く。並行の負荷のある手元の数字は記録にとどめ、判定に使わない。採る形で全体を続けて 3 回流し、ログインの時間切れが 0 件。ログインの移り先の URL の期待をわざと替えると落ちる
 - 作るもの 3：spec が、既定の 3 つの DB・名前の規則に合わない名前・開発と本番の環境を拒み、名前を明示しなければ消さないことを確かめ、対象の判定から既定の DB の除外か名前の条件を外すと落ちる。接続中の一時の DB を明示しても消えずに失敗する
-- 作るもの 4・5：M50 の壊し方で `catalog_spec.rb` を丸ごと流すと、外からの打ち切りなしに終わり、元の SQL のエラーと、打ち切ったグループの理由が出力に出る。その後の実行が、残ったポリシーやロックで止まらない。`lock_timeout` を外すと、最初に落とす example が時間の上限まで待つ
-- 作るもの 6：3 つの応答を証跡に書く
+- 作るもの 4・5：M50 の壊し方で `catalog_spec.rb` を丸ごと流すと、外からの打ち切りなしに終わり、元の SQL のエラーと、打ち切ったグループの理由が出力に出る。ポリシーが残ったときは、メッセージの手順で外した後に、次の実行が通る。`add!` の `lock_timeout` を外すと最初に落とす example が、`remove!` の `lock_timeout` だけを外すと `remove!` の example が、時間の上限まで待って落ちる
+- 作るもの 6：3 つの応答を証跡に書く。足す example は書いた時点で通る見込みなので、`Validator` の `return if then_by.blank?` を `then_by.nil?` に替えると落ちることを、壊して落ちる記録に残す
 - 作るもの 7：`publish` は main への push でしか流れないので、M48 の作るもの 3 と同じく、ワークフローの `on.push.branches` にこのマイルストーンのブランチを一時に足し、ブランチへの push で 2 つを見る。`needs` の 1 つ（`manifests`）に一時に `if: false` を足した push で `publish` が skip され（`ci_checks_spec.rb` の `if:` の example の期待も一時に `manifests` を含める）、`if: false` を外してすべての `needs` が成功する push で `publish` が流れる（ログインと push のステップは `github.ref` の条件で skip される）。2 つの実行の URL と、一時の契機を戻した commit で `on.push.branches` が `[ main ]` だけであることを証跡に書く。`ci_checks_spec.rb` の替えた example は、`if:` から `success()` を消すと落ち、`success()` を `always()` に替えると落ちる
 
 **範囲外**：画面の書体の取り方（IB-101。サイクル 07 の改善の探索で見送った）、E2E の世界の前提を確かめる spec（IB-109・IB-111。同じく見送った）、本番の `Tenancy` とテストのトランザクションの包みの変更
 
 **実装する文書の節**：`guides/testing.md`「行列テストとの分担」、`guides/config.md`「database.yml：同じ DB に 2 つのロールで接続する」「application.rb で変えたこと」「CI の工程」、`guides/bin.md`、`README.md`「画面」、PostgreSQL 18 の文書の `DROP DATABASE` と `lock_timeout`、Playwright の文書の「Timeouts」、GitHub の文書の「Workflow syntax for GitHub Actions」の `jobs.<job_id>.if`（状態の関数を含まない `if:` に `success()` を足すこと）と `jobs.<job_id>.needs`
 
-**文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。`guides/config.md`「CI の工程」の、`publish` の `if:` に状態の関数を書かないとした文と、spec が確かめるものと spec で照らす例外に挙げた「`publish` の `if:` が状態の関数を含まないこと」を、`success()` を明示し、`failure`・`cancelled`・`always` を含まない形に直す。「状態の関数」「暗黙の」を種類で `git grep` し、前の形を書いた文を残さない。
+**文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。`guides/config.md`「CI の工程」の、`publish` の `if:` に状態の関数を書かないとした文と、spec が確かめるものと spec で照らす例外に挙げた「`publish` の `if:` が状態の関数を含まないこと」を、`success()` を明示し、`failure`・`cancelled`・`always` を含まない形に直す。「状態の関数」「暗黙の」を種類で `git grep` し、前の形を書いた文を残さない。M48 の時点の記録（`handoff.md`「リポジトリの状態」の M48 の要約、証跡、OI-184 の結果の欄）は、その時点の形として直さない。
