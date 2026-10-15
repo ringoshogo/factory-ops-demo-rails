@@ -190,6 +190,8 @@ cd frontend && E2E_DATABASE=factory_ops_m51_e2e PLAYWRIGHT_CHANNEL=chrome npm ru
 
 実装レビューの直しの後も、`1edb62b` の作業ツリーで `TEST_DATABASE=factory_ops_m51_test bin/ci` を流し、すべての工程が通った（rspec は 3116 examples, 0 failures、分岐の網羅率の警告は 0 件）。直しは spec と補助と文書だけで、E2E は流し直していない。
 
+PR #93 は、main に入ったサイクル 07 の末の `dev-cycle.md`「着手の前に」の段落と同じ場所に、一時の DB を消す段落を足していたのでぶつかり、`pull_request` の CI が流れなかった。main を取り込まずに、段落を同じ節の担当の worktree の段落の前に移した（`3c92f31`）。`3c92f31` の PR の CI はすべて通った（`publish` は `pull_request` なので skip。[実行](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38725044289)）。
+
 ### 残件の処理
 
 引当先が M51 の行は、着手の前と PR の前に台帳を読んだ。OI-202 は `9b36fb1` で閉じた。OI-203（`decided`）は作るもの 7 で反映した。IB-117・IB-123・IB-130 は M51 で実装した。取りまとめ役の判断の受け口（`decisions.md`）で D-1 を読んだ。
