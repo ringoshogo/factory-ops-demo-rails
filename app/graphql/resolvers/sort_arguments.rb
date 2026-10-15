@@ -4,7 +4,7 @@ module Resolvers
   module SortArguments
     extend ActiveSupport::Concern
 
-    # orderBy を省いた thenBy、列の数の上限（Page::MAX_SORTS）を超える並べ替え、同じ列の重なりを、引数の検証でトップレベルのエラーにする
+    # orderBy を省いた空でない thenBy、列の数の上限（Page::MAX_SORTS）を超える並べ替え、同じ列の重なりを、引数の検証でトップレベルのエラーにする
     class Validator < GraphQL::Schema::Validator
       def validate(_object, _context, value)
         order_by, then_by = value.values_at(:order_by, :then_by)

@@ -44,4 +44,27 @@ RSpec.describe "around のフックが送出したときの example のトラン
       model.connection_pool.with_connection { |connection| connection.rollback_transaction while connection.transaction_open? }
     end
   end
+
+  # skip は example を pending にする印で、送り返すと同じく rspec-rails の巻き戻しが飛ぶ。example.run の前と後のどちらで呼んでも巻き戻す
+  it "around の中で skip した example の後も、アプリと所有ロールの接続にトランザクションを残さない" do
+    OwnerConnection.connection_pool.with_connection { nil }
+
+    results = run_inner_group do
+      around do |example|
+        skip "前で飛ばす" if example.metadata[:before_run]
+        example.run
+        skip "後で飛ばす" if example.metadata[:after_run]
+      end
+
+      it("前で飛ばす", :before_run) { nil }
+      it("後で飛ばす", :after_run) { nil }
+    end
+
+    expect(results.map(&:first)).to eq(%i[pending pending])
+    expect(open_transactions).to eq([ 0, 0 ])
+  ensure
+    [ ActiveRecord::Base, OwnerConnection ].each do |model|
+      model.connection_pool.with_connection { |connection| connection.rollback_transaction while connection.transaction_open? }
+    end
+  end
 end

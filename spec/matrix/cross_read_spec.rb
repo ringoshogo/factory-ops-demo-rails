@@ -25,11 +25,12 @@ def cross_policy_counts
   SQL
 end
 
-  # MatrixCrossRead.remove! を直に呼んでよい唯一の example。打ち切られた remove! が出す外す手順で外せることを確かめる
-  DIRECT_REMOVE_EXAMPLE = "別の接続がテナントの表のロックを持つと、with_policies を抜けるときの remove! は待ちの上限で、ポリシーが残ったことと外す手順を出して落ち、手順で外すと次の add! が通る".freeze
+  # MatrixCrossRead.remove! を直に呼んでよい唯一の example。打ち切られた remove! が出す外す手順で外せることを確かめる。
+  # describe のブロックの中の定数はファイルの最上位（Object）に定義されるので、ほかと重ならない名前にする
+  MATRIX_CROSS_READ_DIRECT_REMOVE_EXAMPLE = "別の接続がテナントの表のロックを持つと、with_policies を抜けるときの remove! は待ちの上限で、ポリシーが残ったことと外す手順を出して落ち、手順で外すと次の add! が通る".freeze
 
   # 足し外しを流すスレッドの終わりを待つ上限の秒数。ポリシーの足し外しの待ちの上限（MatrixCrossRead::LOCK_TIMEOUT）より長くする
-  WAIT_SECONDS = 10
+  def wait_seconds = ConcurrencyHelpers::WAIT_SECONDS
 
   # アプリのロールの、example のスレッドの接続とも所有ロールの接続とも別の接続で、最後のテナントの表のロックを取る。
   # 返した接続を閉じるまで、トランザクションを開いたままロックを持つ
@@ -64,7 +65,7 @@ end
         WHERE datname = current_database() AND usename = current_user AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()
       SQL
     end
-    thread&.join(WAIT_SECONDS)
+    thread&.join(wait_seconds)
     OwnerConnection.connection_pool.disconnect!
   end
 
@@ -99,13 +100,13 @@ end
   end
 
   # Prism の構文木から MatrixCrossRead.remove! の直の呼び出しを探す。コメントと文字列の中の語を呼び出しと取り違えない。
-  # このファイルの DIRECT_REMOVE_EXAMPLE の example の中だけは外す。外す手順を確かめるには、手順そのものを流すしかない
+  # このファイルの MATRIX_CROSS_READ_DIRECT_REMOVE_EXAMPLE の example の中だけは外す。外す手順を確かめるには、手順そのものを流すしかない
   def direct_remove_call?(source, path)
     found = false
     visit = lambda do |node, exempt|
       if node.is_a?(Prism::CallNode)
         exempt ||= path == __FILE__ && node.name == :it && node.arguments&.arguments&.first.then do |name|
-          name.is_a?(Prism::ConstantReadNode) && name.name == :DIRECT_REMOVE_EXAMPLE
+          name.is_a?(Prism::ConstantReadNode) && name.name == :MATRIX_CROSS_READ_DIRECT_REMOVE_EXAMPLE
         end
         if node.name == :remove! && node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :MatrixCrossRead
           found ||= !exempt
@@ -125,7 +126,7 @@ end
 
     expect(calls.map { _1.delete_prefix("#{Rails.root}/") }).to eq([])
     # 外すのは、このファイルの名指しの example の中だけで、同じファイルのほかの example と、ほかのファイルの同じ名前は外さない
-    inside = "it DIRECT_REMOVE_EXAMPLE do\n  MatrixCrossRead.remove!\nend\n"
+    inside = "it MATRIX_CROSS_READ_DIRECT_REMOVE_EXAMPLE do\n  MatrixCrossRead.remove!\nend\n"
     outside = "it \"ほかの example\" do\n  MatrixCrossRead.remove!\nend\n"
     expect([ [ inside, __FILE__ ], [ outside, __FILE__ ], [ inside, "spec/other_spec.rb" ] ].map { direct_remove_call?(*_1) })
       .to eq([ false, true, true ])
@@ -158,7 +159,7 @@ end
     started = blocker.exec("SELECT now()::text").getvalue(0, 0)
     thread = run_in_thread { MatrixCrossRead.add! }
 
-    expect(thread.join(WAIT_SECONDS)).not_to be_nil
+    expect(thread.join(wait_seconds)).not_to be_nil
     expect(thread.value&.message).to include(
       MatrixWorld.tenant_tables.last, "pid #{blocker.backend_pid}", ActiveRecord::Base.connection_db_config.configuration_hash[:username],
       "idle in transaction", started
@@ -181,11 +182,58 @@ end
       end
     end
 
-    expect(thread.join(WAIT_SECONDS)).not_to be_nil
+    expect(thread.join(wait_seconds)).not_to be_nil
     role = ActiveRecord::Base.connection_db_config.configuration_hash[:username]
     expect(thread.value&.message).to include("pid #{pid}（#{role}、このスレッドの接続）")
   ensure
     stop_waiting_owner(thread)
+    expect(cross_policy_counts).to eq({})
+  end
+
+  # 打ち切った後の診断が失敗しても、元の打ち切りの例外を隠さない。状態を引く問い合わせはセーブポイントの中で流し、
+  # 失敗しても呼んだスレッドのトランザクションを壊さない。問い合わせを、SQL のエラーになる文に差し替えて確かめる
+  it "ロックを持つ接続の状態を引く問い合わせが失敗しても、引けなかったと出し、打ち切りの例外を cause に残し、このスレッドのトランザクションを壊さない" do
+    blocker = lock_last_tenant_table
+    allow_any_instance_of(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter).to receive(:select_one).and_wrap_original do |original, sql, *rest|
+      original.call(sql.include?("FROM pg_stat_activity") ? "SELECT 1 / 0" : sql, *rest)
+    end
+    usable = nil
+    thread = run_in_thread do |connection|
+      connection.transaction do
+        error = begin
+          MatrixCrossRead.add!
+          nil
+        rescue StandardError => e
+          e
+        end
+        usable = connection.select_value("SELECT 1")
+        raise error if error
+      end
+    end
+
+    expect(thread.join(wait_seconds)).not_to be_nil
+    expect(thread.value&.message).to include("pid #{blocker.backend_pid}", "状態は引けなかった", "division by zero")
+    expect(thread.value.cause).to be_a(ActiveRecord::LockWaitTimeout)
+    expect(usable).to eq(1)
+  ensure
+    stop_waiting_owner(thread)
+    blocker&.close
+    expect(cross_policy_counts).to eq({})
+  end
+
+  it "ロックを持つ接続を pg_locks から引く問い合わせが失敗しても、引けなかったと出し、打ち切りの例外を cause に残す" do
+    blocker = lock_last_tenant_table
+    allow_any_instance_of(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter).to receive(:select_rows).and_wrap_original do |original, sql, *rest|
+      original.call(sql.include?("FROM pg_locks") ? "SELECT 1 / 0" : sql, *rest)
+    end
+    thread = run_in_thread { MatrixCrossRead.add! }
+
+    expect(thread.join(wait_seconds)).not_to be_nil
+    expect(thread.value&.message).to include("ロックを持つ接続：引けなかった", "division by zero")
+    expect(thread.value.cause).to be_a(ActiveRecord::LockWaitTimeout)
+  ensure
+    stop_waiting_owner(thread)
+    blocker&.close
     expect(cross_policy_counts).to eq({})
   end
 
@@ -208,21 +256,21 @@ end
   # ブロックを抜けるのは別のスレッドにする。同じスレッドがロックを握ったまま抜けると、remove! の待ちの上限を外したときに
   # ロックを解く者がいないので、example が落ちずに rspec ごと止まる。
   # 手順で外せることを確かめるために、この example だけは MatrixCrossRead.remove! を直に呼ぶ
-  it DIRECT_REMOVE_EXAMPLE do
+  it MATRIX_CROSS_READ_DIRECT_REMOVE_EXAMPLE do
     entered = Queue.new
     leave = Queue.new
     thread = run_in_thread do
       MatrixCrossRead.with_policies do
         entered << true
-        leave.pop(timeout: WAIT_SECONDS)
+        leave.pop(timeout: wait_seconds)
       end
     end
-    added = entered.pop(timeout: WAIT_SECONDS)
+    added = entered.pop(timeout: wait_seconds)
     expect(added).to be(true)
     blocker = lock_last_tenant_table
     leave << true
 
-    expect(thread.join(WAIT_SECONDS)).not_to be_nil
+    expect(thread.join(wait_seconds)).not_to be_nil
     database = ActiveRecord::Base.connection_db_config.database
     command = [ "RAILS_ENV=test", ("TEST_DATABASE=#{database}" unless database == "factory_ops_demo_rails_test"), "bin/rails runner",
                 "spec/support/matrix_world", "spec/support/matrix_cross_read", "MatrixCrossRead.remove!" ].compact

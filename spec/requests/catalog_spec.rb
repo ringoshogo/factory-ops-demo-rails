@@ -204,7 +204,7 @@ RSpec.describe "カタログの GraphQL", type: :request do
         .to eq(%w[D-1 A-1 B-1 E-1 C-1])
     end
 
-    it "orderBy を省いた thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
+    it "orderBy を省いた空でない thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
       login_as(supplier_member)
       query = "query($orderBy: ItemOrder, $thenBy: [ItemOrder!]) { supplier { items(orderBy: $orderBy, thenBy: $thenBy) { totalCount } } }"
       code = { field: "CODE", direction: "ASC" }

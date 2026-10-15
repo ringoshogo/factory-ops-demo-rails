@@ -7,7 +7,9 @@
 # コミットされず、表のロックを持ったまま世界を作る接続を待たせて rspec が止まる。
 #
 # rspec-rails の around より内側で、group の本文の around より外側に、送出を example の失敗に移すフックを置く。
-# config.include は group を作るときに、本文より先に、登録の順に include するので、rspec-rails の後に登録すれば、この順になる
+# config.include は group を作るときに、本文より先に、登録の順に include する（rspec-core 3.13.6 の
+# lib/rspec/core/example_group.rb の ExampleGroup.subclass が、本文の module_exec の前に set_it_up から
+# lib/rspec/core/configuration.rb の Configuration#configure_group を呼ぶ）ので、rspec-rails の後に登録すれば、この順になる
 module AroundHookErrors
   extend ActiveSupport::Concern
 
@@ -15,7 +17,8 @@ module AroundHookErrors
     group.around do |example|
       example.run
     rescue RSpec::Core::Pending::SkipDeclaredInExample
-      raise
+      # skip は呼んだ時点で example を pending にしてあるので、送り返さずに巻き戻しへ戻る。送り返すと巻き戻しが飛ぶ
+      nil
     rescue RSpec::Support::AllExceptionsExceptOnesWeMustNotRescue => e
       example.example.set_exception(e)
     end

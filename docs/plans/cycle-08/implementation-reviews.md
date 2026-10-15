@@ -8,7 +8,40 @@
 
 `m51-local-checks`（base は `main`）。サイクル 08 の計画の `cycle-08-plan` の先端 `89fd27e` から切った。計画の PR #91 が未マージの間は、その commit も PR の差分に見える。M51 の差分は `89fd27e..` である。
 
-（実装レビューの結果は、レビューを受けた後にここへ書く。）
+Codex も Claude も Go だった。どちらの系統も、`89fd27e..63dc088` の diff を `63dc088` を展開したディレクトリと `git show` で読んだ。Claude は spec を流さず、rspec-rails 8.0.4 の原文と証跡を読んだ。Codex は、手元の DB への接続が実行の環境で許されず（`Operation not permitted`）、DB を使う spec と E2E を流さず、`ci_checks_spec.rb` を Rails を読み込まない形で、`TempDatabases` の名前の判定と `MatrixCrossRead` の診断の失敗を代わりのオブジェクトで、`AroundHookErrors` の `skip` を rspec-rails の原文の around と数えるだけのフックで、メモリの上で流した。Codex は結果のファイルを読み取りだけの制約で書けず、標準出力に出したので、そこから写した。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（Medium 2・Low 2） | 出していない（High が無かった） |
+| Claude | Go（Medium 2・Low 2） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R3） | 指摘（R1） |
+| 正しさ | 指摘（R1） | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘（R3・R4） |
+| テストの検出力 | 指摘（R1・R2） | 指摘なし |
+| 参照の維持 | 指摘（R4） | 指摘（R2） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | R1：`AroundHookErrors` が `skip` を送り返すので、around の中で `example.run` の前か後に `skip` すると、rspec-rails の巻き戻しが飛ぶ | `skip` は呼んだ時点で example を pending にしてあるので、送り返さずに巻き戻しへ戻す形にした。`around_hook_errors_spec.rb` に、前と後で `skip` した 2 つの example の後に、アプリと所有ロールの接続にトランザクションが残らない example を足した（直す前は `got: [2, 2]` で落ちた） | この節を載せた commit |
+| Medium | Codex | R2：打ち切った後の診断が失敗したときの守り（`lock_holders` と `activity` の rescue、`activity` のセーブポイント）を確かめる example が無い | `cross_read_spec.rb` に 2 つの example を足した。状態を引く問い合わせと `pg_locks` を引く問い合わせを、それぞれ SQL のエラーになる文に差し替え、引けなかったと出ること、打ち切りの例外が `cause` に残ること、呼んだスレッドのトランザクションがその後も使えることを確かめる。下の壊して落ちる記録に、rescue とセーブポイントを外す行を足した | 同上 |
+| Medium | Claude | R1：ログインの待ちの値を、計画が判定に使わないとした負荷のある手元の数字で決めたのに、「計画との違い」に無い | 「計画との違い」と計画の作るもの 2 に、比べからは値が決まらなかったことと、20 秒にした材料を書いた。「E2E」の「判定に使っていない」を、採った形の受け入れに使っていないという意味に書き分けた | 同上 |
+| Medium | Claude | R2：`guides/packs-and-packwerk.md` が `test.rb` の `eager_load` の前の式を引き、「手元では使うまで気づかず」と書く | 手元の rspec では気づかず、CI と手元の E2E の起動の時の読み込みで落ちる形に直し、式は `config.md`「環境ごとの設定」を指した | 同上 |
+| Low | Codex | R3：E2E の比べの表が待ち 5 秒の回だけで、20 秒を採った 3 回に最初のログインの時間が無い。高負荷の数字の扱いの文が食い違って読める | Claude R1 と同じく直した。採った 3 回は計測を外した版で流したので、最初のログインの時間は無い。待ちの値は時間切れの上限だけを変え、通る回のログインの時間を変えない | 同上 |
+| Low | Codex | R4：`Resolvers::SortArguments` のコメントと `catalog_spec.rb`（request）の example の名前が「`orderBy` を省いた `thenBy`」をエラーにすると書き、空の配列を区別しない。`packs-and-packwerk.md` は Claude R2 と同じ | どちらも「空でない `thenBy`」に直した | 同上 |
+| Low | Claude | R3：`cross_read_spec.rb` の describe のブロックの中の定数 `DIRECT_REMOVE_EXAMPLE`・`WAIT_SECONDS` が `Object` の定数になる | `WAIT_SECONDS` は `ConcurrencyHelpers::WAIT_SECONDS` を返すメソッドにした。名指しの example の定数は Prism の判定が名前を見るので残し、`MATRIX_CROSS_READ_DIRECT_REMOVE_EXAMPLE` に改め、最上位の定数になることをコメントに書いた | 同上 |
+| Low | Claude | R4：`AroundHookErrors` が依存する rspec-core の include の順の出典がコメントに無い | rspec-core 3.13.6 の `ExampleGroup.subclass` が本文の `module_exec` の前に `set_it_up` から `Configuration#configure_group` を呼ぶことを引いた | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：`publish` の `if:` の spec が、`success()` の否定と論理和でつないだ形を通す → IB-134
+- Claude 2：E2E の比べの表に A1〜A3 が無い → 数えなかった回の理由を「E2E」に書いた
+- Claude 3：`TempDatabases` がそのときの `TEST_DATABASE` の DB を拒まない → IB-135
+- Claude 4：around が `example.run` の前に `skip` すると巻き戻しが飛ぶ → Codex R1 と同じく直した
+- Codex 1：`E2E_EAGER_LOAD` を外しても落ちる example が無い → 計画レビューで積んだ IB-131 のまま
+- Codex 2：`AroundHookErrors` が拾う例外の範囲の境目を固定する spec が無い → IB-136
 
 ### 実装の記録
 
@@ -21,6 +54,7 @@
 - `remove!` の打ち切りの example で、補助の直しの example からは `remove!` を呼ばず、`add!` だけで確かめた。2 つは同じ所有ロールの接続の取り方（`with_owner_connection`）を通り、`remove!` を直に呼べるのは計画で名指しした 1 つの example だけだからである。
 - 計画の外で、打ち切りの example に、`add!` を呼んだスレッドの接続がロックを持つ形（「このスレッドの接続」と出す）の example を足した。計画は、その pid の状態を引かずに「このスレッドの接続」と書くとしたが、確かめる example が無かった。
 - 直の呼び出しを止める example は、名指しの example の中を外す判定を、合成したソースの 3 つ（名指しの example の中・同じファイルのほかの example・ほかのファイル）でも確かめる。外す判定をファイル全体に広げる壊し方で、最初は何も落ちなかったからである（下の B8）。
+- ログインの待ちの値（作るもの 2）は、計画の比べでは決まらず、計画が判定に使わないとした負荷のある手元の数字から決めた。負荷の低い手元の 4 回（A4・B1・A5・B2）はどれも待ちが 5 秒で、各ワーカーの最初のログインは `eager_load` の有無によらず 1 秒未満で、5 秒で落ちなかった。待ちの値を替えて流しても、負荷の低い手元では最初のログインの時間は変わらないので、比べからは値が決まらない。20 秒は、負荷のある手元でボタンを押してから時間切れまでが 15.5 秒に達した回と、IB-117 の記録（時間切れの前の 2 件のテストに 10 秒と 17 秒）から決めた。この期待はログインが済んだことを確かめるだけで、延ばしても製品の遅さを隠さない。計画の作るもの 2 に、この決め方を書いた。下の「E2E」の「判定に使っていない」は、採った形の受け入れ（3 回続けて通ること）に使っていないという意味である
 - 一時の DB の削除のタスクは、`temp_databases:drop[名前]` の形にした。zsh は角括弧を展開するので、手順の文書では引用符で囲んだ。
 - 打ち切ったときのメッセージに、計画の 5 つ（pid・ロール・状態・トランザクションの開始の時刻・対象の表）に加えて、その接続の最後の問い合わせ（200 文字まで）を出した。どの spec がトランザクションを開いたかをたどるためである。
 - 「同じ名前のポリシーがすでにある」の失敗のメッセージの外し方を、`MatrixCrossRead.remove!` から、打ち切りのメッセージと同じコマンドに替えた。`guides/testing.md`「行列テストとの分担」の手で外すコマンドも同じ形に直した。
@@ -64,6 +98,10 @@ RED（期待の不一致で落ちたもの）は、作るものごとに、実�
 | 〃 | `success()` を `always()` に替える | 1 |
 | 〃 | `success() && !cancelled() && …` にする | 1 |
 | 〃 | `(success() \|\| failure()) && …` にする | 1 |
+| `cross_read_spec.rb` の `pg_locks` の診断の失敗（実装レビューの Codex R2） | `lock_holders` の rescue を外す | 1（この example） |
+| `cross_read_spec.rb` の状態の診断の失敗（同上） | `activity` のセーブポイント（`transaction(requires_new: true)`）を外す | 1（この example。呼んだスレッドのトランザクションが壊れる） |
+| 〃 | `activity` の rescue を外す | 1（この example。外側の rescue が「引けなかった」とだけ出す） |
+| `around_hook_errors_spec.rb` の `skip`（実装レビューの Codex R1） | `skip` を送り返す形に戻す | 1（この example。`got: [2, 2]`） |
 | `catalog_spec.rb`（request）の `thenBy` の空の配列 | `Resolvers::SortArguments::Validator` の `return if then_by.blank?` を `then_by.nil?` に替える | 1（この example） |
 
 戻した後に同じ spec を流し、すべて通った。
@@ -132,7 +170,7 @@ MatrixCrossRead.remove! が users のロックを 2s 待って打ち切った。
 
 どの回も `acceptance.spec.ts` の 26 件は `E2E_SCREENSHOTS` が無いので skip した。読み込みをそろえると、各ワーカーの最初のログインは約 0.85 秒から約 0.35 秒に縮んだ。負荷の低い手元では、どちらの形もログインの待ちで落ちなかった。
 
-並行の負荷のある手元の 2 回は記録にとどめ、判定に使っていない。ほかの担当の Node のプロセスと Spotlight の索引で、1 分の load average が 25〜126 だった。`eager_load` なし・待ち 5 秒で、1 回目（`849798c`、load 25 → 29）は 13 failed・59 passed（5.7 分）、2 回目（`4405e83`、load 3.4 → 126）は 12 failed・26 skipped・60 passed（7.0 分）で、どちらもログインの URL の期待の時間切れを含んだ（ボタンを押してから時間切れまでの最長は 15.5 秒。押す操作そのものも遅れた）。負荷のある 3 回目は、共有の DB のコンテナが止まっていて起動できなかったので数えていない（`docker compose up -d --wait db` で起こし直した）。
+並行の負荷のある手元の 2 回は記録にとどめ、採った形の受け入れには使っていない（待ちの値を決めた材料には使った。上の「計画との違い」）。表の A1〜A3 が無いのは、この 2 回と、DB が止まっていて起動できなかった 1 回にあたるからである。ほかの担当の Node のプロセスと Spotlight の索引で、1 分の load average が 25〜126 だった。`eager_load` なし・待ち 5 秒で、1 回目（`849798c`、load 25 → 29）は 13 failed・59 passed（5.7 分）、2 回目（`4405e83`、load 3.4 → 126）は 12 failed・26 skipped・60 passed（7.0 分）で、どちらもログインの URL の期待の時間切れを含んだ（ボタンを押してから時間切れまでの最長は 15.5 秒。押す操作そのものも遅れた）。負荷のある 3 回目は、共有の DB のコンテナが止まっていて起動できなかったので数えていない（`docker compose up -d --wait db` で起こし直した）。
 
 ログインの待ちは 20 秒にした。負荷のある手元でボタンを押してから時間切れまでが 15.5 秒に達した回があり、IB-117 の `npm ci` の直後の 1 回目も、時間切れの前の 2 件のテストに 10 秒と 17 秒かかっていた。この期待はログインが済んだことを確かめるだけなので、延ばしても製品の遅さを隠さない。ほかの期待の待ちは既定の 5 秒のままである。
 
