@@ -152,8 +152,10 @@ test("照合待ちのまま取り消した受注と発注は、取消済のタ�
   // 取り消した受注はもう照合を待たないので、明細の行も待ちの文言の代わりに取消の文言を出す
   await expect(page.getByTestId("order-line").filter({ hasText: "品番未照合（取消）" })).not.toHaveCount(0);
   await expect(page.getByTestId("order-line").filter({ hasText: "品番照合待ち" })).toHaveCount(0);
-  // 待っていないものを注意の色で出さない
-  await expect(page.getByTestId("order-line").getByText("品番未照合（取消）", { exact: true }).first()).not.toHaveClass(/text-caution/);
+  // 待っていないものを注意の色で出さず、同じ行の得意先品番と同じ色で出す
+  const cancelledLine = page.getByTestId("order-line").getByText("品番未照合（取消）", { exact: true }).first();
+  await expect(cancelledLine).not.toHaveClass(/text-caution/);
+  await expect(cancelledLine).toHaveClass(/text-muted-foreground/);
   // かんばんの取消済の列にも、同じ受注のカードが「取消」と出る
   await page.goto("/supplier/dashboard");
   await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`).getByTestId("card-total")).toHaveText("取消");
