@@ -184,7 +184,7 @@ ssh raspi kubectl create job -n factory-ops-rails --from=cronjob/daily-reset man
 
 ### PostgreSQL のイメージを上げたとき
 
-作者は、`postgres.yaml` のイメージのタグを上げて適用したら、名前の列の照合順序 `ja-x-icu` の版を確かめる（`docs/guides/config.md`「照合順序の版」）。毎日の作り直しは、新しい DB に `template1` の版の記録を写すので、作り直しでは古い記録が改まらない。
+作者は、`postgres.yaml` のイメージのタグを上げて適用したら、名前と単位の列の照合順序 `ja-x-icu` の版を確かめる（`docs/guides/config.md`「照合順序の版」）。毎日の作り直しは、新しい DB に `template1` の版の記録を写すので、作り直しでは古い記録が改まらない。
 
 ```sh
 ssh raspi kubectl exec -n factory-ops-rails deployment/postgres -- psql -U postgres -d template1 -Atc "SELECT collversion, pg_collation_actual_version(oid) FROM pg_collation WHERE collname = 'ja-x-icu'"
