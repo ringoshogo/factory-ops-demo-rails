@@ -90,7 +90,7 @@ RSpec.describe "CI と手元で流す検査" do
     jobs = self.class.workflow.fetch("jobs")
     condition = jobs.dig("publish", "if").to_s
 
-    expect(jobs.select { |_, job| job.key?("if") }.keys).to eq(%w[manifests publish])
+    expect(jobs.select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
     expect(condition).to match(/\bsuccess\s*\(\s*\)/)
     expect(condition).not_to match(/\b(failure|cancelled|always)\s*\(/)
   end

@@ -270,7 +270,6 @@ jobs:
 
   # 公開の配置のマニフェストを照らす。kubectl が入った amd64 のランナーで流し、arm64 のランナーのイメージに頼らない
   manifests:
-    if: false
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
