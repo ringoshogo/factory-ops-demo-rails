@@ -25,6 +25,49 @@ def cross_policy_counts
   SQL
 end
 
+  # MatrixCrossRead.remove! を直に呼んでよい唯一の example。打ち切られた remove! が出す外す手順で外せることを確かめる
+  DIRECT_REMOVE_EXAMPLE = "別の接続がテナントの表のロックを持つと、with_policies を抜けるときの remove! は待ちの上限で、ポリシーが残ったことと外す手順を出して落ち、手順で外すと次の add! が通る".freeze
+
+  # 足し外しを流すスレッドの終わりを待つ上限の秒数。ポリシーの足し外しの待ちの上限（MatrixCrossRead::LOCK_TIMEOUT）より長くする
+  WAIT_SECONDS = 10
+
+  # アプリのロールの、example のスレッドの接続とも所有ロールの接続とも別の接続で、最後のテナントの表のロックを取る。
+  # 返した接続を閉じるまで、トランザクションを開いたままロックを持つ
+  def lock_last_tenant_table
+    config = ActiveRecord::Base.connection_db_config.configuration_hash
+    connection = PG.connect(host: config[:host], port: config[:port], user: config[:username], password: config[:password],
+      dbname: config[:database])
+    connection.exec("BEGIN")
+    connection.exec("LOCK TABLE #{connection.quote_ident(MatrixWorld.tenant_tables.last)} IN ACCESS SHARE MODE")
+    connection
+  end
+
+  # ブロックを別のスレッドで流し、例外を拾って返す。ブロックが待ち続けても、example は join の上限で先へ進む
+  def run_in_thread(&block)
+    thread = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection(&block)
+      nil
+    rescue StandardError => e
+      e
+    end
+    thread.report_on_exception = false
+    thread
+  end
+
+  # 打ち切れずに待っている所有ロールの接続を終わらせ、スレッドを待ってから所有ロールの接続を捨てる。
+  # 待っていた DDL が、ロックが解けた後に開いたトランザクションのまま表のロックを持ち続けると、後ろの spec が止まる。
+  # スレッドが接続を返す前に disconnect! を呼ぶと、使用中の接続を待って例外になりうるので、join の後に呼ぶ
+  def stop_waiting_owner(thread)
+    OwnerConnection.connection_pool.with_connection do |owner|
+      owner.select_values(<<~SQL).each { owner.select_value("SELECT pg_terminate_backend(#{Integer(_1)})") }
+        SELECT pid FROM pg_stat_activity
+        WHERE datname = current_database() AND usename = current_user AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()
+      SQL
+    end
+    thread&.join(WAIT_SECONDS)
+    OwnerConnection.connection_pool.disconnect!
+  end
+
   # 文脈を使う内側の example group を走らせ、example の結果を返す。実行の絞り込みと --order rand を内側に掛けない
   def run_inner_group(&body)
     group = RSpec.describe("内側の文脈", order: :defined) do
@@ -55,24 +98,37 @@ end
     expect(cross_policy_shapes).to eq([])
   end
 
-  # 外すのを足し終えたときに限る判定は MatrixCrossRead.share と with_policies にだけ置き、呼ぶ側に書き写させない。
-  # 呼ぶ側が add! と remove! を対にして書くと、add! の失敗でも remove! が走る形を、補助を足すたびに書き直すことになる。
-  # 呼び出しは Prism の構文木から拾い、コメントと文字列の中の語を呼び出しと取り違えない
-  it "spec と補助は MatrixCrossRead.remove! を直に呼ばない" do
-    calls = Dir[Rails.root.join("spec/**/*.rb")].reject { _1.end_with?("spec/support/matrix_cross_read.rb") }.select do |path|
-      found = false
-      visit = lambda do |node|
-        if node.is_a?(Prism::CallNode) && node.name == :remove! && node.receiver.is_a?(Prism::ConstantReadNode) &&
-            node.receiver.name == :MatrixCrossRead
-          found = true
+  # Prism の構文木から MatrixCrossRead.remove! の直の呼び出しを探す。コメントと文字列の中の語を呼び出しと取り違えない。
+  # このファイルの DIRECT_REMOVE_EXAMPLE の example の中だけは外す。外す手順を確かめるには、手順そのものを流すしかない
+  def direct_remove_call?(source, path)
+    found = false
+    visit = lambda do |node, exempt|
+      if node.is_a?(Prism::CallNode)
+        exempt ||= path == __FILE__ && node.name == :it && node.arguments&.arguments&.first.then do |name|
+          name.is_a?(Prism::ConstantReadNode) && name.name == :DIRECT_REMOVE_EXAMPLE
         end
-        node.compact_child_nodes.each { visit.call(_1) }
+        if node.name == :remove! && node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :MatrixCrossRead
+          found ||= !exempt
+        end
       end
-      visit.call(Prism.parse_file(path).value)
-      found
+      node.compact_child_nodes.each { visit.call(_1, exempt) }
     end
+    visit.call(Prism.parse(source).value, false)
+    found
+  end
+
+  # 外すのを足し終えたときに限る判定は MatrixCrossRead.share と with_policies にだけ置き、呼ぶ側に書き写させない。
+  # 呼ぶ側が add! と remove! を対にして書くと、add! の失敗でも remove! が走る形を、補助を足すたびに書き直すことになる
+  it "spec と補助は MatrixCrossRead.remove! を直に呼ばない" do
+    calls = Dir[Rails.root.join("spec/**/*.rb")].reject { _1.end_with?("spec/support/matrix_cross_read.rb") }
+      .select { direct_remove_call?(File.read(_1), _1) }
 
     expect(calls.map { _1.delete_prefix("#{Rails.root}/") }).to eq([])
+    # 外すのは、このファイルの名指しの example の中だけで、同じファイルのほかの example と、ほかのファイルの同じ名前は外さない
+    inside = "it DIRECT_REMOVE_EXAMPLE do\n  MatrixCrossRead.remove!\nend\n"
+    outside = "it \"ほかの example\" do\n  MatrixCrossRead.remove!\nend\n"
+    expect([ [ inside, __FILE__ ], [ outside, __FILE__ ], [ inside, "spec/other_spec.rb" ] ].map { direct_remove_call?(*_1) })
+      .to eq([ false, true, true ])
   end
 
   it "with_policies は、足すのに失敗したら、先にあったポリシーを外さずに送出する" do
@@ -92,6 +148,99 @@ end
       tables = MatrixWorld.tenant_tables.size
       expect(cross_policy_counts).to eq("matrix_cross_read" => tables, "matrix_cross_update" => tables)
     end
+  end
+
+  # 落ちた example の後に別の接続がテナントの表のロックを持ち続けると、ポリシーの足し外しの DDL が待ち続けて rspec が止まる。
+  # 待ちに上限を置き、打ち切ったら待たせている接続を出す。状態とトランザクションの開始の時刻は、PostgreSQL が
+  # 別のロールの接続の分を隠すので、待たせている接続と同じロールの接続から引く
+  it "別の接続がテナントの表のロックを持つと、add! は待ちの上限で、待たせている接続の pid・ロール・状態・開始の時刻を出して落ち、ポリシーを残さない" do
+    blocker = lock_last_tenant_table
+    started = blocker.exec("SELECT now()::text").getvalue(0, 0)
+    thread = run_in_thread { MatrixCrossRead.add! }
+
+    expect(thread.join(WAIT_SECONDS)).not_to be_nil
+    expect(thread.value&.message).to include(
+      MatrixWorld.tenant_tables.last, "pid #{blocker.backend_pid}", ActiveRecord::Base.connection_db_config.configuration_hash[:username],
+      "idle in transaction", started
+    )
+    expect(thread.value.cause).to be_a(ActiveRecord::LockWaitTimeout)
+  ensure
+    stop_waiting_owner(thread)
+    blocker&.close
+    expect(cross_policy_counts).to eq({})
+  end
+
+  # 世界と同じスレッドの接続がロックを持つ形。その接続は打ち切られたトランザクションの中にいることがあるので、状態を引かない
+  it "add! を呼んだスレッドの接続がテナントの表のロックを持つと、その接続を「このスレッドの接続」と出して落ちる" do
+    pid = nil
+    thread = run_in_thread do |connection|
+      connection.transaction do
+        connection.execute("LOCK TABLE #{connection.quote_table_name(MatrixWorld.tenant_tables.last)} IN ACCESS SHARE MODE")
+        pid = connection.raw_connection.backend_pid
+        MatrixCrossRead.add!
+      end
+    end
+
+    expect(thread.join(WAIT_SECONDS)).not_to be_nil
+    role = ActiveRecord::Base.connection_db_config.configuration_hash[:username]
+    expect(thread.value&.message).to include("pid #{pid}（#{role}、このスレッドの接続）")
+  ensure
+    stop_waiting_owner(thread)
+    expect(cross_policy_counts).to eq({})
+  end
+
+  # 落ちた example の後始末（rspec-rails の fixture のトランザクションの巻き戻し）が飛ぶと、所有ロールの接続にトランザクションが残る。
+  # その中で足すとコミットされず、全表のロックを持ったまま世界を作る接続を待たせ、lock_timeout では終わらない。
+  # 確かめは add! で行う。remove! も同じ所有ロールの接続の取り方（with_owner_connection）を通る
+  it "所有ロールの接続にトランザクションが残っていれば、add! はポリシーを足さずに、残ったことを出して落ちる" do
+    owner = OwnerConnection.lease_connection
+    owner.begin_transaction(joinable: false)
+
+    expect { MatrixCrossRead.add! }.to raise_error(/所有ロールの接続にトランザクションが残っている/)
+    expect(owner.select_value("SELECT count(*) FROM pg_policies WHERE policyname IN ('matrix_cross_read', 'matrix_cross_update')")).to eq(0)
+  ensure
+    owner&.rollback_transaction if owner&.transaction_open?
+    OwnerConnection.connection_pool.release_connection
+    expect(cross_policy_counts).to eq({})
+  end
+
+  # remove! が打ち切られるとポリシーが残り、次の実行の add! が「すでにある」で落ちるので、外す手順を出す。
+  # ブロックを抜けるのは別のスレッドにする。同じスレッドがロックを握ったまま抜けると、remove! の待ちの上限を外したときに
+  # ロックを解く者がいないので、example が落ちずに rspec ごと止まる。
+  # 手順で外せることを確かめるために、この example だけは MatrixCrossRead.remove! を直に呼ぶ
+  it DIRECT_REMOVE_EXAMPLE do
+    entered = Queue.new
+    leave = Queue.new
+    thread = run_in_thread do
+      MatrixCrossRead.with_policies do
+        entered << true
+        leave.pop(timeout: WAIT_SECONDS)
+      end
+    end
+    added = entered.pop(timeout: WAIT_SECONDS)
+    expect(added).to be(true)
+    blocker = lock_last_tenant_table
+    leave << true
+
+    expect(thread.join(WAIT_SECONDS)).not_to be_nil
+    database = ActiveRecord::Base.connection_db_config.database
+    command = [ "RAILS_ENV=test", ("TEST_DATABASE=#{database}" unless database == "factory_ops_demo_rails_test"), "bin/rails runner",
+                "spec/support/matrix_world", "spec/support/matrix_cross_read", "MatrixCrossRead.remove!" ].compact
+    expect(thread.value&.message).to include("ポリシーが残った", "pid #{blocker.backend_pid}", *command)
+    tables = MatrixWorld.tenant_tables.size
+    expect(cross_policy_counts).to eq("matrix_cross_read" => tables, "matrix_cross_update" => tables)
+
+    blocker.close
+    blocker = nil
+    MatrixCrossRead.remove!
+    expect { MatrixCrossRead.with_policies { nil } }.not_to raise_error
+    expect(cross_policy_counts).to eq({})
+  ensure
+    leave&.push(true)
+    stop_waiting_owner(thread)
+    blocker&.close
+    # 足したのがこの example のときだけ外す。足すのに失敗したなら、先にあったのは別の実行のポリシーである
+    MatrixCrossRead.remove! if added
   end
 
   # 足すのは 1 つのトランザクションなので、最後に足す表の UPDATE のポリシーだけが重なって失敗しても、前に足しかけた
