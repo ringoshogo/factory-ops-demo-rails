@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { inspectInboundShipment, requestPurchaseOrderCancellation } from "@/lib/actions/purchasing";
 import { IDLE, type FormState } from "@/lib/form-state";
-import { yen } from "@/lib/format";
+import { pendingLineText, yen } from "@/lib/format";
 import type { BuyerPurchaseOrderQuery } from "@/lib/graphql/generated";
 import { canRequestCancellation } from "@/lib/purchase-order-flow";
 import { OPEN_PURCHASE_ORDER_STATUSES } from "@/lib/purchase-order-list";
@@ -106,7 +106,7 @@ export function PurchaseOrderDetail({
               {order.lines.map((line) => (
                 <TableRow key={line.id} data-testid="order-line">
                   <TableCell>{line.partNumber}</TableCell>
-                  <TableCell truncate>{line.confirmedItemName ?? "受注側の確定待ち"}</TableCell>
+                  <TableCell truncate>{line.confirmedItemName ?? pendingLineText("purchaseOrder", order.status)}</TableCell>
                   <TableCell numeric>{line.quantity}</TableCell>
                   <TableCell numeric>{line.confirmedUnitPrice ? yen(line.confirmedUnitPrice) : "—"}</TableCell>
                 </TableRow>

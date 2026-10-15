@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PurchaseOrderStatus, SalesOrderStatus } from "@/lib/graphql/generated";
-import { totalAmountText } from "./format";
+import { pendingLineText, totalAmountText } from "./format";
 import { PURCHASE_ORDER_STATUS, SALES_ORDER_STATUS } from "./statuses";
 
 // codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める状況の一覧から集める
@@ -41,5 +41,25 @@ describe("totalAmountText", () => {
     // 空振りしない：取り消した状況も、取り消していない状況も、すべての値の中にある
     expect(PURCHASE_ORDER_STATUSES.filter((s) => CANCELLED_PURCHASE_ORDER.includes(s))).toHaveLength(2);
     expect(SALES_ORDER_STATUSES.filter((s) => CANCELLED_SALES_ORDER.includes(s))).toHaveLength(1);
+  });
+});
+
+// 照合待ち・確定待ちのまま取り消した伝票は、明細の行にも待ちの文言の代わりに取消の文言を出す。もう何も待たないので
+describe("pendingLineText", () => {
+  it("取り消した受注の明細は「品番未照合（取消）」、ほかの受注の明細は「品番照合待ち」を出す", () => {
+    expect(pendingLineText("salesOrder", "CANCELLED")).toBe("品番未照合（取消）");
+    for (const status of SALES_ORDER_STATUSES) {
+      expect(pendingLineText("salesOrder", status), status).toBe(
+        CANCELLED_SALES_ORDER.includes(status) ? "品番未照合（取消）" : "品番照合待ち",
+      );
+    }
+  });
+
+  it("取り消した発注の明細は「未確定（取消）」、ほかの発注の明細は「受注側の確定待ち」を出す", () => {
+    for (const status of PURCHASE_ORDER_STATUSES) {
+      expect(pendingLineText("purchaseOrder", status), status).toBe(
+        CANCELLED_PURCHASE_ORDER.includes(status) ? "未確定（取消）" : "受注側の確定待ち",
+      );
+    }
   });
 });

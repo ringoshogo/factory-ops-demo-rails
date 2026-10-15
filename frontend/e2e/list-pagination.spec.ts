@@ -130,9 +130,15 @@ test("受注一覧を取引先の名前と受注合計で並べ、合計の無�
   await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`).getByTestId("card-total")).toHaveText("照合待ち");
 });
 
-test("照合待ちのまま取り消した受注と発注は、取消済のタブ・詳細・かんばんの合計の欄に「取消」と出る", async ({ browser }, testInfo) => {
+test("照合待ちのまま取り消した受注と発注は、取消済のタブ・詳細・かんばんの合計の欄に「取消」と、詳細の明細の行に取消の文言と出る", async ({ browser }, testInfo) => {
   const page = await (await browser.newContext()).newPage();
   await login(page, testInfo, "supplier_admin");
+  // 対照：取り消していない品番照合待ちの受注の明細の行には、待ちの文言が出る
+  await page.goto("/supplier/sales-orders?tab=open");
+  await rowLink(page, 6, "照合待ち").click();
+  await expect(page.getByTestId("order-line").filter({ hasText: "品番照合待ち" })).not.toHaveCount(0);
+  await expect(page.getByTestId("order-line").getByText("品番照合待ち", { exact: true }).first()).toHaveClass(/text-caution/);
+
   await page.goto("/supplier/sales-orders?tab=cancelled");
   const totals = await column(page, 6);
   expect(totals).toContain("取消");
@@ -143,18 +149,32 @@ test("照合待ちのまま取り消した受注と発注は、取消済のタ�
   const orderId = await idOf(link);
   await link.click();
   await expect(page.getByTestId("order-total")).toHaveText("取消");
+  // 取り消した受注はもう照合を待たないので、明細の行も待ちの文言の代わりに取消の文言を出す
+  await expect(page.getByTestId("order-line").filter({ hasText: "品番未照合（取消）" })).not.toHaveCount(0);
+  await expect(page.getByTestId("order-line").filter({ hasText: "品番照合待ち" })).toHaveCount(0);
+  // 待っていないものを注意の色で出さない
+  await expect(page.getByTestId("order-line").getByText("品番未照合（取消）", { exact: true }).first()).not.toHaveClass(/text-caution/);
   // かんばんの取消済の列にも、同じ受注のカードが「取消」と出る
   await page.goto("/supplier/dashboard");
   await expect(page.locator(`[data-testid="kanban-card"][data-order-id="${orderId}"]`).getByTestId("card-total")).toHaveText("取消");
 
-  // 発注側の一覧では、受注側により取り消した発注の合計の欄に「取消」と出る
+  // 発注側の一覧では、受注側により取り消した発注の合計の欄に「取消」と出る。テナントをまたいで受注と発注の ID は
+  // 対応づけられないので、詳細は一覧の行から開く
   const buyer = await (await browser.newContext()).newPage();
   await login(buyer, testInfo, "granted_buyer_admin");
+  // 対照：取り消していない受注確定の前の発注の明細の行には、待ちの文言が出る
+  await buyer.goto("/buyer/purchase-orders?tab=open");
+  await rowLink(buyer, 7, "確定待ち").click();
+  await expect(buyer.getByTestId("order-line").filter({ hasText: "受注側の確定待ち" })).not.toHaveCount(0);
+
   await buyer.goto("/buyer/purchase-orders?tab=cancelled");
   const purchaseTotals = await column(buyer, 7);
   expect(purchaseTotals).toContain("取消");
   expect(purchaseTotals.some((t) => t.endsWith(" 円"))).toBe(true);
   expect(purchaseTotals).not.toContain("確定待ち");
+  await rowLink(buyer, 7, "取消").click();
+  await expect(buyer.getByTestId("order-line").filter({ hasText: "未確定（取消）" })).not.toHaveCount(0);
+  await expect(buyer.getByTestId("order-line").filter({ hasText: "受注側の確定待ち" })).toHaveCount(0);
 });
 
 /** URL の sort と dir。 */

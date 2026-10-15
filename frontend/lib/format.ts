@@ -31,5 +31,24 @@ const CANCELLED: { [K in keyof TotalStatus]: readonly TotalStatus[K][] } = {
  */
 export function totalAmountText<K extends keyof TotalStatus>(total: string | null, kind: K, status: TotalStatus[K]): string {
   if (total !== null) return `${yen(total)} 円`;
-  return CANCELLED[kind].includes(status) ? "取消" : PENDING_TOTAL[kind];
+  return isCancelled(kind, status) ? "取消" : PENDING_TOTAL[kind];
+}
+
+/** 伝票を取り消したか。取り消した伝票は照合も確定も待たないので、合計の欄と明細の行に待ちの文言を出さない。 */
+export function isCancelled<K extends keyof TotalStatus>(kind: K, status: TotalStatus[K]): boolean {
+  return CANCELLED[kind].includes(status);
+}
+
+/** 明細の待ちの文言。受注は品目の無い (品番照合待ちの) 明細に、発注は品目名の写しの無い (受注確定の前の) 明細に出す。 */
+const PENDING_LINE = { salesOrder: "品番照合待ち", purchaseOrder: "受注側の確定待ち" } as const;
+
+/** 待っている間に取り消した伝票の明細の文言。品目名の欄に何が無いかと、取り消したのでもう待たないことを 1 つで言う。 */
+const CANCELLED_LINE = { salesOrder: "品番未照合（取消）", purchaseOrder: "未確定（取消）" } as const;
+
+/**
+ * 受注詳細と発注詳細の、品目名の欄が空の明細の文言。合計の欄 (totalAmountText) と同じ取消の状況の集合で分け、
+ * 合計の欄が「取消」の伝票の明細に待ちの文言を出さない (docs/architecture/context-map.md「発注の連結と品番の照合」)。
+ */
+export function pendingLineText<K extends keyof TotalStatus>(kind: K, status: TotalStatus[K]): string {
+  return isCancelled(kind, status) ? CANCELLED_LINE[kind] : PENDING_LINE[kind];
 }
