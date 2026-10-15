@@ -262,8 +262,56 @@ cd frontend && npm run lint && npm run typecheck   # 通った
 cd frontend && E2E_DATABASE=factory_ops_m50r_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 72 passed、26 skipped（acceptance.spec.ts。E2E_SCREENSHOTS が無い）。1.4 分、load average 6.13 → 10.41
 ```
 
+PR #94 の CI は、先端 `052e1a6` の run 38728846772 ですべてのジョブが通った（`publish` は `pull_request` なので skip）。
+
 分岐の網羅率の警告は 0 件だった（足した行と変えた行の分岐は、すべてどれかの example が通った）。「名前の列」を `git grep` し、`ja-x-icu` の列を名前の列だけと書いた文が、計画の M49 の節（M49 の時点の決定）と証跡のほかに残らないことを確かめた。`spec/requests/purchase_orders_spec.rb` の「名前の列の照合順序」は、取引先の名前の並びを確かめる example のコメントで、名前の列だけを指すので直していない。
 
 ### 残件の処理
 
 引当先が M50 の行（OI-186・OI-193・OI-194・OI-199・OI-200）は、着手の前と PR の前に台帳を読み、どれも `decided` だった。OI-199 の判断（a）をこの節の作るもので反映した。`bin/check-open-items --due M50` は通った。取りまとめ役の判断の受け口（`decisions.md`）には、着手の時も commit の前も判断が無かった。
+
+## M33 の残り（サイクル 08）：取消済の伝票の明細の行の文言
+
+`m33-rest-08`（base は `main`）。M50 の残りの `m50-rest` の先端 `052e1a6` から切った。計画の PR #91 と M51 の PR #92・#93 と M50 の残りの PR #94 が未マージの間は、それらの commit も PR の差分に見える。M33 の残り（サイクル 08）の差分は `052e1a6..` である。
+
+作者の判断（OI-204 の (a)）で、照合待ち・確定待ちのまま取り消した伝票の詳細の明細の行に、待ちの文言の代わりに取消の文言を出す。文言は計画の既定のまま、受注を「品番未照合（取消）」、発注を「未確定（取消）」にし、OI-204 の結果の欄に書いた。作者の画面の指摘（OI-177）は来ていないので作っていない。
+
+### 実装の記録
+
+#### 計画との違い
+
+- 取消の判定を `frontend/lib/format.ts` の `isCancelled` に切り出し、`totalAmountText` と `pendingLineText` と受注詳細の色の分岐が同じ関数を読む。計画は、文言の関数が `totalAmountText` と同じ取消の状況の集合で分けるとしていて、集合の持ち方は変えていない。受注詳細の色の分岐も同じ集合で決めるために、判定を 1 つにした。
+- E2E に、取り消していない受注の待ちの文言が注意の色（`text-caution`）を持ち、取り消した受注の取消の文言が持たないことの期待を足した。計画の作るもの 2 の色の分岐を確かめる example が無かったからである。計画の節の作るもの 4 にも同じ commit（`60843dd`）で書いた。
+- 対照の行は、受注は進行中のタブ（`?tab=open`）の一覧で「照合待ち」と出た行から、発注は進行中のタブの一覧で「確定待ち」と出た行から ID を取った。すべてのタブの 1 ページ目に照合待ちの行が並ぶとは限らないからである。
+
+#### RED と、壊して落ちる記録
+
+先に、いまの 2 つの文言をそのまま返す `pendingLineText` を置いて 2 つの詳細の画面から呼ぶ形に直し（振る舞いは変えない）、その上で `frontend/lib/format.test.ts` の 2 つの example を足して流した（`052e1a6` の作業ツリーに、この直しと spec を足した形。Node 22）。
+
+- `npx vitest run lib/format.test.ts`（6 tests, 2 failed）：`CANCELLED` の受注に `expected '品番照合待ち' to be '品番未照合（取消）'`、発注は `CANCELLED: expected '受注側の確定待ち' to be '未確定（取消）'`。どちらも期待の不一致で、関数の読み込みの失敗ではない
+
+実装した後に、同じ単体が通った（6 tests, 0 failed）。E2E の example は、実装の後に足したので、次の壊して落ちる記録で RED に代える。壊す前にファイルを一時ファイルの置き場に複製し、複製から戻した。E2E は `E2E_DATABASE=factory_ops_m33r_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- list-pagination.spec.ts -g "取り消した"` で流した。
+
+| 確かめる example | 壊したもの | 落ちたもの |
+|---|---|---|
+| `format.test.ts` の `totalAmountText` と `pendingLineText` の発注の example | `statuses.ts` の `CANCELLED_PURCHASE_ORDER_STATUSES` から `SUPPLIER_CANCELLED` を外す | 2（どちらも `SUPPLIER_CANCELLED` に待ちの文言を返す） |
+| `list-pagination.spec.ts` の取り消した受注と発注の example | 2 つの詳細の画面を、状況を渡さずに「品番照合待ち」「受注側の確定待ち」を出す形に戻す | 1（受注詳細の明細の行に「品番未照合（取消）」が 0 件） |
+| 同上 | 発注詳細だけを、状況を渡さずに「受注側の確定待ち」を出す形に戻す | 1（発注詳細の明細の行に「未確定（取消）」が 0 件） |
+| 同上 | 受注詳細の色の分岐を、取消でも `text-caution` を付ける形にする | 1（取消の文言が `text-caution` を持つ） |
+
+### 確かめたこと
+
+`60843dd` の作業ツリーで、Ruby 3.4.11・PostgreSQL 18・Node 22 で流した。
+
+```sh
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 通った。test:unit は 16 files, 152 tests
+cd frontend && E2E_DATABASE=factory_ops_m33r_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 72 passed、26 skipped（acceptance.spec.ts。E2E_SCREENSHOTS が無い）。1.1 分、終わった時の load average 12.37
+TEST_DATABASE=factory_ops_m33r_test bin/ci   # すべての工程が通った。rspec は 3117 examples, 0 failures。bin/check-structure を含む
+bin/check-open-items --due M33   # 落ちる。出たのは「引当先が M33 の OI-177 が open のまま残っている」の 1 行だけ（計画の期待どおり）
+```
+
+分岐の網羅率の警告は 0 件だった（足した行と変えた行の分岐は、すべてどれかの example が通った。変えたのは画面だけで、Ruby の行は変えていない）。「品番照合待ち」「受注側の確定待ち」を `git grep` し、画面の明細の行の規則を書いた文は `architecture/context-map.md`「発注の連結と品番の照合」の合計金額の段落だけで、そこに取消の場合を足した。ほかの当たりは、状況の名前（`AWAITING_PART_MATCH`）とイベントの名前とコメントで、明細の行の文言の規則ではないので直していない。
+
+### 残件の処理
+
+引当先が M33 の行のうち、OI-204 は着手の前と commit の前に台帳を読み、`decided` だった。判断（a）をこの節の作るもので反映し、決めた文言を結果の欄に書いた。OI-177 は作者の指摘を待つ `open` のまま残る。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時は空で、実装の commit の前に D-1（M50 の残りの PR の CI の結果を証跡に書く）を読み、上の M50 の残りの節に書いた。
