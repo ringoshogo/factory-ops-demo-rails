@@ -4,7 +4,7 @@
 
 サイクル 09 に入るのは、サイクル 08 の逸脱検査と改善の探索で起こした M52 と、サイクル 08 から移した M33・M41 の残りである。作者は 2026-10-16 に、サイクル 08 の終わりの問い（`plans/cycle-08/author-decisions.md`）に答えた。OI-205 の (a)（全 spec に効く around の補助を外し、落ちた example を包む around だけを個別に直す）は、サイクル 08 の末に M52 の作るもの 4 に入り、直す形と数え上げの方法をこの計画レビューで決めた（下の「M52 の around の数え上げ」）。決めた形は OI-209（`judgment`）に書いた。OI-206・OI-204・IB-101 は既定のままで、作るものは変わらない。IB-133 の答え（M41 の残りを毎サイクル移し続ける）を、M41 の「残り（サイクル 09）」に書いた。IB-130 の答え（前の担当の一時の DB 13 個を取りまとめ役が消す）は、サイクル 08 の末に取りまとめ役が済ませた。
 
-初回のレビューは `38d64dd` を読んだ。依頼には読む版の commit を書き、その版を展開したディレクトリだけを読ませた。Claude は Conditional Go、Codex は Go で、High は Claude の 1 件だった。指摘を直した版（`daaab94`）に初回の記録を足した版を、2 系統で読み直した（読み直し 1。結果は末尾）。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ（`guides/dev-cycle.md`「独立したレビュアー」）。Codex は、展開したディレクトリが git のリポジトリでないので `--skip-git-repo-check` を付けて流し、一時の失敗は起こさなかった。
+初回のレビューは `38d64dd` を読んだ。依頼には読む版の commit を書き、その版を展開したディレクトリだけを読ませた。Claude は Conditional Go、Codex は Go で、High は Claude の 1 件だった。指摘を直した版（`daaab94`）に初回の記録を足した版（`cad3a70`。計画の節と台帳は `daaab94` と同じ）を、2 系統で読み直した（読み直し 1）。2 系統とも、初回の指摘の解消を認め、新しい High 以上は無く、Go だった。M52 から着手できる。読み直し 1 の結果は末尾の「読み直し 1」にある。Claude のサブエージェントは、2 回とも最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ（`guides/dev-cycle.md`「独立したレビュアー」）。Codex は、2 回とも展開したディレクトリが git のリポジトリでないので `--skip-git-repo-check` を付けて流し、一時の失敗は起こさなかった。
 
 読む順は、マイルストーンの分け方 → 作るもの 3 の土台 → around の数え上げ → 判定 → 指摘ごとの対応 → 作者に渡すもの → 直さなかった指摘と台帳に積んだもの、である。指摘の出典は次の形で示す。2 系統の ID がぶつかるときは、`Codex M52-1` のように系統を添える。
 
@@ -63,13 +63,13 @@ M50 の壊し方（`packs/sales/app/public/sales/item_prices.rb` の単価の式
 
 ## 判定
 
-| マイルストーン | 初回 Claude | 初回 Codex |
-|---|---|---|
-| M52 | Conditional Go | Go |
-| M33 の残り | Go | Go |
-| M41 の残り | Go | Go |
+| マイルストーン | 初回 Claude | 初回 Codex | 読み直し 1 Claude | 読み直し 1 Codex |
+|---|---|---|---|---|
+| M52 | Conditional Go | Go | Go | Go |
+| M33 の残り | Go | Go | Go | Go |
+| M41 の残り | Go | Go | Go | Go |
 
-初回の全体の判定は、Claude が Conditional Go、Codex が Go だった。High は Claude の M52-1 の 1 件で、Codex も同じ衝突を Medium（Codex M52-1）で挙げた。数え上げのガードと対照の置き方（計画の形）を変える直しなので、読み直しに出した。
+初回の全体の判定は、Claude が Conditional Go、Codex が Go だった。High は Claude の M52-1 の 1 件で、Codex も同じ衝突を Medium（Codex M52-1）で挙げた。数え上げのガードと対照の置き方（計画の形）を変える直しなので、読み直しに出した。読み直し 1 は 2 系統とも Go で、ここで終えた。
 
 2 系統が同じことを挙げた指摘は次の 1 つである。
 
@@ -121,4 +121,20 @@ M50 の壊し方（`packs/sales/app/public/sales/item_prices.rb` の単価の式
 
 - 指摘は、どれも計画の直しで扱った
 - 違和感のうち計画で扱ったもの（Claude）：対照 (i) は補助を外した後でないと成り立たないことは、外すものを最初に消す順にした。作るもの 1 の渡さないときの `E2E_EAGER_LOAD` は、子のプロセスの環境で `nil` で消すと書いた。ガードが字面で探すことは、`testing.md`「層への配分」に書くとした。`matrix_cross_read.rb` の失敗のメッセージは、「層への配分」を指す文を足すとした
+- Codex の違和感は「なし」だった。改善の候補に移したものは無い
+
+## 読み直し 1
+
+指摘を直した版を、初回の指摘が解消したかと、High 以上の新しい指摘だけで判定させた（`guides/dev-cycle.md`「判定の形」）。2 系統とも、初回の 10 件（2 系統が同じことを挙げた 1 件を含む）の解消を認め、新しい High 以上は無く、全体を Go とした。Claude は、展開したディレクトリの spec を Prism で読み直し、around の中に `with_tenant` か `transaction` を持つものが 19 個（`around_hook_errors_spec.rb` の 1 個を除いて 18 個）で、計画と合うことを確かめた。読み直しで出た Medium 以下は、読み直しには出さずに直した。
+
+| 出典 | 重大度 | 指摘 | 直した節と内容 |
+|---|---|---|---|
+| Claude R1-M52-1 | Medium | 対照 (i) が内側の example の落ち方を照らさず、合成のソースの字面（引数の無い `with_tenant`）のまま流すと、`example.run` の前の `ArgumentError` でも同じく残って通る | M52 の作るもの 4。(i) に、内側の example が `/division by zero.*current transaction is aborted/m` の失敗として報告されることを足し、(i) が流す合成のソースを `Tenancy.with_tenant(SecureRandom.uuid) { example.run }` の実行できる形にした |
+| Codex R1-M52-1 | Medium | マージの前に共通の完了条件を通すとしたが、`--due M52` は作るもの 3 で閉じる OI-208 で落ちる | M52 の作るもの 3。マージの前は `--due M52` を除き、作るもの 3 を終えて OI-208 を閉じた後の先端で、`--due M52` を含む共通の完了条件と `frontend` の検査と E2E を流す |
+| Claude R1-M52-2 | Low | ガードの対照「`TenantExample.run` を呼ぶ around が 1 つ以上ある」は、自分のファイルの内側の group だけで満たせ、`packs/*/spec` の glob が壊れても通る | M52 の作るもの 4。対照を、`packs/` の下のファイルに `TenantExample.run` を呼ぶ around があることにした |
+
+違和感：
+
+- 冒頭の段落が、読み直し 1 の結果がある前提で書かれていた（Claude）：読み直し 1 の結果を受けて、冒頭と判定の表を 2 回分の記録にそろえた
+- 巻き戻す条件は rspec-core の `Example#display_exception` と同じ値である（Claude）：補助のコメントにそのことを書くと、作るもの 4 に足した
 - Codex の違和感は「なし」だった。改善の候補に移したものは無い
