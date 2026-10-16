@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PurchaseOrderStatus, SalesOrderStatus } from "@/lib/graphql/generated";
-import { pendingLineText, totalAmountText } from "./format";
+import type { PurchaseOrderStatus, PurchaseOrderTimelineKind, SalesOrderStatus } from "@/lib/graphql/generated";
+import { isCancellationEvent, pendingLineText, PURCHASE_ORDER_TIMELINE_LABEL, totalAmountText } from "./format";
 import { PURCHASE_ORDER_STATUS, SALES_ORDER_STATUS } from "./statuses";
 
 // codegen の型は値の一覧を持たないので、型がすべての値を鍵に求める状況の一覧から集める
@@ -61,5 +61,18 @@ describe("pendingLineText", () => {
         CANCELLED_PURCHASE_ORDER.includes(status) ? "未確定（取消）" : "受注側の確定待ち",
       );
     }
+  });
+});
+
+describe("isCancellationEvent", () => {
+  // 取消の回答と受注側の取消は、取り消した伝票の明細の文言と同じ控えめの色で出す。取消依頼はまだ取り消していないので含めない
+  const CANCELLATION: readonly PurchaseOrderTimelineKind[] = ["CANCELLATION_APPROVED", "CANCELLATION_REJECTED", "SUPPLIER_CANCELLED"];
+
+  it("取消の承認・却下と受注側の取消だけを取消の出来事にする", () => {
+    for (const kind of Object.keys(PURCHASE_ORDER_TIMELINE_LABEL) as PurchaseOrderTimelineKind[]) {
+      expect(isCancellationEvent(kind), kind).toBe(CANCELLATION.includes(kind));
+    }
+    // 対照：取消の出来事の一覧の値は、すべて出来事の種類にある
+    expect(CANCELLATION.every((kind) => kind in PURCHASE_ORDER_TIMELINE_LABEL)).toBe(true);
   });
 });

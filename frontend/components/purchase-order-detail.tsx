@@ -5,6 +5,7 @@ import { DateText, DueDate } from "@/components/date-text";
 import { ErrorNotice } from "@/components/error-notice";
 import { FieldError } from "@/components/form-errors";
 import { PageHeader } from "@/components/page-header";
+import { PurchaseOrderTimeline } from "@/components/purchase-order-timeline";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,7 @@ type PurchaseOrder = NonNullable<BuyerPurchaseOrderQuery["buyer"]["purchaseOrder
 const OUTCOME_LABEL = { APPROVED: "承認", REJECTED: "却下" } as const;
 
 /**
- * 発注詳細。明細・入荷と検収・受注側の出荷 (経路 3)・取消依頼を 1 画面に置く。検収と取消依頼は admin だけに出す。
+ * 発注詳細。進み・明細・入荷と検収・受注側の出荷 (経路 3)・取消依頼を 1 画面に置く。検収と取消依頼は admin だけに出す。
  * 失敗の文言は最後の操作の結果だけを出す。操作ごとに持つと、後の操作が成功しても前の失敗が残る。入力の誤りは、
  * 最後に送ったフォーム (入荷ごとの検収か、取消依頼) の、path の指す入力欄の下に出す。
  */
@@ -89,6 +90,8 @@ export function PurchaseOrderDetail({
       {last.state.status === "error" && last.state.message && (
         <ErrorNotice data-testid="detail-error">{last.state.message}</ErrorNotice>
       )}
+
+      <PurchaseOrderTimeline entries={order.timeline} businessDate={businessDate} />
 
       <div className="space-y-3">
         <h2 className="text-base font-semibold">明細</h2>
