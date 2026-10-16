@@ -310,11 +310,11 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 | イベント | 発行元 → 受け手 | 運ぶ値 | 受け手が書く表 | 冪等キー |
 |---|---|---|---|---|
 | 発注登録 | 購買 → 受注 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・自社品番・数量）、希望納期 | `sales_orders`・`sales_order_lines` | `source_purchase_order_id` 一意 |
-| 品番照合待ち | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.awaiting_match_at` | 空のときだけ書く |
-| 受注確定 | 受注 → 購買 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・品目名・単価） | `purchase_orders.accepted_at`・明細の写し | 空のときだけ書く |
+| 品番照合待ち | 受注 → 購買 | 発注 ID、発注側・受注側テナント、発生の時刻 | `purchase_orders.awaiting_match_at` | 空のときだけ書く |
+| 受注確定 | 受注 → 購買 | 発注 ID、発注側・受注側テナント、明細（発注明細 ID・品目名・単価）、発生の時刻 | `purchase_orders.accepted_at`・明細の写し | 空のときだけ書く |
 | 取消依頼 | 購買 → 受注 | 取消依頼 ID、発注 ID、発注側・受注側テナント、依頼の登録時刻 | `cancellation_reviews` | `source_cancellation_request_id` 一意 |
-| 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID、発注 ID、発注側・受注側テナント | `cancellation_requests.outcome`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
-| 受注取消 | 受注 → 購買 | 発注 ID、発注側・受注側テナント | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
+| 取消承認・取消却下 | 受注 → 購買 | 取消依頼 ID、発注 ID、発注側・受注側テナント、発生の時刻 | `cancellation_requests.outcome`・`decided_at`・`purchase_orders.cancelled_at` | 回答が空のときだけ書く |
+| 受注取消 | 受注 → 購買 | 発注 ID、発注側・受注側テナント、発生の時刻 | `purchase_orders.supplier_cancelled_at` | 空のときだけ書く |
 | 出荷取消 | 受注 → 出荷 | 受注 ID、受注側テナント、取消を承認した審査 ID（審査を経ない取消では空）、出荷可能を出したか | `shipment_requests.cancelled_at`・有効な出荷指示の取消・出荷停止の解除 | 空のときだけ書く |
 | 出荷可能 | 受注 → 出荷 | 受注 ID、受注番号、受注側・発注側テナント、発注 ID、納期、明細（受注明細 ID・発注明細 ID・品目 ID・数量） | `shipment_requests`・`shipment_request_lines` | `sales_order_id` 一意 |
 | 出荷停止 | 受注 → 出荷 | 審査 ID、受注 ID、受注側テナント | `shipping_holds` | `source_cancellation_review_id` 一意 |
@@ -325,6 +325,8 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 | 請求書発行 | 請求 → 購買 | 請求書 ID、受注側・発注側テナント、請求番号、締め期間、発行日、金額、明細（発注明細 ID・品目名・単価・数量・税率・金額） | `received_invoices`・明細 | `invoice_id` 一意 |
 
 「出荷計上」は受注と購買の両方へ同じ値を運ぶ。購買は、受注 ID と受注明細 ID を保存しない。
+
+発注の時刻列（`awaiting_match_at`・`accepted_at`・`cancelled_at`・`supplier_cancelled_at`）と取消依頼の `decided_at` には、受け取った時刻ではなく、受注側で起きた時刻を書く。受け取った時刻を書くと、配送が遅れたときに、その後に発注側で起きた出来事（取消依頼など）が受注確定より前に並び、発注の進み（`graphql-schema.md`「発注側の視点」）の順が崩れる。受注側から購買へ返す 5 つのイベント（品番照合待ち・受注確定・取消承認・取消却下・受注取消）は、そのために発生の時刻（`occurred_at`、ISO 8601 の時刻の文字列）を運ぶ。発行元は、同じ出来事を受注側の列に書いたならその値（受注確定は受注の `confirmed_at`、審査の決着は審査の `decided_at`、受注取消は受注の `cancelled_at`）を、列が無ければ発行するときの時刻（品番照合待ちと、出荷済か取消済の受注への取消依頼の自動の却下）を渡す。発生の時刻を足す前に登録したジョブのペイロードは `occurred_at` を持たないので、各イベントの型の `from_payload` が空を補い、受け手は空のときだけ受け取った時刻を書く。
 
 イベントに項目を足す人は、足す前に登録したジョブのペイロードがその項目を持たないことに備え、そのイベントの型の `from_payload` で既定の値を補う。`new` は全項目を求めたままにし、発行元が項目を渡し忘れたら例外にする。補った既定の値（「出荷可能」の受注番号の空）を写した行は、作り直しのタスク（`bin/rails read_models:rebuild`）が埋める。作り直しの後に足す前のジョブが届くと、空の写しが次の作り直しまで残るので、既存の DB では、足す前のジョブを配り終えてから作り直しを流す（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）。
 
