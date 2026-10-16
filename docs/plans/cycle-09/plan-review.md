@@ -271,7 +271,7 @@ High は 3 件だった（Claude M53-1 と Codex M53-2 は同じ）。どれも�
 計画レビューの担当が、`a576e3b` を 2 つのサブエージェントで読み、主な主張を手元で確かめた（`access.rb`・`shipment_request_policy.rb`・`adjustment.rb`・`item_labels.rb`・`stocks.rb`・`supplier_dashboard_type.rb`・`viewer_type.rb`・`setup.rb`・`operations.rb`・`authorization_declarations.rb`）。
 
 - 公開 API の戻り値：`packs/*/app/public` の公開の特異メソッドは 47 ファイルの 138 個で、relation かモデルをそのまま返すのは `permitting_suppliers` の 1 つだけだった。ほかは `Data` の値・`Page`・`OperationResult`・ID・件数・真偽値を返す。灰色のものは、`SqlSubquery` を返す 3 つ（ADR 010 の形）、scope を掛けた relation の Arel のノードを返す `Sales::ItemPrices.today_price`、公開のまま在庫のモデルを引数に取る `Inventory::Stocks.to_value` で、どれも呼ぶのは同じパッケージの中か ADR が認めた形なので、M55 の範囲外にした
-- ガードの形：実行時に包む形（前例：`spec/contracts/receivers_spec.rb`）と、Prism で静的に読む形（前例：`spec/db/lock_sites_spec.rb`）を比べた。戻り値が relation かは構文からは決まらず、ローカル変数を経由した返し方と Hash に入れた relation を静的な形は見逃すので、実行時に包む形を採った。静的に読む形は、包んだ集合の数え合わせ（ガードの spec の (i)）にだけ使う
+- ガードの形：実行時に包む形（前例：`spec/contracts/receivers_spec.rb`）と、Prism で静的に読む形（前例：`spec/db/lock_sites_spec.rb`）を比べた。戻り値が relation かは構文からは決まらず、ローカル変数を経由した返し方と Hash に入れた relation を静的な形は見逃すので、実行時に確かめる形を採った。静的に読む形は、確かめる集合の数え合わせ（ガードの spec の (i)）にだけ使う。実行時に確かめる手段は、初回のレビューの指摘（Claude M55-5）で、`prepend` で包む形から、メソッドごとの `TracePoint` に替えた
 - 在庫の行を作る入口：`adjustStock`・在庫の CSV の取り込み・`DemoWorld`（シード）・引当の 4 つ。前の 3 つは調整か在庫数の設定を通り、引当は照合済みの受注明細の品目 ID を受注が渡す。在庫と受注の品目の factory は写しを作らないので、写しの無い品目で調整する spec が 20 ほど当たる（M55 の作るもの 2 の一覧）
 - 受け手を `EventJob` の外から呼ぶ箇所は、本体のコードには無く、spec の競合テストだけにある。操作者のいない公開 API は 13 個で、正本の `graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」は散文で並べている
 
@@ -292,3 +292,39 @@ M55 は M54 の後に置き、実装の順を M53 → M54 → M55 にした（OI
 `Fulfillment::ShipmentRequestPolicy`（OI-215 の直し）は、M54 の計画が名指ししない。M54 は出荷指示の作成と計上の認可（`instruct?`・`ship?`）を変えず、状況の式に操作者を渡すのは `ShipmentRequests` の側なので、同じファイルは書かない。M55 が M54 に依存するのは上の表だけで、M54 が M55 に依存するものは無い。M54 の計画は `Sales::OrderShipping.status_sql` を `SqlSubquery` で返すので、M55 のガードの前に作っても違反にならない。
 
 調べの中で、M54 の「実装する文書の節」に、M54 の後に古くなる `graphql-schema.md` の 3 か所（「mutation の一覧」のイベントの列と受け手が出すイベントの段落、「受注側の視点」の「コンテキスト同士は依存しない」、「ページングと N+1」の「出荷が受注に依存しないので」）と `lib/tasks/read_models.rake` の冒頭のコメントが無いことが分かった。M54 の節に足した。M55 の D は、M54 が書き換えた後の受け手の段落の呼び名を直す。
+
+### M55 の判定
+
+M55 の初回は `36c89ad` を読んだ。M52〜M54 と同じく、読む版を展開したディレクトリだけを読ませ、Codex は `--skip-git-repo-check` を付けて流した。Claude のサブエージェントは最終報告を返さずに終わり、結果のファイルから読んだ。
+
+| マイルストーン | 初回 Claude | 初回 Codex |
+|---|---|---|
+| M55 | Go | Conditional Go |
+
+High は Codex の 1 件で、Claude も同じことを Medium（Claude M55-7）で挙げた。spec の集め方（計画の形）を変える直しなので、読み直しに出した。直した版は `d636399` である。
+
+2 系統が同じことを挙げた指摘は次の 2 つである。
+
+- E の spec の (iii) が、非公開の補助を通して `Tenancy.require_tenant!` を呼ぶ公開 API（`Partnerships::Authentication` の 3 つと `Partnerships::Recipients` の 2 つ）を数えるかを決めていない（Codex M55-1 は High、Claude M55-7 は Medium）
+- 壊して落ちる記録の表が、ガードがたどる入れ物を 1 つずつ外す行を持たない（Codex M55-2・Claude M55-4。どちらも Medium 以下）
+
+### M55 の指摘と対応
+
+| 出典 | 重大度 | 指摘 | 直した節と内容 |
+|---|---|---|---|
+| Codex M55-1・Claude M55-7 | High | E の spec の (iii) が、非公開の `own_users` を通して `require_tenant!` を呼ぶ 5 つの公開 API を集め損ね、表と一致しないか、呼ぶ側を限れない | M55 の作るもの 3 の E。同じ定数の非公開の特異メソッドを通す呼び出しもたどって数えると書き、直に呼ぶ形と補助を通す形の両方の負例と、本体のコードで 5 つが集まる example を足した |
+| Claude M55-5 | Medium | `prepend` で包むと、rspec-mocks の部分の二重の引数の検証が、包んだ公開 API で黙って効かなくなる（`verify_partial_doubles`） | M55 の作るもの 1 のガード。メソッドごとの `TracePoint`（`enable(target:)`）で戻り値を読む形に替え、スタブの引数の誤りが例外になる example (iv) と、`prepend` に戻す壊し方を足した |
+| Codex M55-2・Claude M55-4 | Medium | ガードがたどる入れ物（Hash のキー・`Set`）の負例が無く、1 つずつ外す壊し方が表に無い。`ItemLabels.find` の `Scope`、写しの無い在庫の並びの壊し方も無い | M55 の作るもの 1 の (ii) と壊して落ちる記録の表。入れ物ごとの負例と、入れ物を 1 つずつたどらない壊し方、`ItemLabels.find` と写しの無い在庫の行を足した |
+| Claude M55-3 | Medium | `permitting_suppliers_sql` の `Scope` と `SqlSubquery#contains` を壊す行が無く、`cross_read!` の example がどちらのメソッドに当たるかが決まっていない | M55 の作るもの 1 の単体と壊して落ちる記録の表。`cross_read!` の example を 2 つのメソッドの両方に当て、2 つの壊し方を足した |
+| Codex M55-3 | Low | 一覧の表の「在庫は自社の品目の写しがある品目にだけでき」が、引当を範囲外にした詳細より強い | マイルストーンの一覧の M55 の行を、調整と在庫数の設定が拒む形に限った |
+| Claude M55-1 | Low | packwerk の依存への影響を書いていない | M55 の作るもの 1 のテナントの境界の項に、コンテキストの境界の 1 文を足した |
+| Claude M55-2 | Low | ADR 011 の案 B の不採用の理由（spec の費用）が古くなる | M55 の実装する文書の節と文書に残すこと。調整の spec に写しを置き、引当の spec だけが写しの無い在庫を作る形に書き直し、決定は変えない |
+| Claude M55-6 | Low | 「テストの環境は起動の時に読み込まない」は CI で成り立たない | M55 の作るもの 1 のガード。手元と CI の両方で動く理由に直した |
+| Claude M55-8 | Low | 0 件の確かめの語「在庫は受注に依存しないので」が `data-model.md` の正しい文に当たる | M55 の文書に残すこと。mutation のコメントだけに当たる語に絞った |
+| Claude M55-9 | Low | `limit:` を必須にするかと既存の呼び出しの直し方、取引関係の列の名前の書き方、どの spec も呼ばない公開 API の扱いが決まっていない | M55 の作るもの 1・3。`limit:` は既定値の無いキーワードにして 3 か所の呼び出しを直す、取引関係の列は役割の名前でだけ参照する、呼ばれなかった公開 API は `after(:suite)` で一覧を出すだけで落とさず、補助のコメントに確かめの外と書く、とした |
+
+違和感：
+
+- 完了条件の rspec に購買・請求・contracts の spec が無い（Claude）：ガードは全パッケージの公開 API に効くので、完了条件を `packs/*/spec` にした
+- H の新しい期待は、`verify!` が作り直しをやめても通る（Claude）：同じ example で、`verify!` の前に送信先を別の値にし、後に設定どおりへ戻ることを確かめると足した
+- Codex の違和感は「なし」だった。改善の候補に移したものは無い
