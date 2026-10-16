@@ -15,6 +15,9 @@ RSpec.describe Fulfillment::ShipmentRequests do
 
   def due_within = Tenancy.with_tenant(supplier.id) { described_class.due_within(actor, today:, days: 7) }
 
+  # 出荷依頼の取消済は、受注の取消から導出する
+  def cancel_order(request) = expect(Sales::OrderCancellation.cancel(actor.with(role: "admin"), sales_order_id: request.sales_order_id)).to be_success
+
   describe ".due_within" do
     it "期限が今日から 7 日後の出荷依頼と、期限を過ぎた出荷依頼を、期限の昇順で返す。8 日後と期限の無いものは返さない" do
       seventh, overdue, today_due = request(7), request(-3), request(0)
@@ -28,9 +31,9 @@ RSpec.describe Fulfillment::ShipmentRequests do
       ready, instructed, held, shipped, cancelled = Array.new(5) { request(1) }
       Tenancy.with_tenant(supplier.id) do
         FactoryBot.create(:shipping_instruction, shipment_request: instructed)
-        FactoryBot.create(:shipping_hold, sales_order_id: held.sales_order_id)
+        FactoryBot.create(:cancellation_review, sales_order_id: held.sales_order_id)
         FactoryBot.create(:shipment, shipping_instruction: FactoryBot.create(:shipping_instruction, shipment_request: shipped))
-        cancelled.update!(cancelled_at: Time.current)
+        cancel_order(cancelled)
       end
 
       expect(due_within.to_h { [ _1.id, _1.status ] }).to eq(ready.id => :ready, instructed.id => :instructed, held.id => :on_hold)
@@ -83,7 +86,7 @@ RSpec.describe Fulfillment::ShipmentRequests do
       beta, alpha = %w[beta alpha].map { FactoryBot.create(:tenant, name: _1) }
       a, b, c = Tenancy.with_tenant(supplier.id) do
         [ beta, alpha, beta ].map { FactoryBot.create(:shipment_request, buyer_tenant_id: _1.id) }.tap do |(cancelled, instructed, _ready)|
-          cancelled.update!(cancelled_at: Time.current)
+          cancel_order(cancelled)
           FactoryBot.create(:shipping_instruction, shipment_request: instructed)
         end
       end
@@ -114,6 +117,23 @@ RSpec.describe Fulfillment::ShipmentRequests do
 
       expect(list_ids(order_by: [ { field: :planned_date, direction: :asc } ])).to eq([ [ a, b, c ].map(&:id), 3 ])
       expect(list_ids(order_by: [ { field: :planned_date, direction: :desc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
+    end
+
+    # 受注を取り消しても、出荷は受注を書き換えないので、出荷指示の行は active のまま残る。読む側が取消済の受注の分を除く
+    it "取消済の受注の出荷依頼に残った出荷指示を、出荷指示の読み込みは返さず、出荷予定日で並べると予定日の無い出荷依頼と同じ位置に並べる" do
+      cancelled, instructed, bare = Tenancy.with_tenant(supplier.id) do
+        Array.new(3) { FactoryBot.create(:shipment_request) }.tap do |(cancelled, instructed, _bare)|
+          FactoryBot.create(:shipping_instruction, shipment_request: cancelled, planned_date: today + 1)
+          FactoryBot.create(:shipping_instruction, shipment_request: instructed, planned_date: today + 5)
+          cancel_order(cancelled)
+        end
+      end
+
+      instructions = Tenancy.with_tenant(supplier.id) { described_class.instructions_for(actor, [ cancelled.id, instructed.id, bare.id ]) }
+      # 対照：取り消していない受注の出荷依頼の指示は返り、予定日の位置に並ぶ
+      expect(instructions.transform_values(&:planned_date)).to eq(instructed.id => today + 5)
+      expect(list_ids(order_by: [ { field: :planned_date, direction: :asc } ])).to eq([ [ instructed, cancelled, bare ].map(&:id), 3 ])
+      expect(list_ids(order_by: [ { field: :planned_date, direction: :desc } ])).to eq([ [ instructed, bare, cancelled ].map(&:id), 3 ])
     end
   end
 

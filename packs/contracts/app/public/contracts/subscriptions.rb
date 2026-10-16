@@ -14,16 +14,9 @@ module Contracts
       "Contracts::CancellationApproved" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
       "Contracts::CancellationRejected" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
       "Contracts::SalesOrderCancelled" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ],
-      "Contracts::ShippingHeld" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
-      "Contracts::ShippingHoldReleased" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
-      "Contracts::ShipmentCancelled" => [ Route.new(receiver: "Fulfillment::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
       "Contracts::ReceiptInspected" => [ Route.new(receiver: "Sales::PurchasingEventReceiver", tenant_key: "supplier_tenant_id") ],
-      "Contracts::BillableItemConfirmed" => [ Route.new(receiver: "Billing::SalesEventReceiver", tenant_key: "supplier_tenant_id") ],
       "Contracts::InvoiceIssued" => [ Route.new(receiver: "Purchasing::BillingEventReceiver", tenant_key: "buyer_tenant_id") ],
-      "Contracts::ShipmentPosted" => [
-        Route.new(receiver: "Sales::FulfillmentEventReceiver", tenant_key: "supplier_tenant_id"),
-        Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id")
-      ]
+      "Contracts::ShipmentPosted" => [ Route.new(receiver: "Purchasing::SupplierEventReceiver", tenant_key: "buyer_tenant_id") ]
     }.freeze
 
     def self.routes(event_name)

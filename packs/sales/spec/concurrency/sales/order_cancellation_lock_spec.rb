@@ -47,7 +47,7 @@ RSpec.describe Sales::OrderCancellation do
     commit(release, receiver)
     expect(finish(canceller).failures.map(&:code)).to eq([ :conflict ])
     expect(reviews_and_cancelled_at).to eq([ [ nil ], false ])
-    expect(events(/SalesOrderCancelled|ShipmentCancelled/)).to be_empty
+    expect(events(/SalesOrderCancelled/)).to be_empty
   end
 
   # 受け手が受注のロックを取らないと、取消のコミット前の受注（取消前）を読み、取り消した受注に審査中の審査を作る
@@ -61,6 +61,6 @@ RSpec.describe Sales::OrderCancellation do
     commit(release, canceller)
     finish(receiver)
     expect(reviews_and_cancelled_at).to eq([ [], true ])
-    expect(events(/CancellationRejected|ShippingHeld/)).to eq([ "Contracts::CancellationRejected" ])
+    expect(events(/CancellationRejected/)).to eq([ "Contracts::CancellationRejected" ])
   end
 end

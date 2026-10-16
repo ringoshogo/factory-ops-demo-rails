@@ -40,7 +40,7 @@ RSpec.describe Sales::CancellationReviews do
   def failure_codes(result) = result.failures.map(&:code)
 
   describe ".approve" do
-    it "引当を解除して受注を取消済にし、審査を承認で決着させ、「取消承認」と「出荷取消」を出す" do
+    it "引当を解除して受注を取消済にし、審査を承認で決着させ、「取消承認」だけを出す" do
       allocate(5)
 
       result = approve
@@ -49,20 +49,16 @@ RSpec.describe Sales::CancellationReviews do
       expect(allocated_quantities).to eq([ 0, 0 ])
       expect(stock).to have_attributes(on_hand: 5, allocated: 0)
       expect(review.reload).to have_attributes(decision: "approved", decided_at: be_present, decided_by_user_id: user.id)
-      expect(published.map(&:class)).to contain_exactly(Contracts::CancellationApproved, Contracts::ShipmentCancelled)
-      expect(published.find { _1.is_a?(Contracts::CancellationApproved) }).to have_attributes(
+      # 出荷依頼の取消済は、出荷が受注の取消から導出するので、出荷へは何も出さない
+      expect(published.sole).to have_attributes(class: Contracts::CancellationApproved,
         cancellation_request_id: review.source_cancellation_request_id, purchase_order_id: order.source_purchase_order_id,
         buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id, occurred_at: review.decided_at.iso8601(6))
-      expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) }).to have_attributes(sales_order_id: order.id,
-        supplier_tenant_id: supplier.id, cancellation_review_id: review.id, ready_for_shipment: true)
     end
 
-    it "全量を引き当てていない受注の「出荷取消」は、出荷可能を出していないことを運ぶ" do
+    it "全量を引き当てていない受注も、引当を解除して取り消す" do
       allocate(4)
 
-      approve
-
-      expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) }.ready_for_shipment).to be(false)
+      expect(approve.value.status).to eq(:cancelled)
       expect(stock).to have_attributes(on_hand: 4, allocated: 0)
     end
 
@@ -87,7 +83,7 @@ RSpec.describe Sales::CancellationReviews do
   end
 
   describe ".reject" do
-    it "審査を却下で決着させ、「取消却下」と「出荷停止解除」を出す。引当と受注の状況は変えない" do
+    it "審査を却下で決着させ、「取消却下」だけを出す。引当と受注の状況は変えない" do
       allocate(5)
 
       result = reject
@@ -95,12 +91,10 @@ RSpec.describe Sales::CancellationReviews do
       expect(result.value).to have_attributes(id: order.id, status: :allocated, cancellation_review_pending: false)
       expect(allocated_quantities).to eq([ 3, 2 ])
       expect(review.reload).to have_attributes(decision: "rejected", decided_at: be_present, decided_by_user_id: user.id)
-      expect(published.map(&:class)).to contain_exactly(Contracts::CancellationRejected, Contracts::ShippingHoldReleased)
-      expect(published.find { _1.is_a?(Contracts::CancellationRejected) }).to have_attributes(
+      # 出荷依頼の出荷停止中は、出荷が未決の審査から導出するので、出荷へは何も出さない
+      expect(published.sole).to have_attributes(class: Contracts::CancellationRejected,
         cancellation_request_id: review.source_cancellation_request_id, purchase_order_id: order.source_purchase_order_id,
         buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id, occurred_at: review.decided_at.iso8601(6))
-      expect(published.find { _1.is_a?(Contracts::ShippingHoldReleased) }).to have_attributes(
-        cancellation_review_id: review.id, sales_order_id: order.id, supplier_tenant_id: supplier.id)
     end
   end
 

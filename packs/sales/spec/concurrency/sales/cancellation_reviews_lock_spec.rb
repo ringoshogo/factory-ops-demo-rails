@@ -25,7 +25,7 @@ RSpec.describe Sales::CancellationReviews do
   def decision_events
     SolidQueue::Job.where(class_name: "Contracts::EventJob").map { _1.arguments.fetch("arguments") }
       .select { _2.fetch("supplier_tenant_id") == supplier.id }.map(&:first)
-      .grep(/Cancellation(Approved|Rejected)|ShippingHoldReleased|ShipmentCancelled/)
+      .grep(/Cancellation(Approved|Rejected)/)
   end
 
   it "同じ審査の決着が同時に来ると、後の決着は先の決着のコミットを待ち、CONFLICT になる。決着のイベントは 1 回分だけ出る" do
@@ -38,7 +38,7 @@ RSpec.describe Sales::CancellationReviews do
     commit(release, rejecter)
     expect(finish(approver).failures.map(&:code)).to eq([ :conflict ])
     expect(Tenancy.with_tenant(supplier.id) { [ review.reload.decision, order.reload.cancelled_at ] }).to eq([ "rejected", nil ])
-    expect(decision_events).to contain_exactly("Contracts::CancellationRejected", "Contracts::ShippingHoldReleased")
+    expect(decision_events).to eq([ "Contracts::CancellationRejected" ])
   end
 
   # 受け手が受注のロックを取らないと、承認のコミット前の受注（取消前）を読み、取り消した受注に審査中の審査を作る

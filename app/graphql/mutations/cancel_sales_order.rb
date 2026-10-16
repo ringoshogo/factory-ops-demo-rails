@@ -1,5 +1,5 @@
 module Mutations
-  # 自社の受注を、審査を経ずに取り消す。引当を解除し、「受注取消」と「出荷取消」を出す。
+  # 自社の受注を、審査を経ずに取り消す。引当を解除し、「受注取消」を出す。出荷は受注の取消を読んで出荷依頼を取消済にする。
   # 出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は CONFLICT
   class CancelSalesOrder < BaseMutation
     perspective :supplier

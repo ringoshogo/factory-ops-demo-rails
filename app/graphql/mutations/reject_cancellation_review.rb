@@ -1,5 +1,5 @@
 module Mutations
-  # 取消の審査を却下し、「取消却下」と「出荷停止解除」を出す。決着済みの審査は CONFLICT
+  # 取消の審査を却下し、「取消却下」を出す。出荷は決着した審査を出荷停止と読まなくなる。決着済みの審査は CONFLICT
   class RejectCancellationReview < BaseMutation
     perspective :supplier
     authorize_with Sales::SalesOrderPolicy, :review?

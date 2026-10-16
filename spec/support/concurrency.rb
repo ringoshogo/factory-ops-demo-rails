@@ -98,6 +98,21 @@ module ConcurrencyHelpers
     raise "スレッドが #{WAIT_SECONDS} 秒のあいだ、ロックを待たずに止まっている"
   end
 
+  # thread の接続が行ロックを待っている表の名前の一覧。行ロックを待つ接続は、待つ行のタプルのロック（locktype = 'tuple'）を取ってから、
+  # 持ち主のトランザクション ID のロックを待つ。待っているほうの行（granted = false）は transactionid で relation を持たないので、
+  # どの表の行を待つかはタプルのロックの表で読む。行ロックでないロック（アドバイザリロックなど）を待つ接続は空になる。
+  # blocked_on_lock? で待っていることを確かめてから呼ぶ
+  def waiting_row_tables(thread)
+    pid = thread[:backend_pid]
+    raise "スレッドの接続の pid が分からない" if pid.nil?
+
+    ApplicationRecord.with_connection do |connection|
+      connection.select_values(<<~SQL)
+        SELECT relation::regclass::text FROM pg_locks WHERE locktype = 'tuple' AND pid = #{Integer(pid)} ORDER BY 1
+      SQL
+    end
+  end
+
   # 途中で止めたスレッドを進めるための Queue。example の後で、finish_concurrent_threads が必ず値を積む
   def release_queue = Queue.new.tap { concurrency_releases << _1 }
 

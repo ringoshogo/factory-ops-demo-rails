@@ -10,12 +10,13 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
 
   around { |example| TenantExample.run(example, tenant.id) }
 
-  # instructed は有効な出荷指示を、shipped は出荷指示と出荷実績を、held は同じ受注への解除前の出荷停止を作る
-  def request(instructed: false, shipped: false, held: false, **attributes)
-    FactoryBot.create(:shipment_request, **attributes).tap do |request|
+  # instructed は有効な出荷指示を、shipped は出荷指示と出荷実績を、held は同じ受注への未決の取消の審査を作り、cancelled は受注を取消済にする
+  def request(instructed: false, shipped: false, held: false, cancelled: false)
+    order = FactoryBot.create(:sales_order, cancelled_at: (Time.current if cancelled))
+    FactoryBot.create(:cancellation_review, sales_order: order) if held
+    FactoryBot.create(:shipment_request, sales_order_id: order.id).tap do |request|
       instruction = FactoryBot.create(:shipping_instruction, shipment_request: request) if instructed || shipped
       FactoryBot.create(:shipment, shipping_instruction: instruction) if shipped
-      FactoryBot.create(:shipping_hold, sales_order_id: request.sales_order_id) if held
     end
   end
 
@@ -26,7 +27,7 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
 
   it "導出表の行ごとに、その行の状況で絞った一覧にその出荷依頼だけが返る" do
     requests = {
-      cancelled: request(cancelled_at: Time.current, shipped: true, held: true),
+      cancelled: request(cancelled: true, shipped: true, held: true),
       shipped: request(shipped: true, held: true),
       on_hold: request(instructed: true, held: true),
       instructed: request(instructed: true),
@@ -39,18 +40,18 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
     end
   end
 
-  it "取り消した出荷指示と、解除した出荷停止は数えない" do
+  it "取り消した出荷指示と、決着した取消の審査は数えない" do
     ready = request
     FactoryBot.create(:shipping_instruction, shipment_request: ready, status: "cancelled")
-    FactoryBot.create(:shipping_hold, sales_order_id: ready.sales_order_id, released_at: Time.current)
-    # 対照：有効な出荷指示と、解除前の出荷停止は数える
+    FactoryBot.create(:cancellation_review, sales_order_id: ready.sales_order_id, decision: "rejected", decided_at: Time.current)
+    # 対照：有効な出荷指示と、未決の審査は数える
     instructed, held = request(instructed: true), request(held: true)
 
     expect(list(%i[ready instructed on_hold]))
       .to eq([ [ [ held.id, :on_hold ], [ instructed.id, :instructed ], [ ready.id, :ready ] ], 3 ])
   end
 
-  it "出荷停止は、同じ受注の出荷依頼にだけ効く" do
+  it "取消の審査は、同じ受注の出荷依頼にだけ効く" do
     held = request(held: true)
     other = request
 
@@ -59,7 +60,7 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
   end
 
   it "複数の状況はどれかに当たる出荷依頼に絞り、空の配列は 0 件、nil は絞らない" do
-    cancelled, ready, instructed = request(cancelled_at: Time.current), request, request(instructed: true)
+    cancelled, ready, instructed = request(cancelled: true), request, request(instructed: true)
 
     expect(list(%i[cancelled instructed])).to eq([ [ [ instructed.id, :instructed ], [ cancelled.id, :cancelled ] ], 2 ])
     expect(list([])).to eq([ [], 0 ])
@@ -69,7 +70,7 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
   # 期待する順は docs/architecture/graphql-schema.md「状況の enum」の「状況で並べる順」の表から書き写す
   it "状況で並べると、業務の進み順に並び、DESC はその逆になる" do
     requests = {
-      cancelled: request(cancelled_at: Time.current), shipped: request(shipped: true), on_hold: request(held: true),
+      cancelled: request(cancelled: true), shipped: request(shipped: true), on_hold: request(held: true),
       instructed: request(instructed: true), ready: request
     }
     sorted = lambda do |direction|
@@ -82,6 +83,41 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
     expect(sorted.call(:desc)).to eq(expected.reverse)
   end
 
+  # 取消済と出荷停止中は、受注の公開 API の副問い合わせから、イベントを流さずに導出する
+  describe "受注の取消と審査" do
+    let(:admin) { actor.with(role: "admin") }
+
+    def status(request) = Fulfillment::ShipmentRequests.find(actor, request.id).status
+
+    it "受注を取り消した直後に、その受注の出荷依頼は取消済になる" do
+      cancelled, other = request(instructed: true), request(instructed: true)
+
+      expect(Sales::OrderCancellation.cancel(admin, sales_order_id: cancelled.sales_order_id)).to be_success
+      expect(status(cancelled)).to eq(:cancelled)
+      # 対照：取り消していない受注の出荷依頼は、出荷指示済のまま
+      expect(status(other)).to eq(:instructed)
+    end
+
+    it "未決の審査がある受注の出荷依頼は出荷停止中になり、審査を却下すると元の状況に戻る" do
+      held, other = request(instructed: true), request(instructed: true)
+      review = FactoryBot.create(:cancellation_review, sales_order_id: held.sales_order_id)
+
+      expect(status(held)).to eq(:on_hold)
+      expect(status(other)).to eq(:instructed)
+
+      expect(Sales::CancellationReviews.reject(admin, cancellation_review_id: review.id)).to be_success
+      expect(status(held)).to eq(:instructed)
+    end
+
+    it "審査を承認すると取消済になる" do
+      held = request
+      review = FactoryBot.create(:cancellation_review, sales_order_id: held.sales_order_id)
+
+      expect(Sales::CancellationReviews.approve(admin, cancellation_review_id: review.id)).to be_success
+      expect(status(held)).to eq(:cancelled)
+    end
+  end
+
   # 片方にだけ状況を足すと、足した状況の順位が空になり、状況で並べたときに黙って最後に並ぶ
   it "状況で並べる順（SORT_ORDER）は、導出の優先順（ALL）と同じ状況の集まりを持つ" do
     expect(described_class::SORT_ORDER).to match_array(described_class::ALL)
@@ -89,25 +125,34 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
   end
 end
 
-# 出荷停止は受注の ID を参照するだけで外部キーが無く、他社の名義で自社の受注を指す行を DB は拒まない。
-# 式が所有テナントをそろえずに RLS に任せると、RLS を開いたときだけ他社の停止が効く
+# 出荷依頼は受注を ID で参照するだけで外部キーが無く、他社の受注を指す出荷依頼を DB は拒まない。
+# 式が受注の副問い合わせを scope で自社に限らずに RLS に任せると、RLS を開いたときだけ他社の受注の取消と審査が効く
 RSpec.describe Fulfillment::ShipmentRequestStatus, "（RLS の SELECT と UPDATE を開いたとき）" do
   include_context "RLS の SELECT と UPDATE を開く"
 
   let(:tenant) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
 
-  it "他社の出荷停止は、自社の受注を指していても効かない" do
-    ready = Tenancy.with_tenant(tenant.id) { FactoryBot.create(:shipment_request) }
-    Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:shipping_hold, sales_order_id: ready.sales_order_id) }
+  it "他社の受注の取消と審査は、出荷依頼がその受注を指していても効かず、出荷待ちになる" do
+    cancelled, reviewed = Tenancy.with_tenant(FactoryBot.create(:tenant).id) do
+      [ FactoryBot.create(:sales_order, cancelled_at: Time.current),
+        FactoryBot.create(:sales_order).tap { FactoryBot.create(:cancellation_review, sales_order: _1) } ]
+    end
+    requests = Tenancy.with_tenant(tenant.id) do
+      [ cancelled, reviewed ].map { FactoryBot.create(:shipment_request, sales_order_id: _1.id) }
+    end
 
     Tenancy.with_tenant(tenant.id) do
       cross_read!
-      # 対照：開いた後は、他社の名義で自社の受注を指す出荷停止が見える
-      expect(Fulfillment::ShippingHold.where(sales_order_id: ready.sales_order_id).count).to eq(1)
+      # 対照：開いた後は、他社の取消済の受注と未決の審査が見える
+      counts = ApplicationRecord.lease_connection.select_rows(<<~SQL, nil, [ cancelled.id, reviewed.id ]).first
+        SELECT (SELECT count(*) FROM sales_orders WHERE id = $1 AND cancelled_at IS NOT NULL),
+               (SELECT count(*) FROM cancellation_reviews WHERE sales_order_id = $2 AND decision IS NULL)
+      SQL
+      expect(counts).to eq([ 1, 1 ])
 
       page = Fulfillment::ShipmentRequests.list(actor, first: 100, after: nil, filter: { statuses: [ :ready ] })
-      expect([ page.values.map { [ _1.id, _1.status ] }, page.total_count ]).to eq([ [ [ ready.id, :ready ] ], 1 ])
+      expect([ page.values.map { [ _1.id, _1.status ] }, page.total_count ]).to eq([ requests.reverse.map { [ _1.id, :ready ] }, 2 ])
     end
   end
 end

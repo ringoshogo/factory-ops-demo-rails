@@ -24,7 +24,7 @@ RSpec.describe "出荷の計上の競合と監査ログ" do
   after do
     delete_owned_rows([ supplier.id, request.buyer_tenant_id ], %w[
       shipment_lines shipments shipping_instructions shipment_request_lines shipment_requests
-      stock_movements allocations stocks
+      stock_movements allocations stocks sales_orders
     ])
   end
 

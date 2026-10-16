@@ -8,7 +8,7 @@ RSpec.describe ConcurrencyHelpers do
   let!(:tenant) { FactoryBot.create(:tenant) }
   let(:lock_key) { SecureRandom.random_number(2**31) }
 
-  after { delete_owned_rows([ tenant.id ], []) }
+  after { delete_owned_rows([ tenant.id ], %w[sales_orders]) }
 
   def advisory_lock(key) = ApplicationRecord.lease_connection.execute("SELECT pg_advisory_xact_lock(#{key})")
 
@@ -26,6 +26,25 @@ RSpec.describe ConcurrencyHelpers do
     commit(release, holder)
     commit(other_release, other)
     finish(bystander)
+  end
+
+  # 待つ先の表を取り違えると、受注の行ロックで直列になることを確かめる競合テストが、別の表の行ロックで待っても通る
+  it "行ロックを待つ接続の待つ表の名前を返し、アドバイザリロックを待つ接続には空を返す" do
+    order = Tenancy.with_tenant(tenant.id) { FactoryBot.create(:sales_order) }
+    lock_order = -> { ApplicationRecord.lease_connection.exec_query("SELECT 1 FROM sales_orders WHERE id = $1 FOR UPDATE", "lock", [ order.id ]) }
+    _, release, holder = hold_open(tenant.id) { lock_order.call; advisory_lock(lock_key) }
+
+    row_waiter = in_thread(tenant.id) { lock_order.call }
+    advisory_waiter = in_thread(tenant.id) { advisory_lock(lock_key) }
+    expect(blocked_on_lock?(row_waiter, by: holder)).to be(true)
+    expect(blocked_on_lock?(advisory_waiter, by: holder)).to be(true)
+
+    expect(waiting_row_tables(row_waiter)).to eq([ "sales_orders" ])
+    expect(waiting_row_tables(advisory_waiter)).to eq([])
+
+    commit(release, holder)
+    finish(row_waiter)
+    finish(advisory_waiter)
   end
 
   it "同じスレッドを先行と後行に渡すと失敗する" do

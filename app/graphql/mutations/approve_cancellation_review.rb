@@ -1,5 +1,5 @@
 module Mutations
-  # 取消の審査を承認する。引当を解除して受注を取り消し、「取消承認」と「出荷取消」を出す。
+  # 取消の審査を承認する。引当を解除して受注を取り消し、「取消承認」を出す。出荷は受注の取消を読んで出荷依頼を取消済にする。
   # 決着済みの審査と、引当が消費済み（出荷の計上が先に成立した）の受注は CONFLICT
   class ApproveCancellationReview < BaseMutation
     perspective :supplier

@@ -3,8 +3,8 @@ require_relative "../../../../../spec/support/events"
 require_relative "../../../../../spec/support/shared_examples/idempotent_receiver"
 require_relative "../../../../../spec/support/cross_read"
 
-# 購買からのイベントの受注側の受け手。「取消依頼」では審査を作って出荷停止を出し、受注が出荷済みか取消済なら審査を作らずに自動で却下する。
-# 「検収完了」では検収数量を記録し、受注を検収済にする
+# 購買からのイベントの受注側の受け手。「取消依頼」では審査を作り、受注が出荷済みか取消済なら審査を作らずに自動で却下する。
+# 「検収完了」では検収数量を記録し、受注を検収済にし、請求対象明細を書く
 # （docs/architecture/context-map.md「取消の流れ」2・4、「検収と請求の流れ」2、docs/architecture/data-model.md「イベントの受け口と冪等キー」）
 RSpec.describe Sales::PurchasingEventReceiver do
   include ActiveSupport::Testing::TimeHelpers
@@ -37,14 +37,14 @@ RSpec.describe Sales::PurchasingEventReceiver do
     let(:written_rows) { -> { reviews.size } }
   end
 
-  it "受注側テナントの名義で審査中の審査を作り、受注を止める「出荷停止」を出す。受注は取消審査中になる" do
+  # 審査の行があることが、そのまま出荷の出荷停止になるので、出荷へは何も出さない
+  it "受注側テナントの名義で審査中の審査を作り、イベントは出さない。受注は取消審査中になる" do
     handle(event)
 
     review = reviews.sole
     expect(review).to have_attributes(owner_tenant_id: supplier.id, sales_order_id: order.id,
       source_cancellation_request_id: event.cancellation_request_id, requested_at:, decision: nil)
-    expect(published.sole).to have_attributes(class: Contracts::ShippingHeld, cancellation_review_id: review.id,
-      sales_order_id: order.id, supplier_tenant_id: supplier.id)
+    expect(published).to be_empty
     expect(Tenancy.with_tenant(supplier.id) { Sales::SalesOrders.find(actor, order.id) })
       .to have_attributes(status: :received, cancellation_review_pending: true)
   end
@@ -217,34 +217,51 @@ RSpec.describe Sales::PurchasingEventReceiver do
       expect(shipped_order_value.status).to eq(:inspected)
     end
 
-    it "検収数量が正の受注明細ごとに、受注明細の写しの値で「請求対象確定」を出し、再配送では出し直さない" do
+    def billable_items
+      Tenancy.with_tenant(supplier.id) do
+        Billing::BillableItems.list(actor, customer_tenant_id: nil, first: 10, after: nil).values
+          .map { _1.to_h.slice(:sales_order_line_id, :item_name, :unit_price, :tax_rate_percent, :quantity, :inspected_on) }
+      end
+    end
+
+    it "検収数量が正の受注明細ごとに、受注明細の写しの値で請求対象明細を書き、再配送では書き直さない。イベントは出さない" do
       Tenancy.with_tenant(supplier.id) { shipped_lines[1].update!(item_name: "ナット M8", unit_price: 15, tax_rate_percent: 8) }
       lines = inspected.lines.map { _1.merge("accepted_quantity" => 2) }
       handle(inspected.with(lines:))
 
-      expect(published.map(&:to_h)).to match_array(shipped_lines.map do |line|
-        { supplier_tenant_id: supplier.id, buyer_tenant_id: buyer.id, shipment_id:, sales_order_line_id: line.id,
-          purchase_order_line_id: line.source_purchase_order_line_id, item_name: line.item_name,
-          unit_price: line.unit_price.to_s, tax_rate_percent: line.tax_rate_percent, quantity: 2, inspected_on: "2026-10-21" }
+      expect(billable_items).to match_array(shipped_lines.map do |line|
+        { sales_order_line_id: line.id, item_name: line.item_name, unit_price: line.unit_price, tax_rate_percent: line.tax_rate_percent,
+          quantity: 2, inspected_on: Date.new(2026, 10, 21) }
       end)
-      expect(published.map { _1.to_h[:item_name] }).to contain_exactly("六角ボルト M8", "ナット M8")
+      expect(billable_items.map { _1[:item_name] }).to contain_exactly("六角ボルト M8", "ナット M8")
+      expect(published).to be_empty
 
       handle(inspected)
-      expect(published.size).to eq(2)
+      expect(billable_items.size).to eq(2)
     end
 
-    it "数量 0 の明細には「請求対象確定」を出さない" do
+    # 請求対象明細は、イベントを流さずに、検収の記録と同じトランザクションで書く
+    it "検収完了を受けた直後に、検収数量が正の受注明細の未請求の請求対象明細ができている" do
       handle(inspected)
 
-      expect(published.map { [ _1.class, _1.sales_order_line_id, _1.quantity ] })
-        .to eq([ [ Contracts::BillableItemConfirmed, shipped_lines[0].id, 3 ] ])
+      items = Tenancy.with_tenant(supplier.id) { Billing::BillableItems.list(actor, customer_tenant_id: nil, first: 10, after: nil).values }
+      expect(items.map { [ _1.owner_tenant_id, _1.customer_tenant_id, _1.shipment_id, _1.sales_order_line_id, _1.quantity, _1.invoice_id ] })
+        .to eq([ [ supplier.id, buyer.id, shipment_id, shipped_lines[0].id, 3, nil ] ])
     end
 
-    it "受注側が「出荷計上」をまだ受け取っていない（届く順が入れ替わった）なら、何も書かずに失敗し、再配送に任せる" do
+    it "数量 0 の明細には請求対象明細を書かない" do
+      handle(inspected)
+
+      expect(billable_items.map { [ _1[:sales_order_line_id], _1[:quantity] ] }).to eq([ [ shipped_lines[0].id, 3 ] ])
+    end
+
+    # 受注の出荷済は計上が出荷計上と同じトランザクションで書くので、出荷済でない受注に検収完了が届くことは無い
+    it "出荷済でない受注に検収完了が届けば、出荷済を求める CHECK 制約で失敗し、何も書かない" do
       Tenancy.with_tenant(supplier.id) { shipped_order.update!(shipped_at: nil) }
 
-      expect { handle(inspected) }.to raise_error(Sales::PurchasingEventReceiver::NotShippedYet)
+      expect { handle(inspected) }.to raise_error(ActiveRecord::CheckViolation, /sales_orders_inspected_after_shipped/)
       expect(records).to be_empty
+      expect(billable_items).to be_empty
       expect(Tenancy.with_tenant(supplier.id) { shipped_order.reload.inspected_at }).to be_nil
     end
 

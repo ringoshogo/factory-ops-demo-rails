@@ -294,7 +294,7 @@ ALTER TABLE ONLY public.billable_items FORCE ROW LEVEL SECURITY;
 -- Name: TABLE billable_items; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.billable_items IS '[請求] 請求対象明細。「請求対象確定」の写しで、請求書が空なら未請求';
+COMMENT ON TABLE public.billable_items IS '[請求] 請求対象明細。受注が検収で確定した明細で、請求書が空なら未請求';
 
 
 --
@@ -1163,7 +1163,6 @@ CREATE TABLE public.shipment_requests (
     buyer_tenant_id uuid NOT NULL,
     source_purchase_order_id uuid NOT NULL,
     due_date date,
-    cancelled_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     sales_order_no character varying
@@ -1203,30 +1202,6 @@ ALTER TABLE ONLY public.shipments FORCE ROW LEVEL SECURITY;
 --
 
 COMMENT ON TABLE public.shipments IS '[出荷] 出荷実績。出荷依頼を全量で計上し、発注側は自社の発注に連結した分を読む';
-
-
---
--- Name: shipping_holds; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.shipping_holds (
-    id uuid DEFAULT uuidv7() NOT NULL,
-    owner_tenant_id uuid NOT NULL,
-    sales_order_id uuid NOT NULL,
-    source_cancellation_review_id uuid NOT NULL,
-    released_at timestamp(6) without time zone,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
-);
-
-ALTER TABLE ONLY public.shipping_holds FORCE ROW LEVEL SECURITY;
-
-
---
--- Name: TABLE shipping_holds; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.shipping_holds IS '[出荷] 出荷停止。取消の審査ごとに 1 件で、解除するまで受注の出荷指示と計上を止める';
 
 
 --
@@ -2318,14 +2293,6 @@ ALTER TABLE ONLY public.shipments
 
 
 --
--- Name: shipping_holds shipping_holds_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.shipping_holds
-    ADD CONSTRAINT shipping_holds_pkey PRIMARY KEY (id);
-
-
---
 -- Name: shipping_instructions shipping_instructions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3227,27 +3194,6 @@ CREATE UNIQUE INDEX index_shipments_on_shipment_request_id ON public.shipments U
 
 
 --
--- Name: index_shipping_holds_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_shipping_holds_on_owner_tenant_id_and_id ON public.shipping_holds USING btree (owner_tenant_id, id);
-
-
---
--- Name: index_shipping_holds_on_sales_order_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_shipping_holds_on_sales_order_id ON public.shipping_holds USING btree (sales_order_id);
-
-
---
--- Name: index_shipping_holds_on_source_cancellation_review_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_shipping_holds_on_source_cancellation_review_id ON public.shipping_holds USING btree (source_cancellation_review_id);
-
-
---
 -- Name: index_shipping_instructions_on_owner_tenant_id_and_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3939,14 +3885,6 @@ ALTER TABLE ONLY public.sales_order_lines
 
 
 --
--- Name: shipping_holds fk_rails_6f14d60cf3; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.shipping_holds
-    ADD CONSTRAINT fk_rails_6f14d60cf3 FOREIGN KEY (owner_tenant_id) REFERENCES public.tenants(id);
-
-
---
 -- Name: receipt_inspection_lines fk_rails_75c613fa4a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4623,13 +4561,6 @@ CREATE POLICY owner_write ON public.shipments USING ((owner_tenant_id = public.c
 
 
 --
--- Name: shipping_holds owner_write; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY owner_write ON public.shipping_holds USING ((owner_tenant_id = public.current_tenant_id())) WITH CHECK ((owner_tenant_id = public.current_tenant_id()));
-
-
---
 -- Name: shipping_instructions owner_write; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -4802,12 +4733,6 @@ ALTER TABLE public.shipment_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shipments ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: shipping_holds; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.shipping_holds ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: shipping_instructions; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4838,6 +4763,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261016100000'),
 ('20261015000000'),
 ('20261014200000'),
 ('20261014100000'),

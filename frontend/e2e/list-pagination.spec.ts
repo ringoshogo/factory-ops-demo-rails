@@ -239,7 +239,7 @@ test("受注一覧の見出しを Shift を押して押すと 2 つ目の並べ�
 test("出荷依頼の受注番号の見出しを押すと受注番号の順に並び、品目の単価の見出しを Shift を押して押すと、単位のまとまりが流用元の順に並び、単位の同じ品目が単価の順に並ぶ", async ({ page }, testInfo) => {
   await login(page, testInfo, "supplier_admin");
   await page.goto("/supplier/shipment-requests");
-  // 出荷は受注に依存しないので、受注番号は「出荷可能」のイベントで写した値で並ぶ。表示は受注の値で、並びと食い違えば崩れる
+  // 写しを作った時点では出荷が受注に依存しなかったので、受注番号は「出荷可能」のイベントで写した値で並ぶ。表示は受注の値で、並びと食い違えば崩れる
   await page.getByRole("columnheader", { name: "受注番号" }).getByRole("button").click();
   await expect.poll(() => sortOf(page)).toEqual(["order_no", "asc"]);
   await expect(page.getByRole("columnheader", { name: "受注番号" })).toHaveAttribute("aria-sort", "ascending");

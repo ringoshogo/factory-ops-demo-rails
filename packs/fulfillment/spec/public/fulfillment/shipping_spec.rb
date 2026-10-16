@@ -67,19 +67,65 @@ RSpec.describe Fulfillment::Shipping do
     end
   end
 
-  it "解除されていない出荷停止のある受注の出荷依頼は計上せず CONFLICT で、引当も在庫も変わらない。解除すると計上できる" do
-    hold = FactoryBot.create(:shipping_hold, sales_order_id: request.sales_order_id)
+  # 受注の出荷済は、イベントを流さずに、計上と同じトランザクションで書く
+  it "計上の直後に、出荷依頼の受注は出荷済になる" do
+    expect(Sales::SalesOrders.find(actor, request.sales_order_id).status).not_to eq(:shipped)
+
+    post
+
+    expect(Sales::SalesOrders.find(actor, request.sales_order_id).status).to eq(:shipped)
+  end
+
+  describe "受注の取消と審査" do
+    let(:admin) { actor.with(role: "admin") }
+
+    {
+      "取消済の受注" => ->(request, admin) { Sales::OrderCancellation.cancel(admin, sales_order_id: request.sales_order_id) },
+      "未決の審査がある受注" => ->(request, _admin) { FactoryBot.create(:cancellation_review, sales_order_id: request.sales_order_id) }
+    }.each do |name, prepare|
+      it "#{name}の出荷依頼は計上せず CONFLICT で、出荷実績も在庫も変わらない" do
+        prepare.call(request, admin)
+        before = [ stock, movements ]
+
+        expect(Contracts).not_to receive(:publish)
+        expect(post.failures.map(&:code)).to eq([ :conflict ])
+        expect(request.reload.shipment).to be_nil
+        expect([ stock, movements ]).to eq(before)
+        expect(Inventory::Allocation.quantities_for(actor, line_ids).values).to eq([ 3, 2 ])
+      end
+    end
+
+    it "未決の審査を却下すると計上できる" do
+      review = FactoryBot.create(:cancellation_review, sales_order_id: request.sales_order_id)
+      expect(post.failures.map(&:code)).to eq([ :conflict ])
+
+      expect(Sales::CancellationReviews.reject(admin, cancellation_review_id: review.id)).to be_success
+      expect(post.value.status).to eq(:shipped)
+    end
+  end
+
+  # 出荷依頼は受注を ID で参照するだけなので、受注の行の無い出荷依頼を DB は拒まない。計上すると受注の出荷済を書けないまま出荷実績ができる
+  it "受注の行の無い出荷依頼は計上せず、出荷依頼 ID を指す NOT_FOUND を返し、出荷実績も在庫も変わらない" do
+    request.update!(sales_order_id: SecureRandom.uuid)
     before = [ stock, movements ]
 
     expect(Contracts).not_to receive(:publish)
-    expect(post.failures.map(&:code)).to eq([ :conflict ])
+    result = post
+
+    expect(result.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :shipment_request_id ] ] ])
+    expect(request.reload.shipment).to be_nil
+    expect([ stock, movements ]).to eq(before)
+  end
+
+  # 受注の出荷済の書き込みが失敗したら、出荷実績と引当の消費もセーブポイントまで戻す
+  it "受注の出荷済を書けなければ、その失敗を返し、出荷実績も在庫も変えない" do
+    allow(Sales::OrderShipping).to receive(:mark_shipped).and_return(OperationResult.failure(:not_found, path: [ :sales_order_id ]))
+    before = [ stock, movements ]
+
+    expect(post.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :sales_order_id ] ] ])
     expect(request.reload.shipment).to be_nil
     expect([ stock, movements ]).to eq(before)
     expect(Inventory::Allocation.quantities_for(actor, line_ids).values).to eq([ 3, 2 ])
-
-    RSpec::Mocks.space.proxy_for(Contracts).reset
-    hold.update!(released_at: Time.current)
-    expect(post.value.status).to eq(:shipped)
   end
 
   it "有効な指示の無い出荷依頼と、出荷済みの出荷依頼は計上しない" do
@@ -98,7 +144,7 @@ RSpec.describe Fulfillment::Shipping do
     expect(stock).to have_attributes(on_hand: 10, allocated: 5)
   end
 
-  it "ロックを出荷依頼 → 出荷指示 → 在庫（item_id 昇順）→ 引当（受注明細 ID 順）の順に取る" do
+  it "ロックを受注 → 出荷依頼 → 出荷指示 → 在庫（item_id 昇順）→ 引当（受注明細 ID 順）の順に取る" do
     locks = []
     callback = lambda do |*, payload|
       locks << payload[:sql][/FROM "(\w+)"/, 1] + payload[:sql][/ORDER BY (.*?)(?: LIMIT \$\d+)? FOR UPDATE/, 1].to_s if payload[:sql].include?("FOR UPDATE")
@@ -106,6 +152,7 @@ RSpec.describe Fulfillment::Shipping do
     ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { post }
 
     expect(locks).to eq([
+      "sales_orders",
       "shipment_requests",
       %(shipping_instructions"shipping_instructions"."id" ASC),
       %(stocks"stocks"."item_id" ASC),

@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 受注側の取消。審査を経ずに、引当の解除と受注の取消を同じトランザクションで行い、「受注取消」と「出荷取消」を出す。
+# 受注側の取消。審査を経ずに、引当の解除と受注の取消を同じトランザクションで行い、「受注取消」を出す。
 # 出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は CONFLICT で、失敗は書き込みもイベントも残さない
 # （docs/architecture/context-map.md「取消の流れ」、docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
 RSpec.describe Sales::OrderCancellation do
@@ -35,7 +35,7 @@ RSpec.describe Sales::OrderCancellation do
 
   def failure_codes(result) = result.failures.map(&:code)
 
-  it "引当を解除して受注を取消済にし、「受注取消」と「出荷取消」を出す" do
+  it "引当を解除して受注を取消済にし、「受注取消」だけを出す" do
     allocate(5)
 
     result = cancel
@@ -44,11 +44,9 @@ RSpec.describe Sales::OrderCancellation do
     expect(order.reload.cancelled_at).to be_present
     expect(allocated_quantities).to eq([ 0, 0 ])
     expect(stock).to have_attributes(on_hand: 5, allocated: 0)
-    expect(published.map(&:class)).to contain_exactly(Contracts::SalesOrderCancelled, Contracts::ShipmentCancelled)
-    expect(published.find { _1.is_a?(Contracts::SalesOrderCancelled) }).to have_attributes(
+    # 出荷依頼の取消済は、出荷が受注の取消から導出するので、出荷へは何も出さない
+    expect(published.sole).to have_attributes(class: Contracts::SalesOrderCancelled,
       purchase_order_id: order.source_purchase_order_id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
-    expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) }).to have_attributes(sales_order_id: order.id,
-      supplier_tenant_id: supplier.id, cancellation_review_id: nil, ready_for_shipment: true)
   end
 
   # 発注側は、受注側で取り消した時刻を発注の時刻列に書く（docs/architecture/data-model.md「イベントの受け口と冪等キー」）
@@ -58,22 +56,19 @@ RSpec.describe Sales::OrderCancellation do
     expect(published.find { _1.is_a?(Contracts::SalesOrderCancelled) }.occurred_at).to eq(order.reload.cancelled_at.iso8601(6))
   end
 
-  it "全量を引き当てていない受注の「出荷取消」は、出荷可能を出していないことを運ぶ" do
+  it "全量を引き当てていない受注も、引当を解除して取り消す" do
     allocate(4)
 
     expect(cancel).to be_success
-    expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) }.ready_for_shipment).to be(false)
     expect(stock).to have_attributes(on_hand: 4, allocated: 0)
   end
 
-  it "品番照合待ちの受注は、引当が無いまま取り消せ、出荷可能を出していないことを運ぶ" do
+  it "品番照合待ちの受注は、引当が無いまま取り消せる" do
     awaiting = FactoryBot.create(:sales_order, customer_tenant_id: buyer.id)
     FactoryBot.create(:sales_order_line, sales_order: awaiting)
 
     expect(cancel(awaiting.id).value).to have_attributes(id: awaiting.id, status: :cancelled)
-    expect(published.map(&:class)).to contain_exactly(Contracts::SalesOrderCancelled, Contracts::ShipmentCancelled)
-    expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) })
-      .to have_attributes(sales_order_id: awaiting.id, cancellation_review_id: nil, ready_for_shipment: false)
+    expect(published.map(&:class)).to eq([ Contracts::SalesOrderCancelled ])
   end
 
   it "決着した審査だけがある受注は取り消せる" do

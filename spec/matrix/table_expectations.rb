@@ -51,11 +51,10 @@ module MatrixExpectations
     "stock_movements" => OWNER_ONLY,
     # 品目の写しは、在庫の一覧のために受注側が自社の品目から写す
     "item_labels" => OWNER_ONLY,
-    # 出荷は受注側だけが所有する。出荷依頼・出荷停止・出荷指示は相手から読めない
+    # 出荷は受注側だけが所有する。出荷依頼・出荷指示は相手から読めない
     "shipment_requests" => OWNER_ONLY,
     "shipment_request_lines" => OWNER_ONLY,
     "shipping_instructions" => OWNER_ONLY,
-    "shipping_holds" => OWNER_ONLY,
     # 経路 3。有効な取引関係の発注側に、自社の発注に連結した出荷だけが見え、付与があっても失効で閉じる。
     # view_shipments の付与はアプリの policy scope が判定するので、付与の無い発注側にも RLS は見せる
     "shipments" => {
