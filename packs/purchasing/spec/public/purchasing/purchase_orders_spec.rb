@@ -174,13 +174,17 @@ RSpec.describe Purchasing::PurchaseOrders, ".timeline_for" do
     expect(timeline([ order.id ]).fetch(order.id).map(&:owner_tenant_id)).to all(eq(buyer.id))
   end
 
-  it "受注側の取消を出来事にし、同じ時刻の出来事は業務の順で並べる" do
+  # 却下と受注側の取消が同じ時刻のとき、行の ID の順（発注が先）は業務の順（却下が先）と逆になる
+  it "受注側の取消を出来事にし、同じ時刻の出来事は行の ID の順ではなく業務の順で並べる" do
     order = Tenancy.with_tenant(buyer.id) do
-      FactoryBot.create(:purchase_order, created_at: at("2026-10-01 10:00"), accepted_at: at("2026-10-01 10:00"),
-        supplier_cancelled_at: at("2026-10-01 10:00"))
+      FactoryBot.create(:purchase_order, created_at: at("2026-10-01 10:00"), supplier_cancelled_at: at("2026-10-01 12:00")).tap do
+        FactoryBot.create(:cancellation_request, purchase_order: _1, created_at: at("2026-10-01 11:00"), outcome: "rejected",
+          decided_at: at("2026-10-01 12:00"))
+      end
     end
 
-    expect(timeline([ order.id ]).fetch(order.id).map(&:kind)).to eq(%i[ordered accepted supplier_cancelled])
+    expect(timeline([ order.id ]).fetch(order.id).map(&:kind))
+      .to eq(%i[ordered cancellation_requested cancellation_rejected supplier_cancelled])
   end
 
   # 業務の日付は日本時間で決める（docs/guides/testing.md「層への配分」）
