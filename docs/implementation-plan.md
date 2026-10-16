@@ -124,7 +124,9 @@ M34・M35 は、サイクル 01 の改善の探索（`plans/cycle-01/improvement
 | M48 | CI で依存の木を確かめ、イメージの組み立てを PR のたびに流す | 入れ子の依存の peer の範囲から外れた更新の PR が CI で落ち、イメージの組み立てが条件の保守なしに PR ごとに確かめられる |
 | M49 | 文字列の列の照合順序を決め、別の DB の worktree で `bin/ci` を流せるようにする | 品目コードの並びが Ruby の比べ方と列の定義でそろい、コードの順で取るロックが照合順序を知らずに書いても食い違わない。名前の並びが流用元の `Intl.Collator("ja")` と同じになる |
 | M51 | 手元の検証を止めるものを取り除く：E2E のログインの待ち、一時の DB の後片付け、RLS を開くグループの止まり | 一時の DB は名前を明示したときだけ消え、既定の DB と接続中の DB は消えない。ポリシーの足し外しがロックを待ち続けず、待たせた接続を示して落ちる |
-| M52 | テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:` | E2E の Rails を起動の時に読み込む変数を外すと、spec が落ちる。`publish` の `if:` を否定か論理和で迂回すると、spec が落ちる |
+| M52 | テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`、テナントで包む around | E2E の Rails を起動の時に読み込む変数を外すと、spec が落ちる。`publish` の `if:` を否定か論理和で迂回すると、spec が落ちる。テナントで包んだ example が SQL のエラーで落ちても後ろのグループが止まらず、直に包む around を足すと spec が落ちる |
+| M53 | 発注の詳細に、進みのタイムラインを出す | タイムラインが状況と同じ自社の行から組み立てられ、受注側の出来事は受注側で起きた時刻で並び、RLS を開いても他社の出来事が混ざらない |
+| M54 | 同じテナントの中の受注と出荷・請求を、同期の呼び出しでつなぐ | 受注の取消・審査・出荷の計上・検収が、イベントを待たずに出荷依頼の状況と受注と請求の明細に表れ、ロックの順が受注から始まる 1 本になる |
 
 `handoff.md` は骨組みを「パッケージ構成 → テナントの強制 → 行列テスト → イベント」の 4 つにしていた。本書はこれに 2 つ足した。1 つは M1（`rails new`・DB・CI）で、他のすべての前提になる。もう 1 つは M5（GraphQL の基盤）で、行列テストの「入口」の軸が GraphQL のフィールドなので、行列テストの枠より先に要る。テナントの強制は、DB の仕組み（M3）とリクエストの入口（M4）に分けた。1 回の作業に収めるためである。
 
@@ -164,7 +166,9 @@ M15 以降は、番号の順のほかに、次の前提を持つ。前提のマ�
 | M48 | M44 | `npm ls --all` を、M44 で取り込んだ依存の木と `groups` でまとめた PR に当てる。`image_inputs` と `publish` の形が M42 にある |
 | M49 | M46 | 照合順序を決める `item_labels.code`・`item_labels.name` と作り直しの式が M46 にあり、取引先の名前の副問い合わせが M45 にある |
 | M51 | M50・M33 の残り（サイクル 07） | ログインの待ちと `eager_load` を、M50 と M33 の残り（サイクル 07）が直した E2E の上で比べる。M50 の残りと M33 の残り（サイクル 08）より前に置く。壊して落ちる記録で止まった `catalog_spec.rb` の壊し方が M50 にある |
-| M52 | M51 | ガードを足す変数と `start-rails.sh` の読み込みの形、`publish` の `if:` の `success()` が M51 にある。作るもの 3 は、#85 の担当を止める段落を含むブランチで書く |
+| M52 | M51 | ガードを足す変数と `start-rails.sh` の読み込みの形、`publish` の `if:` の `success()`、外す `around_hook_errors.rb` と `MatrixCrossRead` の残ったトランザクションの検出が M51 にある。作るもの 3 は、`origin/main` をマージして #85 の担当を止める段落を取り込んでから書く |
+| M53 | M52 | 時刻の出来事の日付を確かめる単体と、`cross_read!` で RLS を開く単体を、M52 が直した `TenantExample.run` の around の上で書く。M54 と同じ `cancellation_reviews.rb` の発行を直すので、M54 より前に置き、M54 は M53 のブランチから切る |
+| M54 | M53 | 状況の式を結ぶ副問い合わせの形が ADR 010 と M45 にある。M53 が `occurred_at` を足した受注側の発行元（審査の決着と受注の取消）の同じファイルから、同じテナントへの発行（出荷停止解除・出荷取消）を消す。テナントをまたぐ取消承認・取消却下・受注取消は残る |
 
 ---
 
@@ -2298,7 +2302,7 @@ bin/check-open-items --due M41
 
 **残り（サイクル 08）**：作者の実機の手順の結果（OI-196）は、サイクル 07 の間に書かれなかったので、同じ形のままサイクル 08 へ移した。
 
-**残り（サイクル 09）**：作者の実機の手順の結果（OI-196）は、サイクル 08 の間にも書かれなかったので、同じ形のままサイクル 09 へ移した。移すのは 4 回目で、移し続けるか、サイクルの表から外して結果が書かれたときに入れ直すかを、作者に問うた（`plans/cycle-08/author-decisions.md` の 2）。
+**残り（サイクル 09）**：作者の実機の手順の結果（OI-196）は、サイクル 08 の間にも書かれなかったので、同じ形のままサイクル 09 へ移した。移すのは 4 回目で、移し続けるか、サイクルの表から外して結果が書かれたときに入れ直すかを、作者に問うた（`plans/cycle-08/author-decisions.md` の 2）。作者は 2026-10-16 に、結果が来るまで毎サイクル移し続けると答えた（IB-133 の結果の欄）。作るものは変わらない。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
@@ -2548,27 +2552,171 @@ cd frontend && npm run test:e2e   # 負荷の低い手元で、続けて 3 回
 
 **文書に残すこと**：`guides/config.md` に、E2E の Rails が起動の時に読み込む変数と、一時の DB の名前の規則（`_test` か `_e2e` を区切りとして含める）。`guides/bin.md` の運用のタスクの表に、一時の DB の一覧と削除のタスク。`guides/testing.md`「行列テストとの分担」に、ポリシーの足し外しの待ちの上限と、打ち切られたときの読み方。`guides/dev-cycle.md`「着手の前に」に、取りまとめ役が担当を止めるときに一時の DB の一覧を読み、その担当の DB を削除のタスクで消すこと。`handoff.md`「開発環境」に、一時の DB を消す手順。`guides/config.md`「CI の工程」の、`publish` の `if:` に状態の関数を書かないとした文と、spec が確かめるものと spec で照らす例外に挙げた「`publish` の `if:` が状態の関数を含まないこと」を、`success()` を明示し、`failure`・`cancelled`・`always` を含まない形に直す。「状態の関数」「暗黙の」を種類で `git grep` し、前の形を書いた文を残さない。M48 の時点の記録（`handoff.md`「リポジトリの状態」の M48 の要約、証跡、OI-184 の結果の欄）は、その時点の形として直さない。
 
-## M52 テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`
+## M52 テストの基盤と CI の守りのガードを足す：E2E の起動の時の読み込み、`publish` の `if:`、テナントで包む around
 
-**目的**：M51 で足したテストの基盤と CI の守りに、外すか崩すと落ちるガードを足す。1 つ目は、サイクル 08 の逸脱検査（`plans/cycle-08/conformance.md` の D3）が、E2E の起動の時の読み込みの変数に外すと落ちる example が無いことを、`guides/dev-cycle.md`「テストから書く」の規則に反すると裁定したものである（OI-207）。変数を外しても手元の E2E は通るので、外した変更が黙って入る。2 つ目は、サイクル 08 の改善の探索で採用した IB-134 で、`publish` の `if:` の spec が、`needs` が落ちても `publish` を流す式（`success()` の否定や論理和）を通すことである（`plans/cycle-08/improvement.md`「裁定」）。3 つ目は、担当を止めるときに一時の DB を消す手順を、担当を止める段落に寄せる（OI-208）。4 つ目は、M51 で全 spec に効かせた around の補助を外し、送出しうる around を個別に直す（OI-205。作者の判断）。業務の振る舞いは変えない。
+**目的**：M51 で足したテストの基盤と CI の守りに、外すか崩すと落ちるガードを足し、M51 で全 spec に効かせた around の補助を、止まりの起きる around だけの直しに置き換える。1 つ目は、サイクル 08 の逸脱検査（`plans/cycle-08/conformance.md` の D3）が、E2E の起動の時の読み込みの変数に外すと落ちる example が無いことを、`guides/dev-cycle.md`「テストから書く」の規則に反すると裁定したものである（OI-207）。変数を外しても手元の E2E は通るので、外した変更が黙って入る。2 つ目は、サイクル 08 の改善の探索で採用した IB-134 で、`publish` の `if:` の spec が、`needs` が落ちても `publish` を流す式（`success()` の否定や論理和）を通すことである（`plans/cycle-08/improvement.md`「裁定」）。3 つ目は、担当を止めるときに一時の DB を消す手順を、担当を止める段落に寄せる（OI-208）。4 つ目は、作者の判断（OI-205 の (a)）で、全 spec に効く `spec/support/around_hook_errors.rb` を外し、example を包んで送出しうる around を個別に直す。全 spec に効く補助は、around が送出したときの rspec の出力の形を全体で変えるので、止まりの起きる around に直しを限る。直す形と数え上げの方法は計画レビューで決め、OI-209 に書いた。業務の振る舞いは変えない。
+
+担当は、作るもの 4 → 1 → 2 → 3 の順に作る。4 は `spec/rails_helper.rb` と 18 個の around を書き換えて全 spec の流れに効くので、ほかのガードより先に入れる。3 は `origin/main` のマージを伴うので最後に置く。
 
 **作るもの**
 
-1. E2E の起動の時の読み込みのガード（OI-207）：`spec/platform/e2e_eager_load_spec.rb` に、子のプロセスで test の環境を起こし、`CI` を除いた環境で `E2E_EAGER_LOAD=1` を渡したときに `Rails.application.config.eager_load` が真になり、渡さないときは偽になる example を足す（前例：`spec/platform/production_boot_spec.rb` の `Open3`）。`test.rb` の側は、ファイルの文字列ではなく、子のプロセスで読んだ設定の値で照らす。`test.rb` は `.present?` で読むので値を問わないが、`start-rails.sh` が渡す値は `1` にそろえる。あわせて、`frontend/e2e/start-rails.sh` が `bin/rails` を呼ぶ行より前に `export E2E_EAGER_LOAD=1` を持つことを、スクリプトの行を読んで照らす example を足す。スクリプトは DB を作り直してサーバーを起こすので、spec の中で流さない
-2. `publish` の `if:` の迂回を止める（IB-134）：`spec/platform/ci_checks_spec.rb` の `publish` の `if:` の example に、`success()` の直前に否定（`!`）が無いことと、論理和（`||`）を含まないことの期待を足す。いまの期待（`success()` を含み、`failure`・`cancelled`・`always` を含まない）は残す。式の形は照らさず、含む・含まないで照らす方針（`guides/config.md`「CI の工程」）は変えない。example の名前と前のコメント、`config.md`「CI の工程」の spec が確かめるものの列挙も直す
-3. 担当を止める手順を 1 か所にする（OI-208）：`guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md` と `handoff.md`「開発環境」の参照も合わせる。このマイルストーンのブランチが #85 を含まないなら、取りまとめ役は計画レビューの前に引当先を書き換える
-4. around の補助を外して個別に直す（OI-205）：作者は、全 spec に効く補助（`spec/support/around_hook_errors.rb` と `spec/rails_helper.rb` の include）を外し、落ちた example を包む around だけを個別に直すと決めた（`plans/cycle-08/author-decisions.md` の 4）。補助を外し、`Tenancy.with_tenant { example.run }` のように example を包んで送出しうる around を数え上げ、送出しても rspec-rails の巻き戻しまで戻る形に個別に直す。IB-123 の止まり（around の中で SQL のエラーを起こした example の後ろのグループが止まる）を再現する example を足して、直した around で止まらないことを確かめる。`showcase.md` のテーマ 9 と `guides/testing.md`「行列テストとの分担」の補助の記述を、個別の直しに合わせて書き換える。直す形と数え上げの方法は計画レビューで決める
+1. E2E の起動の時の読み込みのガード（OI-207）：`spec/platform/e2e_eager_load_spec.rb` に、子のプロセスで test の環境を起こし、`E2E_EAGER_LOAD=1` を渡したときに `Rails.application.config.eager_load` が真になり、渡さないときは偽になる example を足す（前例：`spec/platform/production_boot_spec.rb` の `Open3`）。子のプロセスの環境では、`CI` を `nil` で消し、渡さないときは `E2E_EAGER_LOAD` も `nil` で消す。親のプロセス（CI では `CI=true`）の値が入り込むと、どちらの example も条件の片方だけでは決まらない。`test.rb` の側は、ファイルの文字列ではなく、子のプロセスで読んだ設定の値で照らす。`test.rb` は `.present?` で読むので値を問わないが、`start-rails.sh` が渡す値は `1` にそろえる。あわせて、`frontend/e2e/start-rails.sh` が `bin/rails` を呼ぶ行より前に `export E2E_EAGER_LOAD=1` を持つことを、スクリプトの行を読んで照らす example を足す。スクリプトは DB を作り直してサーバーを起こすので、spec の中で流さない
+2. `publish` の `if:` の迂回を止める（IB-134）：`spec/platform/ci_checks_spec.rb` の `publish` の `if:` の example に、次の 3 つの期待を足す。`if:` が `!` を含まない（否定の演算子も `!=` も。いまの式はどちらも使わない）、`||` を含まない、`success()` の直後が `&&` か式の終わりである（`==`・`!=` で比べない）。いまの期待（`success()` を含み、`failure`・`cancelled`・`always` を含まない）は残す。否定は `!(success() && …)` や `! success()` のように `success()` の直前に限らず書けるので、`!` そのものを含まないことで照らす。式の形は照らさず、含む・含まないで照らす方針（`guides/config.md`「CI の工程」）は変えない。example の名前と前のコメント、`config.md`「CI の工程」の spec が確かめるものの列挙も直す
+3. 担当を止める手順を 1 か所にする（OI-208）：`guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md` と `handoff.md`「次にやること」の参照も合わせる。サイクル 08 の末のブランチ（このマイルストーンの土台）は #85 を含まない。担当は、次の手順で #85 を取り込む
+   - 作るもの 1・2・4 を commit し、その先端で共通の完了条件を `bin/check-open-items --due M52` を除いて通してから（OI-208 は作るもの 3 で閉じるので、この時点では `open` で落ちる）、`git merge origin/main` で #85 を取り込み、マージの commit を残す。取り込まずに同じ場所を書き換えると、main とぶつかる。2026-10-16 の時点で、土台の先端と `origin/main` は衝突なしにマージでき、取り込むのは #85 と Dependabot の lucide-react の更新（#77）の 2 つの変更である。衝突が出たら、作るもの 3 だけを止めて取りまとめ役に返す（`guides/dev-cycle.md`「前提が崩れたとき」）
+   - 作るもの 3 を終えて OI-208 を閉じた後の先端で、`--due M52` を含む共通の完了条件と `frontend` の検査（`npm ci`・lint・型検査・単体）と E2E を流し直す。#77 が画面の依存を変えるからである
+   - 取りまとめ役は、実装レビューの依頼の diff の範囲を、土台の先端からマージの commit の 1 つ目の親までと、マージの commit から先端までの 2 つに分けて書く。土台の先端からの 1 つの範囲にすると、#85 と #77 が M52 の変更として読まれる
+   - 下の段（未マージの #91〜#96）に直しが入ったら、M52 のブランチは載せ直さず、下の段の先端をマージする。マージの commit を含むブランチをふつうに rebase すると、#85 と #77 が main と別の SHA の commit として並び直り、作者のマージでぶつかりうる
+4. テナントで包む around を個別に直す（OI-205・OI-209）：止まりの原因は、`around { |example| Tenancy.with_tenant(id) { example.run } }` の中で example が SQL のエラーで落ちると、rspec が `example.run` の中で例外を拾う（rspec-core 3.13.6 の `lib/rspec/core/example.rb` の `Example#run`）ので、`with_tenant` がそのまま中断したトランザクションのセーブポイントを解放しようとして around から送出し、外側の rspec-rails の around の巻き戻しが飛ぶことである。rspec-rails は example ごとのトランザクションを `before_setup; example.run; after_teardown` の around で開いて巻き戻し、`ensure` で包まない（rspec-rails 8.0.4 の `lib/rspec/rails/adapters.rb` の `MinitestLifecycleAdapter`）。次の順と形で直す
+   - 外すもの（最初に外す）：`spec/support/around_hook_errors.rb`、`spec/rails_helper.rb` の `require_relative` と `config.include` とその前のコメント、`spec/platform/around_hook_errors_spec.rb`。around の中で `skip` した example の巻き戻しの example は、`skip` を呼ぶ around が無いので移さない。補助があるうちは送出が失敗に移り、下の対照 (i) が成り立たないので、先に外す
+   - 数え上げのガード（次に書き、最初に落とす）：`spec/platform/tenant_example_spec.rb` に、`spec/**/*.rb` と `packs/*/spec/**/*.rb` を Prism で読み、`around`・`prepend_around`・`append_around` の呼び出しのブロックの中に `with_tenant` か `transaction` の呼び出しがあれば、ファイルと行を並べて落とす example を足す。ガードは呼び出しの名前を字面で探すので、補助のメソッドで包んで around から呼ぶ形は捕まえない。対照として、同じ example で、`packs/` の下のファイルに `TenantExample.run` を呼ぶ around が 1 つ以上あること（自分のファイルの内側の group の around だけでは満たさない。`packs/*/spec` の glob が何も読まなくなったときに、ガードが空の一覧で通らないためである）と、合成のソースで落ちることを確かめる。合成のソースは、`around` の中の `Tenancy.with_tenant(SecureRandom.uuid) { example.run }`（下の対照 (i) がこの文字列をそのまま流すので、実行できる形にする）、`around` の中の `ActiveRecord::Base.transaction { example.run }`、`prepend_around` と `append_around` の中の `Tenancy.with_tenant { example.run }` の 4 つで、どれも検出されることを確かめる。この時点で、直す前の 18 個の around を並べて落ちる
+   - 包みの補助：`spec/support/tenant_example.rb` に `TenantExample.run(example, tenant_id)` を置き、`Tenancy.with_tenant(tenant_id) { example.run; raise ActiveRecord::Rollback if example.exception || example.execution_result.pending_exception }` の形で、落ちた example と、`pending` の中で落ちた example のときだけセーブポイントを巻き戻して抜ける。条件は rspec-core の `Example#display_exception`（`@exception || execution_result.pending_exception`）と同じ値で、補助のコメントにそのことを書く。rspec-core は `pending` の example の例外を `exception` ではなく `execution_result.pending_exception` に置く（`lib/rspec/core/example.rb` の `display_exception=`）。`ActiveRecord::Rollback` は `transaction` が飲み、`requires_new: true` のセーブポイントを巻き戻してから抜ける（activerecord 8.1.4 の `lib/active_record/connection_adapters/abstract/database_statements.rb` の `transaction` と `transaction.rb` の `within_new_transaction`）。巻き戻した後は、中断したトランザクションが戻るので、`with_tenant` の後始末（`Tenancy.reset!`）も流れ、around は送出しない。通った example は、いまと同じくセーブポイントを解放して抜ける。このセーブポイントはテストの外側の結べないトランザクションの直下にあるので、example の中の `after_commit` はこの解放で走る（`transaction.rb` の `run_commit_callbacks = !current_transaction.joinable?`）。いつも巻き戻すと、通った example の後に `after_commit` の代わりに `after_rollback` が走る。補助の冒頭のコメントに、この原因と、巻き戻しを落ちた example に限る理由を、上の原文の場所とともに書く。`spec/rails_helper.rb` は、ほかの補助と同じく `require_relative` で読むだけで、`config.include` もフックも足さない
+   - 直す around：`Tenancy.with_tenant` で example を包む around を、すべて `around { |example| TenantExample.run(example, <テナント>) }` に書き換える。2026-10-16 の時点で 18 個（`packs/*/spec` の 17 ファイル。`adjustment_spec.rb` は 2 つ）である。`item_prices_spec.rb` は、`foreign` を呼んでから `TenantExample.run` を呼ぶ do の形のまま残す。数はガードの失敗の一覧で数え、証跡に書く
+   - 止まりを再現する example：同じ spec に、内側の group を流す形（`RSpec.describe` で作った group を `RSpec.world.example_groups` から外し、`example.run` を直に呼んで `NullReporter` に報告する。`spec/platform/around_hook_errors_spec.rb` の形）で、次の 4 つを置く。どれも `ensure` で両方の接続を巻き戻す
+     - (i) 対照：`Tenancy.with_tenant` で直に包んだ around の中で `SELECT 1 / 0` で落ちた example が `/division by zero.*current transaction is aborted/m` の失敗として報告され（`example.run` の前の送出ではなく、セーブポイントの解放の失敗の経路を通ったことを確かめる）、その後、アプリと所有ロールの接続にトランザクションが 1 段ずつ残り、`MatrixCrossRead.with_policies` が「トランザクションが残っている」で失敗する（IB-123 の止まりの、M51 の後の出方）。直に包む around は、上のガードの合成のソースの文字列を内側の group に `module_eval` して作り、spec のファイルに around のブロックとして書かない。ブロックで書くと、ガードが自分のファイルを落とす
+     - (ii) `TenantExample.run` で包んだ around の中で同じく落ちた example は、失敗として報告され（SQL のエラーを飲み込まない）、次の example はトランザクションの 2 段とテナントの設定を持ち、終わった後は両方の接続のトランザクションが 0 段で、`MatrixCrossRead.with_policies` が通る
+     - (iii) `TenantExample.run` で包んだ around の中の `pending` の example が SQL のエラーで落ちた後も、pending として報告され、両方の接続のトランザクションが 0 段で、`MatrixCrossRead.with_policies` が通る
+     - (iv) `TenantExample.run` で包んだ around の中の通る example が、`ApplicationRecord.current_transaction.after_commit` と `after_rollback` にブロックを登録すると、example の後に `after_commit` のブロックだけが走る（Rails 8.1 の `ActiveRecord::Transaction#after_commit`・`#after_rollback`）
+   - 直さない around：`example.run` の後で SQL を流さず、example の DB の状態で送出が変わらないもの（`Rails.event` の購読の解除、環境変数と設定の値の戻し、`Dir.mktmpdir` の後始末）と、rspec-rails の around より外側にある `spec/support/bullet.rb` の `config.around` は直さない。設定の段の around は、group を作るときに include より先に登録され、group の段の around は前に足されるので、外側に回る（rspec-core 3.13.6 の `lib/rspec/core/configuration.rb` の `configure_group` と `lib/rspec/core/hooks.rb` の `around`・`run_around_example_hooks_for`）。全 35 個の分け方は `plans/cycle-09/plan-review.md`「M52 の around の数え上げ」にある
+   - `spec/support/matrix_cross_read.rb` の、所有ロールの接続にトランザクションが残ったときのメッセージの「先に落ちた example とその around のフックを見る」に、`guides/testing.md`「層への配分」の around の書き方を指す文を足す
 
 **完了条件**
 
 ```sh
-bundle exec rspec spec/platform/e2e_eager_load_spec.rb spec/platform/ci_checks_spec.rb   # 0 failures
+bundle exec rspec spec/platform/e2e_eager_load_spec.rb spec/platform/ci_checks_spec.rb spec/platform/tenant_example_spec.rb   # 0 failures
+git grep -n -e AroundHookErrors -e around_hook_errors -- . ':!docs/plans' ':!docs/implementation-plan.md'   # 0 件
 ```
 
-期待の不一致で最初に落とすのは、`config/environments/test.rb` の `eager_load` の条件から `E2E_EAGER_LOAD` を外した版で、変数を渡したのに `eager_load` が偽になる example である。作るもの 2 は、`ci.yml` をいまの形のままにして足した期待が通ることを確かめ、`if:` を `!success() && github.event_name == 'push'` にした版と `success() || github.event_name == 'push'` にした版で落ちることを、RED に代わる壊して落ちる記録にする（いまの `ci.yml` は迂回の形を持たないので、足した期待は書いた時点で通る）。壊して落ちる記録に、`test.rb` の条件から変数を外す、`start-rails.sh` の `export` を消す、`if:` の 2 つの迂回の形、の 4 つを書く。
+期待の不一致で最初に落とすのは、作るもの 4 の数え上げのガードの example である。補助とその spec を外した後、18 個の around を書き換える前のコードで、18 個を並べて落ちる。作るもの 1 と 2 は、M51 が作ったものに足すガードなので、書いた時点で通る。作るもの 4 の (ii)〜(iv) は、`TenantExample` が無いと読み込みの失敗でしか落ちないので、RED に数えない。次の壊し方で落ちることを、RED に代わる壊して落ちる記録にする。
 
-**範囲外**：ログインの待ちの値（OI-206）、手元の E2E の時間の比べ、一時の DB の削除のタスクが `TEST_DATABASE` の DB を拒むこと（IB-135）（サイクル 08 の改善の探索で見送った）。around の補助が拾う例外の範囲（IB-136）は、作るもの 4 で補助を外すので扱わない
+| 作るもの | 壊し方 | 落ちる example |
+|---|---|---|
+| 1 | `test.rb` の条件から `E2E_EAGER_LOAD` を外す | 渡したときに真になる example |
+| 1 | `start-rails.sh` の `export` を消す | スクリプトの行の example |
+| 2 | `if:` を `!success() && github.event_name == 'push'`・`!(success() && github.event_name == 'push')`・`success() || github.event_name == 'push'`・`success() == false && github.event_name == 'push'` にする（4 つを 1 つずつ） | `publish` の `if:` の example |
+| 4 | `TenantExample.run` から `raise ActiveRecord::Rollback …` の行を外す | (ii)・(iii) |
+| 4 | 巻き戻しの条件から `pending_exception` を外す | (iii) |
+| 4 | 巻き戻しの条件を外し、いつも巻き戻す | (iv) |
+| 4 | ガードが探す呼び出しの名前から `with_tenant` を外す・`transaction` を外す、探す around の名前から `prepend_around` を外す・`append_around` を外す（4 つを 1 つずつ） | ガードの合成のソースの対照 |
 
-**実装する文書の節**：`guides/config.md`「環境ごとの設定」「CI の工程」、`guides/dev-cycle.md`「テストから書く」「着手の前に」
+ほかに、M50 の壊し方（`packs/sales/app/public/sales/item_prices.rb` の `Sales::ItemPrices` の単価の式から `.current` を外す）で `bundle exec rspec packs/sales/spec/public/sales/catalog_spec.rb` を流し、壊した example の 1 件だけが落ちることを証跡に書く。直す前（補助を外し、around を直していない版）は、後ろの `cross_read!` の 2 つのグループも「トランザクションが残っている」で落ちる。
 
-**文書に残すこと**：`guides/config.md`「環境ごとの設定」の `test.rb` の `eager_load` の箇条に、ガードの spec の置き場。`guides/config.md`「CI の工程」の spec が確かめるものに、`publish` の `if:` が `success()` の否定と論理和を含まないこと。
+**範囲外**：ログインの待ちの値（OI-206）、手元の E2E の時間の比べ、一時の DB の削除のタスクが `TEST_DATABASE` の DB を拒むこと（IB-135）（サイクル 08 の改善の探索で見送った）。around の補助が拾う例外の範囲（IB-136）は、作るもの 4 で補助を外すので扱わない。本番の `Tenancy.with_tenant` は変えない。`example.run` の後で SQL を流さない around の送出（`Dir.mktmpdir` の後始末の失敗など）は、example の DB の状態で起きず、いまは止まりの事例が無いので扱わない。around が `example.run` の**前**に送出したとき（`TenantExample.run` の引数の `let` や、`item_prices_spec.rb` の `foreign` が、壊した準備で例外を出したとき）も、rspec-rails の巻き戻しが飛んでトランザクションが残る。M51 の補助はこれも失敗に移していたが、M52 は扱わない。M51 の後は止まらず、後ろの `cross_read!` と `with_policies` のグループが「トランザクションが残っている」で落ちて、メッセージが前の example の around を指すからである。準備の送出も拾う形にすると、example を流さずに抜けた around に rspec-core が付ける skip（`lib/rspec/core/hooks.rb` の `AroundHook#execute_with`）との関係を決める必要があり、作者が退けた全体の補助に近づく。この残る穴は OI-209 に書いた
+
+**実装する文書の節**：`guides/config.md`「環境ごとの設定」「CI の工程」、`guides/dev-cycle.md`「テストから書く」「着手の前に」、`guides/testing.md`「層への配分」「行列テストとの分担」
+
+**文書に残すこと**：`guides/config.md`「環境ごとの設定」の `test.rb` の `eager_load` の箇条に、ガードの spec の置き場。`guides/config.md`「CI の工程」の spec が確かめるものに、`publish` の `if:` が `!` と `||` を含まず、`success()` を比べないこと。`guides/testing.md`「層への配分」に、example をテナントで包む around は `TenantExample.run` を通すことと、その理由（直に包むと、落ちた example の後に巻き戻しが飛び、後ろのグループが止まる）と、ガードの spec の置き場と、ガードが呼び出しの名前を字面で探すので補助のメソッドで包んで呼ぶ形を捕まえないことを書く。around を書く人の大半は単体の spec を書く人で、行列の節を読まないからである。`guides/testing.md`「行列テストとの分担」の所有ロールの接続の箇条は、`around_hook_errors.rb` の記述を「層への配分」の参照に置き換える。`showcase.md` のテーマ 9 の「1 つの example の失敗が後ろのテストを止めない」の箇条と「状態」を、個別の直しとガードに合わせて書き換える。台帳は、実装者が IB-123 の反映先の `around_hook_errors.rb` を `tenant_example.rb` に書き換え、IB-136 の結果の欄に、補助を外したので前提が無くなったことを書き足す。IB-138 は、「層への配分」に書くことで問いが片付くので、取りまとめ役がサイクル 09 の末の改善の探索で判定する。
+
+## M53 発注の詳細に、進みのタイムラインを出す
+
+**目的**：作者の判断（OI-210。B の (a)）で、発注側の担当者が発注の詳細で、発注がいつ何を経て今の状況になったかを、時刻の順に読めるようにする。いまの詳細は、状況（導出の結果 1 つ）と、発注日・取消依頼の回答の時刻・出荷日・検収日を別々の欄に出すだけで、受注確定や取消の承認がいつ起きたか、どの順に起きたかが読めない。タイムラインは、発注側がいま持っている自社の行だけから組み立てる。状況の式（`Purchasing::PurchaseOrderStatus`）と同じ行を読むので、状況と履歴が食い違わない。新しい表も、相手テナントへの読む経路も足さない。あわせて、受注側から届くイベントに発生の時刻を運ばせるか（作者がこのマイルストーンで決めるとした事項）を、運ばせる形に決める（OI-212）。
+
+**作るもの**
+
+1. イベントの発生の時刻（OI-212）：発注の時刻列を書く 5 つのイベント（`Contracts::SalesOrderConfirmed`・`PartMatchPending`・`CancellationApproved`・`CancellationRejected`・`SalesOrderCancelled`）に `occurred_at`（ISO 8601 の時刻の文字列）を足す。発行元は、同じ出来事を受注側の列に書いたならその値を、列が無ければ発行するときの時刻を渡す。発行元は 5 つである。`Sales::PartMatching`（受注確定。受注の `confirmed_at`）、`Sales::PurchaseOrderTranslator`（品番照合待ち。発行するときの時刻）、`Sales::CancellationReviews`（審査の決着。審査の `decided_at`）、`Sales::PurchasingEventReceiver.publish_rejected`（出荷済か取消済の受注への取消依頼の自動の却下。審査を作らないので発行するときの時刻）、`Sales::OrderCancellation`（受注の取消。受注の `cancelled_at`）。`Purchasing::SupplierEventReceiver` は、`accepted_at`・`awaiting_match_at`・`cancellation_requests.decided_at`・承認の `cancelled_at`・`supplier_cancelled_at` に、受け取った時刻（`Time.current`）ではなく `occurred_at` を書く。足す前に登録したジョブのペイロードは `occurred_at` を持たないので、各イベントの `from_payload` で空を足し（前例：`Contracts::SalesOrderReadyForShipment.from_payload`）、受け手は空のときだけ `Time.current` を書く。`new` は全項目を求めたままにし、発行元が渡し忘れたら例外にする。5 つのイベントを `new` で作る spec（`git grep -n -E '(SalesOrderConfirmed|PartMatchPending|CancellationApproved|CancellationRejected|SalesOrderCancelled)\.new'` で数え、変数のクラスで作る補助（`supplier_event_receiver_spec.rb` の `answer`）も含める。`spec/contracts/correlation_spec.rb`、配送表に無い種類の例に使う `packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb`・`packs/billing/spec/public/billing/sales_event_receiver_spec.rb` を含む）にも `occurred_at` を渡す。受け取った時刻のままにすると、受注確定の配送が遅れたときに、その後に発注側で出した取消依頼が受注確定より前に並ぶ
+2. 購買の公開 API：`Purchasing::PurchaseOrders.timeline_for(actor, order_ids)` を足し、発注 ID ごとに、時刻の順に並べた出来事の値（`PurchaseOrderTimelineEntryValue`。`kind`・`occurred_on`・`occurred_at`・`owner_tenant_id`）の配列を返す。`owner_tenant_id` は、GraphQL の型の認可（`Purchasing::PurchaseOrderPolicy#show?` は値の `owner_tenant_id` を読む）のために、`Scope` を通した自社の発注から入れ、GraphQL のフィールドには出さない。見えない発注の ID（他社の発注を含む）は空の配列になる。行は `Scope` の自社の発注に結んで次の表のとおり読み、1 回の問い合わせ（`UNION ALL`。枝ごとに列の型をそろえる）で全発注の分を読む
+
+   | 出来事（`kind`） | 読む行 | 時刻 |
+   |---|---|---|
+   | `ordered` 発注登録 | `purchase_orders` | `created_at` |
+   | `part_match_pending` 品番照合待ち | `purchase_orders` | `awaiting_match_at` |
+   | `accepted` 受注確定 | `purchase_orders` | `accepted_at` |
+   | `cancellation_requested` 取消依頼 | `cancellation_requests`（依頼ごと。却下の後の再依頼も 1 行ずつ） | `created_at` |
+   | `cancellation_approved`・`cancellation_rejected` 取消の承認・却下 | `cancellation_requests` の `outcome` | `decided_at` |
+   | `supplier_cancelled` 受注側の取消 | `purchase_orders` | `supplier_cancelled_at` |
+   | `shipped` 出荷 | `inbound_shipments` | `shipped_on`（日付） |
+   | `inspected` 検収 | `receipt_inspections`（`inbound_shipments` を通して発注に結ぶ） | `inspected_on`（日付） |
+   | `invoice_received` 請求書の受領 | `received_invoices`（明細の `purchase_order_line_id` を通して発注に結ぶ。請求書と発注の組ごとに 1 つにまとめ（`EXISTS`）、1 通が複数の発注にまたがれば、それぞれに 1 つ出す） | `issued_on`（日付） |
+
+   承認で書く `purchase_orders.cancelled_at` は `cancellation_approved` と同じ時刻なので、別の出来事にしない。時刻の列の出来事は、`occurred_on` に日本時間の日付（`config.time_zone`）を、`occurred_at` に時刻を入れ、日付の列の出来事は `occurred_at` を空にする。並べるのは、行を `UNION ALL` で読んだ後の Ruby の側で、時刻を `config.time_zone` の日付にしてから並べる。並べ方は、`occurred_on` の昇順、`occurred_at` の昇順で空を後ろ、上の表の業務の順（`kind` の順位）、行の ID の順である。日付だけの出来事は、同じ日の時刻の出来事の後ろに、出荷 → 検収 → 請求書の受領の順に並ぶ
+3. GraphQL：`PurchaseOrder.timeline: [PurchaseOrderTimelineEntry!]!` と、`PurchaseOrderTimelineEntry`（`kind: PurchaseOrderTimelineKind!`・`occurredOn: ISO8601Date!`・`occurredAt: ISO8601DateTime`）と `PurchaseOrderTimelineKind` の enum を足す。リゾルバは、ほかの子の一覧と同じく `Sources::PublicApiSource` で `timeline_for` を呼ぶ。型の宣言（視点・認可）は `CancellationRequestType` にそろえる。`CancellationRequest.decidedAt` の説明（いまは「回答が届いた時刻」）を「受注側で回答した時刻。発生の時刻を運ぶ前に登録したイベントでは届いた時刻」に直す。`schema.graphql` を書き出し、`bin/check-schema-compat` が足しただけの変更として通ることを確かめる。入口の行列の入れ子の公開 API の表（`spec/matrix/graphql_expectations.rb` の `NESTED_APIS`）に `"Purchasing::PurchaseOrders.timeline_for" => { table: "purchase_orders" }` を足す。`spec/matrix/graphql_matrix_spec.rb` が、`app/graphql` から `PublicApiSource` で呼ぶ公開 API とこの表の鍵が一致することを求め、行の世界で他社の発注の ID を渡して空になることを確かめる。`spec/graphql/query_budget_spec.rb` には足さない。発注の詳細の行（`BuyerPurchaseOrder`）は、同じ発注の下の入荷を 1 件と 20 件に増やして比べるので、発注のフィールドの `timeline` はキーが 1 つのままで比べにならない（同じ根の `lines`・`cancellationRequests` も載っていない）。`timeline_for` の一括の読み込みは、下の単体の example が SQL の件数で確かめる
+4. 画面：`frontend/components/purchase-order-timeline.tsx` を足し、`purchase-order-detail.tsx` の明細の上に置く。発注の詳細の問い合わせに `timeline` を足す。出来事の名前は `frontend/lib/format.ts` に置き、時刻の出来事は日付と時刻を、日付の出来事は日付だけを出す。取消の却下と承認、受注側の取消は、取消の色（OI-192 の合計の欄と同じ控えめの色）で出す
+
+**完了条件**
+
+```sh
+bundle exec rspec packs/purchasing/spec packs/sales/spec packs/fulfillment/spec packs/billing/spec spec/contracts spec/matrix/graphql_matrix_spec.rb spec/graphql spec/requests/purchase_orders_spec.rb   # 0 failures
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:e2e -- e2e/purchase-order-timeline.spec.ts   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、次の 2 つである。
+
+- `supplier_event_receiver_spec.rb` の、`occurred_at` を運ぶ「受注確定」を受けると `accepted_at` がその時刻になる example。イベントの型に `occurred_at` を足した後、受け手を直す前に流し、受け手が受け取った時刻を書くので落ちる。同じ形で、5 つのイベントの時刻列ごとに example を置き、`occurred_at` の無い古いペイロード（`from_payload` に `occurred_at` の無いハッシュを渡す）では受け取った時刻を書くことも確かめる。発行元の 5 つの spec（受注確定を通す `purchase_order_translator_spec.rb`・`part_mappings_spec.rb`、`cancellation_reviews_spec.rb`、`purchasing_event_receiver_spec.rb` の自動の却下、`order_cancellation_spec.rb`）には、登録したイベントの `occurred_at` が上の値であることを確かめる example を置く
+- `purchase_orders_spec.rb` の、受注確定・取消依頼・却下・再依頼・承認と、出荷・検収・請求書の受領を経た発注について、`timeline_for` が上の並べ方で出来事を返す example。`timeline_for` を空の配列を返す形で先に置いてから流す
+
+`purchase_orders_spec.rb` には、ほかに次を置く。
+
+- 日本時間の 0〜9 時に `travel_to` して作った出来事の `occurred_on` が日本時間の日付になる（`guides/testing.md`「層への配分」）
+- 発注を 2 件以上作り、`timeline_for` が SQL を 1 回だけ流して両方の出来事を返す（`ActiveSupport::Notifications` で数える。前例：`spec/graphql/query_budget_spec.rb` の `count_sql`）。Bullet は関連の読み込みしか見ないので、生の `UNION ALL` の繰り返しを捕まえない
+- 他社の発注の行が混ざらない。自社と他社の発注の ID を両方 `timeline_for` に渡し、共有の文脈「RLS の SELECT と UPDATE を開く」（`cross_read!`）で RLS を開いても、他社の発注の ID は空の配列になり、他社の取消依頼・入荷・検収・受領請求書の出来事が自社の発注に混ざらず、対照として自社の出来事は返る。`UNION ALL` のどの枝から `Scope` を外しても落ちることを壊して落ちる記録に書く（枝ごとに 1 つ）
+- 1 通の受領請求書が、同じ発注の明細 2 行と別の発注の明細 1 行を含むとき、両方の発注に `invoice_received` が 1 つずつ出る
+
+`spec/requests/purchase_orders_spec.rb` に、発注の詳細の問い合わせが空でない `timeline` を返し（型の認可を通る）、`occurredAt` が日付の出来事で null になる example を置く。`frontend/e2e/purchase-order-timeline.spec.ts` は、E2E の世界（`DemoWorld`）の請求書を発行した発注（`stage: :issued`）を開き、発注登録 → 受注確定 → 出荷 → 検収 → 請求書の受領の順に出ることを確かめる。対照として、取消依頼中の発注（`stage: :cancellation_requested`）に取消依頼が出て、出荷が出ないことを確かめる。画面の寸法とコントラストは、`/buyer/purchase-orders/[id]` を測る既存の E2E（`frontend/e2e/support/screens.ts`）がそのまま測る。
+
+壊して落ちる記録には、上の `Scope` の枝のほか、受け手の `occurred_at` の読みを `Time.current` に戻す、並べ方の `occurred_at` の空を前に置く、`kind` の順位を外す、請求書と発注の組ごとにまとめる `EXISTS` を明細の結びに替える、を書く。
+
+**範囲外**：受注側の内部の進み（引当・出荷指示・出荷予定日）を発注側に見せること。いまの 3 つの読む経路の外になり、見せたくなったら、4 つ目の RLS の経路を作らず、新しいイベントで発注側に写す。上書きされて時刻が残らない出来事のための履歴の表（OI-210 の (b)）。受注側のタイムライン。発注の一覧への出来事の表示。
+
+**実装する文書の節**：`architecture/graphql-schema.md`「発注側の視点」「ページングと N+1」、`architecture/data-model.md`「イベントの受け口と冪等キー」、`architecture/context-map.md`「コンテキスト間の関係」
+
+**文書に残すこと**：`architecture/graphql-schema.md`「発注側の視点」に `PurchaseOrder.timeline` と出来事の表と並べ方。`architecture/data-model.md`「イベントの受け口と冪等キー」に、発注の時刻列は受注側の発生の時刻（`occurred_at`）を書き、無い古いペイロードでは受け取った時刻を書くこと。`showcase.md` のテーマ 4（整合性の設計）に、状況と同じ行から組み立てる履歴を足す。
+
+## M54 同じテナントの中の受注と出荷・請求を、同期の呼び出しでつなぐ
+
+**目的**：作者の判断（OI-211。A の案 2）で、同じテナントの中の受注 ↔ 出荷と受注 → 請求を、イベントではなく公開 API の同期の呼び出しでつなぐ。いまは、同じテナントの中の 6 つの経路（`Contracts::Subscriptions` の「出荷可能」「出荷停止」「出荷停止解除」「出荷取消」「出荷計上」の受注への分、「請求対象確定」）がイベントで、届く順の入れ替わりに備える仕組み（解除済みの停止を先に作る upsert、出荷取消が先に届いたら失敗させる道と `ready_for_shipment`、受注ごとの勧告ロック、検収完了が先に届いたら失敗させる `NotShippedYet`）を抱えている。`architecture/context-map.md`「コンテキスト間の関係」は、同期を在庫の不変条件と同じテナントの中の写しに、非同期をテナントをまたぐ連結に使うとしており、同じテナントの中の受注と出荷のイベントはこの分け方から外れている。流用元も、計上と受注の出荷済みの書き込みと、受注の取消と出荷指示の取消を、1 つのトランザクションで行う（調査の記録は `plans/cycle-09/plan-review.md`「M54 の調べ」）。
+
+出荷が受注を読み、呼ぶ（`fulfillment` → `sales`）。受注が請求を呼ぶ（`sales` → `billing`）。「出荷可能」だけはイベントで残す。理由は新しい ADR 012 に書く（作るもの 7）。
+
+**作るもの**
+
+1. 依存の向き：`packs/fulfillment/package.yml` に `packs/sales` を、`packs/sales/package.yml` に `packs/billing` を足す。`sales` は `fulfillment` に、`billing` は `sales` にも `fulfillment` にも依存しないので、循環しない。`bin/packwerk validate` が循環を落とす（packwerk 3.3.1 の `lib/packwerk/validators/dependency_validator.rb` の `call` が `check_acyclic_graph` を呼ぶ）ので、完了条件で流す。`architecture/context-map.md`「疎結合を守る規則」の依存の表の 2 行も直す
+2. 受注の公開 API（`Sales::OrderShipping`。新しいファイル）
+   - `status_sql(actor)`：自社の受注について、受注 ID と、取消済か（`cancelled_at` がある）と、未決の取消の審査があるか（決着していない `cancellation_reviews` がある）を返す副問い合わせ（`SqlSubquery`。ADR 010 決定 2 と同じ形。前例：`Inventory::Stocks.safety_stocks_sql`）
+   - `lock(actor, sales_order_id)`：`Scope` の自社の受注の行を `FOR UPDATE` でロックし、取消済・審査中・出荷済の 3 つを返す。見えない受注（他社の受注を含む）は `nil` を返し、何もロックしない
+   - `mark_shipped(actor, sales_order_id)`：`Scope` の自社の受注に、`shipped_at` が空のときだけ書く。見えない受注には書かずに `NOT_FOUND` の失敗を返す。呼ぶ側が `lock` を取った後に呼ぶ
+   - 単体（`packs/sales/spec/public/sales/order_shipping_spec.rb`）：他社の受注の ID で `lock` が `nil` を、`mark_shipped` が書かずに `NOT_FOUND` を返す。`cross_read!` で RLS を開いても同じで、対照として自社の受注には書く。`mark_shipped` を 2 回呼んでも `shipped_at` は最初の値のまま。`status_sql` は、`cross_read!` で RLS を開いても他社の受注の取消と審査を返さない
+   - テナントの境界：表も RLS のポリシーも足さない。3 つとも `Scope` の自社の受注だけを読み書きし、他社の受注には当たらない。GraphQL の入口は足さないので、入口の行列の行は変わらない
+3. 出荷の状況と操作（`packs/fulfillment`）
+   - `Fulfillment::ShipmentRequestStatus.expression` を、出荷停止の行と出荷依頼の `cancelled_at` ではなく、`Sales::OrderShipping.status_sql` を結んで導出する形にする。優先順（取消済 → 出荷済 → 出荷停止中 → 出荷指示済 → 出荷可能）と、GraphQL の状況の値は変えない。式は操作者を受け取る形になるので、式を呼ぶ箇所すべて（`ShipmentRequests` の `list` の列・`filtered`・`with_status`・`order_columns`。`with_status` を使う `find`・`for_sales_orders`・`due_within` を含む）に渡す
+   - `Fulfillment::Instructions.create` と `Fulfillment::Shipping.post` は、出荷依頼をロックせずに引いて受注 ID を読み、`Sales::OrderShipping.lock` で受注をロックしてから、出荷依頼をロックして読み直す。`lock` が `nil`（受注が見えない）なら、何も書かずに `NOT_FOUND`（`path: [:shipment_request_id]`）を返す。受注の行の無い出荷依頼で計上すると、受注の `shipped_at` を書かないまま出荷実績ができ、目的と食い違うからである。取消済か審査中なら、いまと同じ `CONFLICT` の文言を返す。`Shipping.post` は、引当の消費の後に `Sales::OrderShipping.mark_shipped` を同じトランザクションで呼び、失敗を返したらセーブポイントまで戻してその失敗を返す。単体（`shipping_spec.rb`・`instructions_spec.rb`）に、受注の行の無い出荷依頼で `NOT_FOUND` になり、出荷実績も出荷指示もできない example を置く。`ShipmentRequest#held?` は消す
+   - 受注を取り消しても、出荷は受注を書き換えられないので、出荷指示の行は `active` のまま残す。有効な出荷指示を読む 2 か所（`packs/fulfillment/app/public/fulfillment/shipment_requests.rb` の `instructions_for` と、並べ替えの列「出荷予定日」の `planned_date` の副問い合わせ）は、取消済の受注の出荷依頼の指示を除く。出荷指示の部分一意索引は変えない。`Instructions.cancel` は受注を読まず、取消済の受注の出荷依頼の残った指示も取り消せる（害が無く、画面は取消済の出荷依頼に取消のボタンを出さない）。状況の式で、出荷依頼の受注が `status_sql` に当たらない（見えない受注を指す）ときは、取消済でも出荷停止中でもない側に倒れ、出荷済・出荷指示済・出荷可能のどれかになる
+   - `Fulfillment::SalesEventReceiver` は「出荷可能」だけを受ける。出荷停止・解除・取消の受け手と、受注ごとの勧告ロック（`lock_sales_order`）を消す。「出荷可能」が取消の後に届いて出荷依頼ができても、状況は受注から導出して取消済になる
+4. 受注の取消と審査（`packs/sales`）：`OrderCancelling.cancel` は「出荷取消」を出さず、`ready_for_shipment` の読みも消す。`CancellationReviews.reject` は「出荷停止解除」を出さない。`PurchasingEventReceiver.review` は「出荷停止」を出さない。審査の行があることが、そのまま出荷停止になる。`PurchasingEventReceiver.inspect_shipment` は `NotShippedYet` を消す。出荷済の書き込みと「出荷計上」が同じトランザクションになるので、検収完了が出荷済より先に届くことは無く、届けば `sales_orders_inspected_after_shipped` の CHECK 制約で失敗する。請求対象確定は、イベントではなく `Billing::BillableItems.confirm` を同じトランザクションで呼ぶ。`confirm` は新しい公開の書き込みの入口で、操作者のいない入口から呼ばれるので操作者を取らず、`Tenancy.require_tenant!` でテナントの設定を求め、`owner_tenant_id` を `Current.tenant_id` で書き、値を返さない（いまの受け手の `handle` と同じ契約。前例：`Fulfillment::ShipmentRequests.put_order_numbers`）。冪等の INSERT は、いまの `Billing::SalesEventReceiver.record` と同じく `(shipment_id, sales_order_line_id)` の一意索引に任せ、他社の同じ組の行があれば書かない。単体（`packs/billing/spec/public/billing/billable_items_spec.rb`）で、テナントの設定が無いと `Tenancy::MissingTenant`、2 回呼んでも 1 行、他社の同じ組の行があれば自社の行を書かないことを確かめる。`guides/testing.md`「行列テストとの分担」の、グローバルな一意索引で他社の行への書き込みが止まる入口の名指しを `confirm` に替える
+5. 消すもの：イベントの型 `Contracts::ShippingHeld`・`ShippingHoldReleased`・`ShipmentCancelled`・`BillableItemConfirmed`、配送表の 5 行（その 4 つと「出荷計上」の `Sales::FulfillmentEventReceiver` の行）、`Sales::FulfillmentEventReceiver`、`Billing::SalesEventReceiver`、`Fulfillment::ShippingHold` と `shipping_holds` の表、`shipment_requests.cancelled_at` の列。表と列はマイグレーションで消す。列は前例（`db/migrate/20261012200100_remove_unit_price_from_items.rb`）と同じく、モデルに `ignored_columns` を置いてから `safety_assured` で消し、`down` は表と列を空で戻す（値は戻さない）。消した列を読む箇所が残らないことを `git grep` で確かめる。テナントの表の一覧（`spec/matrix/table_expectations.rb` など）から `shipping_holds` を消す。出荷の factory の `:shipment_request`（`packs/fulfillment/spec/factories/fulfillment.rb`）は、いま受注の行を作らずに `SecureRandom.uuid` を受注 ID にするので、同じテナントの受注の行（`:sales_order`）を作ってその ID を入れる形に変える。この factory で計上と出荷指示の作成を通す spec（`shipping_spec.rb`・`instructions_spec.rb`・`shipping_lock_spec.rb`・`spec/concurrency/post_shipment_audit_spec.rb`・`spec/requests/supplier_shipments_spec.rb`・`spec/requests/audit_spec.rb`、入口の行列の `Mutation.postShipment`・`Mutation.createShippingInstruction` の世界）は、factory を変えた後に流して落ちた spec と直し方を証跡に書く。トランザクションを使わない競合テスト（`shipping_lock_spec.rb`・`post_shipment_audit_spec.rb`）は、後始末の表（`delete_owned_rows`）に `sales_orders` を足す。入口の行列の世界は、出荷の表の行の数だけ受注の行が増える。消すイベントと受け手を名指しする spec（`git grep` で数える。`packs/sales/spec/concurrency/sales/cancellation_reviews_lock_spec.rb`・`order_cancellation_lock_spec.rb`・`spec/contracts/shipment_posted_delivery_spec.rb`・`packs/billing/spec/concurrency/billing/closing_lock_spec.rb` など）は、同期の形の期待に書き換えるか、消した受け手だけを確かめる spec なら消す。消した example の `expect` が確かめていた性質は、上の最初に落とす example と競合テストに対応づけ、対応の表を証跡に書く（`guides/testing.md`「層への配分」の移す人の規則と同じ）
+6. ロックの順：受注 → 出荷依頼 → 出荷指示 → 在庫（`item_id` 昇順）→ 引当にそろえる。受注の取消は受注 → 受注明細 → 在庫 → 引当のまま変わらない。どちらも受注を最初に取るので、取消・審査の作成と決着・出荷指示の作成・計上が、受注の行ロックで直列になる。出荷が受注の行を後から取る順（出荷依頼 → 出荷指示 → 受注 → 在庫 → 引当）は、受注を待つ間に出荷依頼のロックを持ち続け、取消の確かめを出荷依頼のロックの後に読む形になるので採らない（`plans/cycle-09/plan-review.md`「M54 の調べ」）。`architecture/data-model.md`「取消と出荷の競合を止める場所」のロックの順の文と、`spec/db/lock_sites_spec.rb` の表（消した受け手の行を消し、`Sales::OrderShipping.lock` の行を足し、`Fulfillment::Instructions.create` の理由を受注の行ロックで直列になる形に書き直して `shipping_lock_spec.rb` を指す）を直す
+7. ADR 012「同じテナントの中の連結を同期にし、出荷可能だけをイベントで残す」：比べた形（受注が出荷を呼ぶ形・出荷依頼の写しを無くす形・ルートパッケージで束ねる形・`Contracts.publish` が同じテナントの受け手をすぐに呼ぶ形）と退けた理由、ロックの順、「出荷可能」を残す理由を書く。残す理由は、受注が出荷を呼ぶと `sales` → `fulfillment` の依存が要って作るもの 1 と循環することと、遅れて届いても出荷依頼の状況は受注から導出するので害が無いことである。裏返る条件は、出荷依頼の写しを無くして出荷が受注の行から出荷可能を読む形（案 3）に移るとき
+
+**完了条件**
+
+```sh
+bin/packwerk validate && bin/packwerk check
+bundle exec rspec packs/fulfillment/spec packs/sales/spec packs/billing/spec spec/concurrency spec/contracts spec/scenarios spec/db/lock_sites_spec.rb spec/matrix   # 0 failures
+cd frontend && npm run test:e2e   # 0 failures
+```
+
+期待の不一致で最初に落とすのは、次の 4 つである。どれも、イベントを流さずに（`deliver_enqueued_events` を呼ばずに）確かめるので、いまのコードでは落ちる。
+
+- `packs/fulfillment/spec/models/fulfillment/shipment_request_status_spec.rb`：受注を取り消した直後の出荷依頼の状況が `cancelled` に、未決の審査がある受注の出荷依頼が `on_hold` に、審査を却下した後は元の状況に戻る
+- `packs/fulfillment/spec/public/fulfillment/shipping_spec.rb`：計上の直後に受注の `shipped_at` が書かれている。取消済と審査中の受注の出荷依頼は、出荷指示の作成も計上も `CONFLICT` になる（`instructions_spec.rb` にも同じ形）
+- `packs/sales/spec/public/sales/purchasing_event_receiver_spec.rb`：検収完了を受けた直後に、未請求の請求対象明細ができている
+- `packs/fulfillment/spec/public/fulfillment/shipment_requests_spec.rb`：取消済の受注の出荷依頼の `active` な出荷指示を、出荷指示の読み込み（`instructions_for`）が返さず、出荷予定日で並べたときに、その出荷依頼が予定日の無い出荷依頼と同じ位置に並ぶ。対照として、取り消していない受注の出荷依頼の指示は返り、予定日の位置に並ぶ
+
+競合テストは次のとおりにする。`spec/db/lock_sites_spec.rb` の表が、ロックを取るメソッドごとに競合テストを求める。
+
+- `spec/concurrency/cancel_vs_ship_spec.rb`（S4）は、次の 2 つの組を 2 つの接続で動かす。後の操作が待つことは pid で（`spec/support/concurrency.rb`）、待つ先が受注の行であることは、待つ側の `pg_locks` の `locktype = 'tuple'` の行の `relation` が `sales_orders` で、`shipment_requests` の `tuple` の行が無いことで確かめる（行ロックを待つ接続はタプルのロックを取る。`granted = false` の行は `transactionid` で `relation` を持たない）。この判定は `spec/support/concurrency.rb` の補助に置く
+  - 受注側の取消と計上：両方の順を試す。取消が先なら、計上は待った後に取消済を読んで `CONFLICT` になり、状況は取消済。計上が先なら、取消は待った後に出荷済を読んで `CONFLICT` になり、状況は出荷済
+  - 審査の承認と計上：未決の審査がある間は、計上は順によらず審査中で `CONFLICT` になる。承認が先なら、計上は待った後に取消済を読んで `CONFLICT`。いまの「審査の経路で出荷停止を流さずに計上を先に成立させる」example は、審査の行がそのまま停止になるので作れず、消す
+- `packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb` は、次の組を動かす。`shipping_hold_lock_spec.rb`（勧告ロック）と、`shipping_lock_spec.rb` の出荷停止の受け手の example を、この形に置き換えて消す。`sales_event_receiver_lock_spec.rb`（同じ「出荷可能」が 2 つの接続に届いても出荷依頼が 1 件）は、受け手が残るので残す
+  - 審査の作成（取消依頼の受け手）と計上：審査が先なら、計上は待った後に `CONFLICT`。計上が先なら、受け手は待った後に出荷済を読んで自動で却下し、未決の審査を残さない
+  - 審査の作成と出荷指示の作成：審査が先なら出荷指示の作成は `CONFLICT`。出荷指示が先なら審査はでき、その後の計上は `CONFLICT`
+  - 審査の却下と計上：却下が先なら、計上は待った後に読み直して成立する
+
+壊して落ちる記録には、状況の式から副問い合わせの取消済と審査中をそれぞれ外す、`Shipping.post` から `mark_shipped` を外す、`Instructions.create` と `Shipping.post` から受注のロックを外す（`shipping_lock_spec.rb` の審査が先の example が落ちる）、`status_sql` から `Scope` を外す（`cross_read!` で RLS を開いた単体の example が他社の受注の取消で状況を変える）、`instructions_for` と `planned_date` から取消済の除外をそれぞれ外す、を書く。
+
+E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベントのために `drain` を残し、期待は変えない。`frontend` の E2E を全体で流し、取消・審査中・出荷の画面の状況の表示が変わらないことを確かめる。
+
+**範囲外**：「出荷可能」の同期化と出荷依頼の写しを無くすこと（案 3）、「出荷計上」が運ぶ受注 ID と受注明細 ID（受注の受け手を消すと読む受け手がいなくなるが、消すと足す前に登録したジョブのペイロードを `from_payload` が読めなくなるので残す）、出荷依頼の受注番号の写し（M50）を受注の副問い合わせに替えること、テナントをまたぐイベントの経路。消すイベントのジョブが配置の時点でキューに残ったときの互換は持たない。配送表から消した型のジョブは失敗し続けるが、公開の配置は毎日 DB ごと作り直し（ADR 009）、手元は `db:reset` で消える
+
+**実装する文書の節**：`architecture/context-map.md`「コンテキスト間の関係」「疎結合を守る規則」「取消の流れ」「検収と請求の流れ」、`architecture/data-model.md`「状態は保存せず、時刻列から導出する」（取消の前に出荷可能を出していたかの文と、出荷依頼の状況の表）「出荷（`fulfillment`）」（出荷停止の表と受け手のロックの段落）「取消と出荷の競合を止める場所」「イベントの届く順の入れ替わり」「イベントの受け口と冪等キー」、`adr/010-状況の導出をSQLの式1つにする.md`（決定 3・4 の出荷停止の副問い合わせと、出荷可能を出していたかの判定の行）、`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`、`guides/testing.md`「競合テスト」「行列テストとの分担」（出荷停止の副問い合わせ・`release_hold`・`hold`・`Billing::SalesEventReceiver` の名指し）
+
+**文書に残すこと**：ADR 012。`context-map.md`「コンテキスト間の関係」の図の矢印（受注 → 出荷は「出荷可能」のイベントだけ、出荷 → 受注は受注の読みと出荷済みの書き込みの同期の呼び出し、受注 → 請求は請求対象確定の同期の呼び出し）と、関係の表の「受注 → 出荷」「出荷 → 受注・購買」「受注 → 請求」の行と、同期と非同期の使い分けの箇条（同じテナントの中の連結は同期、例外は「出荷可能」で ADR 012）。`data-model.md` の、出荷停止の表の行と、受注 ↔ 出荷の届く順の入れ替わりの例と勧告ロックの段落を消し、テナントをまたぐ例は残す。ロックの順の文を作るもの 6 に合わせる。ADR 010 の「出荷可能を出していたかの判定」の行と、ADR 011 の同じテナントの中の写しの文を、作るもの 3・4 に合わせる。`showcase.md` のテーマ 2〜4 の、同期と非同期の分け方・下流が上流に順応する向き・届く順の入れ替わりの例と、出荷依頼の受注番号の写しの理由（「出荷は受注に依存しないので」）を合わせる。写しは範囲外として残すので、理由を「写しを作った時点の依存の向き」に書き換える。書き換えた後に、`git grep -n -e ShippingHeld -e ShippingHoldReleased -e ShipmentCancelled -e BillableItemConfirmed -e shipping_holds -e ShippingHold -e NotShippedYet -e FulfillmentEventReceiver -e Billing::SalesEventReceiver -e release_hold -e lock_sales_order -e 'held?' -e 'ready_for_shipment:' -e '\.ready_for_shipment' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!db/migrate'` が 0 件になることを確かめる。
