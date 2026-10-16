@@ -238,7 +238,7 @@ RSpec.describe "発注登録と受注の連結", type: :request do
       line_id = select_values(buyer, "SELECT id FROM purchase_order_lines").sole
       Tenancy.with_tenant(supplier.id) do
         Contracts.publish(Contracts::SalesOrderConfirmed.new(purchase_order_id: placed.id, buyer_tenant_id: buyer.id,
-          supplier_tenant_id: supplier.id, lines: [ { "purchase_order_line_id" => line_id, "item_name" => "別名", "unit_price" => "1" } ]))
+          supplier_tenant_id: supplier.id, lines: [ { "purchase_order_line_id" => line_id, "item_name" => "別名", "unit_price" => "1" } ], occurred_at: Time.current.iso8601(6)))
       end
       deliver_enqueued_events(times: 2)
 

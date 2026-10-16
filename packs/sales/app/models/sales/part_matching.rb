@@ -28,7 +28,7 @@ module Sales
     # 品目 ID ごとの現在の単価の行。明細ごとに引かず、受注をまとめて照合するときに 1 回で引く
     def self.prices(item_ids) = ItemPrice.current.where(owner_tenant_id: Current.tenant_id, item_id: item_ids).group_by(&:item_id)
 
-    # 全明細が照合できた受注を確定し、「受注確定」を出す。受注・受注明細・品目の ID は運ばない。
+    # 全明細が照合できた受注を確定し、「受注確定」を出す。発生の時刻は受注の confirmed_at で、受注・受注明細・品目の ID は運ばない。
     # 明細を読み込み済みの呼び出し元は lines に渡し、受注ごとに明細を引き直さない。
     # 自社の admin への新しい受注の通知は撃ちっぱなしにする。失っても受注は一覧に出るので、業務は進む（docs/adr/007 決定 5 の B-1）
     def self.confirm(order, lines = order.lines)
@@ -40,7 +40,8 @@ module Sales
         lines: lines.map do |line|
           { "purchase_order_line_id" => line.source_purchase_order_line_id, "item_name" => line.item_name,
             "unit_price" => line.unit_price.to_s }
-        end
+        end,
+        occurred_at: order.confirmed_at.iso8601(6)
       ))
       Notifications::Email.deliver_best_effort(:new_sales_order, params: { order_no: order.order_no })
     end

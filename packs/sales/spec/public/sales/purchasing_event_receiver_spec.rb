@@ -7,6 +7,8 @@ require_relative "../../../../../spec/support/cross_read"
 # 「検収完了」では検収数量を記録し、受注を検収済にする
 # （docs/architecture/context-map.md「取消の流れ」2・4、「検収と請求の流れ」2、docs/architecture/data-model.md「イベントの受け口と冪等キー」）
 RSpec.describe Sales::PurchasingEventReceiver do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:buyer) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
@@ -60,6 +62,16 @@ RSpec.describe Sales::PurchasingEventReceiver do
     end
   end
 
+  # 自動の却下は審査を作らないので、発行するときの時刻を運ぶ。依頼の時刻（requested_at）ではない
+  it "自動の却下の「取消却下」の発生の時刻は、発行するときの時刻である" do
+    now = Time.zone.parse("2026-10-14 10:20:30")
+    Tenancy.with_tenant(supplier.id) { order.update!(shipped_at: Time.current) }
+
+    travel_to(now) { handle(event) }
+
+    expect(Time.iso8601(published.sole.occurred_at)).to eq(now)
+  end
+
   it "受注がまだ無い（発注登録より先に届いた）なら、何も書かずに失敗し、再配送に任せる" do
     expect { handle(event.with(purchase_order_id: SecureRandom.uuid)) }.to raise_error(ActiveRecord::RecordNotFound)
     expect(reviews).to be_empty
@@ -96,7 +108,7 @@ RSpec.describe Sales::PurchasingEventReceiver do
 
   it "配送表に無い種類のイベントは、審査を書かずに ArgumentError で失敗する" do
     unexpected = Contracts::PartMatchPending.new(purchase_order_id: order.source_purchase_order_id, buyer_tenant_id: buyer.id,
-      supplier_tenant_id: supplier.id)
+      supplier_tenant_id: supplier.id, occurred_at: Time.current.iso8601(6))
 
     expect { handle(unexpected) }.to raise_error(ArgumentError, "unexpected event: Contracts::PartMatchPending")
     expect(reviews).to be_empty

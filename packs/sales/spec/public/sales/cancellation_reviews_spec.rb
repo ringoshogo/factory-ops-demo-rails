@@ -52,7 +52,7 @@ RSpec.describe Sales::CancellationReviews do
       expect(published.map(&:class)).to contain_exactly(Contracts::CancellationApproved, Contracts::ShipmentCancelled)
       expect(published.find { _1.is_a?(Contracts::CancellationApproved) }).to have_attributes(
         cancellation_request_id: review.source_cancellation_request_id, purchase_order_id: order.source_purchase_order_id,
-        buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
+        buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id, occurred_at: review.decided_at.iso8601(6))
       expect(published.find { _1.is_a?(Contracts::ShipmentCancelled) }).to have_attributes(sales_order_id: order.id,
         supplier_tenant_id: supplier.id, cancellation_review_id: review.id, ready_for_shipment: true)
     end
@@ -98,7 +98,7 @@ RSpec.describe Sales::CancellationReviews do
       expect(published.map(&:class)).to contain_exactly(Contracts::CancellationRejected, Contracts::ShippingHoldReleased)
       expect(published.find { _1.is_a?(Contracts::CancellationRejected) }).to have_attributes(
         cancellation_request_id: review.source_cancellation_request_id, purchase_order_id: order.source_purchase_order_id,
-        buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
+        buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id, occurred_at: review.decided_at.iso8601(6))
       expect(published.find { _1.is_a?(Contracts::ShippingHoldReleased) }).to have_attributes(
         cancellation_review_id: review.id, sales_order_id: order.id, supplier_tenant_id: supplier.id)
     end

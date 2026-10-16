@@ -6,6 +6,8 @@ require_relative "../../../../../spec/support/cross_read"
 # 「出荷計上」の購買の受け手（docs/architecture/data-model.md「購買（`purchasing`）」「イベントの受け口と冪等キー」）。
 # 配送表を通した重複配送は spec/contracts/shipment_posted_delivery_spec.rb が確かめる
 RSpec.describe Purchasing::SupplierEventReceiver do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:buyer) { FactoryBot.create(:tenant) }
   let!(:order) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:purchase_order, supplier_tenant_id: supplier.id) } }
@@ -57,7 +59,8 @@ RSpec.describe Purchasing::SupplierEventReceiver do
 
     it "他社の発注は見つからず、書かない" do
       theirs = Tenancy.with_tenant(FactoryBot.create(:tenant).id) { FactoryBot.create(:purchase_order, supplier_tenant_id: supplier.id) }
-      pending_event = Contracts::PartMatchPending.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
+      pending_event = Contracts::PartMatchPending.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id,
+        occurred_at: Time.current.iso8601(6))
 
       Tenancy.with_tenant(buyer.id) do
         cross_read!
@@ -78,7 +81,7 @@ RSpec.describe Purchasing::SupplierEventReceiver do
 
     def answer(klass, **overrides)
       klass.new(cancellation_request_id: request.id, purchase_order_id: order.id, buyer_tenant_id: buyer.id,
-        supplier_tenant_id: supplier.id, **overrides)
+        supplier_tenant_id: supplier.id, occurred_at: Time.current.iso8601(6), **overrides)
     end
 
     def order_value = Tenancy.with_tenant(buyer.id) { Purchasing::PurchaseOrders.find(actor, order.id) }
@@ -128,7 +131,8 @@ RSpec.describe Purchasing::SupplierEventReceiver do
 
   describe "受注取消" do
     let(:cancelled) do
-      Contracts::SalesOrderCancelled.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id)
+      Contracts::SalesOrderCancelled.new(purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id,
+        occurred_at: Time.current.iso8601(6))
     end
     let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: buyer.id, name: "", email: "", role: "member", partner_code: "") }
 
@@ -158,6 +162,52 @@ RSpec.describe Purchasing::SupplierEventReceiver do
     it "受注側テナントが一致しない発注は書かない" do
       expect { handle(cancelled.with(supplier_tenant_id: FactoryBot.create(:tenant).id)) }.to raise_error(ActiveRecord::RecordNotFound)
       expect(Tenancy.with_tenant(buyer.id) { order.reload.supplier_cancelled_at }).to be_nil
+    end
+  end
+
+  # 発注の時刻列には、受け取った時刻ではなく受注側で起きた時刻を書く。受け取った時刻を書くと、配送が遅れたときに、
+  # その後に発注側で出した取消依頼が受注確定より前に並ぶ（docs/architecture/data-model.md「イベントの受け口と冪等キー」）。
+  # 発生の時刻を運ぶ前に登録したジョブのペイロードには occurred_at が無く、そのときだけ受け取った時刻を書く
+  describe "発生の時刻" do
+    let(:occurred_at) { Time.zone.parse("2026-10-14 10:20:30.123456") }
+    let(:received_at) { Time.zone.parse("2026-10-15 09:00:00") }
+    let!(:request) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:cancellation_request, purchase_order: order) } }
+    let(:keys) { { purchase_order_id: order.id, buyer_tenant_id: buyer.id, supplier_tenant_id: supplier.id } }
+    let(:confirmed_lines) { lines.map { { "purchase_order_line_id" => _1.id, "item_name" => "確定名", "unit_price" => "100" } } }
+
+    # イベントごとに、作る引数と、書いた時刻列を読む手続き
+    let(:cases) do
+      { Contracts::SalesOrderConfirmed => [ { lines: confirmed_lines }, -> { order.reload.accepted_at } ],
+        Contracts::PartMatchPending => [ {}, -> { order.reload.awaiting_match_at } ],
+        Contracts::CancellationApproved => [ { cancellation_request_id: request.id },
+          -> { [ request.reload.decided_at, order.reload.cancelled_at ] } ],
+        Contracts::CancellationRejected => [ { cancellation_request_id: request.id }, -> { request.reload.decided_at } ],
+        Contracts::SalesOrderCancelled => [ {}, -> { order.reload.supplier_cancelled_at } ] }
+    end
+
+    def written(klass, payload)
+      travel_to(received_at) { handle(klass.from_payload(payload)) }
+      Tenancy.with_tenant(buyer.id) { cases.fetch(klass).last.call }
+    end
+
+    def payload(klass) = klass.new(**keys, **cases.fetch(klass).first, occurred_at: occurred_at.iso8601(6)).to_payload
+
+    [ Contracts::SalesOrderConfirmed, Contracts::PartMatchPending, Contracts::CancellationApproved,
+      Contracts::CancellationRejected, Contracts::SalesOrderCancelled ].each do |klass|
+      it "#{klass.name.demodulize} は、運んだ発生の時刻を書く" do
+        expect(Array.wrap(written(klass, payload(klass)))).to all(eq(occurred_at))
+      end
+
+      it "#{klass.name.demodulize} の occurred_at の無い古いペイロードでは、受け取った時刻を書く" do
+        old = payload(klass).except("occurred_at")
+
+        expect(klass.from_payload(old).occurred_at).to be_nil
+        expect(Array.wrap(written(klass, old))).to all(eq(received_at))
+      end
+    end
+
+    it "new は occurred_at を求め、発行元が渡し忘れたら例外にする" do
+      expect { Contracts::PartMatchPending.new(**keys) }.to raise_error(ArgumentError, /occurred_at/)
     end
   end
 
