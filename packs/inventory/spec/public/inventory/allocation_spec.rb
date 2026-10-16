@@ -8,7 +8,7 @@ RSpec.describe Inventory::Allocation do
   let(:item_id) { SecureRandom.uuid }
   let(:line_ids) { Array.new(2) { SecureRandom.uuid }.sort }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   def stock = Inventory::Stocks.for_items(actor, [ item_id ]).fetch(item_id)
 

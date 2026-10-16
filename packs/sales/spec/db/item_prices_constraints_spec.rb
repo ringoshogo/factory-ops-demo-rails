@@ -6,7 +6,7 @@ RSpec.describe "item_prices の制約" do
   let(:supplier) { FactoryBot.create(:tenant) }
   let!(:item) { FactoryBot.create(:item, unit_price: nil) }
 
-  around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
+  around { |example| TenantExample.run(example, supplier.id) }
 
   def connection = ActiveRecord::Base.lease_connection
 

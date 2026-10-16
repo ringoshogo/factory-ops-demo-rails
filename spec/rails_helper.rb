@@ -15,7 +15,7 @@ require_relative "support/request_helpers"
 # 競合テストの補助と後始末のガードは、:concurrency のメタデータ（下の define_derived_metadata）と同じくここで必ず読む。
 # spec のファイルごとに読ませると、読み忘れた競合テストを単独で流したときにガードが登録されない
 require_relative "support/concurrency"
-require_relative "support/around_hook_errors"
+require_relative "support/tenant_example"
 
 # Requires supporting ruby files with custom matchers and macros, etc, in
 # spec/support/ and its subdirectories. Files matching `spec/**/*_spec.rb` are
@@ -51,9 +51,6 @@ RSpec.configure do |config|
   # examples within a transaction, remove the following line or assign false
   # instead of true.
   config.use_transactional_fixtures = true
-  # example を包む around が送出しても、上の example ごとのトランザクションを巻き戻す（spec/support/around_hook_errors.rb）。
-  # rspec-rails が足す巻き戻しの around より後に include して、その内側に置く
-  config.include AroundHookErrors
 
   # You can uncomment this line to turn off ActiveRecord support entirely.
   # config.use_active_record = false

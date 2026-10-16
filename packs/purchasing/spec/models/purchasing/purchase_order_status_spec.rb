@@ -8,7 +8,7 @@ RSpec.describe Purchasing::PurchaseOrderStatus do
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
   let(:now) { Time.current }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   # inbound は入荷を、inspected は入荷とその検収を作る
   def order(inbound: false, inspected: false, **timestamps)

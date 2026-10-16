@@ -7,7 +7,7 @@ RSpec.describe Sales::CancellationReviews do
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:buyer) { FactoryBot.create(:tenant) }
 
-  around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
+  around { |example| TenantExample.run(example, supplier.id) }
 
   let(:user) { FactoryBot.create(:user) }
   let(:actor) { Partnerships::Actor.new(user_id: user.id, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }

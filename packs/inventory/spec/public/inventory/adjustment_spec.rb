@@ -7,7 +7,7 @@ RSpec.describe Inventory::Adjustment, ".adjust" do
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
   let(:item_id) { SecureRandom.uuid }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   def adjust(reason) = described_class.adjust(actor, item_id:, type: "inbound", quantity: 3, reason:)
 
@@ -42,7 +42,7 @@ RSpec.describe Inventory::Adjustment, ".set_quantity" do
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
   let(:item_id) { SecureRandom.uuid }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   def set(quantity) = described_class.set_quantity(actor, item_id:, quantity:, reason: "CSV の取り込み")
 

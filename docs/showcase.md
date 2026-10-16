@@ -287,7 +287,7 @@ bin/check-structure
 - 同時実行は、2 つの接続を別のスレッドで動かし、後の接続が先の接続のロックを待つことを pid で確かめる（`spec/support/concurrency.rb`）
 - 一覧のために別のコンテキストへ写した値は、`spec/scenarios/read_model_copies_spec.rb` が、シードと E2E の世界を作った後と品目を変えた後に、元から作り直しても何も書かないことを確かめる。品目の写しと、出荷依頼に写した受注番号の両方を読み、受注番号の写しを空にするか書き換えた対照で、作り直しが書き直すことも確かめる
 - 画面は、Playwright の E2E が Rails・`bin/jobs`・Next を起こして通す。S1・S2 を画面でも確かめ、全画面の寸法とコントラストを測り、集計の数と飛び先の一覧の件数が一致することを確かめる（`frontend/e2e/`）。手元の E2E の Rails も、CI と同じく起動の時にアプリを読み込んでから答えるので、最初の要求の遅さと読み込みの誤りの出方が手元と CI で変わらない（`frontend/e2e/start-rails.sh`、[`guides/config.md`](guides/config.md)「環境ごとの設定」）
-- 1 つの example の失敗が後ろのテストを止めない：テストの DB に RLS を開くポリシーを足し外しする補助は、表のロックを待つ時間に上限を置き、打ち切ったらロックを持つ接続を出す。example を包む around が SQL のエラーの後に送出しても、送出を example の失敗に移して example のトランザクションを巻き戻すので、残ったロックで後ろのグループが止まらない（`spec/support/matrix_cross_read.rb`・`spec/support/around_hook_errors.rb`、`spec/matrix/cross_read_spec.rb`・`spec/platform/around_hook_errors_spec.rb`、[`guides/testing.md`](guides/testing.md)「行列テストとの分担」）
+- 1 つの example の失敗が後ろのテストを止めない：テストの DB に RLS を開くポリシーを足し外しする補助は、表のロックを待つ時間に上限を置き、打ち切ったらロックを持つ接続を出す。example をテナントで包む around は、example が SQL のエラーで落ちたときだけテナントのセーブポイントを巻き戻して抜ける補助を通すので、送出せず、example のトランザクションが残って後ろのグループを止めない。補助を通さずにテナントかトランザクションで直に包む around は、spec のファイルを構文木で読むガードが落とす（`spec/support/matrix_cross_read.rb`・`spec/support/tenant_example.rb`、`spec/matrix/cross_read_spec.rb`・`spec/platform/tenant_example_spec.rb`、[`guides/testing.md`](guides/testing.md)「層への配分」「行列テストとの分担」）
 
 **どう確かめられるか**
 
@@ -298,7 +298,7 @@ bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちら�
 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
-**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、around の送出の後の巻き戻しと、手元の E2E の起動の時の読み込みは M51。
+**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、手元の E2E の起動の時の読み込みは M51。テナントで包む around の補助とガードは M52（M51 の全 spec に効く補助を置き換えた）。
 
 ### 10. 運用性
 

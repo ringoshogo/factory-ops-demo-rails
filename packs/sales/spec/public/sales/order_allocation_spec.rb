@@ -6,7 +6,7 @@ RSpec.describe Sales::OrderAllocation do
   let(:supplier) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
 
-  around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
+  around { |example| TenantExample.run(example, supplier.id) }
 
   let(:item) { FactoryBot.create(:item) }
   let(:order) do

@@ -6,7 +6,7 @@ RSpec.describe Sales::ItemPrice do
 
   let(:supplier) { FactoryBot.create(:tenant) }
 
-  around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
+  around { |example| TenantExample.run(example, supplier.id) }
 
   it "上限の無い有効期間の端を空で読み、有効期間に含まれる日だけを含む" do
     open_ended = FactoryBot.create(:item_price)
