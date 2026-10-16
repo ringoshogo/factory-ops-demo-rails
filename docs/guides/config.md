@@ -354,7 +354,7 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 | 工程 | 生成のまま | 本デモ | 理由 |
 |---|---|---|---|
 | Packages: packwerk | — | `bin/packwerk validate && bin/packwerk check` | 依存の向きと公開 API の限定を強制する（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md)） |
-| Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
+| Ledgers | — | `bin/check-open-items` | 残件と改善の候補の台帳の形と、ID の参照と、サイクル 10 からの証跡の形を確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | Ledgers: commit references | — | `bin/check-commit-refs` | 台帳・証跡・引き継ぎに書いた SHA が HEAD の祖先かを確かめる（[dev-cycle.md「機械で守ること」](dev-cycle.md#機械で守ること)） |
 | GraphQL: schema compatibility | — | `bin/check-schema-compat` | `origin/main` との分岐点からの、非推奨を経ない破壊的変更を止める（[graphql-schema.md「互換の判定」](../architecture/graphql-schema.md#互換の判定)） |
 | Tests | `bin/rails test` | `bin/rails db:test:prepare && COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json` | テストに RSpec を使う。層ごとの件数を数えるため、JSON の出力も書く。分岐の網羅率を同じ実行で測る |
