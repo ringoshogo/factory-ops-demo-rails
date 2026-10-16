@@ -16,20 +16,9 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
       spec: "packs/billing/spec/concurrency/billing/closing_lock_spec.rb", mentions: [ "公開 API を通らない明細の書き換え", "確定した請求書は変えられない" ]
     },
     "Fulfillment::Instructions.create" => {
-      reason: "出荷依頼の行ロックで、出荷停止の受け手・計上と直列になる。同じロックの待ちは、計上と出荷停止の受け手の競合テストが確かめる"
+      spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb", mentions: %w[Instructions.create PurchasingEventReceiver.handle]
     },
     "Fulfillment::Instructions.cancel" => { spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb" },
-    "Fulfillment::SalesEventReceiver.hold" => {
-      spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb", mentions: %w[SalesEventReceiver ShippingHeld]
-    },
-    "Fulfillment::SalesEventReceiver.lock_sales_order" => {
-      spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb",
-      mentions: %w[SalesEventReceiver ShippingHeld SalesOrderReadyForShipment]
-    },
-    "Fulfillment::SalesEventReceiver.cancel" => {
-      reason: "出荷取消の受け手。取消と計上のどちらか一方だけが成立することは、受注側の在庫の行と引当の行のロックが決め、" \
-        "spec/concurrency/cancel_vs_ship_spec.rb が確かめる。出荷依頼の行ロックは、その後に届く取消を計上の後に並べるだけである"
-    },
     "Fulfillment::Shipping.post" => { spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb" },
     "Inventory::Stock.lock_for" => { spec: "packs/inventory/spec/concurrency/inventory/stock_lock_spec.rb" },
     "Imports::Chunk.locked" => {
@@ -86,8 +75,10 @@ RSpec.describe "ロックを取るメソッドと競合テスト" do
     "Sales::Catalog.save" => { spec: "packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb" },
     "Sales::Catalog.rebuild_item_labels" => { spec: "packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb" },
     "Sales::Catalog.set_published" => { reason: "自社の品目の公開の状態だけを書き、最後の書き込みが残ってよい" },
-    "Sales::FulfillmentEventReceiver.ship" => {
-      reason: "「出荷計上」の受け手。受注の時刻が空のときだけ書くので、同じ受注への配送が並んでも結果は変わらない"
+    # 出荷指示の作成と計上が最初に取る受注の行ロック。取消・審査の作成と決着と直列になることを、計上と出荷指示の作成の側から確かめる
+    "Sales::OrderShipping.lock" => {
+      spec: "packs/fulfillment/spec/concurrency/fulfillment/shipping_lock_spec.rb",
+      mentions: %w[Instructions.create PurchasingEventReceiver.handle CancellationReviews.reject]
     },
     "Sales::OrderAllocation.allocate" => { spec: "packs/sales/spec/concurrency/sales/order_allocation_lock_spec.rb" },
     "Sales::OrderCancellation.cancel" => { spec: "packs/sales/spec/concurrency/sales/order_cancellation_lock_spec.rb" },

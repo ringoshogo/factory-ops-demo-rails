@@ -344,3 +344,181 @@ PR #100 の CI は、push のたびに `pull_request` で流れ、どれも通�
 ### 残件の処理
 
 引当先が M53 の行（OI-210・OI-212。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。IB-139 は計画のとおり M53 で起票済みのまま。画面で計画が書き切らなかった 3 つを OI-220（`judgment`）に、出来事の種類の一覧と enum の一致の検査が無いことを IB-145 に、実装レビューの違和感（請求書の受領の日付の意味）を IB-146 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。
+
+## M54 同じテナントの中の受注と出荷・請求を、同期の呼び出しでつなぐ
+
+`m54-same-tenant-sync`（base は `main`）。M53 の先端 `fe9abd1`（`origin/m53-timeline`）から切った。計画と M52・M53 の PR が未マージの間は、それらの commit も PR の差分に見える。M54 の差分は `fe9abd1..` である。
+
+PR #101 の実装レビューは、実装者が 2 系統に同じ依頼で出した。どちらも Go だった。どちらの系統も、`32ebd8e` を展開したディレクトリと `fe9abd1..32ebd8e` の diff だけを読んだ。
+
+- Claude：spec を流さず、コードと spec を読んで、壊したときに何が落ちるかを確かめた。消えた example の名前（47 件）を対応の表と照らした
+- Codex：`--skip-git-repo-check` を付け、読み取り専用で流した。検査と壊し方は流し直していない
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上の指摘が無いので、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go（Medium 3・Low 1） |
+| Claude | Go（Medium 2・Low 4） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R2） | 指摘（R2・R3） |
+| 参照の維持 | 指摘（R3・R4） | 指摘（R4・R5・R6） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium・Low | Claude R1・Codex R1 | 計画の「文書に残すこと」の `git grep` が、ADR 012 の「状態」の表の名前（`shipping_holds`）で 1 件当たり、0 件にならない。grep の結果も証跡に無い | ADR 012 の文から表と列の名前を外した。grep が 0 件であることを、この節の「手元で流したもの」に書いた | この節を載せた commit |
+| Medium | Claude R2 | 状況の式の `COALESCE` を外しても落ちない。効くのは出荷指示の読み込みと出荷予定日の `NOT` だけで、受注の見えない出荷依頼の example が無い | `shipment_requests_spec.rb:140` に、受注の見えない出荷依頼の有効な指示を読み込みが返し、出荷予定日の位置に並べる example を足した。`COALESCE` を外すとこれだけが落ちる（下の表） | 同上 |
+| Medium | Codex R2 | `Instructions.create` のロックの順（受注 → 出荷依頼）を確かめる example が無い。出荷依頼を先にロックしても競合テストは落ちない | `instructions_spec.rb:106` に、`FOR UPDATE` の順が受注 → 出荷依頼であることを確かめる example を足した。出荷依頼を先にロックするとこれだけが落ちる | 同上 |
+| Low | Claude R3 | `cancel_vs_ship_spec.rb` の待つ先の補助のコメントが、出荷依頼と受注の順の誤りを捕まえると読める | コメントを、計上が受注の行をロックしない形を捕まえ、順はロックの順の example が確かめる、と直した | 同上 |
+| Medium | Codex R4 | 「出荷は受注の行を書き換えないので」が、計上が受注を出荷済にする実装と食い違う。出荷指示を残す理由として依存の向きが逆 | `data-model.md` の 2 か所、ADR 012 決定 3、計画の M54 の作るもの 3、`shipment_requests_spec.rb` のコメントを、状況は「いまの受注の行から読む」、指示を残すのは「受注は出荷に依存しないので、受注の取消は出荷指示を書き換えない」に直した。直す前の言い方を `git grep` で数え、0 件にした | 同上 |
+| Low | Claude R4 | `spec/requests/cancellations_spec.rb` の冒頭のコメントと 2 つの example の名前が、出荷停止の解除と出荷指示の取消を前提にしている | 審査の決着と、出荷依頼が取消済になって出荷指示を返さない形に直した | 同上 |
+| Low | Claude R5 | `mark_shipped` の失敗の `path: [:sales_order_id]` を、入力に受注 ID の無い `postShipment` がそのまま返す | `Shipping.post` が、利用者の渡した出荷依頼 ID を指す `NOT_FOUND` に写す。`shipping_spec.rb:121` の期待も直した。写さずに返すとこれが落ちる | 同上 |
+| Low | Claude R6 | マイグレーションの `down` を流した記録が無い | 実装の途中で、テストの DB で `db:rollback` と `db:migrate` を流し、`down` の後の `structure.sql` が、列の順（`shipment_requests.cancelled_at` が表の最後に付く）を除いて `fe9abd1` と同じになり、もう一度 `up` すると変更の後の形に戻ることを確かめていた。表の説明の `change_table_comment` を足した後も、同じ往復を流した | 記録のみ |
+| Medium | Codex R3 | 終えたマイルストーンの計画の節（M14・M21〜M24・M26・M40 など）に、消したイベントと出荷停止の表を前提にした文が残る | 直さない。終えたマイルストーンの節は、そのマイルストーンが作ったものの記録として書き換えず、いまの形は設計文書と ADR 012 が正本である。判断を OI-223（`judgment`）に積んだ | — |
+
+| 壊し方（この節を載せた版） | 結果 |
+|---|---|
+| 状況の式の `order_flag` から `COALESCE` を外す | `shipment_requests_spec.rb:140` だけが落ちた（`packs/fulfillment/spec` の 70 examples, 1 failure） |
+| `Instructions.create` で出荷依頼を受注より先にロックする | `instructions_spec.rb:106` だけが落ちた（13 examples, 1 failure） |
+| `Shipping.post` で `mark_shipped` の失敗を写さずに返す | `shipping_spec.rb:121` だけが落ちた（14 examples, 1 failure） |
+
+違和感は次のように扱った。
+
+- Codex 1：出荷依頼の受注番号の写しの「写しを作った時点では」が、コメントの規約の「経緯を書かない」と緊張する → IB-148
+- Claude 1：`testing.md` の `INSERT ... ON CONFLICT DO UPDATE` の段落が、例を消した後に当たる入口の無い規則として残る → いまは当たる入口が無く、足す人がこの形にする、と 1 文を足した
+- Claude 2：計画は、待つ先の確かめで出荷依頼と受注の順の誤りも捕まえる前提で書いていた。待ち終えた接続はタプルのロックを手放すので捕まえない → IB-149。順は Codex R2 で足したロックの順の example と `shipping_spec.rb` のロックの順の example が確かめる
+- Claude 3：`shipping_lock_spec.rb:116` は、自動の却下の「取消却下」が出たことを見ていない → 扱わない。自動の却下のイベントは単体の `purchasing_event_receiver_spec.rb:53` が確かめ、競合テストは未決の審査を残さないことを確かめる
+
+### 実装の記録
+
+下の spec の行の番号は、実装レビューに出す版のものである。
+
+#### 計画との違い
+
+- 作るもの 2 の `lock`：計画は「取消済・審査中・出荷済の 3 つを返す」としたが、取消済と審査中の 2 つだけを返す（`Sales::OrderShipping::State`）。出荷は自分の出荷実績で出荷済を読み、受注の出荷済は計上が同じトランザクションで書くので、読む箇所が無い。計画の作るもの 2 の文を `de09118` で直した（OI-222 の (1)）
+- 作るもの 4 の `confirm` の引数：計画は引数を名指ししていない。明細ごとにキーワード引数（得意先・出荷実績 ID・受注明細 ID・発注明細 ID・品目名・単価・数量・税率・検収日）を取る（OI-222 の (2)）
+- 作るもの 5 のマイグレーション：計画の表と列を消すほかに、請求対象明細の表の説明の「「請求対象確定」の写し」を、同じマイグレーションの `change_table_comment` で「受注が検収で確定した明細」に直した。消すイベントの名前が表の説明に残るからである（OI-222 の (3)）
+- 作るもの 6 の `lock_sites_spec.rb`：計画は `Fulfillment::Instructions.create` の理由を書き直して `shipping_lock_spec.rb` を指すとしたが、競合テストを書いたので、理由ではなく `spec:` の行にした（`mentions: %w[Instructions.create PurchasingEventReceiver.handle]`）。足した `Sales::OrderShipping.lock` の行も同じ spec を指す
+- 競合テストの補助：待つ先の表を読む補助を `waiting_row_tables`（`spec/support/concurrency.rb`）とし、表の名前の配列を返す。ガードの example（`spec/concurrency/concurrency_helpers_spec.rb:32`）を足し、`guides/testing.md`「競合テスト」の手順 3 に使い方を書いた（OI-222 の (4)）
+- 作るもの 8（OI-208）：取りまとめ役の指示で M54 では作らず、新しい M56 の節に移した。#85 の merge commit がこのブランチの祖先に無く、M55 も M54 から切るので書けないからである。移し先は取りまとめ役の指示どおりサイクル 09 の終わり（main から切るので #85 を祖先に持つ）で、台帳の検査（`bin/check-open-items`）が引当先にマイルストーンの番号と計画の節しか受け付けないので、M56 の節として置き、サイクル末の担当が行う形にした（OI-221）。計画の M54 の作るもの 8 と実装する文書の節と前提の表の文を、M56 の節と M52 の作るもの 3 と `guides/dev-cycle.md` のサイクル 09 の行と `handoff.md`「次にやること」に移した（`de09118`）
+
+#### RED
+
+期待の不一致で落ちたものは、計画が名指しした最初に落とす 4 つの spec である。出荷依頼の factory を受注の行を作る形に変え、4 つの spec に example を足した作業ツリーを、実装の前の `fe9abd1` のコードで流した。63 examples, 10 failures で、どれも期待の不一致だった。
+
+| spec | 落ちた example | 落ち方 |
+|---|---|---|
+| `shipment_request_status_spec.rb` の「受注の取消と審査」 | 受注を取り消した直後の取消済・未決の審査の出荷停止中と却下で戻ること・承認の後の取消済の 3 つ | `expected: :cancelled got: :instructed`、`expected: :on_hold got: :instructed`、`expected: :cancelled got: :ready` |
+| `shipping_spec.rb` | 計上の直後に受注が出荷済になる。取消済と審査中の受注の出荷依頼の計上が `CONFLICT` になる 2 つ | `expected: :shipped got: :allocated`、`expected: [:conflict] got: []` |
+| `instructions_spec.rb` | 取消済と審査中の受注の出荷依頼の出荷指示の作成が `CONFLICT` になる 2 つ | `expected: [:conflict] got: []` |
+| `shipment_requests_spec.rb` | 取消済の受注の出荷依頼に残った出荷指示を、読み込みが返さず、出荷予定日で予定日の無い出荷依頼と同じ位置に並べる | 返った指示が 2 件（取消済の受注の分を含む）で、ハッシュの不一致 |
+| `purchasing_event_receiver_spec.rb` | 検収完了を受けた直後に未請求の請求対象明細ができている | `got: []` |
+
+次の spec は、新しい公開 API を呼ぶので実装の前は読み込みの失敗（`NameError`・`NoMethodError`）でしか落ちないか、実装の後に書いたので、壊して落ちる記録で RED に代える。
+
+- `packs/sales/spec/public/sales/order_shipping_spec.rb`（新しい公開 API の単体）
+- `packs/billing/spec/public/billing/billable_items_spec.rb` の `.confirm`
+- `shipping_spec.rb` の受注の行の無い出荷依頼の `NOT_FOUND`・`mark_shipped` の失敗で戻す・審査を却下すると計上できる、`instructions_spec.rb` の受注の行の無い出荷依頼の `NOT_FOUND`・審査の却下と決着した審査・取消済の受注の出荷依頼の指示の取消
+- `shipment_request_status_spec.rb` の RLS を開いた example（他社の受注の取消と審査）
+- `fulfillment/sales_event_receiver_spec.rb` の取消の後に届いた「出荷可能」
+- 競合テスト：`spec/concurrency/cancel_vs_ship_spec.rb`・`shipping_lock_spec.rb` の「取消の審査」・`concurrency_helpers_spec.rb:32`
+
+#### 出荷依頼の factory を変えた後に落ちた spec
+
+`:shipment_request` を同じテナントの受注の行（`:sales_order`）を作る形に変えた後、実装の前のコードで、計画が名指しした spec を流した（`packs/fulfillment/spec/concurrency`・`post_shipment_audit_spec.rb`・`supplier_shipments_spec.rb`・`audit_spec.rb`・`spec/matrix`）。1573 examples, 5 failures で、落ちたのはトランザクションを使わない競合テストの 5 つ（`shipping_lock_spec.rb` の 4 つと `post_shipment_audit_spec.rb`）だけだった。どれも後始末が「sales_orders に行が残った。delete_owned_rows に渡す表を足す」で落ちた。後始末の表に `sales_orders`（`shipping_lock_spec.rb` は審査も作るので `cancellation_reviews` も）を足して直した。入口の行列の世界は、出荷の表の行の数だけ受注の行が増え、期待を変えずに通った。
+
+逆に、実装の後に factory を受注の行を作らない形（`SecureRandom.uuid`）に戻すと、計上と出荷指示の作成が `NOT_FOUND` になり、`packs/fulfillment/spec`・`post_shipment_audit_spec.rb`・`audit_spec.rb`・入口の行列の 789 examples のうち 38 が落ちた（入口の行列は `Mutation.createShippingInstruction`・`Mutation.postShipment` の受注側の行）。
+
+#### 壊して落ちる記録
+
+壊す前にファイルを一時の置き場に複製し、複製から戻した。
+
+| 壊し方 | 結果 |
+|---|---|
+| 状況の式から取消済を外す（`.when(false)`） | `shipment_request_status_spec.rb` の導出表・受注の取消・承認の example、`instructions_spec.rb:84`、`sales_event_receiver_spec.rb:64`、`shipment_requests_spec.rb` の 2 つが落ちた（59 examples, 9 failures） |
+| 状況の式から審査中を外す | `shipment_request_status_spec.rb` の導出表・決着した審査・審査の範囲・未決の審査の example、`instructions_spec.rb:61`、`shipment_requests_spec.rb:30` が落ちた（59 examples, 7 failures） |
+| `Shipping.post` から `mark_shipped` を外す | `shipping_spec.rb:71`（計上の直後の出荷済）・`:121`、`cancel_vs_ship_spec.rb:86`（計上が先なら取消は出荷済を読んで `CONFLICT`）が落ちた（53 examples, 3 failures） |
+| `Shipping.post` から `mark_shipped` の失敗で戻すことを外す | `shipping_spec.rb:121` だけが落ちた（14 examples, 1 failure） |
+| `Instructions.create` から受注のロックを外す（`FOR UPDATE` なしで読む） | `shipping_lock_spec.rb:146`・`:158`（審査の作成と出荷指示の作成の両方の順）が落ちた（8 examples, 2 failures） |
+| `Shipping.post` から受注のロックを外す | `shipping_lock_spec.rb:103`（審査の作成が先）・`:129`（却下が先）、`cancel_vs_ship_spec.rb:74`・`:108`（取消と承認が先）が落ちた（12 examples, 4 failures） |
+| `Sales::OrderShipping.lock` から `FOR UPDATE` を外す | 上の 2 つを合わせた 6 つが落ちた（12 examples, 6 failures） |
+| `Shipping.post` で出荷依頼を受注より先にロックする | `shipping_spec.rb:147`（ロックの順）だけが落ちた（18 examples, 1 failure）。待つ先の表の確かめは落ちない。取消が先のとき、計上は出荷依頼の行ロックを得てから受注の行を待つので、待つ先は受注の行のままだからである |
+| `status_sql` から `Scope` を外す | `order_shipping_spec.rb:100`・`shipment_request_status_spec.rb:136`（RLS を開いて他社の受注の取消と審査）が落ちた（17 examples, 2 failures） |
+| `lock` から `Scope` を外す | `order_shipping_spec.rb:85` だけが落ちた（7 examples, 1 failure） |
+| `mark_shipped` から `Scope` を外す | 同上 |
+| `mark_shipped` から出荷済の時刻が空のときだけ書く条件を外す | `order_shipping_spec.rb:43` だけが落ちた（7 examples, 1 failure） |
+| `lock` の審査中を常に偽にする | `order_shipping_spec.rb:21`、`instructions_spec.rb:61`、`shipping_spec.rb:98` など 5 つが落ちた（56 examples, 5 failures） |
+| `Instructions.create` で受注の見えない出荷依頼も続ける | `instructions_spec.rb:94` だけが落ちた（12 examples, 1 failure） |
+| `Shipping.post` で受注の見えない出荷依頼も続ける | `shipping_spec.rb:108` だけが落ちた（14 examples, 1 failure） |
+| `instructions_for` から取消済の除外を外す | `shipment_requests_spec.rb:123` だけが、指示の読み込みの期待で落ちた（12 examples, 1 failure） |
+| `planned_date` から取消済の除外を外す | `shipment_requests_spec.rb:123` だけが、出荷予定日で並べた期待で落ちた（12 examples, 1 failure） |
+| `confirm` の `insert` を `insert!` にする（重複を飛ばさない） | `billable_items_spec.rb` の 4 つと、`purchasing_event_receiver_spec.rb` の検収完了の 9 つが落ちた（26 examples, 13 failures） |
+| 検収完了の受け手から `confirm` の呼び出しを外す | `purchasing_event_receiver_spec.rb:227`・`:244`・`:252` が落ちた（19 examples, 3 failures） |
+| 検収数量が 0 の明細も `confirm` する | `:252`（数量 0）を含む 7 つが、請求対象明細の数量の CHECK 制約で落ちた（19 examples, 7 failures） |
+| `waiting_row_tables` が常に `sales_orders` を返す | `concurrency_helpers_spec.rb:32` が落ちた（10 examples, 1 failure） |
+| `waiting_row_tables` がタプルのロックで絞らない | `concurrency_helpers_spec.rb:32` と `cancel_vs_ship_spec.rb` の待つ先を確かめる 3 つが落ちた（14 examples, 4 failures） |
+
+落ちなかったもの：`confirm` から `Tenancy.require_tenant!` を外しても、`TenantRecord` の `default_scope` が同じ `MissingTenant` を SQL を流す前に上げるので、`billable_items_spec.rb` のテナントの設定の外の example は落ちない（7 examples, 0 failures）。IB-59（見送り）と同じ形である。
+
+#### 消した spec と example の性質の対応
+
+`git grep` で、消したイベントと受け手を名指しする spec を数え、同期の形の期待に書き換えるか、消した受け手だけを確かめる spec を消した。消した example の `expect` が確かめていた性質と、移し先は次のとおりである（`guides/testing.md`「層への配分」）。
+
+| 消した spec・example | 確かめていた性質 | 移し先 |
+|---|---|---|
+| `packs/sales/spec/public/sales/fulfillment_event_receiver_spec.rb`（ファイル） | 受注の `shipped_at` を 1 回だけ書く | `order_shipping_spec.rb:43`・`shipping_spec.rb:71` |
+| 同上 | 他社の受注を RLS を開いても書かない | `order_shipping_spec.rb:85` |
+| 同上 | 発注側テナントが一致しない受注は書かない・配送表に無いイベントは失敗する | 対応先なし。`mark_shipped` は出荷依頼が持つ自社の受注の ID だけを受け取り、受け手は消した |
+| `packs/billing/spec/public/billing/sales_event_receiver_spec.rb`（ファイル） | 受注側の名義で未請求の明細を書く・同じ出荷実績の別の明細は別の行・請求済みの明細を作り直さない・重複して 1 回分 | `billable_items_spec.rb` の `.confirm` の 4 つと、`purchasing_event_receiver_spec.rb` の冪等な受け手と再配送の example |
+| 同上 | 配送表に無いイベントは失敗する | 対応先なし（受け手を消した） |
+| `packs/fulfillment/spec/concurrency/fulfillment/shipping_hold_lock_spec.rb`（ファイル） | 出荷依頼がまだ無い受注への停止と「出荷可能」が並んでも、停止中の受注に有効な出荷指示が残らない | `shipping_lock_spec.rb:146`（審査が先なら出荷指示の作成は `CONFLICT`）と、`shipment_request_status_spec.rb` の未決の審査の example（審査を出荷依頼より先に作る） |
+| `fulfillment/sales_event_receiver_spec.rb` の「出荷停止と出荷取消」（17 examples） | 停止で出荷停止中・解除で戻る・取消で取消済と指示の取消・審査を経ない取消 | `shipment_request_status_spec.rb` の「受注の取消と審査」、`instructions_spec.rb:84`、`shipment_requests_spec.rb:123` |
+| 同上 | 停止・解除・取消の冪等と、他社の同じ審査 ID・他社の受注の行を書かない | 対応先なし。書く行が無くなった。他社の受注を読まないことは `order_shipping_spec.rb:100`・`shipment_request_status_spec.rb:136` |
+| 同上の「届く順の入れ替わり」（5 examples） | 停止・解除・取消・出荷可能の順が入れ替わっても取り残さない | 同期にしたので、残る入れ替わりは「出荷可能」が取消の後に届くことだけで、`fulfillment/sales_event_receiver_spec.rb:64` |
+| `shipment_request_status_spec.rb` の他社の出荷停止の example | 他社の名義の行が状況に入らない | 同じファイルの `:136`（他社の受注を指す出荷依頼） |
+| `instructions_spec.rb` の「出荷停止」（2 examples）、`shipping_spec.rb` の解除の example | 停止中は作成と計上が `CONFLICT`、解除すると通る、別の受注と解除した停止は止めない | `instructions_spec.rb:61`・`:76`、`shipping_spec.rb` の「受注の取消と審査」 |
+| `shipping_lock_spec.rb` の停止の受け手の example | 停止の受け手のコミットまで計上が待ち `CONFLICT` | `shipping_lock_spec.rb:103` |
+| `cancel_vs_ship_spec.rb` の「審査の承認」の計上が先の example | 審査の経路でも計上が先なら取消は `CONFLICT` | 審査の行がそのまま停止になるので作れない（計画のとおり）。計上が先の取消の `CONFLICT` は受注側の取消の `:86` が同じ内部の取消の処理で確かめる |
+| `purchasing_event_receiver_spec.rb` の `NotShippedYet` の example | 出荷済でない受注の検収は何も書かずに失敗 | 同じ example を CHECK 制約の失敗の期待に書き換えた（`:259`） |
+| `cancellation_reviews_spec.rb`・`order_cancellation_spec.rb` の「出荷取消は出荷可能を出していないことを運ぶ」（3 examples） | 取消の前の引当の状態を読む | 対応先なし（読みを消した）。全量を引き当てていない受注と品番照合待ちの受注を取り消せることは、同じ example を書き換えて残した |
+| `spec/contracts/shipment_posted_delivery_spec.rb` の受注の宛先 | 受注の受け手に 1 件登録され、重複しても 1 回分 | 宛先が購買だけになったことを同じ spec で確かめる。受注の出荷済は `shipping_spec.rb:71` |
+
+rspec の件数は、M53 の 3150 から 3117 になり、実装レビューの直しで 3119 になった。
+
+### 確かめたこと
+
+#### 手元で流したもの
+
+```sh
+TEST_DATABASE=factory_ops_m54_test bundle exec rspec packs/fulfillment/spec packs/sales/spec packs/billing/spec spec/concurrency spec/contracts spec/scenarios spec/db spec/matrix   # 0 failures
+TEST_DATABASE=factory_ops_m54_test BASE_REF=origin/m53-timeline bin/ci   # de09118 で、すべての工程が通った。rspec は 3117 examples, 0 failures
+bin/check-open-items --due M54 && bin/check-commit-refs   # 通った
+git grep -n -e ShippingHeld -e ShippingHoldReleased -e ShipmentCancelled -e BillableItemConfirmed -e shipping_holds -e ShippingHold -e NotShippedYet -e FulfillmentEventReceiver -e Billing::SalesEventReceiver -e release_hold -e lock_sales_order -e 'held?' -e 'ready_for_shipment:' -e '\.ready_for_shipment' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!db/migrate'   # 実装レビューの直しの後に 0 件
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck   # 通った（Node 22、npm ci の後）
+cd frontend && E2E_DATABASE=factory_ops_m54_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # e4ffc00 で 74 passed・26 skipped（1.7 分）
+```
+
+`bin/packwerk validate` は、足した 2 つの依存（`fulfillment` → `sales`、`sales` → `billing`）で循環を出さずに通った。分岐の網羅率の警告は、`de09118` の `bin/ci`（基準は `fe9abd1`）で 0 件だった。`e4ffc00` は出荷計上の型のコメントと spec の説明だけを変え、`bin/rubocop` と台帳の検査を流し直した。E2E は、取消・審査中・出荷の画面の状況の表示を含めて期待を変えずに通った（`DemoWorld` はテナントをまたぐイベントのために `drain` を残している）。
+
+実装の途中で、マイグレーションの後に `shipping_holds` を後始末の表に持つ古い競合テストが後始末に失敗し、テストの DB に行とジョブが残って、`allocation_spec.rb` と受け手の spec が残った行で落ちた。テストの DB を作り直してから流し直し、通った。製品の不具合ではない。
+
+実装レビューの直しの後も `TEST_DATABASE=factory_ops_m54_test BASE_REF=origin/m53-timeline bin/ci` が通った（3119 examples, 0 failures、分岐の網羅率の警告 0 件）。直しは spec・文書・コメントと `Shipping.post` の失敗の写しだけで、手元の E2E は流し直していない。
+
+PR #101 の CI は、push のたびに `pull_request` で流れた（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `e4ffc00` | [38887125143](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38887125143) | success |
+| `32ebd8e` | [38887230016](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38887230016) | success（e2e 3 分 24 秒・test 6 分 5 秒） |
+| `d212b8d` | [38889458244](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38889458244) | success（e2e 3 分 18 秒・test 5 分 24 秒） |
+
+この表を載せた commit は証跡だけを変える。その CI の結果は PR の checks で見る。
+
+### 残件の処理
+
+引当先が M54 の行（OI-211・OI-213。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜7 で反映した。OI-208 は、取りまとめ役の指示で引当先を M56 に移した（内容の欄に指示を書いた。状態が `open` の行は結果の欄に書けないので、検査に合わせて内容の欄にした）。移し先の形の判断を OI-221、計画が書き切らなかった 4 つを OI-222 に `judgment` で積み、出荷依頼の受注番号の写しを受注の副問い合わせに替える候補を IB-147 に積んだ。IB-140 は計画のとおり起票済みのまま。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。

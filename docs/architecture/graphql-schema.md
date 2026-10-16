@@ -239,7 +239,7 @@ type ReceivedInvoiceLine {
 
 以下の SDL は抜粋である。省いた型（`ShipmentRequestLine`・`ShippingInstruction`・`BillingTerm`・`InvoiceTaxSummary` など）は、`data-model.md` の表の列のうち、相手側を指す ID 列を除いたものをフィールドにする。ただし `ShipmentRequest.instruction` は有効な出荷指示だけを返すので、`ShippingInstruction` は `status` をフィールドにしない。
 
-同じテナントの中で複数のコンテキストを束ねるフィールド（受注 → 出荷依頼、出荷依頼明細 → 受注明細）は、ルートパッケージで両方の公開 API を呼んで解決する。コンテキスト同士は依存しない（`context-map.md`「疎結合を守る規則」5）。
+同じテナントの中で複数のコンテキストを束ねるフィールド（受注 → 出荷依頼、出荷依頼明細 → 受注明細）は、ルートパッケージで両方の公開 API を呼んで解決する。出荷は受注に依存するが、受注は出荷に依存しないので、受注の型から出荷依頼をたどるフィールドは受注の公開 API では解決できない。束ねる場所をルートパッケージに 1 つにそろえる（`context-map.md`「疎結合を守る規則」5）。
 
 ```graphql
 type SupplierView {
@@ -720,11 +720,11 @@ type SalesOrderStatusCount {
 | `startImport` | `Imports::Runs.start`（`POST /imports/files` で置いたファイルの ID と種類で指定し、待機中の取り込みを返す。自社の置いたファイルでなければ `NOT_FOUND`、同じファイルの 2 回目と、置いてから 24 時間を過ぎて中身を消したファイルは `CONFLICT`（どちらも `path` は `["fileId"]`。中身を消したファイルは置き直しを促す文言。`data-model.md`「取り込み（`imports`）」）。ジョブはコミットの後に登録する） | なし |
 | `registerPartMapping` | `Sales::PartMappings.register`（照合待ちの受注を照合し直す。取引先は自社が受注側の取引関係の相手に限り、それ以外と見えない品目は `NOT_FOUND`） | 全明細が照合できた受注ごとに受注確定 |
 | `allocateSalesOrder` | `Sales::OrderAllocation.allocate`（`Inventory::Allocation` を同期で呼ぶ。品番照合待ち・取消済・出荷済の受注は `CONFLICT`） | 全量引当になったら出荷可能 |
-| `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する。出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は `CONFLICT`） | 受注取消・出荷取消 |
-| `approveCancellationReview` | `Sales::CancellationReviews.approve`（引当を解除する） | 取消承認・出荷取消 |
-| `rejectCancellationReview` | `Sales::CancellationReviews.reject` | 取消却下・出荷停止解除 |
-| `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions`（どちらも出荷依頼 ID で指定する。取消は有効な指示を取り消す。取消済・出荷済の出荷依頼と、有効な指示の重複・不在は `CONFLICT`） | なし |
-| `postShipment` | `Fulfillment::Shipping.post`（出荷依頼 ID と出荷日で指定し、有効な指示のある出荷依頼を全量で計上する。`Inventory::Allocation` で引当を消費し、`active` でない引当があれば `CONFLICT`） | 出荷計上 |
+| `cancelSalesOrder` | `Sales::OrderCancellation.cancel`（引当を解除する。出荷済・取消済の受注、未決の取消の審査がある受注、引当が消費済みの受注は `CONFLICT`） | 受注取消 |
+| `approveCancellationReview` | `Sales::CancellationReviews.approve`（引当を解除する） | 取消承認 |
+| `rejectCancellationReview` | `Sales::CancellationReviews.reject` | 取消却下 |
+| `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions`（どちらも出荷依頼 ID で指定する。取消は有効な指示を取り消す。作成は受注の行をロックして取消と審査を読み、取消済の受注・取消の審査中の受注・出荷済の出荷依頼と、有効な指示の重複は `CONFLICT`、受注の行の無い出荷依頼は `NOT_FOUND`。取消は出荷済の出荷依頼と有効な指示の不在が `CONFLICT`） | なし |
+| `postShipment` | `Fulfillment::Shipping.post`（出荷依頼 ID と出荷日で指定し、有効な指示のある出荷依頼を全量で計上する。受注の行をロックし、取消済か取消の審査中の受注の出荷依頼は `CONFLICT`、受注の行の無い出荷依頼は `NOT_FOUND`。`Inventory::Allocation` で引当を消費し、`active` でない引当があれば `CONFLICT`。同じトランザクションで `Sales::OrderShipping.mark_shipped` が受注を出荷済みにする） | 出荷計上 |
 | `adjustStock` | `Inventory::Adjustment.adjust`（入庫・出庫。出庫は有効在庫までに限り、超えれば `INVALID_INPUT`。品目は在庫が受注に依存しないので、mutation が `Sales::Catalog` で自社の品目かを確かめ、見えなければ `NOT_FOUND`） | なし |
 | `setBillingTerm` | `Billing::Terms.set`（取引先 ID と締め日。取引先は自社が受注側の取引関係の相手に限り、それ以外は `NOT_FOUND`） | なし |
 | `closeBillingPeriod` | `Billing::Closing.close`（取引先 ID と締め日で、下書きの請求書を作る。入力と状態の結果は `data-model.md`「請求（`billing`）」） | なし |
@@ -734,7 +734,7 @@ type SalesOrderStatusCount {
 | `revokePartnership` | `Partnerships::Management.revoke` | なし |
 | `grantPermission`・`withdrawPermission` | `Partnerships::Management` | なし |
 
-受注側の ACL がイベントを受けて出すイベントは、上の表に載らない。ACL は、「発注登録」を受けて「受注確定」か「品番照合待ち」を、「取消依頼」を受けて「出荷停止」を（受注が出荷済みか取消済なら「取消却下」を）、「検収完了」を受けて「請求対象確定」を出す。取引関係の失効はイベントを出さない。失効の効果は、各公開 API が `Partnerships::Access` に問い合わせた時点で現れる（`context-map.md`「取引関係の失効」）。
+受注側の ACL がイベントを受けて出すイベントは、上の表に載らない。ACL は、「発注登録」を受けて「受注確定」か「品番照合待ち」を出し、「取消依頼」を受けて受注が出荷済みか取消済なら「取消却下」を出す。「取消依頼」で作る審査は出荷が同期で読み、「検収完了」で確定する請求対象は請求の公開 API を同期で呼んで書くので、どちらもイベントを出さない。取引関係の失効はイベントを出さない。失効の効果は、各公開 API が `Partnerships::Access` に問い合わせた時点で現れる（`context-map.md`「取引関係の失効」）。
 
 mutation の引数と戻り値は、次の形に揃える。
 
@@ -857,7 +857,7 @@ mutation の戻り値（payload）は null を許さない（`Payload!`）。規
 | `supplier.stockMovements` | — | `types` |
 | `supplier.items` | `CODE`・`NAME`・`UNIT`・`UNIT_PRICE`・`SAFETY_STOCK` | `keyword` |
 
-- 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。出荷依頼の `ORDER_NO` は、出荷が受注に依存しないので、「出荷可能」のイベントで運んで出荷依頼に写した受注番号（`shipment_requests.sales_order_no`、`data-model.md`「出荷（`fulfillment`）」）で並べる。表示の受注番号は、いまと同じく `ShipmentRequest.salesOrder` から受注の値を出す。写しの空の出荷依頼（作り直しのタスクを流す前の既存の DB）は、値の無い行として最後に並ぶ。
+- 伝票番号は `PO-000001` の形の、桁をそろえた文字列である（`DocumentNumber`）。文字列の順が番号の順になるので、`ORDER_NO` は列をそのまま並べる。出荷依頼の `ORDER_NO` は、写しを作った時点では出荷が受注に依存しなかったので、「出荷可能」のイベントで運んで出荷依頼に写した受注番号（`shipment_requests.sales_order_no`、`data-model.md`「出荷（`fulfillment`）」）で並べる。表示の受注番号は、いまと同じく `ShipmentRequest.salesOrder` から受注の値を出す。写しの空の出荷依頼（作り直しのタスクを流す前の既存の DB）は、値の無い行として最後に並ぶ。
 - 取引先の名前（`CUSTOMER_NAME`・`SUPPLIER_NAME`）は、取引関係の公開 API `Partnerships::Directory.tenant_names_sql` が返すテナントの ID と名前の副問い合わせから、伝票の相手のテナント ID（受注の `customer_tenant_id`・発注の `supplier_tenant_id`・出荷依頼の `buyer_tenant_id`）の行の名前を、行ごとに 1 つ引くスカラーの副問い合わせ（`SqlSubquery#lookup`）で並べる。結合と違い、結ぶ条件を書き誤って 2 行以上が当たると、行を増やさずに SQL のエラーになる。名前は `tenants.name` の照合順序 `ja-x-icu` で並べ、流用元の画面の `Intl.Collator("ja")` と同じ規則の並びになる（同じと言える範囲は `data-model.md`「文字列の照合順序」）。名前全体の読みの順ではなく、よく使う漢字はその漢字の音読みの順に並ぶ。
 - 合計金額（`TOTAL_AMOUNT`）は、明細の数量と単価の積の和を、受注は `Sales::SalesOrderAmount`、発注は `Purchasing::PurchaseOrderAmount` の SQL の式で計算して並べる。単価の無い明細（受注は品番照合待ち、発注は受注確定の前）が 1 つでもあれば、合計は空になり、値の無い行として最後に並ぶ。一覧の `totalAmount` も同じ式を読むので、空の合計は、どの画面でも金額の代わりに空の理由（「照合待ち」・「確定待ち」。取り消した伝票は「取消」）を出し、一部の合計を出さない（`frontend/lib/format.ts` の `totalAmountText`。伝票の状況を受け取る）。単価は `bigint` の上限まで入りうるので、積と和は `numeric` で計算する。和は、明細の件数の上限（100）・数量の上限（`integer`）・単価の上限（`bigint`）の積を超えないので 31 桁に収まる。
 - 状況（`STATUS`）は、状況の式の値を業務の進み順の位置で並べる（「状況の enum」）。

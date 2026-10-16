@@ -1,5 +1,5 @@
 module Types
-  # 受注側が所有する請求対象明細（「請求対象確定」の写し）。連結元の発注明細 ID はフィールドに出さない
+  # 受注側が所有する請求対象明細（受注が検収で確定した明細）。連結元の発注明細 ID はフィールドに出さない
   class BillableItemType < BaseObject
     graphql_name "BillableItem"
     perspective :supplier

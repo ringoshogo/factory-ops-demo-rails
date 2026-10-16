@@ -1,7 +1,7 @@
 require "rails_helper"
 require_relative "../support/events"
 
-# 発注側の取消依頼と受注側の審査の通し。依頼で出荷が止まり、承認で発注と出荷依頼が取り消され、却下で元の状況に戻る。
+# 発注側の取消依頼と受注側の審査の通し。依頼の審査で出荷が止まり、承認で発注が取り消されて出荷依頼が取消済になり、却下で元の状況に戻る。
 # 出荷済みの受注への依頼は、審査を作らずに自動で却下される（docs/architecture/context-map.md「取消の流れ」）
 RSpec.describe "取消依頼と審査", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
@@ -100,7 +100,7 @@ RSpec.describe "取消依頼と審査", type: :request do
       "cancellationRequests" => [ { "reason" => "数量の誤り", "outcome" => "APPROVED", "decidedAt" => be_present } ])
   end
 
-  it "依頼を却下すると、発注は依頼の前の状況に戻り、出荷停止が解除されて計上できる" do
+  it "依頼を却下すると、発注は依頼の前の状況に戻り、審査が決着して出荷停止中でなくなり、計上できる" do
     request_cancellation
 
     rejected_review_id = review_id
@@ -137,7 +137,7 @@ RSpec.describe "取消依頼と審査", type: :request do
     expect(sales_order).to include("status" => "SHIPPED", "cancellationReviewPending" => false, "cancellationReviews" => [])
   end
 
-  it "受注側が取り消すと、発注が受注側により取消・出荷依頼が取消済になり、有効な出荷指示が取り消され、引当が解除される" do
+  it "受注側が取り消すと、発注が受注側により取消・出荷依頼が取消済になり、出荷指示を返さなくなり、引当が解除される" do
     expect(mutate("cancelSalesOrder", "salesOrder { status }", salesOrderId: @sales_order_id))
       .to eq("salesOrder" => { "status" => "CANCELLED" }, "errors" => [])
     expect(audit_rows(supplier, "sales_order.cancel")).to eq([ [ supplier_admin.id, "SalesOrder", @sales_order_id, buyer.id ] ])

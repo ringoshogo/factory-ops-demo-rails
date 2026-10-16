@@ -6,3 +6,4 @@ dependencies:
   - packs/contracts
   - packs/inventory
   - packs/notifications
+  - packs/billing

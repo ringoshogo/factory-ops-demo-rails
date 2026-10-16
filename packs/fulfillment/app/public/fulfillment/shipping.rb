@@ -1,16 +1,21 @@
 module Fulfillment
   # 出荷実績の計上（docs/architecture/graphql-schema.md「mutation の一覧」postShipment）。在庫の Inventory::Allocation で
-  # 引当を消費し、現在庫と引当を減らす。ロックは出荷依頼 → 出荷指示 → 在庫 → 引当の順に取り、在庫と引当は在庫が取る。
-  # 受注の取消と同時に進んでも、在庫と引当の行ロックでどちらか一方だけが成立する
+  # 引当を消費し、現在庫と引当を減らし、受注の出荷済を同じトランザクションで書く。ロックは受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当の順に取り、
+  # 受注は受注が、在庫と引当は在庫が取る。受注の取消・審査の作成と決着とは、受注の行ロックで直列になる
   # （docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
   module Shipping
-    # 有効な出荷指示のある出荷依頼を全量で計上し、「出荷計上」を出す。取消済・出荷済の出荷依頼、出荷停止中の受注の出荷依頼、
-    # 有効な指示の無い出荷依頼、active でない引当を含む出荷依頼は、何も変えず CONFLICT を返す
+    # 有効な出荷指示のある出荷依頼を全量で計上し、受注を出荷済にして「出荷計上」を出す。取消済の受注・出荷済の出荷依頼、
+    # 取消の審査中の受注の出荷依頼、有効な指示の無い出荷依頼、active でない引当を含む出荷依頼は、何も変えず CONFLICT を返す。
+    # 出荷依頼をロックせずに引いて受注 ID を読み、受注をロックしてから出荷依頼をロックして読み直す。受注が見えない出荷依頼は、
+    # 受注の出荷済を書けないまま出荷実績ができるので、何も書かずに NOT_FOUND を返す
     def self.post(actor, shipment_request_id:, shipped_on:)
-      request = Scope.call(actor, ShipmentRequest.all).lock.find_by(id: shipment_request_id)
-      return OperationResult.failure(:not_found, path: [ :shipment_request_id ]) unless request
-      return conflict("Shipment request is cancelled or shipped") if request.cancelled_at || request.shipment
-      return conflict("Sales order is on hold") if request.held?
+      request = Scope.call(actor, ShipmentRequest.all).find_by(id: shipment_request_id)
+      order = request && Sales::OrderShipping.lock(actor, request.sales_order_id)
+      return OperationResult.failure(:not_found, path: [ :shipment_request_id ]) unless order
+
+      request.lock!
+      return conflict("Shipment request is cancelled or shipped") if order.cancelled || request.shipment
+      return conflict("Sales order is on hold") if order.under_review
 
       instruction = request.instructions.active.lock.first
       return conflict("Shipment request has no active instruction") unless instruction
@@ -28,6 +33,12 @@ module Fulfillment
             ShipmentLine.new(owner_tenant_id: request.owner_tenant_id, shipment_request_line: line,
               source_purchase_order_line_id: line.source_purchase_order_line_id, quantity: line.quantity)
           end)
+        # 受注の失敗は入力に無い受注 ID を指すので、利用者が渡した出荷依頼 ID に写す
+        unless Sales::OrderShipping.mark_shipped(actor, request.sales_order_id).success?
+          result = OperationResult.failure(:not_found, path: [ :shipment_request_id ])
+          raise ActiveRecord::Rollback
+        end
+
         publish_posted(request, shipment)
         result = OperationResult.success(ShipmentRequests.find(actor, request.id))
       end

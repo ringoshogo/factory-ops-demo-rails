@@ -2,8 +2,8 @@ require "rails_helper"
 require_relative "../support/events"
 require_relative "../support/shared_examples/idempotent_receiver"
 
-# 1 つの「出荷計上」が、受注と購買の 2 つの宛先テナントでそれぞれ 1 回だけ処理される
-# （docs/architecture/data-model.md「イベントの受け口と冪等キー」）
+# 「出荷計上」は、発注側テナントの購買の受け手だけに届き、1 回だけ処理される。受注の出荷済は、出荷の計上が同じトランザクションで書くので、
+# 受注側テナントの受け手は無い（docs/architecture/data-model.md「イベントの受け口と冪等キー」）
 RSpec.describe "出荷計上の配送" do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }
@@ -27,26 +27,24 @@ RSpec.describe "出荷計上の配送" do
 
   # 受け手の表はパッケージの外から読めないので、SQL で数える
   def count(tenant, sql) = Tenancy.with_tenant(tenant.id) { ActiveRecord::Base.lease_connection.select_value(sql) }
-  def shipped_orders = count(supplier, "SELECT count(*) FROM sales_orders WHERE shipped_at IS NOT NULL")
   def inbound_rows = count(buyer, "SELECT (SELECT count(*) FROM inbound_shipments) + (SELECT count(*) FROM inbound_shipment_lines)")
 
-  it "受注の受け手は受注側テナント、購買の受け手は発注側テナントを宛先にして、1 件ずつ登録される" do
+  it "購買の受け手だけを、発注側テナントを宛先にして 1 件登録する" do
     publish
 
-    expect(enqueued_event_jobs.map { |job| job.arguments["arguments"].values_at(2, 3) }).to contain_exactly(
-      [ "Sales::FulfillmentEventReceiver", supplier.id ], [ "Purchasing::SupplierEventReceiver", buyer.id ]
-    )
+    expect(enqueued_event_jobs.map { |job| job.arguments["arguments"].values_at(2, 3) }).to eq([ [ "Purchasing::SupplierEventReceiver", buyer.id ] ])
   end
 
-  it "どちらの宛先も、重複して届いても 1 回分だけ書く" do
+  it "重複して届いても 1 回分だけ書き、受注は書かない" do
     publish
     deliver_enqueued_events(times: 2)
 
-    expect([ shipped_orders, inbound_rows ]).to eq([ 1, 2 ])
+    expect(inbound_rows).to eq(2)
+    expect(count(supplier, "SELECT count(*) FROM sales_orders WHERE shipped_at IS NOT NULL")).to eq(0)
   end
 
   it_behaves_like "冪等な受け手" do
     let(:publish_event) { -> { publish } }
-    let(:written_rows) { -> { [ shipped_orders, inbound_rows ].sum } }
+    let(:written_rows) { -> { inbound_rows } }
   end
 end

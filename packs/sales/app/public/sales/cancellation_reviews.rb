@@ -13,21 +13,15 @@ module Sales
       order_ids.index_with { [] }.merge(reviews.map { to_value(_1) }.group_by(&:sales_order_id))
     end
 
-    # 受注を取り消して（引当の解除と cancelled_at）、審査を承認で決着させ、「取消承認」と「出荷取消」を出す。
+    # 受注を取り消して（引当の解除と cancelled_at）、審査を承認で決着させ、「取消承認」を出す。
     # 引当が消費済み（出荷の計上が先に成立した）なら CONFLICT で、担当者は却下する
     def self.approve(actor, cancellation_review_id:)
-      decide(actor, cancellation_review_id, "approved") do |order, review|
-        OrderCancelling.cancel(actor, order, cancellation_review_id: review.id)
-      end
+      decide(actor, cancellation_review_id, "approved") { |order| OrderCancelling.cancel(actor, order) }
     end
 
-    # 審査を却下で決着させ、「取消却下」と「出荷停止解除」を出す。受注と引当は変えない
+    # 審査を却下で決着させ、「取消却下」を出す。受注と引当は変えない。審査が決着すると、出荷はその受注の出荷依頼を出荷停止中と導出しなくなる
     def self.reject(actor, cancellation_review_id:)
-      decide(actor, cancellation_review_id, "rejected") do |order, review|
-        Contracts.publish(Contracts::ShippingHoldReleased.new(cancellation_review_id: review.id, sales_order_id: order.id,
-          supplier_tenant_id: order.owner_tenant_id))
-        OperationResult.success
-      end
+      decide(actor, cancellation_review_id, "rejected") { OperationResult.success }
     end
 
     def self.to_value(review)
@@ -45,7 +39,7 @@ module Sales
         order = SalesOrder.lock.find(review.sales_order_id)
         # 受注のロックを取ってから読み直し、先に決着した審査を見落とさない
         review.reload
-        result = review.decision ? OperationResult.failure(:conflict, message: "Cancellation review is already decided") : yield(order, review)
+        result = review.decision ? OperationResult.failure(:conflict, message: "Cancellation review is already decided") : yield(order)
         raise ActiveRecord::Rollback unless result.success?
 
         review.update!(decision:, decided_at: Time.current, decided_by_user_id: actor.user_id)
