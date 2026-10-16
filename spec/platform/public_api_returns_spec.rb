@@ -109,6 +109,17 @@ RSpec.describe PublicApiReturns do
       end
     end
 
+    # 呼ぶ側の rescue StandardError（ジョブの retry_on など）に拾われると、違反が黙って消える
+    it "違反は、呼ぶ側の rescue StandardError に拾われない" do
+      swallowed = lambda do
+        probe.returning(AuditLog.none)
+      rescue StandardError
+        :swallowed
+      end
+
+      expect_violation { swallowed.call }
+    end
+
     it "副問い合わせ・Data の値・ID の配列は通す" do
       subquery = SqlSubquery.of(AuditLog.none.select(:id), id: "id")
 

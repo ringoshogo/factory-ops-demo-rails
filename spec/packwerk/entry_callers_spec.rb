@@ -9,7 +9,7 @@ require "prism"
 # (iii) テナントの設定を求める公開の特異メソッド（受け手の handle を除く）が、表のうちテナントが決まる前の入口を除いた行と等しい
 # spec の配下は読まない。競合テストは受け手を直に呼ぶからである
 module EntryCallers
-  SOURCES = %w[app/**/*.rb packs/*/app/**/*.rb lib/**/*.{rb,rake} config/**/*.rb db/seeds.rb].freeze
+  SOURCES = %w[app/**/*.rb packs/*/app/**/*.rb packs/*/lib/**/*.rb lib/**/*.{rb,rake} config/**/*.rb db/seeds.rb].freeze
   TABLE_HEADER = "| 公開 API | 呼んでよい場所 | テナント |"
 
   Call = Data.define(:path, :nesting, :receiver, :name)
@@ -28,6 +28,8 @@ module EntryCallers
       @definitions = []
       @hidden = []
       @method = nil
+      @singleton = false
+      @private = false
     end
 
     def visit_module_node(node) = within(node.constant_path) { visit(node.body) }
@@ -44,11 +46,23 @@ module EntryCallers
       super
     end
 
+    # class << self の中の def も特異メソッドに数え、その中の private の後のものは非公開にする
+    def visit_singleton_class_node(node)
+      return super unless node.expression.is_a?(Prism::SelfNode)
+
+      singleton, privately = @singleton, @private
+      @singleton, @private = true, false
+      super
+    ensure
+      @singleton, @private = singleton, privately
+    end
+
     def visit_def_node(node)
-      return super unless node.receiver.is_a?(Prism::SelfNode)
+      return super unless node.receiver.is_a?(Prism::SelfNode) || (@singleton && node.receiver.nil?)
 
       @method = { name: node.name.to_s, requires_tenant: false, helpers: Set.new }
       super
+      @hidden << [ @nesting.join("::"), node.name.to_s ] if @singleton && @private
       @definitions << @method.merge(constant: @nesting.join("::"))
       @method = nil
     end
@@ -65,6 +79,7 @@ module EntryCallers
       if receiver.nil? && node.name == :private_class_method && node.arguments
         node.arguments.arguments.grep(Prism::SymbolNode).each { @hidden << [ @nesting.join("::"), _1.unescaped ] }
       end
+      @private = true if @singleton && receiver.nil? && node.name == :private && node.arguments.nil?
       super
     rescue Prism::ConstantPathNode::DynamicPartsInConstantPathError
       super
@@ -267,6 +282,24 @@ RSpec.describe "呼ぶ側を限る入口" do
       requiring = EntryCallers.tenant_requiring(collect("packs/partnerships/app/public/partnerships/recipients.rb" => source), Set.new)
 
       expect(requiring).to eq(Set["Partnerships::Recipients.direct", "Partnerships::Recipients.through_helper"])
+      # class << self の中の def も、直に呼ぶ形と非公開の補助を通す形の両方を数え、private の後の補助は公開に数えない
+      singleton = <<~RUBY
+        module Imports
+          module Runs
+            class << self
+              def direct = Tenancy.require_tenant!
+              def through_helper = own_rows
+              def unrelated = 1
+
+              private
+
+              def own_rows = Tenancy.require_tenant!
+            end
+          end
+        end
+      RUBY
+      expect(EntryCallers.tenant_requiring(collect("packs/imports/app/public/imports/runs.rb" => singleton), Set.new))
+        .to eq(Set["Imports::Runs.direct", "Imports::Runs.through_helper"])
       # app/public の外のファイルと、除いた受け手の handle は数えない
       expect(EntryCallers.tenant_requiring(collect("packs/partnerships/app/models/partnerships/recipients.rb" => source), Set.new)).to be_empty
       expect(EntryCallers.tenant_requiring(collect("packs/partnerships/app/public/partnerships/recipients.rb" => source),

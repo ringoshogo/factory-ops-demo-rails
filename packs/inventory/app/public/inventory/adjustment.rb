@@ -56,7 +56,8 @@ module Inventory
     def self.labeled?(actor, item_id) = Scope.call(actor, ItemLabel.where(item_id:)).exists?
 
     def self.invalid_input(attribute, message) = OperationResult.failure(:invalid_input, path: [ attribute ], message:)
-    def self.not_found = OperationResult.failure(:not_found, path: [ :item_id ])
+    # 取り込みが行の失敗の文に写すので、文を持たせる
+    def self.not_found = OperationResult.failure(:not_found, path: [ :item_id ], message: "Item must be one of the own items")
     private_class_method :labeled?, :invalid_input, :not_found
   end
 end

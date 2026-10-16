@@ -12,6 +12,16 @@ RSpec.describe ConcurrencyHelpers do
 
   def advisory_lock(key) = ApplicationRecord.lease_connection.execute("SELECT pg_advisory_xact_lock(#{key})")
 
+  # 公開 API の戻り値のガードの例外は Exception から継ぐ。補助が StandardError だけを拾うと、親が子の知らせを待ち続ける
+  it "子のスレッドのブロックが Exception から継ぐ例外を出しても、親が同じ例外を送出して待ちを終える" do
+    violation = -> { raise PublicApiReturns::Violation, "子のスレッドの違反" }
+
+    Timeout.timeout(ConcurrencyHelpers::WAIT_SECONDS) do
+      expect { hold_open(tenant.id, &violation) }.to raise_error(PublicApiReturns::Violation, "子のスレッドの違反")
+      expect { finish(in_thread(tenant.id, &violation)) }.to raise_error(PublicApiReturns::Violation, "子のスレッドの違反")
+    end
+  end
+
   it "ロックの待ちは、後行の接続が先行の接続を待っているときだけ真になり、無関係な接続の待ちを数えない" do
     _, release, holder = hold_open(tenant.id) { advisory_lock(lock_key) }
     # 先行の接続を待つ、検査の対象ではない接続

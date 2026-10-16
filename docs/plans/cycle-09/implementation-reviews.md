@@ -527,6 +527,52 @@ PR #101 の CI は、push のたびに `pull_request` で流れた（`publish` �
 
 `m55-separation`（base は `main`）。M54 の先端 `42d5416`（`origin/m54-same-tenant-sync`）から切った。計画と M52〜M54 の PR（#98〜#101）が未マージの間は、それらの commit も PR の差分に見える。M55 の差分は `42d5416..` である。
 
+PR #102 の実装レビューは、実装者が 2 系統に同じ依頼で出した。Codex は Conditional Go、Claude は Go だった。どちらの系統も、`c4acc2d` を展開したディレクトリと `42d5416..c4acc2d` の diff だけを読んだ。
+
+- Claude：手元で完了条件の rspec を流し（2815 examples, 0 failures）、ガードの取り付けを外す壊し方と、`Violation` を `StandardError` から継ぐ壊し方を流した。`TracePoint` の例外の伝わり方を Ruby 3.4.11 の小さなスクリプトで確かめ、zeitwerk と rspec-mocks の引用を原文で確かめた
+- Codex：`--skip-git-repo-check` を付け、読み取り専用で流した。spec は流さず、`hold_open` の本体を写した DB の要らない縮小の実験で、子のスレッドのガードの例外で親が待ち続けることを確かめた（実験の Ruby は 2.6.10）
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High は Codex R1 の 1 件で、直し方が補助の `rescue` を広げて回帰の example を足すと名指しされた Conditional Go なので、直したことをここに書き、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Conditional Go（High 1・Medium 2） |
+| Claude | Go（Low 4） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘なし |
+| 正しさ | 指摘（R1） | 指摘（R4） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R1・R2・R3） | 指摘（R1・R2） |
+| 参照の維持 | 指摘なし | 指摘（R3・R4） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex R1 | ガードの `Violation` は `Exception` から継ぐので、競合テストの補助 `hold_open` の `rescue StandardError` を通らず、子のスレッドで違反が起きると親が `ready` を待ち続ける | `spec/support/concurrency.rb` の `hold_open`・`in_thread`・後始末の `rescue` を `Exception` に広げ、理由をコメントに書いた。`concurrency_helpers_spec.rb:16` に、子のブロックが `Violation` を出すと、親が上限の時間の内に同じ例外を送出する example を足した。`hold_open` を `StandardError` に戻すとこれが落ちる（下の表） | この節を載せた commit |
+| Low | Claude R1 | `Violation` を `Exception` から継ぐ決め（OI-224 の (1)）を、どの example も確かめない | `public_api_returns_spec.rb:113` に、呼ぶ側の `rescue StandardError` の中で違反が起きても外へ出る example を足した。`StandardError` から継ぐとこれだけが落ちる | 同上 |
+| Medium・Low | Codex R2・Claude R2 | `entry_callers_spec.rb` の (iii) が `class << self` の中の `def` を数えない。ガードの spec と数え方が違う | `Collector` に `class << self` の中の `def` と `private` の後の非公開を足し、(iii) の負例に、`class << self` の中で直に呼ぶ形と非公開の補助を通す形を足した。数えないように戻すと負例が落ちる | 同上 |
+| Medium | Codex R3 | ダッシュボードの安全在庫の上限の仕様の値 100 を、どの example も確かめない（単体は `limit:` に 2・3、request spec は定数を差し替える） | `dashboard_spec.rb:120` に、定数を差し替えずに上限ちょうどの 100 件と 101 件の example を足した。`STOCKS_LIMIT` を 99 にしても 101 にしてもこれが落ちる | 同上 |
+| Low | Claude R3 | 「層ごとの責務」の受け手の行が、同じテナントの中を同期でつなぐ規則も spec が守ると読める | 守る仕組みの列を、`EventJob` からだけ呼ばれることは `entry_callers_spec.rb` が落とし、同期と非同期の分け方は機械では落とさず計画レビューと実装レビューが見る、と書き分けた | 同上 |
+| Low | Claude R4 | 「コードが引けて写しの無い品目は起きない」が、写しの表を足した後の作り直しの前の既存の DB と食い違い、そのとき在庫の取り込みの行の誤りの文が空になる | 取り込みのコメントと `data-model.md` の取り込みの手順 3 を、作り直しまでは写しが無く在庫数の設定が `NOT_FOUND` で拒む、と直した。`deploy/README.md` の写しの無い間の影響に、在庫の調整と在庫の CSV の行が拒まれることを足した。写しの無い品目の `NOT_FOUND` に文を持たせ、`adjustment_spec.rb` で確かめる。文を外すとそれが落ちる | 同上 |
+
+| 壊し方（この節を載せた版） | 結果 |
+|---|---|
+| `hold_open` が `StandardError` だけを拾う | `concurrency_helpers_spec.rb:16` だけが落ちた（11 examples, 1 failure） |
+| `Violation` を `StandardError` から継ぐ | `public_api_returns_spec.rb:113` だけが落ちた（6 examples, 1 failure） |
+| `entry_callers_spec.rb` が `class << self` の中の `def` を数えない | `entry_callers_spec.rb:264`（(iii) の負例）だけが落ちた（6 examples, 1 failure） |
+| `STOCKS_LIMIT` を 99 にする・101 にする | どちらも `dashboard_spec.rb:120` だけが落ちた（8 examples, 1 failure） |
+| 写しの無い品目の `NOT_FOUND` から文を外す | `adjustment_spec.rb` の写しの確かめの 2 つが落ちた（10 examples, 2 failures） |
+
+違和感は次のように扱った。
+
+- Claude 1：`DemoWorld::Operations` の spec の期待が、実装と同じ式で `find_target` の有無を読む → 期待を mutation の基底クラスの判定（`Mutations::BaseMutation#targeted?`）から読む形に直した
+- Claude 2：`lib/` が「各コンテキストの公開 API だけを使う」と書くが、`DemoWorld::Operations` は mutation の宣言を読む → `context-map.md` の `lib/` の行に、規則は同じルートパッケージの mutation の宣言から読むと足した
+- Claude 3：`entry_callers_spec.rb` が `packs/*/lib` を読まない → 読む置き場に足した
+- Claude 4：上限の仕様の値 100 を確かめない → Codex R3 と同じで、上で直した
+- Claude 5：ガードの例外は確かめるメソッドが戻る時点で出るので、違反した呼び出しの書き込みは example のトランザクションが巻き戻すまで残る → 扱わない。テストのガードとして、違反した example が落ちれば足りる
+- Codex：未呼び出しの公開 API を失敗にしない制約 → IB-150 に積んである
+
 ### 実装の記録
 
 下の spec の行の番号は、実装レビューに出す版のものである。

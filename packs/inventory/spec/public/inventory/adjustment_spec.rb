@@ -122,6 +122,8 @@ RSpec.describe Inventory::Adjustment, "の品目の確かめ" do
           expect(failures(operation.call(actor, item_id))).to eq([ [ :not_found, [ :item_id ] ] ])
           expect(written(item_id)).to eq([ 0, 0 ])
         end
+        # 在庫の取り込みが行の失敗の文に写すので、失敗は文を持つ
+        expect(operation.call(actor, unlabeled).failures.sole.message).to eq("Item must be one of the own items")
       end
     end
   end

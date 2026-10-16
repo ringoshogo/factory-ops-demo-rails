@@ -276,9 +276,8 @@ RSpec.describe DemoWorld do
           .to raise_error(DemoWorld::Operations::Forbidden), name.to_s
       end
 
-      targeted = DemoWorld::Operations::MUTATIONS.transform_values do |mutation|
-        mutation.method_defined?(:find_target) || mutation.private_method_defined?(:find_target)
-      end
+      # 対象を引くかは mutation の基底クラスの判定（Mutations::BaseMutation#targeted?）から読む
+      targeted = DemoWorld::Operations::MUTATIONS.transform_values { _1.allocate.send(:targeted?) }
       # 対照：対象を引く mutation と引かない mutation の両方がある
       expect(targeted.values.uniq).to contain_exactly(true, false)
       expect(passed).to eq(targeted)

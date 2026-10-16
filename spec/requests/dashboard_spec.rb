@@ -116,6 +116,19 @@ RSpec.describe "受注側のダッシュボード", type: :request do
         "shipped" => done, "inspected" => done, "cancelled" => done)
   end
 
+  # 上限は仕様の値（100 件）で、定数を差し替えずに書く（docs/guides/testing.md「層への配分」）。前の準備で 2 件がある
+  it "安全在庫を下回る在庫が上限ちょうどの 100 件ならすべて返し、101 件なら品目コードの順の先頭 100 件を返す" do
+    codes = Array.new(98) { format("C-%03d", _1) }
+    codes.each { stock_below(_1) }
+    expect(dashboard.fetch("stocksBelowSafetyStock").size).to eq(100)
+
+    stock_below("A-LAST")
+    returned = dashboard.fetch("stocksBelowSafetyStock").map { _1.dig("item", "code") }
+    expect(returned.size).to eq(100)
+    expect(returned.first).to eq("A-LAST")
+    expect(returned).not_to include("NUT-1")
+  end
+
   it "安全在庫を下回る在庫を、品目コードの昇順で上限の件数まで返す" do
     stub_const("Types::SupplierDashboardType::STOCKS_LIMIT", 2)
     stock_below("AXLE-1")
