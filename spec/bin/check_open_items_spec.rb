@@ -147,4 +147,58 @@ RSpec.describe "bin/check-open-items" do
     expect(status).not_to be_success
     expect(err).to include("(標準入力):1: OI-07 が台帳に無い")
   end
+
+  it "サイクル 10 以降の実装レビューの証跡で、計画との違いの項目が OI-NN も「判断なし」も持たなければ落とす" do
+    ledgers(open_items: "| OI-01 | judgment | 内容 | 出どころ | M16 | |\n")
+    evidence = <<~MD
+      ## M16 テストの層
+
+      #### 計画との違い
+
+      - 作るもの 1 の引数を、計画の 2 つから 3 つにした
+      - 作るもの 2 の置き場を決めた（OI-01）
+      - 作るもの 3 は計画の文のとおりに直した（判断なし）
+
+      #### RED
+
+      - 計画との違いの節の外の項目は確かめない
+    MD
+    write("docs/plans/cycle-10/implementation-reviews.md", evidence)
+    write("docs/plans/cycle-09/implementation-reviews.md", evidence)
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    expect(err.lines).to eq([ "docs/plans/cycle-10/implementation-reviews.md:5: 計画との違いの項目に、" \
+                              "judgment の行の ID（OI-NN）も「判断なし」も無い\n" ])
+
+    write("docs/plans/cycle-10/implementation-reviews.md", evidence.sub("3 つにした", "3 つにした（判断なし）"))
+    _out, err, status = run_check
+    expect(err).to eq("")
+    expect(status).to be_success
+  end
+
+  it "サイクル 10 以降の計画レビューの証跡が、dev-cycle.md の計画レビューの観点の名前を欠けば落とす" do
+    ledgers(open_items: "")
+    write("docs/guides/dev-cycle.md", <<~MD)
+      ## 1. 計画レビュー
+
+      1. **設計文書との整合**：説明
+      2. **順序と依存**：説明
+
+      ## 2. マイルストーンの実装
+
+      1. **計画への準拠と範囲**：説明
+    MD
+    write("docs/plans/cycle-10/plan-review.md", "| 観点 | 判定 |\n|---|---|\n| 設計文書との整合 | 指摘なし |\n")
+    write("docs/plans/cycle-09/plan-review.md", "観点の名前を書かない\n")
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    expect(err.lines).to eq([ "docs/plans/cycle-10/plan-review.md: 計画レビューの観点「順序と依存」の結果が無い\n" ])
+
+    write("docs/plans/cycle-10/plan-review.md", "| 設計文書との整合 | 指摘なし |\n| 順序と依存 | 指摘あり |\n")
+    _out, err, status = run_check
+    expect(err).to eq("")
+    expect(status).to be_success
+  end
 end

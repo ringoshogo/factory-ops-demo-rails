@@ -11,6 +11,9 @@ require "open3"
 OPEN_ITEMS = "docs/plans/open-items.md"
 BACKLOG = "docs/plans/improvement-backlog.md"
 PLAN = "docs/implementation-plan.md"
+DEV_CYCLE = "docs/guides/dev-cycle.md"
+EVIDENCE = %r{\Adocs/plans/cycle-(\d+)/(implementation-reviews|plan-review)\.md\z}
+EVIDENCE_FROM = 10
 
 OI_STATES = %w[open judgment blocked-user decided closed].freeze
 OI_UNRESOLVED = %w[open judgment blocked-user].freeze
@@ -107,6 +110,30 @@ check_text = lambda do |label, text|
   end
 end
 
+# 実装の途中で計画と違う形にした項目は、作者に確かめる judgment の行を持つか、決めたことが無いと書く
+# （docs/guides/dev-cycle.md「作者が不在の間に決めたこと」）
+check_differences = lambda do |label, text|
+  inside = false
+  text.each_line.with_index(1) do |line, lineno|
+    if line.start_with?("#")
+      inside = line.sub(/\A#+/, "").strip == "計画との違い"
+    elsif inside && line.start_with?("- ") && !line.match?(/\bOI-\d+\b/) && !line.include?("判断なし")
+      errors << "#{label}:#{lineno}: 計画との違いの項目に、judgment の行の ID（OI-NN）も「判断なし」も無い"
+    end
+  end
+end
+
+# 計画レビューの観点は、規則の正本の dev-cycle.md「1. 計画レビュー」の番号付きの太字から集める
+plan_review_aspects = nil
+check_plan_review = lambda do |label, text|
+  plan_review_aspects ||= File.read(File.join(root, DEV_CYCLE))[/^## 1\. 計画レビュー\n(.*?)(?=^## )/m, 1].to_s
+                              .scan(/^\d+\. \*\*(.+?)\*\*/).flatten
+  errors << "#{DEV_CYCLE}: 「1. 計画レビュー」から観点の名前を読めない" if plan_review_aspects.empty?
+  plan_review_aspects.each do |aspect|
+    errors << "#{label}: 計画レビューの観点「#{aspect}」の結果が無い" unless text.include?(aspect)
+  end
+end
+
 files, status = Open3.capture2("git", "-C", root, "ls-files", "-z")
 abort "git ls-files が失敗した" unless status.success?
 files.split("\0").each do |file|
@@ -119,6 +146,12 @@ files.split("\0").each do |file|
   next unless text.valid_encoding? && !text.include?("\0")
 
   check_text.call(file, text)
+
+  # 証跡はその時点の記録で後から書き換えないので、形を決めたサイクルより前の証跡は確かめない
+  cycle, kind = file.match(EVIDENCE)&.captures
+  next unless cycle && cycle.to_i >= EVIDENCE_FROM
+
+  kind == "plan-review" ? check_plan_review.call(file, text) : check_differences.call(file, text)
 end
 
 options[:texts].each do |file|
