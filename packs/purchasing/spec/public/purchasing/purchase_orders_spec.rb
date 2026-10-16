@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 入荷の検収と検収数量の一括取得（docs/architecture/graphql-schema.md「読み取りの一覧」）。
 # 入荷を 2 件以上まとめて渡し、入荷ごとの値を取り違えないことと、見えない入荷と検収の前の入荷が空になることを確かめる
@@ -121,5 +122,127 @@ RSpec.describe Purchasing::PurchaseOrders, ".list" do
     expect(list_ids(order_by: [ { field: :supplier_name, direction: :asc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
     expect(list_ids(order_by: [ { field: :status, direction: :asc } ])).to eq([ [ c, b, a ].map(&:id), 3 ])
     expect(list_ids(order_by: [ { field: :status, direction: :desc } ])).to eq([ [ a, b, c ].map(&:id), 3 ])
+  end
+end
+
+# 発注の進みのタイムライン。状況の式と同じ自社の行だけから組み立て、時刻の出来事は日本時間の日付と時刻で、日付の出来事は
+# 同じ日の時刻の出来事の後ろに業務の順で並べる（docs/architecture/graphql-schema.md「発注側の視点」）
+RSpec.describe Purchasing::PurchaseOrders, ".timeline_for" do
+  include ActiveSupport::Testing::TimeHelpers
+
+  let!(:buyer) { FactoryBot.create(:tenant) }
+  let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: buyer.id, name: "", email: "", role: "member", partner_code: "") }
+
+  def at(text) = Time.zone.parse(text)
+
+  def timeline(ids) = Tenancy.with_tenant(buyer.id) { described_class.timeline_for(actor, ids) }
+
+  def entries(values) = values.map { [ _1.kind, _1.occurred_on, _1.occurred_at ] }
+
+  # 受注確定・取消依頼・却下・再依頼・承認と、出荷・検収・請求書の受領を経た発注。検収と請求書の受領は同じ日で、
+  # 請求書を先に作るので、行の ID の順は業務の順と逆になる
+  def walked_order
+    FactoryBot.create(:purchase_order, created_at: at("2026-10-01 10:00"), awaiting_match_at: at("2026-10-01 11:00"),
+      accepted_at: at("2026-10-02 09:30"), cancelled_at: at("2026-10-03 15:00")).tap do |order|
+      FactoryBot.create(:cancellation_request, purchase_order: order, created_at: at("2026-10-02 10:00"), outcome: "rejected",
+        decided_at: at("2026-10-02 12:00"))
+      FactoryBot.create(:cancellation_request, purchase_order: order, created_at: at("2026-10-03 10:00"), outcome: "approved",
+        decided_at: at("2026-10-03 15:00"))
+      line = FactoryBot.create(:purchase_order_line, purchase_order: order)
+      shipment = FactoryBot.create(:inbound_shipment, purchase_order: order, shipped_on: Date.new(2026, 10, 3))
+      FactoryBot.create(:received_invoice_line, purchase_order_line: line,
+        received_invoice: FactoryBot.create(:received_invoice, issued_on: Date.new(2026, 10, 5)))
+      FactoryBot.create(:receipt_inspection, inbound_shipment: shipment, inspected_on: Date.new(2026, 10, 5))
+    end
+  end
+
+  it "出来事を、日付、時刻（空は後ろ）、業務の順で並べ、取消の承認で書く発注の取消の時刻を別の出来事にしない" do
+    order = Tenancy.with_tenant(buyer.id) { walked_order }
+
+    expect(entries(timeline([ order.id ]).fetch(order.id))).to eq([
+      [ :ordered, Date.new(2026, 10, 1), at("2026-10-01 10:00") ],
+      [ :part_match_pending, Date.new(2026, 10, 1), at("2026-10-01 11:00") ],
+      [ :accepted, Date.new(2026, 10, 2), at("2026-10-02 09:30") ],
+      [ :cancellation_requested, Date.new(2026, 10, 2), at("2026-10-02 10:00") ],
+      [ :cancellation_rejected, Date.new(2026, 10, 2), at("2026-10-02 12:00") ],
+      [ :cancellation_requested, Date.new(2026, 10, 3), at("2026-10-03 10:00") ],
+      [ :cancellation_approved, Date.new(2026, 10, 3), at("2026-10-03 15:00") ],
+      [ :shipped, Date.new(2026, 10, 3), nil ],
+      [ :inspected, Date.new(2026, 10, 5), nil ],
+      [ :invoice_received, Date.new(2026, 10, 5), nil ]
+    ])
+    expect(timeline([ order.id ]).fetch(order.id).map(&:owner_tenant_id)).to all(eq(buyer.id))
+  end
+
+  it "受注側の取消を出来事にし、同じ時刻の出来事は業務の順で並べる" do
+    order = Tenancy.with_tenant(buyer.id) do
+      FactoryBot.create(:purchase_order, created_at: at("2026-10-01 10:00"), accepted_at: at("2026-10-01 10:00"),
+        supplier_cancelled_at: at("2026-10-01 10:00"))
+    end
+
+    expect(timeline([ order.id ]).fetch(order.id).map(&:kind)).to eq(%i[ordered accepted supplier_cancelled])
+  end
+
+  # 業務の日付は日本時間で決める（docs/guides/testing.md「層への配分」）
+  it "日本時間の 0〜9 時に起きた出来事の日付は、日本時間の日付になる" do
+    now = Time.utc(2026, 10, 11, 16, 0)
+    order = travel_to(now) { Tenancy.with_tenant(buyer.id) { FactoryBot.create(:purchase_order) } }
+
+    # 対照：この時刻の UTC の日付は前日である
+    expect(now.to_date).to eq(Date.new(2026, 10, 11))
+    expect(entries(timeline([ order.id ]).fetch(order.id))).to eq([ [ :ordered, Date.new(2026, 10, 12), now ] ])
+  end
+
+  # Bullet は関連の読み込みしか見ないので、発注ごとに問い合わせを繰り返す形を捕まえない。SQL の件数で確かめる
+  it "発注が 2 件でも、SQL を 1 回だけ流して両方の出来事を返す" do
+    orders = Tenancy.with_tenant(buyer.id) { [ walked_order, FactoryBot.create(:purchase_order, accepted_at: Time.current) ] }
+    count = 0
+    counter = ->(*, payload) { count += 1 unless payload[:cached] || %w[SCHEMA TRANSACTION Tenancy].include?(payload[:name]) }
+
+    values = Tenancy.with_tenant(buyer.id) do
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { described_class.timeline_for(actor, orders.map(&:id)) }
+    end
+
+    expect(values.transform_values(&:size)).to eq(orders[0].id => 10, orders[1].id => 2)
+    expect(count).to eq(1)
+  end
+
+  it "1 通の受領請求書が 2 つの発注の明細を含むと、発注ごとに 1 つずつ請求書の受領を出す" do
+    first, second = Tenancy.with_tenant(buyer.id) do
+      orders = FactoryBot.create_list(:purchase_order, 2)
+      invoice = FactoryBot.create(:received_invoice)
+      [ orders[0], orders[0], orders[1] ].each do |order|
+        FactoryBot.create(:received_invoice_line, received_invoice: invoice, purchase_order_line: FactoryBot.create(:purchase_order_line, purchase_order: order))
+      end
+      orders
+    end
+
+    values = timeline([ first.id, second.id ])
+
+    expect(values.transform_values { |entries| entries.map(&:kind) })
+      .to eq(first.id => %i[ordered invoice_received], second.id => %i[ordered invoice_received])
+  end
+
+  # 公開 API は所有の条件を RLS に任せない。RLS の SELECT を開いて他社の行を見えるようにし、どの読み方も自社の発注に結ぶことを確かめる
+  # （docs/guides/testing.md「行列テストとの分担」）
+  describe "RLS の SELECT と UPDATE を開いたとき" do
+    include_context "RLS の SELECT と UPDATE を開く"
+
+    it "他社の発注の ID は空の配列になり、他社の取消依頼・入荷・検収・受領請求書の出来事が混ざらない" do
+      other = FactoryBot.create(:tenant)
+      theirs = Tenancy.with_tenant(other.id) { walked_order }
+      ours = Tenancy.with_tenant(buyer.id) { FactoryBot.create(:purchase_order, created_at: at("2026-10-01 10:00")) }
+
+      values = Tenancy.with_tenant(buyer.id) do
+        cross_read!
+        # 対照：開いた後は、他社の発注が見える
+        expect(Purchasing::PurchaseOrder.where(id: theirs.id)).to exist
+        described_class.timeline_for(actor, [ ours.id, theirs.id ])
+      end
+
+      # 対照：自社の発注の出来事は返る
+      expect(entries(values.fetch(ours.id))).to eq([ [ :ordered, Date.new(2026, 10, 1), at("2026-10-01 10:00") ] ])
+      expect(values.fetch(theirs.id)).to eq([])
+    end
   end
 end

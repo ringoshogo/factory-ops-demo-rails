@@ -31,6 +31,11 @@ module Purchasing
       order_ids.index_with { [] }.merge(requests.map { to_cancellation_request_value(_1) }.group_by(&:purchase_order_id))
     end
 
+    # 発注 ID ごとの進みの出来事。古い順に並べ、見えない発注の ID は空の配列になる
+    def self.timeline_for(actor, order_ids)
+      order_ids.index_with { [] }.merge(PurchaseOrderTimeline.for(Scope.call(actor, :own).where(id: order_ids)))
+    end
+
     # 発注 ID ごとの入荷（「出荷計上」の写し）
     def self.inbound_shipments_for(actor, order_ids)
       shipments = InboundShipment.where(purchase_order_id: Scope.call(actor, :own).where(id: order_ids).select(:id)).order(:id)
