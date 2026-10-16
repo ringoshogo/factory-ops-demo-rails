@@ -64,7 +64,8 @@ RSpec.describe "取消と出荷の計上の競合" do
     end
   end
 
-  # 後の操作は受注の行を待つ。出荷依頼を先にロックする順なら、計上は出荷依頼のロックを持ったまま在庫の行を待つ
+  # 後の操作は受注の行を待つ。計上が受注の行をロックしない形なら、計上は在庫の行を待つ。出荷依頼と受注の間の順は、
+  # 待つ先の表では分からないので、shipping_spec.rb と instructions_spec.rb のロックの順の example が確かめる
   def expect_waiting_on_order(waiter, by:)
     expect(blocked_on_lock?(waiter, by:)).to be(true)
     expect(waiting_row_tables(waiter)).to eq([ "sales_orders" ])

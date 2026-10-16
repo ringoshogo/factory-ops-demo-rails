@@ -119,7 +119,7 @@ RSpec.describe Fulfillment::ShipmentRequests do
       expect(list_ids(order_by: [ { field: :planned_date, direction: :desc } ])).to eq([ [ b, a, c ].map(&:id), 3 ])
     end
 
-    # 受注を取り消しても、出荷は受注を書き換えないので、出荷指示の行は active のまま残る。読む側が取消済の受注の分を除く
+    # 受注は出荷に依存しないので、受注の取消は出荷指示を書き換えず、出荷指示の行は active のまま残る。読む側が取消済の受注の分を除く
     it "取消済の受注の出荷依頼に残った出荷指示を、出荷指示の読み込みは返さず、出荷予定日で並べると予定日の無い出荷依頼と同じ位置に並べる" do
       cancelled, instructed, bare = Tenancy.with_tenant(supplier.id) do
         Array.new(3) { FactoryBot.create(:shipment_request) }.tap do |(cancelled, instructed, _bare)|
@@ -134,6 +134,19 @@ RSpec.describe Fulfillment::ShipmentRequests do
       expect(instructions.transform_values(&:planned_date)).to eq(instructed.id => today + 5)
       expect(list_ids(order_by: [ { field: :planned_date, direction: :asc } ])).to eq([ [ instructed, cancelled, bare ].map(&:id), 3 ])
       expect(list_ids(order_by: [ { field: :planned_date, direction: :desc } ])).to eq([ [ instructed, bare, cancelled ].map(&:id), 3 ])
+    end
+
+    # 受注の副問い合わせに行が無いと、取消済かは NULL になる。除く条件の NOT が NULL で行を落とさず、取消済でない側に倒れる
+    it "受注の見えない出荷依頼の有効な出荷指示は、読み込みが返し、出荷予定日の位置に並べる" do
+      orphan, bare = Tenancy.with_tenant(supplier.id) do
+        [ FactoryBot.create(:shipment_request, sales_order_id: SecureRandom.uuid), FactoryBot.create(:shipment_request) ].tap do |(orphan, _bare)|
+          FactoryBot.create(:shipping_instruction, shipment_request: orphan, planned_date: today + 2)
+        end
+      end
+
+      instructions = Tenancy.with_tenant(supplier.id) { described_class.instructions_for(actor, [ orphan.id, bare.id ]) }
+      expect(instructions.transform_values(&:planned_date)).to eq(orphan.id => today + 2)
+      expect(list_ids(order_by: [ { field: :planned_date, direction: :desc } ])).to eq([ [ orphan, bare ].map(&:id), 2 ])
     end
   end
 

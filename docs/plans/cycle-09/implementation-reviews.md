@@ -349,7 +349,50 @@ PR #100 の CI は、push のたびに `pull_request` で流れ、どれも通�
 
 `m54-same-tenant-sync`（base は `main`）。M53 の先端 `fe9abd1`（`origin/m53-timeline`）から切った。計画と M52・M53 の PR が未マージの間は、それらの commit も PR の差分に見える。M54 の差分は `fe9abd1..` である。
 
-PR #101。実装レビューの判定と指摘への対応は、レビューの後にこの節に書く。
+PR #101 の実装レビューは、実装者が 2 系統に同じ依頼で出した。どちらも Go だった。どちらの系統も、`32ebd8e` を展開したディレクトリと `fe9abd1..32ebd8e` の diff だけを読んだ。
+
+- Claude：spec を流さず、コードと spec を読んで、壊したときに何が落ちるかを確かめた。消えた example の名前（47 件）を対応の表と照らした
+- Codex：`--skip-git-repo-check` を付け、読み取り専用で流した。検査と壊し方は流し直していない
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上の指摘が無いので、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go（Medium 3・Low 1） |
+| Claude | Go（Medium 2・Low 4） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R2） | 指摘（R2・R3） |
+| 参照の維持 | 指摘（R3・R4） | 指摘（R4・R5・R6） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium・Low | Claude R1・Codex R1 | 計画の「文書に残すこと」の `git grep` が、ADR 012 の「状態」の表の名前（`shipping_holds`）で 1 件当たり、0 件にならない。grep の結果も証跡に無い | ADR 012 の文から表と列の名前を外した。grep が 0 件であることを、この節の「手元で流したもの」に書いた | この節を載せた commit |
+| Medium | Claude R2 | 状況の式の `COALESCE` を外しても落ちない。効くのは出荷指示の読み込みと出荷予定日の `NOT` だけで、受注の見えない出荷依頼の example が無い | `shipment_requests_spec.rb:140` に、受注の見えない出荷依頼の有効な指示を読み込みが返し、出荷予定日の位置に並べる example を足した。`COALESCE` を外すとこれだけが落ちる（下の表） | 同上 |
+| Medium | Codex R2 | `Instructions.create` のロックの順（受注 → 出荷依頼）を確かめる example が無い。出荷依頼を先にロックしても競合テストは落ちない | `instructions_spec.rb:106` に、`FOR UPDATE` の順が受注 → 出荷依頼であることを確かめる example を足した。出荷依頼を先にロックするとこれだけが落ちる | 同上 |
+| Low | Claude R3 | `cancel_vs_ship_spec.rb` の待つ先の補助のコメントが、出荷依頼と受注の順の誤りを捕まえると読める | コメントを、計上が受注の行をロックしない形を捕まえ、順はロックの順の example が確かめる、と直した | 同上 |
+| Medium | Codex R4 | 「出荷は受注の行を書き換えないので」が、計上が受注を出荷済にする実装と食い違う。出荷指示を残す理由として依存の向きが逆 | `data-model.md` の 2 か所、ADR 012 決定 3、計画の M54 の作るもの 3、`shipment_requests_spec.rb` のコメントを、状況は「いまの受注の行から読む」、指示を残すのは「受注は出荷に依存しないので、受注の取消は出荷指示を書き換えない」に直した。直す前の言い方を `git grep` で数え、0 件にした | 同上 |
+| Low | Claude R4 | `spec/requests/cancellations_spec.rb` の冒頭のコメントと 2 つの example の名前が、出荷停止の解除と出荷指示の取消を前提にしている | 審査の決着と、出荷依頼が取消済になって出荷指示を返さない形に直した | 同上 |
+| Low | Claude R5 | `mark_shipped` の失敗の `path: [:sales_order_id]` を、入力に受注 ID の無い `postShipment` がそのまま返す | `Shipping.post` が、利用者の渡した出荷依頼 ID を指す `NOT_FOUND` に写す。`shipping_spec.rb:121` の期待も直した。写さずに返すとこれが落ちる | 同上 |
+| Low | Claude R6 | マイグレーションの `down` を流した記録が無い | 実装の途中で、テストの DB で `db:rollback` と `db:migrate` を流し、`down` の後の `structure.sql` が、列の順（`shipment_requests.cancelled_at` が表の最後に付く）を除いて `fe9abd1` と同じになり、もう一度 `up` すると変更の後の形に戻ることを確かめていた。表の説明の `change_table_comment` を足した後も、同じ往復を流した | 記録のみ |
+| Medium | Codex R3 | 終えたマイルストーンの計画の節（M14・M21〜M24・M26・M40 など）に、消したイベントと出荷停止の表を前提にした文が残る | 直さない。終えたマイルストーンの節は、そのマイルストーンが作ったものの記録として書き換えず、いまの形は設計文書と ADR 012 が正本である。判断を OI-223（`judgment`）に積んだ | — |
+
+| 壊し方（この節を載せた版） | 結果 |
+|---|---|
+| 状況の式の `order_flag` から `COALESCE` を外す | `shipment_requests_spec.rb:140` だけが落ちた（`packs/fulfillment/spec` の 70 examples, 1 failure） |
+| `Instructions.create` で出荷依頼を受注より先にロックする | `instructions_spec.rb:106` だけが落ちた（13 examples, 1 failure） |
+| `Shipping.post` で `mark_shipped` の失敗を写さずに返す | `shipping_spec.rb:121` だけが落ちた（14 examples, 1 failure） |
+
+違和感は次のように扱った。
+
+- Codex 1：出荷依頼の受注番号の写しの「写しを作った時点では」が、コメントの規約の「経緯を書かない」と緊張する → IB-148
+- Claude 1：`testing.md` の `INSERT ... ON CONFLICT DO UPDATE` の段落が、例を消した後に当たる入口の無い規則として残る → いまは当たる入口が無く、足す人がこの形にする、と 1 文を足した
+- Claude 2：計画は、待つ先の確かめで出荷依頼と受注の順の誤りも捕まえる前提で書いていた。待ち終えた接続はタプルのロックを手放すので捕まえない → IB-149。順は Codex R2 で足したロックの順の example と `shipping_spec.rb` のロックの順の example が確かめる
+- Claude 3：`shipping_lock_spec.rb:116` は、自動の却下の「取消却下」が出たことを見ていない → 扱わない。自動の却下のイベントは単体の `purchasing_event_receiver_spec.rb:53` が確かめ、競合テストは未決の審査を残さないことを確かめる
 
 ### 実装の記録
 
@@ -445,7 +488,7 @@ PR #101。実装レビューの判定と指摘への対応は、レビューの�
 | `cancellation_reviews_spec.rb`・`order_cancellation_spec.rb` の「出荷取消は出荷可能を出していないことを運ぶ」（3 examples） | 取消の前の引当の状態を読む | 対応先なし（読みを消した）。全量を引き当てていない受注と品番照合待ちの受注を取り消せることは、同じ example を書き換えて残した |
 | `spec/contracts/shipment_posted_delivery_spec.rb` の受注の宛先 | 受注の受け手に 1 件登録され、重複しても 1 回分 | 宛先が購買だけになったことを同じ spec で確かめる。受注の出荷済は `shipping_spec.rb:71` |
 
-rspec の件数は、M53 の 3150 から 3117 になった。
+rspec の件数は、M53 の 3150 から 3117 になり、実装レビューの直しで 3119 になった。
 
 ### 確かめたこと
 
@@ -455,6 +498,7 @@ rspec の件数は、M53 の 3150 から 3117 になった。
 TEST_DATABASE=factory_ops_m54_test bundle exec rspec packs/fulfillment/spec packs/sales/spec packs/billing/spec spec/concurrency spec/contracts spec/scenarios spec/db spec/matrix   # 0 failures
 TEST_DATABASE=factory_ops_m54_test BASE_REF=origin/m53-timeline bin/ci   # de09118 で、すべての工程が通った。rspec は 3117 examples, 0 failures
 bin/check-open-items --due M54 && bin/check-commit-refs   # 通った
+git grep -n -e ShippingHeld -e ShippingHoldReleased -e ShipmentCancelled -e BillableItemConfirmed -e shipping_holds -e ShippingHold -e NotShippedYet -e FulfillmentEventReceiver -e Billing::SalesEventReceiver -e release_hold -e lock_sales_order -e 'held?' -e 'ready_for_shipment:' -e '\.ready_for_shipment' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!db/migrate'   # 実装レビューの直しの後に 0 件
 cd frontend && npm run codegen:check && npm run lint && npm run typecheck   # 通った（Node 22、npm ci の後）
 cd frontend && E2E_DATABASE=factory_ops_m54_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # e4ffc00 で 74 passed・26 skipped（1.7 分）
 ```
@@ -463,7 +507,15 @@ cd frontend && E2E_DATABASE=factory_ops_m54_e2e PLAYWRIGHT_CHANNEL=chrome npm ru
 
 実装の途中で、マイグレーションの後に `shipping_holds` を後始末の表に持つ古い競合テストが後始末に失敗し、テストの DB に行とジョブが残って、`allocation_spec.rb` と受け手の spec が残った行で落ちた。テストの DB を作り直してから流し直し、通った。製品の不具合ではない。
 
-PR #101 の CI の実行と結果は、レビューの後の直しを含む最後の commit の分まで、この節に書く。
+実装レビューの直しの後も `TEST_DATABASE=factory_ops_m54_test BASE_REF=origin/m53-timeline bin/ci` が通った（3119 examples, 0 failures、分岐の網羅率の警告 0 件）。直しは spec・文書・コメントと `Shipping.post` の失敗の写しだけで、手元の E2E は流し直していない。
+
+PR #101 の CI は、push のたびに `pull_request` で流れた（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `e4ffc00` | [38887125143](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38887125143) | success |
+| `32ebd8e` | [38887230016](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38887230016) | success（e2e 3 分 24 秒・test 6 分 5 秒） |
+<!-- CI-ROWS -->
 
 ### 残件の処理
 

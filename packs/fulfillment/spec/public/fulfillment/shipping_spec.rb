@@ -118,11 +118,11 @@ RSpec.describe Fulfillment::Shipping do
   end
 
   # 受注の出荷済の書き込みが失敗したら、出荷実績と引当の消費もセーブポイントまで戻す
-  it "受注の出荷済を書けなければ、その失敗を返し、出荷実績も在庫も変えない" do
+  it "受注の出荷済を書けなければ、出荷依頼 ID を指す NOT_FOUND を返し、出荷実績も在庫も変えない" do
     allow(Sales::OrderShipping).to receive(:mark_shipped).and_return(OperationResult.failure(:not_found, path: [ :sales_order_id ]))
     before = [ stock, movements ]
 
-    expect(post.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :sales_order_id ] ] ])
+    expect(post.failures.map { [ _1.code, _1.path ] }).to eq([ [ :not_found, [ :shipment_request_id ] ] ])
     expect(request.reload.shipment).to be_nil
     expect([ stock, movements ]).to eq(before)
     expect(Inventory::Allocation.quantities_for(actor, line_ids).values).to eq([ 3, 2 ])

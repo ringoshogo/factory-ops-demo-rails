@@ -102,6 +102,16 @@ RSpec.describe Fulfillment::Instructions do
     expect(orphan.instructions.count).to eq(0)
   end
 
+  # 計上と同じ順で、受注の取消・審査の作成と決着と受注の行ロックで直列になる（docs/architecture/data-model.md「取消と出荷の競合を止める場所」）
+  it "ロックを受注 → 出荷依頼の順に取る" do
+    request
+    locks = []
+    callback = ->(*, payload) { locks << payload[:sql][/FROM "(\w+)"/, 1] if payload[:sql].include?("FOR UPDATE") }
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { create }
+
+    expect(locks).to eq(%w[sales_orders shipment_requests])
+  end
+
   it "有効な指示の無い出荷依頼の取消と、見えない出荷依頼は失敗する" do
     expect(codes(cancel)).to eq([ :conflict ])
     expect(codes(described_class.cancel(actor, shipment_request_id: SecureRandom.uuid))).to eq([ :not_found ])

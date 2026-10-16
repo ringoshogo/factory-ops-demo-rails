@@ -33,8 +33,11 @@ module Fulfillment
             ShipmentLine.new(owner_tenant_id: request.owner_tenant_id, shipment_request_line: line,
               source_purchase_order_line_id: line.source_purchase_order_line_id, quantity: line.quantity)
           end)
-        result = Sales::OrderShipping.mark_shipped(actor, request.sales_order_id)
-        raise ActiveRecord::Rollback unless result.success?
+        # 受注の失敗は入力に無い受注 ID を指すので、利用者が渡した出荷依頼 ID に写す
+        unless Sales::OrderShipping.mark_shipped(actor, request.sales_order_id).success?
+          result = OperationResult.failure(:not_found, path: [ :shipment_request_id ])
+          raise ActiveRecord::Rollback
+        end
 
         publish_posted(request, shipment)
         result = OperationResult.success(ShipmentRequests.find(actor, request.id))
