@@ -154,7 +154,7 @@ class MatrixWorld
   # ダッシュボードの集計に当たる行。受注と未請求の明細は表ごとの行で足りる。在庫と出荷依頼は、factory の既定では
   # 安全在庫を割らず期限も無いので、ここで足す。どの集計も自社の行を数えるので、集計の公開 API が scope を外すと、
   # RLS の SELECT を開いた入口の行列で他社のこの行が数に入る（docs/guides/testing.md「行列テストとの分担」）。
-  # 在庫はダッシュボードが品目のコードで並べるので、自社の品目に作る
+  # 在庫はダッシュボードが品目の写しのコードで並べるので、写しのある自社の品目に作る
   def add_dashboard_rows(persona)
     FactoryBot.create(:stock, item_id: row("items", persona).id, on_hand: 1, safety_stock: 2)
     FactoryBot.create(:shipment_request, due_date: Date.current)

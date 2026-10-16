@@ -202,5 +202,10 @@ RSpec.describe "Partnerships::Access と Directory" do
       expect(Partnerships::PartnershipPolicy.new(value, user: actor_of(supplier, role: "member")).apply(:manage?)).to be(false)
       expect(Partnerships::PartnershipPolicy.new(value, user: buyer_actor).apply(:manage?)).to be(false)
     end
+
+    it "自社の取引用コードを返す規則は、admin にだけ真" do
+      expect(Partnerships::PartnershipPolicy.new(user: supplier_actor).apply(:show_partner_code?)).to be(true)
+      expect(Partnerships::PartnershipPolicy.new(user: actor_of(supplier, role: "member")).apply(:show_partner_code?)).to be(false)
+    end
   end
 end

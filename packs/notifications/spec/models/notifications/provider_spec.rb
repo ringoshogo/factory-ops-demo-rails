@@ -20,8 +20,16 @@ RSpec.describe Notifications::Provider do
     expect { described_class.build(config) }.to raise_error(ArgumentError, /provider/)
   end
 
-  it "起動時の確かめが、設定から送信先を作り直す" do
-    expect(Notifications::Setup.verify!).to eq(Notifications::FakeProvider)
+  # 起動時の確かめは送信先を外へ出さない。送信先は Provider.current だけが返す
+  it "起動時の確かめが、送信先を返さずに、設定から送信先を作り直す" do
+    described_class.instance_variable_set(:@current, described_class::FileSystem.new(Dir.tmpdir))
+    # 対照：作り直す前は、設定と違う送信先が残っている
+    expect(described_class.current).to be_a(described_class::FileSystem)
+
+    expect(Notifications::Setup.verify!).to be_nil
+    expect(described_class.current).to eq(Notifications::FakeProvider)
+  ensure
+    described_class.reset!
   end
 
   describe described_class::FileSystem do

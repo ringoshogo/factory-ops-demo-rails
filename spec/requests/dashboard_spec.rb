@@ -18,7 +18,7 @@ RSpec.describe "受注側のダッシュボード", type: :request do
   def dashboard = travel_to(now) { query(screen).dig("supplier", "dashboard") }
 
   def stock_below(code)
-    as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item, code:).id, on_hand: 1, safety_stock: 5) }
+    as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item, :labeled, code:).id, on_hand: 1, safety_stock: 5) }
   end
 
   before do
@@ -36,7 +36,7 @@ RSpec.describe "受注側のダッシュボード", type: :request do
   it "画面の問い合わせが、4 つの公開 API と同じ値を返す。member も読め、今日は日本時間で決まる" do
     expected = as_supplier do
       { counts: Sales::SalesOrders.count_by_status(actor),
-        stocks: Inventory::Stocks.below_safety_stock(actor).map(&:item_id),
+        stocks: Inventory::Stocks.below_safety_stock(actor, limit: 100).map(&:item_id),
         requests: Fulfillment::ShipmentRequests.due_within(actor, today:, days: 7).map(&:id),
         unbilled: Billing::BillableItems.unbilled_total(actor) }
     end

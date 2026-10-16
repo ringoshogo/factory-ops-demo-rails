@@ -261,6 +261,35 @@ RSpec.describe DemoWorld do
       table.each_value { |(_, _, (api, method))| expect(api).not_to have_received(method) }
     end
 
+    # 規則の正本は mutation の宣言で、対象に評価するか操作者に評価するかは mutation の find_target の有無で決まる
+    # （docs/architecture/graphql-schema.md「基底クラス」）
+    it "操作と mutation の表は Operations の公開のメソッドと同じで、どの操作も mutation と同じく対象を渡すか渡さないかを決める" do
+      expect(DemoWorld::Operations::MUTATIONS.keys).to match_array(DemoWorld::Operations.singleton_methods)
+
+      passed = {}
+      allow(DemoWorld::Operations).to receive(:authorize!).and_wrap_original do |original, operation, actor, target = nil|
+        passed[operation] = !target.nil?
+        original.call(operation, actor, target)
+      end
+      operations.each do |name, (actor, arguments, _)|
+        expect { as(actor) { DemoWorld::Operations.public_send(name, actor, **arguments) } }
+          .to raise_error(DemoWorld::Operations::Forbidden), name.to_s
+      end
+
+      targeted = DemoWorld::Operations::MUTATIONS.transform_values do |mutation|
+        mutation.method_defined?(:find_target) || mutation.private_method_defined?(:find_target)
+      end
+      # 対照：対象を引く mutation と引かない mutation の両方がある
+      expect(targeted.values.uniq).to contain_exactly(true, false)
+      expect(passed).to eq(targeted)
+      # 対象の有無が mutation と食い違えば、admin でも規則を評価せずに止まる
+      authorize = ->(*arguments) { as(supplier) { DemoWorld::Operations.send(:authorize!, *arguments) } }
+      expect { authorize.(:grant_permission, supplier) }.to raise_error(DemoWorld::Operations::Mismatch)
+      expect { authorize.(:establish_partnership, supplier, supplier) }.to raise_error(DemoWorld::Operations::Mismatch)
+      # 対照：食い違わなければ、admin は規則を通る
+      expect(authorize.(:establish_partnership, supplier)).to be_nil
+    end
+
     it "操作者が admin なら、規則を通って公開 API を呼ぶ" do
       result = as(supplier) { DemoWorld::Operations.set_billing_term(_1, customer_tenant_id: world.tenant_ids.fetch(:granted_buyer), closing_day: 20) }
 

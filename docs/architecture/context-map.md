@@ -46,7 +46,7 @@
 | パッケージ | 役割 |
 |---|---|
 | `packs/platform` | Rails の基底クラス（`ApplicationRecord`・`ApplicationJob`）とテナントの仕組み（`Current`・`Tenancy`）。どのパッケージにも依存せず、公開 API を限定しない。基底クラスをルートパッケージに置くと、パッケージからルートへの依存が循環になるため、ここに置く |
-| `packs/contracts`（`Contracts::`） | コンテキスト間のイベント（公表された言語）。`platform` だけに依存する |
+| `packs/contracts`（`Contracts::`） | コンテキスト間のイベント（公表された言語）と、その配送。`platform` だけに依存する。配送表（`Contracts::Subscriptions`）は、全パッケージの受け手を文字列で名指しする意図した集中登録で、受け手のパッケージには、実行時に `EventJob` が受け手の名前を解決するときだけ依存する。受け手は `EventJob` からだけ呼ばれる（`spec/packwerk/entry_callers_spec.rb`） |
 | `packs/notifications`（`Notifications::`） | 外部へのメールの送信と、配信結果の受信。業務の言葉を持たず、どのコンテキストからも「どの種類の通知を・本文のどの値で」だけを受け取る。宛先は通知の種類ごとに決め、メールアドレスを `partnerships` の公開 API で引く。非同期処理の型は `../adr/007-非同期処理の型をジョブを失ったときの影響で選ぶ.md` |
 | `packs/imports`（`Imports::`） | CSV の一括取り込み。置き場を持ち、反映は受注と在庫の公開 API を呼んで行う。業務の不変条件は各コンテキストの公開 API に残す |
 | ルートパッケージ（`app/graphql/` ほか） | GraphQL の API。各コンテキストの公開 API だけを使う |
@@ -239,7 +239,8 @@ flowchart LR
 | `inventory` | `platform`、`partnerships` |
 | `notifications` | `platform`、`partnerships` |
 | `imports` | `platform`、`partnerships`、`sales`、`inventory` |
-| `partnerships`・`contracts` | `platform` だけ |
+| `partnerships` | `platform` だけ |
+| `contracts` | `platform` だけ（配送表は受け手を文字列で名指しし、実行時に `EventJob` が名前を解決するときだけ受け手のパッケージに依存する） |
 | `platform` | なし |
 | ルートパッケージ | すべて |
 

@@ -132,7 +132,7 @@ RSpec.describe MatrixWorld do
         partner_code: "")
       world.as(:supplier) do
         { sales_order_counts: Sales::SalesOrders.count_by_status(actor),
-          stocks_below_safety_stock: Inventory::Stocks.below_safety_stock(actor).size,
+          stocks_below_safety_stock: Inventory::Stocks.below_safety_stock(actor, limit: 100).size,
           shipment_requests_due_soon: Fulfillment::ShipmentRequests.due_within(actor, today: Date.current, days: 7).size,
           unbilled_total: Billing::BillableItems.unbilled_total(actor) }
       end

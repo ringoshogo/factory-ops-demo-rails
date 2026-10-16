@@ -21,13 +21,7 @@ module Types
 
     def sales_order_counts = Sales::SalesOrders.count_by_status(actor).map { |status, count| { status:, count: } }
 
-    # 在庫は品目コードを持たないので、品目の公開 API で引いたコードで並べてから上限で切る。在庫の行は自社の品目にだけでき、
-    # 品目は消さないので、どの在庫にも品目がある。品目は Stock.item と同じソースで引くので、Stock.item は同じ実行の中で引き直さない
-    def stocks_below_safety_stock
-      stocks = Inventory::Stocks.below_safety_stock(actor)
-      items = dataloader.with(Sources::PublicApiSource, Sales::Catalog, :items_for, actor).load_all(stocks.map(&:item_id))
-      stocks.zip(items).sort_by { |stock, item| [ item.code, stock.item_id ] }.first(STOCKS_LIMIT).map(&:first)
-    end
+    def stocks_below_safety_stock = Inventory::Stocks.below_safety_stock(actor, limit: STOCKS_LIMIT)
 
     def shipment_requests_due_soon
       Fulfillment::ShipmentRequests.due_within(actor, today: object.business_date, days: DUE_SOON_DAYS)

@@ -11,7 +11,7 @@ RSpec.describe Inventory::Stocks do
   let!(:other) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
 
-  def below_safety_stock = Tenancy.with_tenant(supplier.id) { described_class.below_safety_stock(actor) }
+  def below_safety_stock(limit: 100) = Tenancy.with_tenant(supplier.id) { described_class.below_safety_stock(actor, limit:) }
 
   describe ".below_safety_stock" do
     it "有効在庫が安全在庫より 1 小さい在庫を返し、等しい在庫と大きい在庫を返さない。引当を差し引いて比べる" do
@@ -33,6 +33,31 @@ RSpec.describe Inventory::Stocks do
 
       # 対照：同じ条件の自社の在庫は返る
       expect(below_safety_stock.map(&:item_id)).to eq([ own.item_id ])
+    end
+
+    # 写しのコードが同じ在庫は無いが、写しの無い在庫どうしは品目 ID で並ぶ
+    it "品目の写しのコードの順に並べ、写しの無い在庫を最後に品目 ID の順で並べる" do
+      ids = Tenancy.with_tenant(supplier.id) do
+        labeled = %w[BOLT-1 AXLE-1 NUT-1].to_h do |code|
+          [ code, FactoryBot.create(:stock, on_hand: 0, safety_stock: 1).tap { FactoryBot.create(:item_label, item_id: _1.item_id, code:) }.item_id ]
+        end
+        unlabeled = Array.new(2) { FactoryBot.create(:stock, on_hand: 0, safety_stock: 1).item_id }.sort
+        [ *labeled.values_at("AXLE-1", "BOLT-1", "NUT-1"), *unlabeled ]
+      end
+
+      expect(below_safety_stock.map(&:item_id)).to eq(ids)
+    end
+
+    it "上限ちょうどの在庫はすべて返し、上限 + 1 の在庫は並びの先頭から上限の件数だけ返す" do
+      stock = ->(code) { FactoryBot.create(:stock, on_hand: 0, safety_stock: 1).tap { FactoryBot.create(:item_label, item_id: _1.item_id, code:) } }
+      first, second = Tenancy.with_tenant(supplier.id) { %w[A-1 B-1].map { stock.(_1).item_id } }
+
+      expect(below_safety_stock(limit: 2).map(&:item_id)).to eq([ first, second ])
+
+      Tenancy.with_tenant(supplier.id) { stock.("C-1") }
+      expect(below_safety_stock(limit: 2).map(&:item_id)).to eq([ first, second ])
+      # 対照：上限を広げれば 3 件目も返る
+      expect(below_safety_stock(limit: 3).size).to eq(3)
     end
   end
 
