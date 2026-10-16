@@ -574,6 +574,7 @@ module MatrixExpectations
     "Purchasing::PurchaseOrders.inspections_for" => { table: "receipt_inspections", column: "inbound_shipment_id" },
     "Purchasing::PurchaseOrders.lines_by_id" => { table: "purchase_order_lines" },
     "Purchasing::PurchaseOrders.lines_for" => { table: "purchase_order_lines", column: "purchase_order_id" },
+    "Purchasing::PurchaseOrders.timeline_for" => { table: "purchase_orders" },
     "Purchasing::ReceivedInvoices.lines_for" => { table: "received_invoice_lines", column: "received_invoice_id" },
     "Sales::CancellationReviews.for_sales_orders" => { table: "cancellation_reviews", column: "sales_order_id" },
     "Sales::Catalog.items_for" => { table: "items" },

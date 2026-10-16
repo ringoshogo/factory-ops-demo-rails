@@ -235,7 +235,7 @@ enum CancellationOutcome {
 
 type CancellationRequest {
   """
-  回答が届いた時刻。回答待ちは空
+  受注側で回答した時刻。発生の時刻を運ぶ前に登録したイベントでは届いた時刻。回答待ちは空
   """
   decidedAt: ISO8601DateTime
   id: ID!
@@ -1142,6 +1142,11 @@ type PurchaseOrder {
   supplierShipments: [SupplierShipment!]!
 
   """
+  進みの出来事。古い順
+  """
+  timeline: [PurchaseOrderTimelineEntry!]!
+
+  """
   税抜の合計金額。受注確定の前の明細を含むと空
   """
   totalAmount: BigInt
@@ -1287,6 +1292,72 @@ enum PurchaseOrderStatus {
 
   """
   受注側により取消
+  """
+  SUPPLIER_CANCELLED
+}
+
+type PurchaseOrderTimelineEntry {
+  kind: PurchaseOrderTimelineKind!
+
+  """
+  時刻。日付だけの出来事（出荷・検収・請求書の受領）は空
+  """
+  occurredAt: ISO8601DateTime
+
+  """
+  日本時間の日付
+  """
+  occurredOn: ISO8601Date!
+}
+
+enum PurchaseOrderTimelineKind {
+  """
+  受注確定
+  """
+  ACCEPTED
+
+  """
+  取消の承認
+  """
+  CANCELLATION_APPROVED
+
+  """
+  取消の却下
+  """
+  CANCELLATION_REJECTED
+
+  """
+  取消依頼
+  """
+  CANCELLATION_REQUESTED
+
+  """
+  検収
+  """
+  INSPECTED
+
+  """
+  請求書の受領
+  """
+  INVOICE_RECEIVED
+
+  """
+  発注登録
+  """
+  ORDERED
+
+  """
+  品番照合待ち
+  """
+  PART_MATCH_PENDING
+
+  """
+  出荷
+  """
+  SHIPPED
+
+  """
+  受注側の取消
   """
   SUPPLIER_CANCELLED
 }

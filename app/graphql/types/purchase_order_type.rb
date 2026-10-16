@@ -16,6 +16,7 @@ module Types
     field :lines, [ PurchaseOrderLineType ], null: false
     field :cancellation_requests, [ CancellationRequestType ], null: false
     field :inbound_shipments, [ InboundShipmentType ], null: false
+    field :timeline, [ PurchaseOrderTimelineEntryType ], null: false, description: "進みの出来事。古い順"
     field :supplier_shipments, resolver: Resolvers::Buyer::SupplierShipmentsResolver,
       description: "経路 3。view_shipments が無ければ空"
 
@@ -36,6 +37,10 @@ module Types
     def inbound_shipments
       dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :inbound_shipments_for, context[:current_user])
         .load(object.id)
+    end
+
+    def timeline
+      dataloader.with(Sources::PublicApiSource, Purchasing::PurchaseOrders, :timeline_for, context[:current_user]).load(object.id)
     end
   end
 end
