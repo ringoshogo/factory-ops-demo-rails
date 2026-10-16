@@ -689,6 +689,15 @@ cd frontend && E2E_DATABASE=factory_ops_m55_e2e PLAYWRIGHT_CHANNEL=chrome npm ru
 
 rspec の件数は、M54 の 3119 から 3145 になり、実装レビューの直しで 3148 になった。実装レビューの直しの後も `TEST_DATABASE=factory_ops_m55_test BASE_REF=origin/m54-same-tenant-sync bin/ci` が通った（`dbabbea` で 3148 examples, 0 failures、分岐の網羅率の警告 0 件）。直しは spec・補助・文書と、写しの無い品目の `NOT_FOUND` の文だけで、手元の E2E は流し直していない。
 
+PR #102 の CI は、push のたびに `pull_request` で流れた（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `c4acc2d` | [38895922277](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38895922277) | success |
+| `985ef3b` | [38898770937](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38898770937) | success |
+
+この表を載せた commit は証跡だけを変える。その CI の結果は PR の checks で見る。
+
 ### 残件の処理
 
 引当先が M55 の行（OI-215〜OI-218。どれも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。OI-219（`judgment`）は計画のとおりに作った。計画が書き切らなかった 3 つを OI-224 に `judgment` で積み、戻り値のガードの確かめの外を IB-150 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。
