@@ -72,6 +72,36 @@ Codex の R1 が High だったので、直した版を 2 系統の読み直し�
 
 直した後の版を読み直し 2 に出した（下）。
 
+#### 読み直し 2
+
+`fddcd93`（読み直し 1 の指摘の直し）を、2 系統に同じ依頼で出した。どちらの系統も `git show fddcd93:<パス>` で読み、6 つの期待を Ruby で書き写して式ごとに照らした。spec は流していない。Claude のサブエージェントは最終報告を返さずに終わり、結果のファイルから読んだ。
+
+| 系統 | 判定 | 前の指摘 |
+|---|---|---|
+| Codex | Conditional Go（High 1） | N1 は解消、N2 は未解消（F1） |
+| Claude | Conditional Go（Medium 1） | N1 は解消、N2 は一部未解消（M1） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（F1） | 指摘なし |
+| 正しさ | 指摘（F1） | 指摘（M1） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（F1） | 指摘（M1） |
+| 参照の維持 | 指摘（F1） | 指摘（M1） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex | F1：括弧の中の `success()` を照らす期待が最初の `)` までしか見ないので、`format('){0}', success())` と `format('{0}{1}', toJSON(github.event_name), success())` が通る。どちらも `needs` が落ちても空でない文字列で真になる | 単一引用符の文字列を空にしてから括弧の深さを数え、`success()` を囲む括弧のどれかが関数の呼び出しの括弧か添字なら落とす補助（`success_inside_call?`）に替えた。2 つの式と Claude M1 の 4 つの式で落ち、対照の 3 つで落ちないことを確かめ、補助の 2 つの処理を片方ずつ外すと迂回が通ることも確かめた（上の表） | この節を載せた commit |
+| Medium | Claude | M1：同じ穴（`format(')', success())`・`join(fromJSON('[1]'), success())`・`fromJSON('[1,1]')[success()]` など） | Codex F1 と同じ直しで落ちる | 同上 |
+
+読み直しは 2 回までなので、この直しは読み直しに出していない。直しが閉じたかは、上の表の壊し方で確かめた。
+
+違和感は次のように扱った。
+
+- Claude 1：比べの演算子の文字の期待が、ほかの文字列の中の `=` も落とす → 同じ直しで、文字列を空にしてから照らす形にした（対照の `contains(github.ref, '=')` が通る）
+- Claude 2：契機の比べの除き方が `''` を扱わない → 文字列を空にする処理は `''` を扱う形にした
+- Codex 1：照らし方が式の構文解析に近づいている → IB-144
+
 ### 実装の記録
 
 #### 計画との違い
@@ -79,7 +109,7 @@ Codex の R1 が High だったので、直した版を 2 系統の読み直し�
 - 作るもの 3（OI-208）は作らず、M54 の作るもの 8 に移した。計画は、作るもの 1・2・4 の先端で `git merge origin/main` を流して #85 を取り込んでから書くとしたが、マージのコマンドが実行の環境の権限で拒否された（`a2c8225` で `bin/ci` を通した後）。別の手で取り込まずに取りまとめ役に返し、作者が 2026-10-16 に、M52 から外し #85 を祖先に持つブランチで行うと決めた（受け口の D-1）。M52 のブランチに main のマージの commit は無く、差分は `9fbe840..` の 1 つの範囲である。計画の M52 の節（目的・作る順・作るもの 3・依存の表・実装する文書の節）と、M54 の節（作るもの 8・依存の表・実装する文書の節）と、`guides/dev-cycle.md`「全体の流れ」の表のサイクル 09 の行を直した。OI-208 は引当先を M54 にし、作者の判断を内容の欄の末尾に書いた。受け口は結果の欄に書くよう求めたが、`bin/check-open-items` が `open` の行の結果を落とすので、内容の欄にした
 - 作るもの 4 の止まりを再現する example の後始末は、計画の「`ensure` で両方の接続を巻き戻す」では足りなかった。(i) の対照で内側の example の around が送出すると、rspec-rails の `after_teardown` が飛び、トランザクションのほかに、example の間だけスレッドをまたいで共有させた接続（activerecord 8.1.4 の `lib/active_record/test_fixtures.rb` の `teardown_transactional_fixtures` が呼ぶ `ConnectionPool#unpin_connection!`）も戻らない。接続を巻き戻すだけの形で `spec/platform/tenant_example_spec.rb` と `packs/sales/spec/concurrency/sales/cancellation_reviews_lock_spec.rb` を `--order defined` で続けて流すと、競合テストの 2 つのスレッドが同じ接続を使い、プロセスが CPU を使わずに 10 分を過ぎても終わらなかった。アプリの接続は `idle in transaction`（最後の問い合わせ `SELECT pg_backend_pid()`）だった。example を 1 つずつ前に置いて流し、(i) の後だけで止まることを確かめた。後始末を、内側の example の `after_teardown` を流してから両方の接続を巻き戻す形にし、同じ 2 つのファイルが 7 examples, 0 failures で終わることを確かめた。計画の作るもの 4 の節を直した（`99545f4`）。同じ事実を `spec/support/tenant_example.rb` の冒頭のコメントにも書いた。M51 の後に止まりが「トランザクションが残っている」で落ちる形に変わったのは後ろのグループが行列のグループだったときで、後ろが競合テストなら、飛んだ後始末は今も止まりになる。
 - 作るもの 2 の壊し方のうち、否定の 2 つ（`!success() && …`・`!(success() && …)`）は、`if:` の値を `!` で書き始めると YAML のタグとして読まれ、`ci_checks_spec.rb` の全 example が `YAML.load_file` の失敗で落ちる。`if:` の期待を確かめたことにならないので、GitHub の式の書き方の `${{ }}` で包んで流した。計画の壊して落ちる記録の表を直した（`a2c8225`）。
-- 作るもの 2 の `success()` を比べないことの照らし方は、計画の「`success()` の直後が `&&` か式の終わり」から、契機の比べ（`github.event_name == '…'`）を除いた残りが比べの演算子の文字（`=`・`<`・`>`）を含まない形に替え、名前の付いた括弧の中に `success()` が無いことを足した。直後を照らす形は、`false == success() && …` のように左に比べを置く形を通し、`${{ github.event_name == 'push' && success() }}` のように迂回でない式を落とした（実装レビューの Codex R1・Claude R3・R4）。`==` だけを照らす形は大小の比べ（`success() < 1`）を通し、関数の引数に入れる形（`format('{0}', success())`）は比べの照らし方では落ちなかった（読み直し 1 の Codex N1・Claude N1・N2）。計画の作るもの 2 と壊して落ちる記録の表を直した
+- 作るもの 2 の `success()` を比べないことの照らし方は、計画の「`success()` の直後が `&&` か式の終わり」から、契機の比べ（`github.event_name == '…'`）を除いた残りが比べの演算子の文字（`=`・`<`・`>`）を含まない形に替え、`success()` を囲む括弧に関数の呼び出しの括弧も添字も無いことを足した。どちらも、単一引用符の文字列を空にしてから照らし、関数の括弧は深さを数える。直後を照らす形は、`false == success() && …` のように左に比べを置く形を通し、`${{ github.event_name == 'push' && success() }}` のように迂回でない式を落とした（実装レビューの Codex R1・Claude R3・R4）。`==` だけを照らす形は大小の比べ（`success() < 1`）を通し、関数の引数に入れる形（`format('{0}', success())`）は比べの照らし方では落ちなかった（読み直し 1 の Codex N1・Claude N1・N2）。関数の括弧を最初の `)` まで正規表現で見る形は、文字列の中の `)` か前の引数の呼び出しで切れた（読み直し 2 の Codex F1・Claude M1）。計画の作るもの 2 と壊して落ちる記録の表を直した
 
 #### RED と、壊して落ちる記録
 
@@ -122,11 +152,13 @@ packs/sales/spec/public/sales/purchase_order_translator_spec.rb:12
 | 2 | `if:` を `${{ !success() && github.event_name == 'push' }}` にする | `publish` の `if:` の example だけが `not_to include("!")` で落ちた（8 examples, 1 failure） |
 | 2 | `if:` を `${{ !(success() && github.event_name == 'push') }}` にする | 同じ example だけが `not_to include("!")` で落ちた |
 | 2 | `if:` を `success() \|\| github.event_name == 'push'` にする | 同じ example だけが `not_to include("\|\|")` で落ちた |
-| 2 | `if:` を `success() == false && github.event_name == 'push'` にする | 同じ example だけが、契機の比べを除いた残りの比べの演算子の文字の期待（`:103`）で落ちた |
+| 2 | `if:` を `success() == false && github.event_name == 'push'` にする | 同じ example だけが、契機の比べを除いた残りの比べの演算子の文字の期待（`:125`）で落ちた |
 | 2 | `if:` を `false == success() && github.event_name == 'push'` にする | 同じ example だけが、同じ期待で落ちた |
-| 2 | `if:` を `success() >= false && …`・`success() < 1 && …`・`1 > success() && …` にする（3 つを 1 つずつ） | どれも同じ example だけが、比べの演算子の文字の期待（`ci_checks_spec.rb:103`）で落ちた |
-| 2 | `if:` を `format('{0}', success()) && …`・`toJSON(success()) && …`・`contains('truefalse', success()) && …` にする（3 つを 1 つずつ） | どれも同じ example だけが、括弧の中の `success()` の期待（`:104`）で落ちた |
-| 2（対照） | `if:` を `${{ github.event_name == 'push' && success() }}`・`(success()) && github.event_name == 'push'` にする | 何も落ちなかった（どちらも 8 examples, 0 failures） |
+| 2 | `if:` を `success() >= false && …`・`success() < 1 && …`・`1 > success() && …` にする（3 つを 1 つずつ） | どれも同じ example だけが、比べの演算子の文字の期待（`ci_checks_spec.rb:125`）で落ちた |
+| 2 | `if:` を `format('{0}', success()) && …`・`toJSON(success()) && …`・`contains('truefalse', success()) && …`・`format('){0}', success()) && …`・`format('{0}{1}', toJSON(github.event_name), success()) && …`・`join(fromJSON('[1]'), success()) && …`・`fromJSON('[1,1]')[success()] && …` にする（7 つを 1 つずつ） | どれも同じ example だけが、`success()` を囲む括弧の期待（`ci_checks_spec.rb:126`）で落ちた |
+| 2 | `success_inside_call?` の文字列を空にする処理を外し、`format('){0}', success()) && …` にする | 何も落ちなかった（守りが外れたことを、迂回が通ることで確かめた） |
+| 2 | `success_inside_call?` の閉じ括弧で 1 段だけ戻す処理を、全部を戻す形にし、`format('{0}{1}', toJSON(github.event_name), success()) && …` にする | 何も落ちなかった（同上） |
+| 2（対照） | `if:` を `${{ github.event_name == 'push' && success() }}`・`(success()) && github.event_name == 'push'`・`success() && github.event_name == 'push' && contains(github.ref, '=')` にする | 何も落ちなかった（どれも 8 examples, 0 failures） |
 | 4 | ガードの glob を `packs/*/spec` だけにする | ガードの example が `spec/` の対照で落ちた |
 | 4 | ガードの glob を `spec` だけにする | ガードの example が `packs/` の対照と直に包む around の一覧で落ちた |
 | 4 | `TenantExample.run` から `raise ActiveRecord::Rollback …` の行を外す | (ii)・(iii) が落ちた（5 examples, 2 failures） |

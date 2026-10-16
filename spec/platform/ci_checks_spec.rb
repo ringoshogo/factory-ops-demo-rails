@@ -10,6 +10,27 @@ RSpec.describe "CI と手元で流す検査" do
 
   def self.workflow = YAML.load_file(Rails.root.join(".github/workflows/ci.yml"))
 
+  # GitHub の式の文字列は単一引用符で囲み、中の単一引用符は 2 つ重ねる。文字列の中の記号を式の記号と取り違えないよう、空の文字列にする
+  def self.without_strings(condition) = condition.gsub(/'(?:[^']|'')*'/, "''")
+
+  # success() を囲む括弧のどれかが関数の呼び出しの括弧か添字なら、その関数か添字で success() の値を真に変えられる
+  # （format('{0}', success()) は needs が落ちても 'false' を返す）。括弧の深さを数えるのは、前の引数の閉じ括弧で
+  # 照らす範囲が切れないためである
+  def self.success_inside_call?(condition)
+    source = without_strings(condition)
+    enclosing = []
+    source.each_char.with_index do |char, index|
+      return true if enclosing.any? && source[index..].match?(/\Asuccess\s*\(/)
+
+      case char
+      when "(" then enclosing << source[0...index].match?(/\w\s*\z/)
+      when "[" then enclosing << true
+      when ")", "]" then enclosing.pop
+      end
+    end
+    false
+  end
+
   def self.workflow_commands
     bin_commands(workflow.fetch("jobs").values.flat_map { _1.fetch("steps") }.filter_map { _1["run"] }.join("\n"))
   end
@@ -89,7 +110,8 @@ RSpec.describe "CI と手元で流す検査" do
   # 比べるか（success() == false・false == success()・success() < 1）、関数の引数に入れて文字列にすると（format('{0}', success())）、
   # 状態の関数を含むので GitHub は success() を足さず、needs が落ちても流れる。否定は success() の直前に限らず書け、
   # 比べは success() のどちらの側にも書けるので、! そのものを含まないことと、契機の比べ（github.event_name == ...）を除いた残りが
-  # 比べの演算子の文字（= < >）を含まないことと、名前の付いた括弧の中に success() が無いことで照らす。
+  # 比べの演算子の文字（= < >）を含まないことと、success() を囲む括弧に関数の呼び出しの括弧も添字も無いことで照らす。
+  # どちらも文字列の中の記号は数えない。
   # 式の形は照らさず、含む・含まないの条件で照らす
   it "ジョブの段の if: を持つのは publish だけで、publish の if: は success() を比べず関数の引数にも入れずに含み、! と || と failure・cancelled・always を含まない" do
     jobs = self.class.workflow.fetch("jobs")
@@ -100,8 +122,8 @@ RSpec.describe "CI と手元で流す検査" do
     expect(condition).not_to match(/\b(failure|cancelled|always)\s*\(/)
     expect(condition).not_to include("!")
     expect(condition).not_to include("||")
-    expect(condition.gsub(/\bgithub\.event_name\s*==\s*'[^']*'/, "")).not_to match(/[=<>]/)
-    expect(condition).not_to match(/\w\s*\([^)]*\bsuccess\s*\(/)
+    expect(self.class.without_strings(condition).gsub(/\bgithub\.event_name\s*==\s*''/, "")).not_to match(/[=<>]/)
+    expect(self.class.success_inside_call?(condition)).to be(false)
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do
