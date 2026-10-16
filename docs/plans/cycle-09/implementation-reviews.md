@@ -515,7 +515,9 @@ PR #101 の CI は、push のたびに `pull_request` で流れた（`publish` �
 |---|---|---|
 | `e4ffc00` | [38887125143](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38887125143) | success |
 | `32ebd8e` | [38887230016](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38887230016) | success（e2e 3 分 24 秒・test 6 分 5 秒） |
-<!-- CI-ROWS -->
+| `d212b8d` | [38889458244](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38889458244) | success（e2e 3 分 18 秒・test 5 分 24 秒） |
+
+この表を載せた commit は証跡だけを変える。その CI の結果は PR の checks で見る。
 
 ### 残件の処理
 
