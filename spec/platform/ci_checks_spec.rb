@@ -85,14 +85,19 @@ RSpec.describe "CI と手元で流す検査" do
   # （docs/guides/config.md「CI の工程」）。ほかのジョブに契機を絞る if: を足すと、push でそのジョブが skip され、
   # publish も skip されてイメージが置かれなくなる。publish の if: は success() を明示し、needs のどれかが落ちた・取り消された・
   # skip されたときに止まることを YAML の行で読めるようにする。failure・cancelled・always を足すと、落ちたか取り消された
-  # needs でも流れて push する。式の形は照らさず、含む・含まないの条件で照らす
-  it "ジョブの段の if: を持つのは publish だけで、publish の if: は success() を含み、failure・cancelled・always を含まない" do
+  # needs でも流れて push する。success() を否定するか（!success()・!(success() && …)）、論理和でつなぐか（success() || …）、
+  # == や != で比べると（success() == false）、状態の関数を含むので GitHub は success() を足さず、needs が落ちても流れる。
+  # 否定は success() の直前に限らず書けるので、! そのものを含まないことで照らす。式の形は照らさず、含む・含まないの条件で照らす
+  it "ジョブの段の if: を持つのは publish だけで、publish の if: は success() を比べずに含み、! と || と failure・cancelled・always を含まない" do
     jobs = self.class.workflow.fetch("jobs")
     condition = jobs.dig("publish", "if").to_s
 
     expect(jobs.select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
     expect(condition).to match(/\bsuccess\s*\(\s*\)/)
     expect(condition).not_to match(/\b(failure|cancelled|always)\s*\(/)
+    expect(condition).not_to include("!")
+    expect(condition).not_to include("||")
+    expect(condition.scan(/\bsuccess\s*\(\s*\)\s*(\S{0,2})/).flatten).to all(satisfy { _1.empty? || _1 == "&&" })
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do

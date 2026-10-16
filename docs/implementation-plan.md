@@ -2593,7 +2593,7 @@ git grep -n -e AroundHookErrors -e around_hook_errors -- . ':!docs/plans' ':!doc
 |---|---|---|
 | 1 | `test.rb` の条件から `E2E_EAGER_LOAD` を外す | 渡したときに真になる example |
 | 1 | `start-rails.sh` の `export` を消す | スクリプトの行の example |
-| 2 | `if:` を `!success() && github.event_name == 'push'`・`!(success() && github.event_name == 'push')`・`success() || github.event_name == 'push'`・`success() == false && github.event_name == 'push'` にする（4 つを 1 つずつ） | `publish` の `if:` の example |
+| 2 | `if:` を `${{ !success() && github.event_name == 'push' }}`・`${{ !(success() && github.event_name == 'push') }}`・`success() || github.event_name == 'push'`・`success() == false && github.event_name == 'push'` にする（4 つを 1 つずつ。`!` で始まる値は YAML のタグになって読めないので、否定の 2 つは `${{ }}` で包む） | `publish` の `if:` の example |
 | 4 | `TenantExample.run` から `raise ActiveRecord::Rollback …` の行を外す | (ii)・(iii) |
 | 4 | 巻き戻しの条件から `pending_exception` を外す | (iii) |
 | 4 | 巻き戻しの条件を外し、いつも巻き戻す | (iv) |
