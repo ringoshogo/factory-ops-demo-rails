@@ -51,6 +51,13 @@ RSpec.describe Sales::OrderCancellation do
       supplier_tenant_id: supplier.id, cancellation_review_id: nil, ready_for_shipment: true)
   end
 
+  # 発注側は、受注側で取り消した時刻を発注の時刻列に書く（docs/architecture/data-model.md「イベントの受け口と冪等キー」）
+  it "「受注取消」の発生の時刻は、受注の cancelled_at である" do
+    cancel
+
+    expect(published.find { _1.is_a?(Contracts::SalesOrderCancelled) }.occurred_at).to eq(order.reload.cancelled_at.iso8601(6))
+  end
+
   it "全量を引き当てていない受注の「出荷取消」は、出荷可能を出していないことを運ぶ" do
     allocate(4)
 

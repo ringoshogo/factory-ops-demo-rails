@@ -102,6 +102,31 @@ RSpec.describe "発注登録と受注の連結", type: :request do
         { "partNumber" => "UNKNOWN", "confirmedItemName" => nil, "confirmedUnitPrice" => nil } ])
   end
 
+  # 並べ方と読む行は Purchasing::PurchaseOrders.timeline_for の spec が確かめる。ここでは出来事の型が発注の詳細から型の認可を通り、
+  # 日付だけの出来事の時刻が null になることを確かめる
+  it "発注の詳細の進みのタイムラインは、発注登録・受注確定・出荷を古い順に返し、出荷の時刻は null にする" do
+    login_as(buyer_member)
+    placed = place
+    deliver_enqueued_events
+    # 出荷の計上は受注側の受け手も受けるので、受注と受注明細の ID は実在の行から取る
+    sales_order_id, sales_order_line_id, line_id = select_values(supplier,
+      "SELECT sales_order_id || ' ' || id || ' ' || source_purchase_order_line_id FROM sales_order_lines").sole.split
+    Tenancy.with_tenant(supplier.id) do
+      Contracts.publish(Contracts::ShipmentPosted.new(shipment_id: SecureRandom.uuid, sales_order_id:,
+        purchase_order_id: placed.dig("purchaseOrder", "id"), supplier_tenant_id: supplier.id, buyer_tenant_id: buyer.id,
+        shipped_on: "2026-12-01", lines: [ { "sales_order_line_id" => sales_order_line_id, "purchase_order_line_id" => line_id, "quantity" => 10 } ]))
+    end
+    deliver_enqueued_events
+
+    timeline = query(<<~GRAPHQL, id: placed.dig("purchaseOrder", "id")).dig("buyer", "purchaseOrder", "timeline")
+      query($id: ID!) { buyer { purchaseOrder(id: $id) { timeline { kind occurredOn occurredAt } } } }
+    GRAPHQL
+
+    expect(timeline.map { _1["kind"] }).to eq(%w[ORDERED ACCEPTED SHIPPED])
+    expect(timeline.last).to eq("kind" => "SHIPPED", "occurredOn" => "2026-12-01", "occurredAt" => nil)
+    expect(timeline.first(2).map { _1["occurredAt"] }).to all(be_present)
+  end
+
   # 相手の種類ごとの NOT_PERMITTED は Purchasing::Ordering の spec が確かめる。ここでは失敗がユーザーエラーに写ることと、
   # 失効の前の発注がイベントで受注まで進むことを確かめる
   it "取引関係を失効させると新しい発注は NOT_PERMITTED のユーザーエラーになるが、失効の前に出した発注は受注まで進む" do
@@ -238,7 +263,8 @@ RSpec.describe "発注登録と受注の連結", type: :request do
       line_id = select_values(buyer, "SELECT id FROM purchase_order_lines").sole
       Tenancy.with_tenant(supplier.id) do
         Contracts.publish(Contracts::SalesOrderConfirmed.new(purchase_order_id: placed.id, buyer_tenant_id: buyer.id,
-          supplier_tenant_id: supplier.id, lines: [ { "purchase_order_line_id" => line_id, "item_name" => "別名", "unit_price" => "1" } ]))
+          supplier_tenant_id: supplier.id, lines: [ { "purchase_order_line_id" => line_id, "item_name" => "別名", "unit_price" => "1" } ],
+          occurred_at: Time.current.iso8601(6)))
       end
       deliver_enqueued_events(times: 2)
 

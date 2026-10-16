@@ -36,7 +36,8 @@ RSpec.describe Sales::PurchaseOrderTranslator do
     expect(lines_of(orders.sole).map { [ _1.item_id, _1.item_name, _1.unit_price, _1.tax_rate_percent, _1.quantity ] })
       .to eq([ [ item.id, "六角ボルト M8", 120, 10, 2 ] ])
     expect(published.sole).to have_attributes(class: Contracts::SalesOrderConfirmed, purchase_order_id: event.purchase_order_id,
-      lines: [ { "purchase_order_line_id" => event.lines.sole["purchase_order_line_id"], "item_name" => "六角ボルト M8", "unit_price" => "120" } ])
+      lines: [ { "purchase_order_line_id" => event.lines.sole["purchase_order_line_id"], "item_name" => "六角ボルト M8", "unit_price" => "120" } ],
+      occurred_at: Sales::SalesOrder.sole.confirmed_at.iso8601(6))
   end
 
   # 受注日と、明細の単価を決めた有効日は、業務の今日（日本時間）で決まる（docs/architecture/context-map.md「検収と請求の流れ」、
@@ -71,6 +72,15 @@ RSpec.describe Sales::PurchaseOrderTranslator do
     expect(lines_of(orders.sole).map { [ _1.customer_part_number, _1.item_id, _1.item_name, _1.unit_price, _1.tax_rate_percent ] })
       .to eq([ [ "MY-BOLT", item.id, "六角ボルト M8", 120, 10 ], [ "UNKNOWN", nil, nil, nil, nil ] ])
     expect(published.map(&:class)).to eq([ Contracts::PartMatchPending ])
+  end
+
+  # 受注に照合待ちの時刻の列は無いので、発行するときの時刻を運ぶ（docs/architecture/data-model.md「イベントの受け口と冪等キー」）
+  it "「品番照合待ち」の発生の時刻は、発行するときの時刻である" do
+    now = Time.zone.parse("2026-10-14 10:20:30")
+
+    travel_to(now) { described_class.handle(event_for("MY-BOLT", "UNKNOWN")) }
+
+    expect(Time.iso8601(published.sole.occurred_at)).to eq(now)
   end
 
   it "別の取引先の同じ品番の対応は、照合に使わない" do

@@ -1,4 +1,4 @@
-import type { PurchaseOrderStatus, SalesOrderStatus } from "@/lib/graphql/generated";
+import type { PurchaseOrderStatus, PurchaseOrderTimelineKind, SalesOrderStatus } from "@/lib/graphql/generated";
 import { CANCELLED_PURCHASE_ORDER_STATUSES, CANCELLED_SALES_ORDER_STATUSES } from "@/lib/statuses";
 
 /**
@@ -51,4 +51,32 @@ const CANCELLED_LINE = { salesOrder: "品番未照合（取消）", purchaseOrde
  */
 export function pendingLineText<K extends keyof TotalStatus>(kind: K, status: TotalStatus[K]): string {
   return isCancelled(kind, status) ? CANCELLED_LINE[kind] : PENDING_LINE[kind];
+}
+
+/** 発注の進みの出来事の名前。`Record<enum, …>` で書くので、API が出来事を足すと型検査が落ちる。 */
+export const PURCHASE_ORDER_TIMELINE_LABEL: Record<PurchaseOrderTimelineKind, string> = {
+  ORDERED: "発注登録",
+  PART_MATCH_PENDING: "品番照合待ち",
+  ACCEPTED: "受注確定",
+  CANCELLATION_REQUESTED: "取消依頼",
+  CANCELLATION_APPROVED: "取消の承認",
+  CANCELLATION_REJECTED: "取消の却下",
+  SUPPLIER_CANCELLED: "受注側の取消",
+  SHIPPED: "出荷",
+  INSPECTED: "検収",
+  INVOICE_RECEIVED: "請求書の受領",
+};
+
+const CANCELLATION_TIMELINE_KINDS: readonly PurchaseOrderTimelineKind[] = [
+  "CANCELLATION_APPROVED",
+  "CANCELLATION_REJECTED",
+  "SUPPLIER_CANCELLED",
+];
+
+/**
+ * 取消の回答と受注側の取消の出来事か。これらは、取り消した伝票の明細の文言 (pendingLineText) と同じ控えめの色で出す。
+ * 取消依頼は発注側の操作で、まだ取り消していないので含めない。
+ */
+export function isCancellationEvent(kind: PurchaseOrderTimelineKind): boolean {
+  return CANCELLATION_TIMELINE_KINDS.includes(kind);
 }

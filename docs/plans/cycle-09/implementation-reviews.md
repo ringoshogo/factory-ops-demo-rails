@@ -206,3 +206,141 @@ PR #98 の CI は、push のたびに `pull_request` で流れ、どれも通っ
 ### 残件の処理
 
 引当先が M52 の行は、着手の前と PR の前に台帳を読んだ。OI-207 は `a2c8225` で閉じた。OI-205・OI-209（どちらも `decided`）は作るもの 4 で反映した。OI-208 は作者の判断（受け口の D-1）で引当先を M54 に移した。IB-123 の反映先を `tenant_example.rb` に書き換え、IB-136 の結果の欄に、補助を外したので前提が無くなったことを書き足した。IB-134 は作るもの 2 で実装した。OI-214（`judgment`）を実装レビューで積み、IB-141〜IB-143 に違和感を移した。IB-138 は、計画のとおり、サイクル 09 の末の改善の探索で取りまとめ役が判定する。取りまとめ役の判断の受け口（`decisions.md`）で D-1 を読んだ。
+
+## M53 発注の詳細に、進みのタイムラインを出す
+
+`m53-timeline`（base は `main`）。サイクル 09 の計画の `cycle-09-plan-m55` の先端 `7702f10` から切った。計画と M52 の PR が未マージの間は、それらの commit も PR の差分に見える。M53 の差分は `7702f10..` である。
+
+PR #100 の実装レビューは、実装者が 2 系統に同じ依頼で出した。どちらも Go だった。どちらの系統も、`7702f10..d3d4434` の diff を `git show d3d4434:<パス>` で読んだ。
+
+- Claude：作業ツリーが `d3d4434` と同じことを確かめてから、手元で M53 の完了条件の rspec を流した（1424 examples, 0 failures）。壊し方（取消依頼の枝の空の時刻の除外を外す）も流した。画面の検査と E2E は流していない
+- Codex：spec を流していない。読み取り専用の環境で rbenv が一時ファイルを作れず、`db:test:prepare` が起動の前に失敗したからである。受け手のコードを手元で評価して、再配送の期待を照らした
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上の指摘が無いので、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go（Medium 1） |
+| Claude | Go（Medium 1・Low 1） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R1） | 指摘（R1・R2） |
+| 参照の維持 | 指摘なし | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | R1：受け手の再配送の example は、同じイベントを 2 回渡す。2 回とも同じ `occurred_at` を書くので、空のときだけ書く条件（`unless order.supplier_cancelled_at` など）を外しても通る | `supplier_event_receiver_spec.rb` の「発生の時刻」に、5 つのイベントごとの example を足した。後から 1 時間後の発生の時刻で届けても、先に書いた時刻を書き換えないことを確かめる（`:209`）。4 つの条件を 1 つずつ外すと、それぞれ足した example が落ちる（下の表） | この節を載せた commit |
+| Medium | Claude | R1：`timeline_for` の単体に、回答待ちの取消依頼を持つ発注の example が無い。取消依頼の枝の `WHERE events.occurred_at IS NOT NULL` を外しても、rspec の全体が通る | `purchase_orders_spec.rb` に、回答待ちの取消依頼が取消依頼だけを出す example を足した（`:191`）。条件を外すと、この example が `NoMethodError` で落ちる（下の表） | 同上 |
+| Low | Claude | R2：E2E は、請求書を発行した発注を「検収済で明細が 2 件」の行で選ぶ。この選び方は、世界の発注の組に頼る | 発注の組を決める側（`lib/demo_world.rb` の `ORDERS` のコメント）に、E2E の選び方の前提と、組を変えるときに E2E も変えることを書いた。受領請求書の画面には発注への手がかり（発注番号・リンク）が無いので、選び方そのものは変えていない | 同上 |
+
+あわせて、Claude の違和感 1 に沿って、進みが読む行の書き方を直した。前は「状況の式と同じ行から組み立てる」と書いていた。状況の式が読むのは発注の時刻列・入荷・検収だけで、取消依頼と受領請求書は式の外にある。そこで「状況の式が読む行に、取消依頼と受領請求書を足した行」と書いた。直した場所は次のとおりである。
+
+- 計画の M53 の目的と、マイルストーンの一覧の行
+- `graphql-schema.md`「発注側の視点」
+- `showcase.md` のテーマ 4
+- `purchase_order_timeline.rb` の冒頭のコメント
+- `purchase_orders_spec.rb` の冒頭のコメント
+
+直す前の形を `git grep`（「状況の式と同じ自社の行」「状況と同じ行」「と同じ自社の行」）で数え、証跡の外で 0 件であることを確かめた。
+
+| 壊し方（この節を載せた版） | 結果 |
+|---|---|
+| 受け手の `accept` から `return if order.accepted_at` を外す | 受注確定の後からの配送の example だけが落ちた（31 examples, 1 failure） |
+| 品番照合待ちの `unless order.awaiting_match_at` を外す | 品番照合待ちの同じ example だけが落ちた（31 examples, 1 failure） |
+| 受注取消の `unless order.supplier_cancelled_at` を外す | 受注取消の同じ example だけが落ちた（31 examples, 1 failure） |
+| `answer_cancellation` から `return if request.outcome` を外す | 承認・却下の同じ example 2 つと、既存の「回答が記録済みの依頼には、後から届いた回答を書かない」（`:113`）が落ちた（31 examples, 3 failures） |
+| 取消依頼の枝から `WHERE events.occurred_at IS NOT NULL` を外す | `purchase_orders_spec.rb:191` が、回答待ちの依頼の空の種類の `to_sym` で落ちた（13 examples, 1 failure） |
+
+違和感は次のように扱った。
+
+- Claude 1：「状況の式と同じ行」と書くと、読者は範囲を取り違える → 上のとおり書き方を直した
+- Claude 2：請求書の受領の日付は、受注側の発行日（`issued_on`）で、発注側が受け取った日ではない。名前と日付の意味がずれる → IB-146
+- Claude 3：`in_time_zone` に引数を渡さず `Time.zone` に従う。計画の文は `config.time_zone` と書く → 扱わない。`Time.zone` は `config.time_zone`（`Asia/Tokyo`）で、コードに `Time.use_zone` は無い。業務の日付を決めるほかの公開 API（`Date.current`）も `Time.zone` に従うので、そろえた
+- Codex 1：E2E の選び方が世界の偶然の特徴に頼る → Claude R2 と同じ対応
+- Codex 2：出来事の種類と enum の一致の検査が無い → IB-145 にある
+
+### 実装の記録
+
+下の spec の行の番号は、実装レビューに出した `d3d4434` の版のものである。
+
+#### 計画との違い
+
+- 作るもの 2 の読み方：計画は「行は `Scope` の自社の発注に結んで読み、1 回の問い合わせ（`UNION ALL`）で全発注の分を読む」とした。公開 API が `Scope.call(actor, :own).where(id: order_ids)` を 1 回作り、内部のモジュール `Purchasing::PurchaseOrderTimeline`（`packs/purchasing/app/models/purchasing/purchase_order_timeline.rb`。状況の式の `PurchaseOrderStatus` と同じ置き場）が、それを CTE（`scoped_orders`）にして、発注・取消依頼・入荷・検収・受領請求書の 5 つの枝をすべてその CTE に結ぶ。発注の時刻列 4 つと取消依頼の 2 つの時刻は、枝の中で `CROSS JOIN LATERAL (VALUES …)` で出来事の行にする。計画の「`UNION ALL` のどの枝から `Scope` を外しても落ちる」は、その枝だけを `Scope` を通さない CTE に結び替える壊し方で確かめた（下の表）。計画の文は変えていない
+- 作るもの 2 の業務の順：計画の表は取消の承認と却下を 1 行に書く。並べ方の順位は、表の並びのとおり承認 → 却下にした（OI-220 の (3)）
+- 作るもの 4 の色と見出し：計画の「OI-192 の合計の欄と同じ控えめの色」は、合計の欄の「取消」が色を持たないので、取り消した伝票の明細の文言と同じ `text-muted-foreground` にした。見出しは「進み」にした（OI-220 の (1)・(2)）。取消の出来事の判定を `frontend/lib/format.ts` の `isCancellationEvent` にし、単体（`lib/format.test.ts`）を足した。計画は単体を名指ししていない
+- `CancellationRequest.decidedAt` の説明は、計画のとおりに直し、`architecture/graphql-schema.md` の SDL の写しにも同じ説明を足した
+
+#### RED
+
+期待の不一致で落ちたものは次の 3 つである。
+
+1. `supplier_event_receiver_spec.rb` の「発生の時刻」（5 つのイベントの型に `occurred_at` を足し、受け手を直す前の `42d39d6` の作業ツリーで流した）。26 examples, 5 failures。落ちたのは「運んだ発生の時刻を書く」の 5 つで、どれも `expected: 2026-10-14 10:20:30.123456 +0900 got: 2026-10-15 09:00:00 +0900`（受け取った時刻）だった。取消承認は `decided_at` と発注の `cancelled_at` の 2 つが同じ値で落ちた。古いペイロードで受け取った時刻を書く 5 つは、直す前も通る（直す前は常に受け取った時刻を書く）ので、下の壊して落ちる記録で代える
+2. 発行元の 5 つの spec（発行元が仮に発行するときの時刻を渡す形で流した）。58 examples, 5 failures。受注の `confirmed_at` を渡す 2 つ（`purchase_order_translator_spec.rb` の受注確定・`part_mappings_spec.rb`）、審査の `decided_at` を渡す 2 つ（`cancellation_reviews_spec.rb` の承認・却下）、受注の `cancelled_at` を渡す 1 つ（`order_cancellation_spec.rb:55`）が、どれもマイクロ秒の違う時刻の文字列で落ちた（例：`-:occurred_at => "…17:38:52.030730+09:00"`・`+:occurred_at => "…17:38:52.031613+09:00"`）。発行するときの時刻が仕様の 2 つ（`purchase_order_translator_spec.rb:78`・`purchasing_event_receiver_spec.rb:66`）は、この形で通るので、壊して落ちる記録で代える
+3. `packs/purchasing/spec/public/purchasing/purchase_orders_spec.rb` の `.timeline_for`（公開 API を空の配列を返す形で置いて流した）。12 examples, 6 failures。足した 6 つがすべて、出来事が `got: []`（SQL の数の example は `got: {… => 0, … => 0}`）で落ちた。他社の発注を混ぜる example は、対照の自社の出来事で落ちた
+
+次の spec は、実装の後に書いたか、書いた時点で通ったので、壊して落ちる記録で RED に代える。
+
+- `purchase_orders_spec.rb:178`（同じ時刻の出来事の業務の順）：初めは発注の時刻列どうしを同じ時刻にした example にし、業務の順を外しても落ちなかった（行の ID が同じで、並べ替えの結果がたまたま表の順だった）。行の ID の順（発注が先）が業務の順（却下が先）と逆になる、却下と受注側の取消の組に書き直した（`9a437a0`）
+- `supplier_event_receiver_spec.rb:209`（`new` が `occurred_at` を求める）
+- `spec/requests/purchase_orders_spec.rb:107`（発注の詳細の `timeline` が型の認可を通り、出荷の時刻が null）
+- `spec/matrix/graphql_matrix_spec.rb`（`NESTED_APIS` の `timeline_for` の行）
+- `frontend/lib/format.test.ts` の `isCancellationEvent` と、`frontend/e2e/purchase-order-timeline.spec.ts`
+
+#### 壊して落ちる記録
+
+壊す前にファイルを一時の置き場に複製し、複製から戻した。
+
+| 壊し方 | 結果 |
+|---|---|
+| 受け手の `occurred_at` の読みを `Time.current` に戻す | `supplier_event_receiver_spec.rb` の「運んだ発生の時刻を書く」の 5 つが落ちた（26 examples, 5 failures） |
+| 受け手の空のときの `Time.current` を外す（`Time.iso8601(event.occurred_at.to_s)`） | 古いペイロードの 5 つが落ちた（26 examples, 5 failures） |
+| `CancellationRejected.from_payload` を消す | 却下の古いペイロードの 1 つが落ちた（26 examples, 1 failure） |
+| `PartMatchPending.new` に `occurred_at` の既定の空を持たせる | `supplier_event_receiver_spec.rb:209` が `nothing was raised` で落ちた |
+| 自動の却下の `occurred_at` を依頼の時刻（`event.requested_at`）にする | `purchasing_event_receiver_spec.rb:66` だけが落ちた（18 examples, 1 failure） |
+| 品番照合待ちの `occurred_at` を発行の 1 秒前にする | `purchase_order_translator_spec.rb:78` だけが落ちた（9 examples, 1 failure） |
+| 発注の枝の CTE を、`Scope` を通さない CTE に結び替える | `purchase_orders_spec.rb:235`（他社の発注を混ぜる）だけが、他社の発注の ID に出来事が返って落ちた（12 examples, 1 failure） |
+| 同じく取消依頼の枝 | 同上 |
+| 同じく入荷の枝 | 同上 |
+| 同じく検収の枝 | 同上 |
+| 同じく受領請求書の枝 | 同上 |
+| 並べ方の時刻の空を前に置く | `:159`・`:214` が落ちた（12 examples, 2 failures） |
+| 並べ方から業務の順位を外す | `:159`・`:178` が落ちた（12 examples, 2 failures。`:178` を書き直す前は `:159` だけだった） |
+| 受領請求書の `EXISTS` を明細の結びに替える | `:214` だけが、同じ発注の明細 2 行の分の請求書の受領が 2 つ出て落ちた（12 examples, 1 failure） |
+| 時刻を日本時間にせず、UTC の日付を取る | `:191`（日本時間の 0〜9 時）だけが落ちた（12 examples, 1 failure） |
+| 出来事の値の `owner_tenant_id` を空にする | `spec/requests/purchase_orders_spec.rb:107` が、`timeline` の要素の `FORBIDDEN` で落ちた |
+| `timeline_for` の `Scope` を `PurchaseOrder.where(id:)` にする | 入口の行列の `timeline_for` の行が `expected: [:supplier] got: [:supplier, :granted_buyer, :ungranted_buyer, :revoked_buyer, :stranger]` で落ちた |
+| `NESTED_APIS` から `timeline_for` の行を消す | 入口の行列の鍵の一致の example が、`the missing elements were: ["Purchasing::PurchaseOrders.timeline_for"]` で落ちた |
+| 画面の部品で出来事を逆の順に出す | `purchase-order-timeline.spec.ts` の 2 つが、出来事の種類の配列の不一致で落ちた（2 failed） |
+| 取消の出来事に取消依頼を足す | `format.test.ts` の `isCancellationEvent` が落ちた（1 failed・152 passed） |
+
+### 確かめたこと
+
+#### 手元で流したもの
+
+```sh
+TEST_DATABASE=factory_ops_m53_test bundle exec rspec packs/purchasing/spec packs/sales/spec packs/fulfillment/spec packs/billing/spec spec/contracts spec/matrix/graphql_matrix_spec.rb spec/graphql spec/requests/purchase_orders_spec.rb   # 0 failures
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck && npm run test:unit   # 通った（Node 22、npm ci の後。単体は 153 passed）
+cd frontend && E2E_DATABASE=factory_ops_m53_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- e2e/purchase-order-timeline.spec.ts   # 2 passed
+TEST_DATABASE=factory_ops_m53_test BASE_REF=origin/cycle-09-plan-m55 bin/ci   # e9b8290 で、すべての工程が通った。rspec は 3144 examples, 0 failures
+bin/check-open-items --due M53 && bin/check-commit-refs   # 通った
+cd frontend && E2E_DATABASE=factory_ops_m53_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # e9b8290 で 74 passed・26 skipped（1.9 分）
+```
+
+`bin/check-schema-compat` は、足した型と enum とフィールドを非破壊の変更として通した（落とす変更は無い）。分岐の網羅率の警告は、`e9b8290` と `2bd0288` の `bin/ci`（基準は `7702f10`）でどちらも 0 件で、PR の CI の test のジョブの注釈も、どちらの先端でも 0 件だった。実装レビューの直しの後の `2bd0288` でも `TEST_DATABASE=factory_ops_m53_test BASE_REF=origin/cycle-09-plan-m55 bin/ci` が通った（3150 examples, 0 failures）。直しは spec・文書・コメントだけで、手元の E2E は流し直していない。
+
+PR #100 の CI は、push のたびに `pull_request` で流れ、どれも通った（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `d3d4434` | [38877978187](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38877978187) | success（e2e 3 分 38 秒・test 6 分 34 秒） |
+| `2bd0288` | [38879904483](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38879904483) | success（e2e 3 分 49 秒・test 4 分 18 秒） |
+
+この表を載せた commit は証跡と `handoff.md` の件数だけを変える。その CI の結果は PR の checks で見る。E2E の全体は、1 分の load average が 10 前後の間に 1 回流した。発注の詳細の寸法とコントラストは、`/buyer/purchase-orders/[id]` を測る既存の E2E（`frontend/e2e/support/screens.ts`）がそのまま測り、通った。
+
+### 残件の処理
+
+引当先が M53 の行（OI-210・OI-212。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。IB-139 は計画のとおり M53 で起票済みのまま。画面で計画が書き切らなかった 3 つを OI-220（`judgment`）に、出来事の種類の一覧と enum の一致の検査が無いことを IB-145 に、実装レビューの違和感（請求書の受領の日付の意味）を IB-146 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。

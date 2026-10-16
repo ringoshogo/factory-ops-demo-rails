@@ -125,6 +125,21 @@ type PurchaseOrder {
   inboundShipments: [InboundShipment!]!
   "経路 3。view_shipments が無ければ空"
   supplierShipments: [SupplierShipment!]!
+  "進みの出来事。古い順"
+  timeline: [PurchaseOrderTimelineEntry!]!
+}
+
+type PurchaseOrderTimelineEntry {
+  kind: PurchaseOrderTimelineKind!
+  "日本時間の日付"
+  occurredOn: ISO8601Date!
+  "時刻。日付だけの出来事（出荷・検収・請求書の受領）は空"
+  occurredAt: ISO8601DateTime
+}
+
+enum PurchaseOrderTimelineKind {
+  ORDERED PART_MATCH_PENDING ACCEPTED CANCELLATION_REQUESTED CANCELLATION_APPROVED CANCELLATION_REJECTED
+  SUPPLIER_CANCELLED SHIPPED INSPECTED INVOICE_RECEIVED
 }
 
 type PurchaseOrderLine {
@@ -140,6 +155,7 @@ type CancellationRequest {
   id: ID!
   reason: String!
   outcome: CancellationOutcome
+  "受注側で回答した時刻。発生の時刻を運ぶ前に登録したイベントでは届いた時刻"
   decidedAt: ISO8601DateTime
 }
 
@@ -198,6 +214,24 @@ type ReceivedInvoiceLine {
 ```
 
 `SupplierShipmentLine.purchaseOrderLine` は、出荷明細が持つ発注明細 ID の写しから、購買の公開 API で自社の発注明細を引く。受注明細や出荷依頼を経由しない。
+
+`PurchaseOrder.timeline` は、発注がいつ何を経て今の状況になったかを、時刻の順に返す。出来事は、購買の自社の行だけから、購買の公開 API `Purchasing::PurchaseOrders.timeline_for` が組み立てる。読む行は、状況の式（`data-model.md`「状態は保存せず、時刻列から導出する」）が読む発注の時刻列・入荷・検収に、取消依頼と受領請求書を足したものである。状況の式と同じ行を読むので、状況と進みは食い違わない。履歴の表は持たず、相手テナントへの読む経路も足さない。そのため、受注側の内部の進み（引当・出荷指示・出荷予定日）と、上書きされて時刻が残らない出来事は出さない。
+
+| 出来事（`kind`） | 読む行 | 時刻 |
+|---|---|---|
+| `ORDERED` 発注登録 | `purchase_orders` | `created_at` |
+| `PART_MATCH_PENDING` 品番照合待ち | `purchase_orders` | `awaiting_match_at` |
+| `ACCEPTED` 受注確定 | `purchase_orders` | `accepted_at` |
+| `CANCELLATION_REQUESTED` 取消依頼 | `cancellation_requests`（依頼ごと。却下の後の再依頼も 1 行ずつ） | `created_at` |
+| `CANCELLATION_APPROVED`・`CANCELLATION_REJECTED` 取消の承認・却下 | `cancellation_requests` の `outcome` | `decided_at` |
+| `SUPPLIER_CANCELLED` 受注側の取消 | `purchase_orders` | `supplier_cancelled_at` |
+| `SHIPPED` 出荷 | `inbound_shipments` | `shipped_on`（日付） |
+| `INSPECTED` 検収 | `receipt_inspections`（入荷を通して発注に結ぶ） | `inspected_on`（日付） |
+| `INVOICE_RECEIVED` 請求書の受領 | `received_invoices`（明細の発注明細を通して発注に結ぶ。請求書と発注の組ごとに 1 つで、1 通が複数の発注にまたがれば、それぞれに 1 つ出す） | `issued_on`（日付） |
+
+承認で書く `purchase_orders.cancelled_at` は取消の承認と同じ時刻なので、別の出来事にしない。受注側から届く出来事の時刻は、受注側で起きた時刻である（`data-model.md`「イベントの受け口と冪等キー」）。
+
+時刻の列の出来事は、`occurredOn` に日本時間（`config.time_zone`）の日付を、`occurredAt` に時刻を持つ。日付の列の出来事は `occurredAt` を空にする。公開 API は、全発注の出来事を 1 回の問い合わせ（読む行ごとの枝の `UNION ALL`）で読み、日付の昇順、時刻の昇順（空は後ろ）、上の表の業務の順、行の ID の順に並べる。日付だけの出来事は、同じ日の時刻の出来事の後ろに、出荷 → 検収 → 請求書の受領の順に並ぶ。画面は、返った順のまま出し、並べ直さない（`frontend/components/purchase-order-timeline.tsx`）。
 
 ## 受注側の視点
 
@@ -902,7 +936,7 @@ N+1 は、2 つの検査で落とす（`../implementation-plan.md` M17）。
 - **一覧のテストは、親を 2 件以上作る**：Bullet は、1 回の読み込みで 1 件しか返らなかったレコードを N+1 の候補にしない。一覧を返す公開 API のテストでは、親を 2 件以上作り、それぞれの関連を読む値を確かめる。準備のデータは factory で作り、確かめる公開 API は factory が終わった後に呼ぶ。Bullet は作ったレコードも候補から外すので、`spec/support/bullet.rb` は factory が動く間だけ検出を止めている。factory の属性やコールバックの中で公開 API を呼ぶと、その読み込みは検出されない。公開 API を呼んで準備したレコードは、候補にならない。
 - **画面の問い合わせは、一覧の中にコネクションを入れ子にしない**：一覧の要素の下にコネクションを置くと、親ごとにページングの問い合わせが出る。コネクションは、親を 1 つに決めてから引く（カタログは `buyer.supplier(supplierTenantId:)` で取引先を 1 社選んでから引く）。画面の問い合わせは、操作名を付けて 1 ファイル 1 つで `frontend/graphql/<視点>/<操作名>.graphql` に置く。画面が実際に送る文書と、検査する文書を 1 つにするためである。query の文書は、クエリ数の予算のテストの表に、操作者・一覧の親・入れ子の件数を足す。表に無い query の文書と、リストの要素の下にコネクションを置いた文書があると、そのテストが落ちる。詳細の文書は詳細の下の配列（明細など）を一覧の親にし、一覧を持たない文書は、エラーなく実行できることだけを確かめる。1 ページの上限を文書に書いて読む一覧（ダッシュボードのかんばんの列の `first: 10`）は、表の一覧の行に上限を書き、返す件数を親の件数と上限の小さい方と比べる。画面の問い合わせは fragment を使わない。予算のテストが選択をたどるときに fragment を展開しないからである。
 
-公開 API の中で親ごとに発行するクエリのうち、関連の読み込みでないもの（`where` で子を引き直す、など）は、Bullet にも、画面の問い合わせを通らない書き込みの経路ではクエリ数の予算にも見えない。一括で引くことを守りたい公開 API は、その spec で SQL の数を数える（`Sales::PartMappings.register` の spec）。
+公開 API の中で親ごとに発行するクエリのうち、関連の読み込みでないもの（`where` で子を引き直す、など）は、Bullet にも、画面の問い合わせを通らない書き込みの経路ではクエリ数の予算にも見えない。一括で引くことを守りたい公開 API は、その spec で SQL の数を数える（`Sales::PartMappings.register` の spec）。生の SQL の問い合わせを親ごとに繰り返す形も Bullet に見えないので、`Purchasing::PurchaseOrders.timeline_for` の spec は、発注を 2 件渡して SQL が 1 回であることを数える。発注の詳細の問い合わせの `timeline` は、親の発注が 1 件のままなので、クエリ数の予算のテストでは比べにならない。
 
 Dataloader のソースは、リクエストのトランザクションと同じ DB 接続で動かす。graphql-ruby の Dataloader はソースを別の Fiber で実行するので、`config.active_support.isolation_level` を既定の `:thread` のままにし、`GraphQL::Dataloader::AsyncDataloader` は使わない。`:fiber` にすると Fiber ごとに別の接続を取り、`SET LOCAL` の無い接続で引いたソースが例外ではなく 0 行を返す。
 

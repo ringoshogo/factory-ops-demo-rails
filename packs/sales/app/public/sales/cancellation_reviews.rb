@@ -54,11 +54,12 @@ module Sales
       result.success? ? OperationResult.success(SalesOrders.find(actor, review.sales_order_id)) : result
     end
 
+    # 発生の時刻は審査の決着の時刻にする。承認で書く受注の cancelled_at は、同じトランザクションの少し前の時刻である
     def self.publish_answer(decision, order, review)
       event = decision == "approved" ? Contracts::CancellationApproved : Contracts::CancellationRejected
       Contracts.publish(event.new(cancellation_request_id: review.source_cancellation_request_id,
         purchase_order_id: order.source_purchase_order_id, buyer_tenant_id: order.customer_tenant_id,
-        supplier_tenant_id: order.owner_tenant_id))
+        supplier_tenant_id: order.owner_tenant_id, occurred_at: review.decided_at.iso8601(6)))
     end
     private_class_method :to_value, :decide, :publish_answer
   end

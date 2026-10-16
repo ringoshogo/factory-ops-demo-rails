@@ -21,6 +21,7 @@ query BuyerPurchaseOrder($id: ID!) {
         lines { quantity purchaseOrderLine { id partNumber confirmedItemName } }
       }
       cancellationRequests { id reason outcome decidedAt }
+      timeline { kind occurredOn occurredAt }
     }
   }
 }

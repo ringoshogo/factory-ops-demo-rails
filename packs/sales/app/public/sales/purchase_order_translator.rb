@@ -43,11 +43,13 @@ module Sales
       )
     end
 
+    # 受注に照合待ちの時刻の列は無いので、発生の時刻は発行するときの時刻にする
     def self.publish_pending(order)
       Contracts.publish(Contracts::PartMatchPending.new(
         purchase_order_id: order.source_purchase_order_id,
         buyer_tenant_id: order.customer_tenant_id,
-        supplier_tenant_id: order.owner_tenant_id
+        supplier_tenant_id: order.owner_tenant_id,
+        occurred_at: Time.current.iso8601(6)
       ))
     end
     private_class_method :create_order, :publish_pending

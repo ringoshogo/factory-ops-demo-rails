@@ -58,7 +58,7 @@ RSpec.describe Sales::FulfillmentEventReceiver do
 
   it "配送表に無い種類のイベントは、受注を書かずに ArgumentError で失敗する" do
     unexpected = Contracts::PartMatchPending.new(purchase_order_id: order.source_purchase_order_id, buyer_tenant_id: buyer.id,
-      supplier_tenant_id: supplier.id)
+      supplier_tenant_id: supplier.id, occurred_at: Time.current.iso8601(6))
 
     expect { Tenancy.with_tenant(supplier.id) { described_class.handle(unexpected) } }
       .to raise_error(ArgumentError, "unexpected event: Contracts::PartMatchPending")

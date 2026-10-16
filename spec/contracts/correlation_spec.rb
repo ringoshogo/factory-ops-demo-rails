@@ -75,7 +75,7 @@ RSpec.describe "相関 ID と因果 ID", type: :request do
   it "相関 ID の無い文脈で発行したイベントは、そのイベントから一連の処理が始まり、自分の ID を相関 ID にする" do
     Tenancy.with_tenant(supplier.id) do
       Contracts.publish(Contracts::SalesOrderConfirmed.new(purchase_order_id: SecureRandom.uuid, buyer_tenant_id: buyer.id,
-        supplier_tenant_id: supplier.id, lines: []))
+        supplier_tenant_id: supplier.id, lines: [], occurred_at: Time.current.iso8601(6)))
     end
 
     metadata = metadata_of("Contracts::SalesOrderConfirmed")

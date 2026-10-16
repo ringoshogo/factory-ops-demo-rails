@@ -33,6 +33,7 @@ RSpec.describe Sales::PartMappings do
     expect(Sales::SalesOrders.by_ids(actor, orders.map(&:id)).values.map(&:status)).to all(eq(:received))
     expect(confirmed.map(&:purchase_order_id)).to match_array(orders.map(&:source_purchase_order_id))
     expect(confirmed.map { _1.lines.map { |line| line["item_name"] } }).to all(include("六角ボルト M8"))
+    expect(confirmed.map(&:occurred_at)).to match_array(orders.map { _1.reload.confirmed_at.iso8601(6) })
   end
 
   # 単価は登録の日ではなく受注日に有効な単価を写す（docs/adr/006 決定 5）

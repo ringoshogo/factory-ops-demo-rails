@@ -71,7 +71,9 @@ class DemoWorld
   Order = Data.define(:buyer, :lines, :due_in, :stage)
   UNMAPPED_NUMBER = "900"
   # 受注・発注・出荷依頼の、止まっていられる状況をすべて持つ。発注の「送信済み」は、受注側がイベントを受け取るまでの途中の状況で、
-  # その場で流すので残らない
+  # その場で流すので残らない。発注の進みの E2E（frontend/e2e/purchase-order-timeline.spec.ts）は、granted_buyer の検収済の発注
+  # （inspected・drafted・issued）のうち明細が 2 行のものを請求書を発行した発注として開くので、この 3 つの明細の行の数を変えるときは、
+  # E2E の選び方も変える
   ORDERS = [
     Order.new(buyer: :granted_buyer, lines: [ [ "001", 10 ], [ "003", 5 ] ], due_in: 7, stage: :issued),
     Order.new(buyer: :granted_buyer, lines: [ [ "010", 6 ] ], due_in: 5, stage: :drafted),

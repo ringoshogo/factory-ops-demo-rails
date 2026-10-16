@@ -8,6 +8,6 @@ module Types
     field :id, ID, null: false
     field :reason, String, null: false
     field :outcome, CancellationOutcomeType, description: "回答待ちは空"
-    field :decided_at, GraphQL::Types::ISO8601DateTime, description: "回答が届いた時刻。回答待ちは空"
+    field :decided_at, GraphQL::Types::ISO8601DateTime, description: "受注側で回答した時刻。発生の時刻を運ぶ前に登録したイベントでは届いた時刻。回答待ちは空"
   end
 end

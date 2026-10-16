@@ -34,10 +34,12 @@ module Sales
         supplier_tenant_id: order.owner_tenant_id))
     end
 
-    # 自動の却下は審査を残さないので、同じ依頼が 2 回届くと 2 回出す。購買の受け手は回答が空のときだけ書くので、結果は変わらない
+    # 自動の却下は審査を残さないので、同じ依頼が 2 回届くと 2 回出す。購買の受け手は回答が空のときだけ書くので、結果は変わらない。
+    # 決着の時刻の列も無いので、発生の時刻は発行するときの時刻にする
     def self.publish_rejected(order, event)
       Contracts.publish(Contracts::CancellationRejected.new(cancellation_request_id: event.cancellation_request_id,
-        purchase_order_id: event.purchase_order_id, buyer_tenant_id: order.customer_tenant_id, supplier_tenant_id: order.owner_tenant_id))
+        purchase_order_id: event.purchase_order_id, buyer_tenant_id: order.customer_tenant_id, supplier_tenant_id: order.owner_tenant_id,
+        occurred_at: Time.current.iso8601(6)))
     end
     # 冪等キーは出荷実績 ID と受注明細 ID の組で、受注の行ロックが同じ出荷実績の配送を直列にする。
     # 全明細を同じトランザクションで書くので、書いたかどうかは出荷実績 ID だけで判定する。

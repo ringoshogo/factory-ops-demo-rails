@@ -141,11 +141,13 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 - [`adr/005-イベントのジョブをトランザクション内で登録する.md`](adr/005-イベントのジョブをトランザクション内で登録する.md)
 - [`architecture/context-map.md`](architecture/context-map.md)「コンテキスト間の関係」（同期と非同期の使い分け）、「取引関係の失効」（組のロック）
 - [`architecture/data-model.md`](architecture/data-model.md)「イベントの受け口と冪等キー」「取消と出荷の競合を止める場所」
+- [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「発注側の視点」（状況の式と同じ行を読んで組み立てる進み）
 
 **どこで守っているか**
 - イベントの登録：`packs/contracts/app/public/contracts.rb` の `Contracts.publish` だけが、トランザクションの中で `Contracts::EventJob`（`packs/contracts/app/public/contracts/event_job.rb`）を登録する。外で登録するとカスタム Cop `lib/rubocop/cop/factory_ops/event_job_enqueue.rb` と実行時の検査が落とす。outbox は置かない
 - 冪等キー：受け手ごとに業務の ID の一意制約で取る（例：受注の `source_purchase_order_id`、`packs/sales/app/public/sales/purchase_order_translator.rb`）
 - イベントの項目を足すとき：足す前に登録したジョブのペイロードは、イベントの型の `from_payload` だけが空で補い、発行元が呼ぶ `new` は全項目を求める。発行元の渡し忘れは引数の誤りで落ち、古いジョブは受け手まで届く（`packs/contracts/app/public/contracts/sales_order_ready_for_shipment.rb`、`packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb`、[`architecture/data-model.md`](architecture/data-model.md)「イベントの受け口と冪等キー」）
+- 状況の式と同じ行を読んで組み立てる進み：発注の詳細の進み（`PurchaseOrder.timeline`）は、履歴の表を持たず、状況の式（`Purchasing::PurchaseOrderStatus`）が読む発注の時刻列・入荷・検収に、取消依頼と受領請求書を足した自社の行から `Purchasing::PurchaseOrderTimeline`（`packs/purchasing/app/models/purchasing/purchase_order_timeline.rb`）が 1 回の問い合わせで組み立てるので、状況と進みが食い違わない。受注側から届く出来事の時刻は、受け取った時刻ではなく、イベントが運ぶ受注側の発生の時刻（`occurred_at`）で、配送が遅れても発注側の取消依頼と前後が入れ替わらない（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`）
 - 在庫の同期：`Inventory::Allocation`（`packs/inventory/app/public/inventory/allocation.rb`）を受注と出荷が同じトランザクションで呼び、有効在庫が負にならないことを行ロックと CHECK 制約で守る
 - ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
 - 引当の行を直列化の点にする：出荷の計上は `active` の引当だけを消費し、受注の取消は消費済みの引当を解除しない。同時に進んでもどちらか一方だけが成立する
@@ -158,13 +160,15 @@ bundle exec rspec spec/jobs/event_job_atomicity_spec.rb spec/contracts spec/rubo
 bundle exec rspec packs/purchasing/spec/public/purchasing/ordering_lock_spec.rb \
   packs/sales/spec/public/sales/order_allocation_lock_spec.rb packs/sales/spec/public/sales/part_mappings_spec.rb
 bundle exec rspec packs/sales/spec/public/sales/order_allocation_spec.rb packs/fulfillment/spec/public/fulfillment/shipping_spec.rb
+bundle exec rspec packs/purchasing/spec/public/purchasing/purchase_orders_spec.rb packs/purchasing/spec/public/purchasing/supplier_event_receiver_spec.rb
 ```
 
 - `spec/jobs/event_job_atomicity_spec.rb`：キューの接続が業務 DB と同じで、ロールバックすればジョブも残らない
 - `spec/support/shared_examples/idempotent_receiver.rb`：同じイベントを 2 回発行し、同じジョブを 2 回実行しても、書いた行が増えない。受け手ごとに適用する
 - `order_allocation_spec.rb`・`shipping_spec.rb`：発行された `FOR UPDATE` を記録し、ロックの順を確かめる
+- `purchase_orders_spec.rb`（`.timeline_for`）・`supplier_event_receiver_spec.rb`（発生の時刻）：進みが日付・時刻・業務の順に並び、他社の行が混ざらず、受け手が運んだ発生の時刻を書く
 
-**状態**：実装済み（M7・M10〜M14、引当の行で取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22）。
+**状態**：実装済み（M7・M10〜M14、引当の行で取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22、発注の進みと発生の時刻は M53）。
 
 ### 5. 非同期処理の型の使い分け
 

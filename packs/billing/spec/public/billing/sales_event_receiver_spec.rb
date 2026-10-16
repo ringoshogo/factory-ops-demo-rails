@@ -64,7 +64,7 @@ RSpec.describe Billing::SalesEventReceiver do
 
   it "配送表に無い種類のイベントは、明細を書かずに ArgumentError で失敗する" do
     unexpected = Contracts::PartMatchPending.new(purchase_order_id: SecureRandom.uuid, buyer_tenant_id: buyer.id,
-      supplier_tenant_id: supplier.id)
+      supplier_tenant_id: supplier.id, occurred_at: Time.current.iso8601(6))
 
     expect { handle(unexpected) }.to raise_error(ArgumentError, "unexpected event: Contracts::PartMatchPending")
     expect(items).to be_empty
