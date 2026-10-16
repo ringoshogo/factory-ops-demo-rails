@@ -687,7 +687,7 @@ cd frontend && E2E_DATABASE=factory_ops_m55_e2e PLAYWRIGHT_CHANNEL=chrome npm ru
 
 「腐敗防止層」が残る行は次のとおりで、どれも品番の読み替え（翻訳）の役を指す。`context-map.md` の関係の表の「購買 → 受注」の種類と説明の行・「発注の連結と品番の照合」の手順 2、`handoff.md` の品番の行、`showcase.md` の 3 行（何を示すかの文・腐敗防止層の箇条・spec のコメント）、`purchase_order_translator.rb` と `purchase_order_translator_spec.rb` の冒頭のコメント。
 
-rspec の件数は、M54 の 3119 から 3145 になった。
+rspec の件数は、M54 の 3119 から 3145 になり、実装レビューの直しで 3148 になった。実装レビューの直しの後も `TEST_DATABASE=factory_ops_m55_test BASE_REF=origin/m54-same-tenant-sync bin/ci` が通った（`dbabbea` で 3148 examples, 0 failures、分岐の網羅率の警告 0 件）。直しは spec・補助・文書と、写しの無い品目の `NOT_FOUND` の文だけで、手元の E2E は流し直していない。
 
 ### 残件の処理
 
