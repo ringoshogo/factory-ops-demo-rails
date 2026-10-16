@@ -16,6 +16,7 @@ require_relative "support/request_helpers"
 # spec のファイルごとに読ませると、読み忘れた競合テストを単独で流したときにガードが登録されない
 require_relative "support/concurrency"
 require_relative "support/tenant_example"
+require_relative "support/public_api_returns"
 
 # Requires supporting ruby files with custom matchers and macros, etc, in
 # spec/support/ and its subdirectories. Files matching `spec/**/*_spec.rb` are
@@ -85,6 +86,12 @@ RSpec.configure do |config|
   config.define_derived_metadata(type: :request) { |metadata| metadata[:bullet] = false }
   # テストの送信先に積んだメールと、仕込んだ失敗を example ごとに空にする（config/environments/test.rb）
   config.before { Notifications::FakeProvider.clear }
+  # 公開 API の戻り値のガードを、全 example の前に 1 回だけ付ける（spec/support/public_api_returns.rb）
+  config.before(:suite) { PublicApiReturns.install! }
+  config.after(:suite) do
+    uncalled = PublicApiReturns.uncalled
+    warn "公開 API の戻り値のガード：どの spec も呼ばなかった #{uncalled.size} 個は確かめの外: #{uncalled.join(", ")}" if uncalled.any?
+  end
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
 end

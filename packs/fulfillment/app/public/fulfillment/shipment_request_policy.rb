@@ -4,10 +4,11 @@ module Fulfillment
   class ShipmentRequestPolicy < ApplicationPolicy
     relation_scope(:own) { |relation| relation.where(owner_tenant_id: user.tenant_id) }
 
-    # 経路 3：自社が発注側の出荷のうち、有効な取引関係と view_shipments の付与がある受注側のものだけ
+    # 経路 3：自社が発注側の出荷のうち、有効な取引関係と view_shipments の付与がある受注側のものだけ。
+    # 受注側は取引関係の公開 API の副問い合わせで絞り、取引関係の列の名前を書かない
     relation_scope(:partner) do |relation|
-      relation.where(buyer_tenant_id: user.tenant_id,
-        owner_tenant_id: Partnerships::Access.permitting_suppliers(user, permission: :view_shipments))
+      suppliers = Partnerships::Access.permitting_suppliers_sql(user, permission: :view_shipments)
+      relation.where(buyer_tenant_id: user.tenant_id).where(suppliers.contains(:tenant_id, relation.arel_table[:owner_tenant_id]))
     end
 
     def list? = true
@@ -26,7 +27,7 @@ module Fulfillment
       # 出荷と明細ごとに評価しても、問い合わせは 1 回の実行で 1 回で済ませる。
       # 受注側ごとに問い合わせると、発注の一覧の相手が多いほどクエリが増える
       permitting = remember(:view_shipments_suppliers) do
-        Partnerships::Access.permitting_suppliers(user, permission: :view_shipments).pluck(:owner_tenant_id).to_set
+        Partnerships::Access.permitting_supplier_ids(user, permission: :view_shipments)
       end
       permitting.include?(record.supplier_tenant_id)
     end
