@@ -214,3 +214,20 @@ High は 3 件だった（Claude M53-1 と Codex M53-2 は同じ）。どれも�
 | Codex M54-3 | Low | packwerk の循環の検出の原文が無い | M54 の作るもの 1 |
 
 違和感：前提の表の M54 の行が、テナントをまたぐイベントそのものを同期にすると読める（Claude）。同じファイルから同じテナントへの発行だけを消し、テナントをまたぐイベントは残ると書き直した。Codex の違和感は「なし」だった。
+
+### M53・M54 の読み直し 1
+
+直した版に初回の記録を足した版（`a596fc1`）を、2 系統で読み直した。2 系統とも初回の 15 件の解消を認めた。Codex は新しい指摘を挙げず、M53・M54 とも Go とした。Claude は M53 を Go、M54 を Conditional Go とし、新しい High を 1 件挙げた。High を直し、読み直し 2 に出した。
+
+| 出典 | 重大度 | 指摘 | 直した節と内容 |
+|---|---|---|---|
+| Claude R1-M54-1 | High | `lock` が `nil` のときの出荷指示の作成と計上の扱いが決まっていない。出荷の factory は受注の行を作らないので、計上と出荷指示の作成を通す spec と入口の行列の行がこの場合に当たる | M54 の作るもの 3・5。`lock` が `nil` なら何も書かずに `NOT_FOUND`、`mark_shipped` の失敗はセーブポイントまで戻す。`:shipment_request` の factory を同じテナントの受注の行を作る形にし、当たる spec を並べ、落ちた spec と直し方を証跡に書く |
+| Claude R1-M53-1 | Medium | `occurred_at` を足したイベントを `new` で作る spec が完了条件の外にある | M53 の作るもの 1 と完了条件。`git grep` で数えて `occurred_at` を渡し、完了条件に `spec/contracts`・`packs/fulfillment/spec`・`packs/billing/spec` を足した |
+| Claude R1-M54-2 | Medium | `git grep` の語 `ready_for_shipment` が、残す「出荷可能」のファイルの名前に当たる | M54 の文書に残すこと。項目の読み書き（`ready_for_shipment:`・`.ready_for_shipment`）に限った |
+| Claude R1-M54-3 | Medium | 待つ先を `pg_locks` の `relation` で確かめるとき、どの行を見るかが決まっていない | M54 の競合テスト。`locktype = 'tuple'` の行で確かめ、補助を `spec/support/concurrency.rb` に置く |
+| Claude R1-M53-2 | Low | `CancellationRequest.decidedAt` の説明が新しい意味と食い違う | M53 の作るもの 3 |
+| Claude R1-M54-4 | Low | 置き換えて消す spec の名前が中身と合わない | M54 の競合テスト。`sales_event_receiver_lock_spec.rb` は残す |
+| Claude R1-M54-5 | Low | `context-map.md` の図が文書に残すことに無い | M54 の文書に残すこと。あわせて `showcase.md` の受注番号の写しの理由も足した |
+| Claude R1-M54-6 | Low | 状況の式に操作者を渡す先の列挙が足りない | M54 の作るもの 3 |
+
+違和感：依存の向きを変えると、出荷の spec の土台（受注の行を作らない factory）の前提も変わることを名指しした方がよい（Claude）。R1-M54-1 の直しで、factory と当たる spec を作るもの 5 に並べた。Codex の違和感は「なし」だった。
