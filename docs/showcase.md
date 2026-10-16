@@ -91,7 +91,7 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/supplier_s
 
 **どこで守っているか**
 - `packs/*/package.yml`：依存してよい先と、プライバシーの検査
-- 公開 API は `packs/*/app/public/` にだけ置く。購買と受注は互いに直接依存せず、イベントだけでつながる
+- 公開 API は `packs/*/app/public/` にだけ置く。購買と受注は互いに直接依存せず、イベントだけでつながる。同じテナントの中では、出荷が受注に、受注が請求に依存して同期で呼ぶ。受注から出荷へは「出荷可能」のイベントだけで渡し、依存は循環しない（[`adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md`](adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md）
 - packwerk が区別できない例外（購買から受注へは `Sales::PublishedCatalog` だけを読む）は、`spec/packwerk/purchasing_uses_only_published_catalog_spec.rb` が守る
 - 違反を `package_todo.yml` に逃がさない（`implementation-plan.md`「共通の完了条件」）
 
@@ -119,10 +119,10 @@ bundle exec rspec spec/packwerk
 - GraphQL 層：mutation は公開 API を呼ぶだけで業務規則を持たない（`app/graphql/mutations/place_purchase_order.rb`）。別のコンテキストの値は Dataloader でまとめて公開 API から引く（`app/graphql/sources/public_api_source.rb`）
 - 公開 API：操作者を必須の引数に取り、scope を掛けた後に AR のレコードではなく値のオブジェクト（`*_value.rb`）を返す。書く操作と読む問い合わせは別のモジュールに分ける（`Purchasing::Ordering` と `Purchasing::PurchaseOrders`、`Sales::OrderAllocation` と `Sales::SalesOrders`、`Fulfillment::Shipping` と `Fulfillment::ShipmentRequests`）
 - 腐敗防止層：`packs/sales/app/public/sales/purchase_order_translator.rb` が、発注側の自社品番を受注側の品目へ読み替えて受注を作る
-- 状況の導出：受注・発注・出荷依頼の状況は保存せず、時刻列から SQL の式 1 つで導出する（`packs/sales/app/models/sales/sales_order_status.rb`、`packs/purchasing/app/models/purchasing/purchase_order_status.rb`、`packs/fulfillment/app/models/fulfillment/shipment_request_status.rb`）。イベントが想定外の順で届いても遷移表から外れず、一覧の表示・状況での絞り込み・件数・ダッシュボードの件数が同じ式を読むので、数と飛び先の一覧が食い違わない。別のコンテキストの値（引当の数量）は、相手の公開 API が scope を掛けた後の副問い合わせを値で渡す（[`adr/010-状況の導出をSQLの式1つにする.md`](adr/010-状況の導出をSQLの式1つにする.md)）
+- 状況の導出：受注・発注・出荷依頼の状況は保存せず、時刻列から SQL の式 1 つで導出する（`packs/sales/app/models/sales/sales_order_status.rb`、`packs/purchasing/app/models/purchasing/purchase_order_status.rb`、`packs/fulfillment/app/models/fulfillment/shipment_request_status.rb`）。イベントが想定外の順で届いても遷移表から外れず、一覧の表示・状況での絞り込み・件数・ダッシュボードの件数が同じ式を読むので、数と飛び先の一覧が食い違わない。別のコンテキストの値（引当の数量、出荷依頼の受注の取消と審査）は、相手の公開 API が scope を掛けた後の副問い合わせを値で渡す（[`adr/010-状況の導出をSQLの式1つにする.md`](adr/010-状況の導出をSQLの式1つにする.md)）
 - 発注側の写し：発注側は、受注確定の品目名と単価・出荷計上を、自社の表に写して持つ（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`、`packs/purchasing/app/models/purchasing/inbound_shipment.rb`）。相手の伝票を読みに行かない
 - 在庫の品目の写し：在庫は受注に依存できないので、受注の公開 API が品目を書くのと同じトランザクションで在庫の公開 API を呼び、品目のコードと名前を在庫の表に写す（`packs/sales/app/public/sales/catalog.rb`、`packs/inventory/app/public/inventory/item_labels.rb`、[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）。写しに外部キーを張らず、写しを書く経路と元から作り直すタスク（`bin/rails read_models:rebuild`）が同じ写しを作ることを一致の spec（`spec/scenarios/read_model_copies_spec.rb`）で確かめる
-- 出荷依頼の受注番号の写し：出荷は受注に依存しないので、受注番号を「出荷可能」のイベントで運び、出荷依頼の表に写す（`packs/contracts/app/public/contracts/sales_order_ready_for_shipment.rb`、`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`）。依存の向きを変えずに相手の値で並べ、品目の写しと同じ作り直しのタスクと一致の spec で守る（[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）
+- 出荷依頼の受注番号の写し：写しを作った時点では出荷は受注に依存しなかったので、受注番号を「出荷可能」のイベントで運び、出荷依頼の表に写す（`packs/contracts/app/public/contracts/sales_order_ready_for_shipment.rb`、`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`）。依存の向きを変えずに相手の値で並べ、品目の写しと同じ作り直しのタスクと一致の spec で守る（[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）
 
 **どう確かめられるか**
 
@@ -135,11 +135,12 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 
 ### 4. 整合性の設計
 
-**何を示すか**：在庫の不変条件は同期・同一トランザクションで、テナントをまたぐ連結は非同期のイベントで守る。イベントは業務データと同じトランザクションで登録し、受け手は冪等に動き、同時の操作はロックの順で直列になる。
+**何を示すか**：同じテナントの中の連結（在庫の不変条件、受注と出荷・請求）は同期・同一トランザクションで、テナントをまたぐ連結は非同期のイベントで守る。イベントは業務データと同じトランザクションで登録し、受け手は冪等に動き、同時の操作はロックの順で直列になる。
 
 **設計判断**
 - [`adr/005-イベントのジョブをトランザクション内で登録する.md`](adr/005-イベントのジョブをトランザクション内で登録する.md)
 - [`architecture/context-map.md`](architecture/context-map.md)「コンテキスト間の関係」（同期と非同期の使い分け）、「取引関係の失効」（組のロック）
+- [`adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md`](adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md)（同じテナントの中の受注と出荷・請求を同期でつなぎ、「出荷可能」だけをイベントで残す）
 - [`architecture/data-model.md`](architecture/data-model.md)「イベントの受け口と冪等キー」「取消と出荷の競合を止める場所」
 - [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「発注側の視点」（状況の式と同じ行を読んで組み立てる進み）
 
@@ -149,8 +150,9 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 - イベントの項目を足すとき：足す前に登録したジョブのペイロードは、イベントの型の `from_payload` だけが空で補い、発行元が呼ぶ `new` は全項目を求める。発行元の渡し忘れは引数の誤りで落ち、古いジョブは受け手まで届く（`packs/contracts/app/public/contracts/sales_order_ready_for_shipment.rb`、`packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb`、[`architecture/data-model.md`](architecture/data-model.md)「イベントの受け口と冪等キー」）
 - 状況の式と同じ行を読んで組み立てる進み：発注の詳細の進み（`PurchaseOrder.timeline`）は、履歴の表を持たず、状況の式（`Purchasing::PurchaseOrderStatus`）が読む発注の時刻列・入荷・検収に、取消依頼と受領請求書を足した自社の行から `Purchasing::PurchaseOrderTimeline`（`packs/purchasing/app/models/purchasing/purchase_order_timeline.rb`）が 1 回の問い合わせで組み立てるので、状況と進みが食い違わない。受注側から届く出来事の時刻は、受け取った時刻ではなく、イベントが運ぶ受注側の発生の時刻（`occurred_at`）で、配送が遅れても発注側の取消依頼と前後が入れ替わらない（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`）
 - 在庫の同期：`Inventory::Allocation`（`packs/inventory/app/public/inventory/allocation.rb`）を受注と出荷が同じトランザクションで呼び、有効在庫が負にならないことを行ロックと CHECK 制約で守る
-- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
-- 引当の行を直列化の点にする：出荷の計上は `active` の引当だけを消費し、受注の取消は消費済みの引当を解除しない。同時に進んでもどちらか一方だけが成立する
+- 受注と出荷・請求の同期：出荷は受注の公開 API（`packs/sales/app/public/sales/order_shipping.rb`）で受注の取消と審査を読み、計上で受注を出荷済みにする。受注は検収で請求の公開 API（`Billing::BillableItems.confirm`）を呼ぶ。届く順の入れ替わりが起きないので、停止の表・先回りの行・勧告ロックが要らない
+- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も受注を最初にロックし（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）、取消・審査と受注の行ロックで直列になり、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
+- 受注の行を直列化の点にする：出荷の計上と出荷指示の作成は取消済か審査中の受注で中止し、受注の取消は出荷済みの受注で中止する。同時に進んでもどちらか一方だけが成立する。引当の行（計上は `active` の引当だけを消費し、取消は消費済みの引当を解除しない）は、その後ろの二重の守りである
 - 組の勧告ロック：`Partnerships::Access.lock_pair!` が、受注側と発注側の組ごとに PostgreSQL の勧告ロック（`pg_advisory_xact_lock`）を取り、発注の登録と、取引関係の失効・権限の撤回を直列にする。照合と対応表の登録は `Sales::PartMatching.lock`（`packs/sales/app/models/sales/part_matching.rb`）で直列にする
 
 **どう確かめられるか**
@@ -168,7 +170,7 @@ bundle exec rspec packs/purchasing/spec/public/purchasing/purchase_orders_spec.r
 - `order_allocation_spec.rb`・`shipping_spec.rb`：発行された `FOR UPDATE` を記録し、ロックの順を確かめる
 - `purchase_orders_spec.rb`（`.timeline_for`）・`supplier_event_receiver_spec.rb`（発生の時刻）：進みが日付・時刻・業務の順に並び、他社の行が混ざらず、受け手が運んだ発生の時刻を書く
 
-**状態**：実装済み（M7・M10〜M14、引当の行で取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22、発注の進みと発生の時刻は M53）。
+**状態**：実装済み（M7・M10〜M14、取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22、発注の進みと発生の時刻は M53、受注と出荷・請求の同期と受注の行での直列化は M54）。
 
 ### 5. 非同期処理の型の使い分け
 
