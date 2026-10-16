@@ -83,8 +83,14 @@ M50 の壊し方（`packs/sales/app/public/sales/item_prices.rb` の `Sales::Ite
 ```sh
 TEST_DATABASE=factory_ops_m52_test bundle exec rspec spec/platform/e2e_eager_load_spec.rb spec/platform/ci_checks_spec.rb spec/platform/tenant_example_spec.rb   # 0 failures
 git grep -n -e AroundHookErrors -e around_hook_errors -- . ':!docs/plans' ':!docs/implementation-plan.md'   # 0 件
-TEST_DATABASE=factory_ops_m52_test bin/ci   # a2c8225 で、すべての工程が通った。rspec は 3122 examples, 0 failures
+TEST_DATABASE=factory_ops_m52_test bin/ci   # a2c8225 と ec7aedc で、すべての工程が通った。rspec はどちらも 3122 examples, 0 failures
+TEST_DATABASE=factory_ops_m52_test bin/check-open-items --due M52 && bin/check-commit-refs   # ec7aedc で通った
+cd frontend && E2E_DATABASE=factory_ops_m52_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # ec7aedc で、下の 3 回（Node 22、npm ci の後）
 ```
+
+分岐の網羅率の警告は、`a2c8225` と `ec7aedc` の `bin/ci` でどちらも 0 件だった。
+
+手元の E2E は 3 回流した。1 回目は、ほかの作業で 1 分の load average が 110 に達した間に、`admin-only.spec.ts:24`（受注詳細の取消と審査）がブラウザの文脈を作る `browser.newContext` のまま 60 秒の時間切れで落ちた（1 failed・26 skipped・71 passed、2.4 分）。テストの手順に入る前の、ブラウザを起こす段の時間切れである。load average が 10 前後に下がってから続けて 2 回流し、どちらも 72 passed・26 skipped（1.1 分・1.3 分）だった。M52 は画面とサーバーのコードを変えていない。
 
 ### 残件の処理
 
