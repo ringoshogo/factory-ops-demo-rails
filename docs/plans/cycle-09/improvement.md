@@ -2,7 +2,7 @@
 
 サイクル 09 の台帳の棚卸しが起動を決めた改善の探索の記録である。手順は `guides/cycle-end.md`「改善の探索」にある。調査は、取りまとめ役の側の調べで、`d8676c2`（再発防止の commit）の版を読み、テーマごとに推奨までを書いた。テーマごとの裁定（`採用`・`監視`・`見送り`）は、2 系統のレビュアーが調査の版（`9258fbd`）を読んで出し、「裁定」の節と改善の候補の台帳に書いた。調査の誤りは、裁定の指摘で直した。
 
-手元では、`TEST_DATABASE=factory_ops_c09end_test` で一時の DB を作り、`d8676c2` の全件（`bundle exec rspec`）と、`spec/platform/ci_checks_spec.rb` と、一時の置き場に写した試作を流した。試作は worktree を書き換えずに、写したファイルを `bundle exec rspec <置き場のパス>` と `-r <置き場のパス>` で読ませた。外部の原文は、GitHub の文書「Evaluate expressions in workflows and actions」（https://docs.github.com/en/actions/reference/workflows-and-actions/expressions ）と、`actions/runner` の main（`594b5cd`、2026-10-16）の式の構文解析のソースを `gh api` で読んだ。
+手元では、`TEST_DATABASE=factory_ops_c09end_test` で一時の DB を作り、`d8676c2` の全件（`bundle exec rspec`）と、`spec/platform/ci_checks_spec.rb` と、一時の置き場に写した試作を流した。試作は worktree を書き換えずに、写したファイルを `bundle exec rspec <置き場のパス>` と `-r <置き場のパス>` で読ませた。外部の原文は、GitHub の文書「Evaluate expressions in workflows and actions」（https://docs.github.com/en/actions/reference/workflows-and-actions/expressions ）と、`actions/runner` の main（2026-10-16 の commit 594b5cd）の式の構文解析のソースを `gh api` で読んだ。
 
 ## モード
 
@@ -42,7 +42,7 @@
 ### 1. IB-144・IB-141 `publish` の `if:` の spec を、許す形で照らす
 
 - **いまの形**：`spec/platform/ci_checks_spec.rb` の 1 つの example が、`publish` の `if:` に 6 つの期待を当てる。小文字の `success()` を含む、小文字の `failure`・`cancelled`・`always` の呼び出しを含まない、`!` を含まない、`||` を含まない、文字列を空にして契機の比べ（`github.event_name == '…'`）を除いた残りが `=`・`<`・`>` を含まない、`success()` を囲む括弧が関数の呼び出しか添字でない（`success_inside_call?`）。`guides/config.md`「CI の工程」（372 行目と 382 行目の段落）、ワークフローの `publish` の前のコメント、spec の example の前のコメント、`showcase.md` の表の行の 4 か所が、落とす迂回の形を並べて書く
-- **関数の名前の大文字と小文字**：GitHub の文書「Evaluate expressions in workflows and actions」は、文字列の比べについて「GitHub ignores case when comparing strings.」、状態の関数について「A default status check of `success()` is applied unless you include one of these functions.」と書くが、関数の名前が大文字と小文字を区別するかは書いていない。文書では確かめられなかった。`actions/runner` の `594b5cd` のソースでは、ジョブの `if:` を変換する `WorkflowTemplateConverter.ConvertToIfCondition`（`src/Sdk/WorkflowParser/Conversion/WorkflowTemplateConverter.cs`）が、状態の関数を含むかを `StringComparison.OrdinalIgnoreCase` で `always`・`cancelled`・`failure`・`success` と比べ、含まないときだけ `success() && (…)` にする。関数の表（`src/Sdk/DTExpressions2/Expressions2/ExpressionConstants.cs` の `WellKnownFunctions`）も `StringComparer.OrdinalIgnoreCase` で引く。GitHub の側で同じコードが動くかは確かめていないので、関数の名前は大文字と小文字を区別しない、は推定である（ソースに基づく）
+- **関数の名前の大文字と小文字**：GitHub の文書「Evaluate expressions in workflows and actions」は、文字列の比べについて「GitHub ignores case when comparing strings.」、状態の関数について「A default status check of `success()` is applied unless you include one of these functions.」と書くが、関数の名前が大文字と小文字を区別するかは書いていない。文書では確かめられなかった。`actions/runner` の 594b5cd（2026-10-16 の main）のソースでは、ジョブの `if:` を変換する `WorkflowTemplateConverter.ConvertToIfCondition`（`src/Sdk/WorkflowParser/Conversion/WorkflowTemplateConverter.cs`）が、状態の関数を含むかを `StringComparison.OrdinalIgnoreCase` で `always`・`cancelled`・`failure`・`success` と比べ、含まないときだけ `success() && (…)` にする。関数の表（`src/Sdk/DTExpressions2/Expressions2/ExpressionConstants.cs` の `WellKnownFunctions`）も `StringComparer.OrdinalIgnoreCase` で引く。GitHub の側で同じコードが動くかは確かめていないので、関数の名前は大文字と小文字を区別しない、は推定である（ソースに基づく）
 - **手元での確かめ**：いまの 6 つの期待を一時の置き場のスクリプト（`allowed_form_probe.rb`）に写し、許す形と並べて式ごとに照らした。許す形は、`${{ }}` を外し、一部だけの `${{ }}` を拒み、単一引用符の文字列を空にし、外側の余分な括弧を外し、括弧の深さ 0 の `&&` でつないだ項の 1 つが（余分な括弧を外して）大文字と小文字を区別せずにちょうど `success()` であること、とした
 
   | 式 | いまの期待 | 許す形 | `needs` が落ちたとき |
