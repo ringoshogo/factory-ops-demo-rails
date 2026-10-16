@@ -188,7 +188,18 @@ TEST_DATABASE=factory_ops_m52_test bin/check-open-items --due M52 && bin/check-c
 cd frontend && E2E_DATABASE=factory_ops_m52_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # ec7aedc で、下の 3 回（Node 22、npm ci の後）
 ```
 
-分岐の網羅率の警告は、`a2c8225` と `ec7aedc` の `bin/ci` でどちらも 0 件だった。
+分岐の網羅率の警告は、`a2c8225`・`ec7aedc`・`7b29e31` の `bin/ci` でどれも 0 件だった。実装レビューの直しの後の `7b29e31` でも `TEST_DATABASE=factory_ops_m52_test bin/ci` が通った（3122 examples, 0 failures）。直しは spec と文書だけで、E2E は流し直していない。
+
+PR #98 の CI は、push のたびに `pull_request` で流れ、どれも通った（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `88c2f43` | [38860716691](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38860716691) | success |
+| `d45c1a5` | [38861758941](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38861758941) | success |
+| `fddcd93` | [38862438055](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38862438055) | success |
+| `7b29e31` | [38863167810](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38863167810) | success（e2e 3 分 42 秒・test 5 分 24 秒） |
+
+この表を載せた commit は証跡だけを変える。その CI の結果は PR の checks で見る。
 
 手元の E2E は 3 回流した。1 回目は、ほかの作業で 1 分の load average が 110 に達した間に、`admin-only.spec.ts:24`（受注詳細の取消と審査）がブラウザの文脈を作る `browser.newContext` のまま 60 秒の時間切れで落ちた（1 failed・26 skipped・71 passed、2.4 分）。テストの手順に入る前の、ブラウザを起こす段の時間切れである。load average が 10 前後に下がってから続けて 2 回流し、どちらも 72 passed・26 skipped（1.1 分・1.3 分）だった。M52 は画面とサーバーのコードを変えていない。
 
