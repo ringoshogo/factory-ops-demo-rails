@@ -242,4 +242,4 @@ packwerk は、ソースに定数として書かれた参照だけを見る。�
 
 ### 名前空間とディレクトリを揃える
 
-packs-rails の自動読み込みは Rails（Zeitwerk）の規則に従う。`packs/sales/app/models/sales/item.rb` は `Sales::Item` を定義しなければならない。ずれていると、手元では使うまで気づかず、CI でテストの前に全コードを読み込む（`config/environments/test.rb` の `eager_load = ENV["CI"].present?`）ときに落ちる。
+packs-rails の自動読み込みは Rails（Zeitwerk）の規則に従う。`packs/sales/app/models/sales/item.rb` は `Sales::Item` を定義しなければならない。ずれていると、手元の rspec では使うまで気づかず、CI と手元の E2E の Rails が起動の時に全コードを読み込むときに落ちる（[config.md「環境ごとの設定」](config.md#環境ごとの設定)の `test.rb` の `eager_load`）。

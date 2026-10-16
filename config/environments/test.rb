@@ -15,7 +15,9 @@ Rails.application.configure do
   # this is usually not necessary, and can slow down your test suite. However, it's
   # recommended that you enable it in continuous integration systems to ensure eager
   # loading is working properly before deploying your code.
-  config.eager_load = ENV["CI"].present?
+  # E2E の Rails は、手元でも CI と同じく起動の時に読み込む（frontend/e2e/start-rails.sh が E2E_EAGER_LOAD を渡す）。
+  # 読み込まないと、最初の要求が定数を読み込む時間だけ遅れ、ログインの後の画面の移りが期待の待ちを超える
+  config.eager_load = ENV["CI"].present? || ENV["E2E_EAGER_LOAD"].present?
 
   # Configure public file server for tests with cache-control for performance.
   config.public_file_server.headers = { "cache-control" => "public, max-age=3600" }

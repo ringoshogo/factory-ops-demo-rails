@@ -204,7 +204,7 @@ RSpec.describe "カタログの GraphQL", type: :request do
         .to eq(%w[D-1 A-1 B-1 E-1 C-1])
     end
 
-    it "orderBy を省いた thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
+    it "orderBy を省いた空でない thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
       login_as(supplier_member)
       query = "query($orderBy: ItemOrder, $thenBy: [ItemOrder!]) { supplier { items(orderBy: $orderBy, thenBy: $thenBy) { totalCount } } }"
       code = { field: "CODE", direction: "ASC" }
@@ -215,6 +215,19 @@ RSpec.describe "カタログの GraphQL", type: :request do
       # 対照：orderBy があり、別の列なら通る
       expect(graphql_body(query, orderBy: code, thenBy: [ { field: "NAME", direction: "DESC" } ]))
         .to eq("data" => { "supplier" => { "items" => { "totalCount" => 2 } } })
+    end
+
+    # 画面（frontend/lib/list.ts）は空の thenBy を送らないが、API は空の配列を省いたときと同じに扱い、エラーにするのは
+    # orderBy を省いて空でない thenBy を渡したときだけにする（docs/architecture/graphql-schema.md「ページングと N+1」）
+    it "orderBy を省くと、thenBy を省いても空の配列にしても同じ一覧を返し、空でない thenBy だけをトップレベルのエラーにする" do
+      login_as(supplier_member)
+      query = "query($thenBy: [ItemOrder!]) { supplier { items(thenBy: $thenBy) { nodes { code } totalCount } } }"
+      omitted = graphql_body(query)
+
+      expect(omitted).to eq("data" => { "supplier" => { "items" => { "nodes" => [ { "code" => "A-1" }, { "code" => "B-1" } ], "totalCount" => 2 } } })
+      expect(graphql_body(query, thenBy: [])).to eq(omitted)
+      expect(graphql_body(query, thenBy: [ { field: "CODE", direction: "ASC" } ])["errors"]&.map { _1["message"] })
+        .to eq([ "thenBy requires orderBy" ])
     end
 
     it "keyword は 100 文字ちょうどを受け付け、101 文字はトップレベルのエラーにする" do

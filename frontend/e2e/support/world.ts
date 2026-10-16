@@ -28,6 +28,13 @@ export function account(testInfo: TestInfo, persona: Persona): Account {
   return world.accounts.find((a) => a.persona === persona)!;
 }
 
+/**
+ * ログインの後に移った先の URL を待つ上限 (ミリ秒)。ほかの期待は Playwright の既定の 5 秒のまま。
+ * この期待はログインが済んで URL が変わったことを確かめるだけで、製品の競合を待つものではないので、延ばしても製品の遅さを隠さない。
+ * 負荷の高い手元では、ワーカーの最初のログインが既定の 5 秒を超えて落ちる
+ */
+const LOGIN_URL_TIMEOUT = 20_000;
+
 /** ログインの画面から入る。移った先 (受注側のダッシュボードか発注側の発注一覧) に着いたことを確かめてから返す。 */
 export async function login(page: Page, testInfo: TestInfo, persona: Persona): Promise<Account> {
   const user = account(testInfo, persona);
@@ -35,7 +42,7 @@ export async function login(page: Page, testInfo: TestInfo, persona: Persona): P
   await page.getByLabel("メールアドレス").fill(user.email);
   await page.getByLabel("パスワード").fill(user.password);
   await page.getByRole("button", { name: "ログイン" }).click();
-  await expect(page).toHaveURL(/\/(supplier\/dashboard|buyer\/purchase-orders)$/);
+  await expect(page).toHaveURL(/\/(supplier\/dashboard|buyer\/purchase-orders)$/, { timeout: LOGIN_URL_TIMEOUT });
   return user;
 }
 

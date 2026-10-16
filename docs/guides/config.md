@@ -113,6 +113,8 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 
 test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられる。E2E は `factory_ops_e2e` を渡し、rspec のテスト DB と分ける。E2E の準備（`lib/tasks/e2e.rake`）は DB を作り直すので、同じ DB を使うと rspec の DB を消す。準備は、`TEST_DATABASE` が無いか rspec のテスト DB の名前なら止まる。rspec を別の DB で並べて流すときは、名前に `_test` を区切りとして含める（`factory_ops_m49_test` の形）。行列の spec（`spec/support/matrix_cross_read.rb`）は、全行を読ませるポリシーを足す前に DB の名前を見て、テストの DB と分からなければ止まるからである。
 
+担当ごとに替える一時の DB の名前は、`factory_ops_` で始め、`_` で区切った語に `test`（rspec、`TEST_DATABASE`）か `e2e`（E2E、`E2E_DATABASE`）を含める（`factory_ops_m51_test`・`factory_ops_m51_e2e`）。一時の DB は作る入口（`bin/ci` の `db:test:prepare`、E2E の `start-rails.sh` の `db:drop db:prepare`）だけで、作った担当が止まっても残るので、`RAILS_ENV=test bin/rails temp_databases:list` で一覧し、`RAILS_ENV=test bin/rails "temp_databases:drop[<名前>]"` で消す（[bin.md「bin/rails で流す運用のタスク」](bin.md#binrails-で流す運用のタスク)）。2 つのタスクは名前の規則に合う DB だけを扱い、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）は扱わない。削除は名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続して `DROP DATABASE` を `FORCE` なしで流すので、接続中の DB は PostgreSQL が失敗させる。動いている担当の DB を、その接続ごと切って消さないためである。test の環境でだけ動く（`lib/temp_databases.rb`）。
+
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
 
 ### 照合順序の版
@@ -332,7 +334,7 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 
 `environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）と、通知のメールの送信先（`config.x.notifications.*`。[ジョブ](#ジョブ)）と、本番の `assume_ssl` を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）と、本番の SMTP の生成時のコメントを消したほかは生成のままである。本番のメールは SMTP ではなく SendGrid の API へ送るからである。本デモの読み方で知っておくとよいのは次の 3 つ。
 
-- **`test.rb` の `eager_load = ENV["CI"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。
+- **`test.rb` の `eager_load = ENV["CI"].present? || ENV["E2E_EAGER_LOAD"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。E2E の Rails は、手元でも起動の時に読み込む。`frontend/e2e/start-rails.sh` が `E2E_EAGER_LOAD=1` を渡すので、手元の E2E も CI と同じく読み込んでから `/up` に答え、自動読み込みの誤りも手元で落ちる。読み込まないと、最初の要求が定数を読み込む時間だけ遅れ、ログインの後の画面の移りが期待の待ちを超えることがある。`CI` そのものは渡さない。`CI` は CI の上で動いていることを表し、読み込みのほかにも gem や道具が見て振る舞いを変えうるからである。
 - **`production.rb` に Solid Queue の `connects_to` が無い**：[ジョブ](#ジョブ) のとおり、意図して書いていない。
 - **`production.rb` の `assume_ssl = true`**：本番の環境の要求を https として扱う。TLS は前段（公開の配置では Cloudflare）で終わり、Rails には Next のサーバーから http で届く。actionpack 8.1.4 は `request.ssl?` が偽の応答に `Secure` の Cookie を書かない（`lib/action_dispatch/middleware/cookies.rb` の `write_cookie?`）ので、このままではログインの応答にセッションの Cookie が無い。Rails はこのとき `ActionDispatch::AssumeSSL` をミドルウェアの先頭に足すので、`spec/platform/logging_spec.rb` の許した一覧にも入れてある（[ADR 009](../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md) 決定 2）。
 
@@ -367,7 +369,7 @@ CI のジョブを足すか重くする人は、PR の CI が最も長いジョ�
 
 > `images` のジョブは、arm64 のランナー（M42、PR #74）で、キャッシュが空のときに 4 分 10 秒、キャッシュが効くときに 59 秒だった。amd64 のランナーの QEMU の上では、キャッシュが空のときに 25〜35 分かかった（サイクル 05）。
 
-GHCR にイメージを置くのは `publish` のジョブだけで、main への push で、ワークフローのほかのすべてのジョブが成功したときだけ流れる。テストの落ちた commit のイメージを置かないためである。`images` は組み立てと確かめだけにし、`publish` は同じキャッシュから組み立て直して push する。ジョブを足す人は、`publish` の `needs` にも足す。`publish` の `if:` は `github.event_name == 'push'` だけを書き、状態の関数を書かない。GitHub は状態の関数の無いジョブの `if:` に `success()` を足し、`needs` のどれかが落ちたか skip されたときは、そのジョブを skip する（GitHub の文書の「Workflow syntax for GitHub Actions」の `jobs.<job_id>.needs`：「If a job fails or is skipped, all jobs that need it are skipped unless the jobs use a conditional expression that causes the job to continue.」）。`needs` に無いジョブは、落ちても push を止めない。`continue-on-error` も、ジョブの段では落ちたジョブの `needs` の結果を、ステップの段では落ちたステップのジョブの結果を `success` にするので、どのジョブにもステップにも書かない。ジョブの段の `if:` は `publish` にだけ書く。ほかのジョブに契機を絞る `if:` を足すと、push でそのジョブが skip され、`publish` も skip される。`publish` の `needs` がほかのすべてのジョブちょうどであること、`continue-on-error` を持つジョブとステップが無いこと、ジョブの段の `if:` を持つのが `publish` だけで、その `if:` が状態の関数を含まないこと、push と `packages: write` を持つジョブが `publish` だけで、ワークフローの最上位の権限が `contents: read` だけであることは、`spec/platform/ci_checks_spec.rb` が確かめる。
+GHCR にイメージを置くのは `publish` のジョブだけで、main への push で、ワークフローのほかのすべてのジョブが成功したときだけ流れる。テストの落ちた commit のイメージを置かないためである。`images` は組み立てと確かめだけにし、`publish` は同じキャッシュから組み立て直して push する。ジョブを足す人は、`publish` の `needs` にも足す。`publish` の `if:` は `success() && github.event_name == 'push'` と書き、`success()` を明示する。`success()` は `needs` のどれかが落ちたか、取り消されたか、skip されたときに偽になり、そのジョブを skip する（GitHub の文書の「Workflow syntax for GitHub Actions」の `jobs.<job_id>.needs`：「If a job fails or is skipped, all jobs that need it are skipped unless the jobs use a conditional expression that causes the job to continue.」）。GitHub は状態の関数を含まない `if:` にだけ `success()` を足すので、書かなくても同じ守りになるが、明示すると守りが YAML の行で読める。`failure()`・`cancelled()`・`always()` を足すと、落ちたか取り消された `needs` でも流れて push するので書かない。`needs` に無いジョブは、落ちても push を止めない。`continue-on-error` も、ジョブの段では落ちたジョブの `needs` の結果を、ステップの段では落ちたステップのジョブの結果を `success` にするので、どのジョブにもステップにも書かない。ジョブの段の `if:` は `publish` にだけ書く。ほかのジョブに契機を絞る `if:` を足すと、push でそのジョブが skip され、`publish` も skip される。`publish` の `needs` がほかのすべてのジョブちょうどであること、`continue-on-error` を持つジョブとステップが無いこと、ジョブの段の `if:` を持つのが `publish` だけで、その `if:` が `success()` を含み、`failure`・`cancelled`・`always` を含まないこと、push と `packages: write` を持つジョブが `publish` だけで、ワークフローの最上位の権限が `contents: read` だけであることは、`spec/platform/ci_checks_spec.rb` が確かめる。
 
 どのジョブも、ランナーを OS の版の数字を含む名前（amd64 は `ubuntu-24.04`、arm64 の `images` と `publish` は `ubuntu-24.04-arm`）で指定する。`ubuntu-latest` は GitHub が日程で版を上げ、CI が通るかを確かめないまま版が変わるからである。版の形と arm64 のジョブは `spec/platform/ci_checks_spec.rb` が確かめる。版を上げる人は、GitHub がいまの版のランナーの廃止を告知したとき（GitHub の changelog と、`actions/runner-images` の告知）か、Ubuntu のいまの版の標準の保守が終わる前に、すべてのジョブの `runs-on` を 1 つの PR で上げ、その PR の CI がすべて通ることを確かめる。
 
@@ -377,7 +379,7 @@ GHCR にイメージを置くのは `publish` のジョブだけで、main へ�
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 
-ワークフローが流す `bin/` のコマンドの名前は、`config/ci.rb` の工程と `implementation-plan.md`「共通の完了条件」の一覧にもあることを `spec/platform/ci_checks_spec.rb` が確かめる。実装者は完了条件の一覧のとおりに手元で流すので、一覧に無い検査は CI で初めて落ちるからである。ステップの順と契機ごとの `BASE_REF` の式、コマンドの引数は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。この節で spec が確かめると書いたもの（`npm ls --all` の順と置き場、`publish` の `if:` が状態の関数を含まないことなど）は、壊れると確かめないまま通すか、確かめていないイメージを置く規則なので、例外として照らす。式の形は照らさず、含む・含まないの条件で照らす。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
+ワークフローが流す `bin/` のコマンドの名前は、`config/ci.rb` の工程と `implementation-plan.md`「共通の完了条件」の一覧にもあることを `spec/platform/ci_checks_spec.rb` が確かめる。実装者は完了条件の一覧のとおりに手元で流すので、一覧に無い検査は CI で初めて落ちるからである。ステップの順と契機ごとの `BASE_REF` の式、コマンドの引数は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。この節で spec が確かめると書いたもの（`npm ls --all` の順と置き場、`publish` の `if:` が `success()` を含み、`failure`・`cancelled`・`always` を含まないことなど）は、壊れると確かめないまま通すか、確かめていないイメージを置く規則なので、例外として照らす。式の形は照らさず、含む・含まないの条件で照らす。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
 
 ## 使っていない機能の設定
 

@@ -16,30 +16,35 @@ module MatrixCrossRead
   UPDATE_POLICY = "matrix_cross_update".freeze
   SETTING = "app.matrix_cross_read".freeze
 
+  # ポリシーの足し外しが表のロックを待つ上限。正常な全件の実行では、add! も remove! も全表で 0.05 秒の内に終わる。
+  # 上限が無いと、落ちた example の後に別の接続が表のロックを持ち続けたときに、DDL が待ち続けて rspec が止まる
+  LOCK_TIMEOUT = "2s".freeze
+
+  # 既定のテストの DB の名前（config/database.yml）。これと違う DB なら、外す手順に TEST_DATABASE を書く
+  DEFAULT_TEST_DATABASE = "factory_ops_demo_rails_test".freeze
+
   # 所有ロールの接続で、全表の 2 つのポリシーを 1 つのトランザクションで足す。途中で失敗すると全部が巻き戻り、足した分は残らない。
   # 世界を開く前に呼ぶ。ポリシーの足し外しは表のロックを取るので、全表に書いた世界の外側のトランザクションが開いている間は、
-  # それが閉じるまで待ち、世界と同じスレッドから呼ぶと終わらない。
+  # それが閉じるまで待ち、LOCK_TIMEOUT で打ち切って、ロックを持つ接続を出して失敗する。
   # 同じ名前のポリシーがあれば、別の実行が同じテストの DB で行列を流しているか、途中で止めた実行が残したので、外さずに失敗する
   def self.add!
     with_owner_connection do |connection|
-      connection.transaction do
-        MatrixWorld.tenant_tables.each do |table|
-          # WITH CHECK を書き落とすと PostgreSQL は USING を WITH CHECK に使い、設定が on の間は他社の名義の行を書ける。
-          # 許可のポリシーの WITH CHECK は OR でつながるので、false なら書いた後の行は owner_write の WITH CHECK だけで判定される
-          connection.execute(<<~SQL)
-            CREATE POLICY #{POLICY} ON #{connection.quote_table_name(table)} FOR SELECT
-              USING (current_setting('#{SETTING}', true) = 'on');
-            CREATE POLICY #{UPDATE_POLICY} ON #{connection.quote_table_name(table)} FOR UPDATE
-              USING (current_setting('#{SETTING}', true) = 'on') WITH CHECK (false);
-          SQL
-        end
+      each_table_within_lock_timeout(connection, "add!") do |table|
+        # WITH CHECK を書き落とすと PostgreSQL は USING を WITH CHECK に使い、設定が on の間は他社の名義の行を書ける。
+        # 許可のポリシーの WITH CHECK は OR でつながるので、false なら書いた後の行は owner_write の WITH CHECK だけで判定される
+        connection.execute(<<~SQL)
+          CREATE POLICY #{POLICY} ON #{connection.quote_table_name(table)} FOR SELECT
+            USING (current_setting('#{SETTING}', true) = 'on');
+          CREATE POLICY #{UPDATE_POLICY} ON #{connection.quote_table_name(table)} FOR UPDATE
+            USING (current_setting('#{SETTING}', true) = 'on') WITH CHECK (false);
+        SQL
       end
     end
   rescue ActiveRecord::StatementInvalid => e
     raise unless e.cause.is_a?(PG::DuplicateObject)
 
     raise "#{POLICY} か #{UPDATE_POLICY} のポリシーがすでにある。同じテストの DB で行列を流しているほかの実行が無ければ、" \
-      "途中で止めた実行が残したものなので、MatrixCrossRead.remove! で外す（docs/guides/testing.md「行列テストとの分担」）"
+      "途中で止めた実行が残したものなので、#{remove_command} で外す（docs/guides/testing.md「行列テストとの分担」）"
   end
 
   # グループの前にポリシーを足し、後に外す。外すのは、このグループが足し終えたときだけにする。
@@ -66,11 +71,13 @@ module MatrixCrossRead
   end
 
   # 足していない表があっても失敗しない。spec と補助は直に呼ばず、share か with_policies を通す。
-  # 途中で止めた実行が残したポリシーを手で外すときにだけ、直に呼ぶ
+  # 途中で止めた実行が残したポリシーを手で外すときにだけ、直に呼ぶ。
+  # ロックの待ちを打ち切るとトランザクションごと巻き戻り、ポリシーは残るので、残ったことと外す手順を出す
   def self.remove!
     with_owner_connection do |connection|
-      connection.transaction do
-        MatrixWorld.tenant_tables.product([ POLICY, UPDATE_POLICY ]).each do |table, policy|
+      left = "#{POLICY} と #{UPDATE_POLICY} のポリシーが残った。ロックが解けた後に、#{remove_command} で外す"
+      each_table_within_lock_timeout(connection, "remove!", left) do |table|
+        [ POLICY, UPDATE_POLICY ].each do |policy|
           connection.execute("DROP POLICY IF EXISTS #{policy} ON #{connection.quote_table_name(table)}")
         end
       end
@@ -91,8 +98,93 @@ module MatrixCrossRead
         raise "テストの DB ではない #{database}（#{Rails.env}）に、全行を読ませるポリシーを足そうとした"
       end
 
+      # 落ちた example の後始末（rspec-rails の fixture のトランザクションの巻き戻し）が飛ぶと、所有ロールの接続に
+      # トランザクションが残る。その中で足し外ししてもコミットされず、全表のロックを持ったまま、世界を作るアプリのロールの
+      # 接続を待たせる。待つのはアプリのロールの側なので LOCK_TIMEOUT では終わらず、rspec が止まる
+      if connection.transaction_open?
+        raise "所有ロールの接続にトランザクションが残っている（#{connection.open_transactions} 段）。前の example の後始末が" \
+          "トランザクションを巻き戻せなかったので、ポリシーを足し外ししない。先に落ちた example とその around のフックを見る"
+      end
+
       yield connection
     end
   end
   private_class_method :with_owner_connection
+
+  # 1 つのトランザクションで LOCK_TIMEOUT を置き、表ごとにブロックを流す。ロックの待ちを打ち切ったら、巻き戻した後に、
+  # 打ち切った表のロックを持つ接続を引いて失敗する。元の例外は cause に残る
+  def self.each_table_within_lock_timeout(connection, action, left = nil)
+    current = nil
+    connection.transaction do
+      connection.execute("SET LOCAL lock_timeout = '#{LOCK_TIMEOUT}'")
+      MatrixWorld.tenant_tables.each do |table|
+        current = table
+        yield table
+      end
+    end
+  rescue ActiveRecord::LockWaitTimeout
+    raise [ "MatrixCrossRead.#{action} が #{current} のロックを #{LOCK_TIMEOUT} 待って打ち切った。" \
+            "ロックを持つ接続：#{lock_holders(connection, current)}", left ].compact.join("。")
+  end
+  private_class_method :each_table_within_lock_timeout
+
+  # 表の取得済みのロックを持つ、自分でない接続を並べる。打ち切られたトランザクションの中では問い合わせを流せず、
+  # 巻き戻した後は待ちが無いので pg_blocking_pids も空になるため、表の pg_locks から引く。
+  # PostgreSQL は別のロールの接続の状態と開始の時刻を pg_stat_activity で隠し（PostgreSQL 18 の文書の「Viewing Statistics」）、
+  # 所有ロールは pg_read_all_stats を持たないので、状態はその接続と同じロールの接続から引き、どちらの権限も広げない。
+  # 引けなかったら引けなかったと書き、元の lock_timeout の例外を隠さない
+  def self.lock_holders(owner, table)
+    holders = owner.select_rows(<<~SQL)
+      SELECT DISTINCT l.pid, a.usename::text FROM pg_locks l LEFT JOIN pg_stat_activity a ON a.pid = l.pid
+      WHERE l.locktype = 'relation' AND l.granted AND l.pid <> pg_backend_pid()
+        AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+        AND l.relation = #{owner.quote(owner.quote_table_name(table))}::regclass
+      ORDER BY 1
+    SQL
+    return "見つからなかった（打ち切った後に解けた）" if holders.empty?
+
+    app_role = ActiveRecord::Base.connection_db_config.configuration_hash[:username]
+    owner_role = owner.pool.db_config.configuration_hash[:username]
+    holders.map do |pid, role|
+      detail =
+        case role
+        when app_role
+          ActiveRecord::Base.connection_pool.with_connection do |app|
+            # 世界と同じスレッドの接続は、打ち切られたトランザクションの中にいることがあり、問い合わせを流せない
+            app.raw_connection.backend_pid == pid ? "このスレッドの接続" : activity(app, pid)
+          end
+        when owner_role then activity(owner, pid)
+        else "状態は引けなかった（引ける接続の無いロール）"
+        end
+      "pid #{pid}（#{role || 'ロール不明'}、#{detail}）"
+    end.join("、")
+  rescue StandardError => e
+    "引けなかった（#{e.class}: #{e.message.lines.first&.strip}）"
+  end
+  private_class_method :lock_holders
+
+  # 同じロールの接続から、pid の状態・トランザクションの開始の時刻・最後の問い合わせを引く。
+  # 開いたトランザクションを失敗で巻き戻さないよう、セーブポイントの中で流す
+  def self.activity(connection, pid)
+    row = connection.transaction(requires_new: true) do
+      connection.select_one(<<~SQL)
+        SELECT state, xact_start::text AS xact_start, left(query, 200) AS query FROM pg_stat_activity WHERE pid = #{Integer(pid)}
+      SQL
+    end
+    return "状態は引けなかった（接続が終わった）" if row.nil? || row["state"].nil?
+
+    "状態 #{row['state']}、トランザクションの開始 #{row['xact_start'] || 'なし'}、最後の問い合わせ #{row['query']}"
+  rescue StandardError => e
+    "状態は引けなかった（#{e.class}: #{e.message.lines.first&.strip}）"
+  end
+  private_class_method :activity
+
+  # 残ったポリシーを外すコマンド。bin/rails runner は spec/support を読まないので、2 つの補助を読み込ませる
+  def self.remove_command
+    database = OwnerConnection.connection_db_config.database
+    env = [ "RAILS_ENV=test", ("TEST_DATABASE=#{database}" unless database == DEFAULT_TEST_DATABASE) ].compact.join(" ")
+    "#{env} bin/rails runner 'require \"./spec/support/matrix_world\"; require \"./spec/support/matrix_cross_read\"; " \
+      "MatrixCrossRead.remove!'"
+  end
+  private_class_method :remove_command
 end

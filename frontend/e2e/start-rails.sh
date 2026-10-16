@@ -14,6 +14,9 @@ set -eu
 cd "$(dirname "$0")/../.."
 
 export RAILS_ENV=test
+# CI と同じく、起動の時にアプリを読み込んでから /up に答える (config/environments/test.rb)。CI そのものは渡さない。
+# CI は「CI の上で動いている」ことを表し、読み込みのほかにも gem や道具が見て振る舞いを変えうるので、読み込みだけを切り替える
+export E2E_EAGER_LOAD=1
 bin/rails e2e:check
 bin/rails db:drop db:prepare
 bin/rails "e2e:prepare[${E2E_WORKERS:-1}]"
