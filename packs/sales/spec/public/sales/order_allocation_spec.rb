@@ -8,7 +8,7 @@ RSpec.describe Sales::OrderAllocation do
 
   around { |example| TenantExample.run(example, supplier.id) }
 
-  let(:item) { FactoryBot.create(:item) }
+  let(:item) { FactoryBot.create(:item, :labeled) }
   let(:order) do
     FactoryBot.create(:sales_order).tap do |order|
       [ 3, 2 ].each { FactoryBot.create(:sales_order_line, :matched, sales_order: order, item_id: item.id, quantity: _1) }

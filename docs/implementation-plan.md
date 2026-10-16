@@ -2793,10 +2793,10 @@ cd frontend && npm run test:e2e   # 0 failures
 | ガードが `TracePoint` の代わりに `prepend` で包む | ガードの spec の (iv) |
 | ガードが集めるファイルの glob から 1 つのパッケージを外す・確かめない種類に `Module` を足す | ガードの spec の (i) |
 | `permitting_supplier_ids` から権限の条件か `Scope` を外す | `access_spec.rb` の付与の無い関係・`cross_read!` の example（ID の集合の側） |
-| `permitting_suppliers_sql` から `Scope` を外す | `access_spec.rb` の `cross_read!` の example（`contains` で結んだ側）と、`partner_shipments_spec.rb` の付与の無い関係の example |
+| `permitting_suppliers_sql` から `Scope` を外す | `access_spec.rb` の `cross_read!` の example（`contains` で結んだ側）。`partner_shipments_spec.rb` の付与の無い関係の example は落ちない（付与を消した関係は RLS の下でも行を返さない） |
 | `SqlSubquery#contains` が副問い合わせを結ばない（条件をいつも真にする） | `contains` の単体と、`partner_shipments_spec.rb` の `view_shipments` の付与が無ければ空の example |
 | `adjust`・`set_quantity` の写しの確かめから `Scope` を外す・確かめを消す | `adjustment_spec.rb` の他社の写しの example・写しの無い品目の example |
-| `ItemLabels.find` から `Scope` を外す | `item_labels_spec.rb` の他社と `cross_read!` の example |
+| `ItemLabels.find` から `Scope` を外す | `item_labels_spec.rb` の `cross_read!` の example。他社の写しの example は RLS が写しを隠すので落ちない |
 | `below_safety_stock` の並べ替えを品目 ID だけにする・写しの無い在庫を先に並べる・`limit` を外す | `stocks_spec.rb` の順と写しの無い在庫と上限の example、`dashboard_spec.rb` |
 | E の spec が配送表の受け手の参照を集めない・表の行の呼んでよい場所を広げる・`require_tenant!` の集め方を外す | `entry_callers_spec.rb` の (i)〜(iii) の負例 |
 | E の spec の (iii) が、同じ定数の非公開の特異メソッドをたどらない | `entry_callers_spec.rb` の補助を通す形の負例と、本体のコードで 5 つが集まる example |

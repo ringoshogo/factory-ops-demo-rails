@@ -13,7 +13,8 @@ module Types
     field :tenant, TenantType, null: false, description: "自社テナント。取引用コードは含めない（partnerCode が admin にだけ返す）"
     field :audit_logs, resolver: Resolvers::Viewer::AuditLogsResolver, description: "admin だけ。新しいものから"
 
-    def partner_code = object.admin? ? object.partner_code : nil
+    # 規則が拒否したら FORBIDDEN にせず空を返す（docs/architecture/graphql-schema.md「役割による制限」）
+    def partner_code = Partnerships::PartnershipPolicy.new(user: object).apply(:show_partner_code?) ? object.partner_code : nil
 
     def tenant = Partnerships::Directory.tenants(object, [ object.tenant_id ]).fetch(object.tenant_id)
   end

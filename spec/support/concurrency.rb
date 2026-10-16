@@ -32,7 +32,9 @@ module ConcurrencyHelpers
         release.pop
         result
       end
-    rescue StandardError => e
+    # Exception まで拾って親に渡す。公開 API の戻り値のガードの例外（spec/support/public_api_returns.rb）は Exception から継ぐので、
+    # StandardError だけを拾うと、子のスレッドだけが終わり、親が ready を待ち続ける
+    rescue Exception => e # rubocop:disable Lint/RescueException
       ready << [ :failed, e ]
       raise
     end
@@ -61,7 +63,8 @@ module ConcurrencyHelpers
         started << current_backend_pid
         block.call
       end
-    rescue StandardError
+    # hold_open と同じく、Exception から継ぐ例外でも親の待ちを解く
+    rescue Exception # rubocop:disable Lint/RescueException
       started << nil
       raise
     end
@@ -122,7 +125,8 @@ module ConcurrencyHelpers
     concurrency_releases.each { _1 << true }
     alive = concurrency_threads.reject do |thread|
       thread.join(WAIT_SECONDS)
-    rescue StandardError
+    # 公開 API の戻り値のガードの例外のように Exception から継ぐものも、同じく確かめ済みとして捨てる
+    rescue Exception # rubocop:disable Lint/RescueException
       true
     end
     raise "#{alive.size} 本のスレッドが #{WAIT_SECONDS} 秒で終わらない。行を消さずに止める" if alive.any?

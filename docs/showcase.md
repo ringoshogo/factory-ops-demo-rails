@@ -106,7 +106,7 @@ bundle exec rspec spec/packwerk
 
 ### 3. 責務と関心の分離
 
-**何を示すか**：1 回のリクエストが「コントローラ → GraphQL のリゾルバ・mutation → コンテキストの公開 API → モデル」の順に通り、各層の責務が重ならない。テナントをまたぐ言葉の違いは受け手の側の腐敗防止層が吸収する。
+**何を示すか**：1 回のリクエストが「コントローラ → GraphQL のリゾルバ・mutation → コンテキストの公開 API → モデル」の順に通り、各層の責務が重ならない。テナントをまたぐ言葉の違いは、受け手の側の翻訳（腐敗防止層）が吸収する。
 
 **設計判断**
 - [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「1 回のリクエストがたどる道」「読み取りの一覧」「mutation の一覧」
@@ -118,7 +118,7 @@ bundle exec rspec spec/packwerk
 - 入口：`app/controllers/graphql_controller.rb` が認証とテナントの設定をし、スキーマの実行全体を 1 つのトランザクションで包む
 - GraphQL 層：mutation は公開 API を呼ぶだけで業務規則を持たない（`app/graphql/mutations/place_purchase_order.rb`）。別のコンテキストの値は Dataloader でまとめて公開 API から引く（`app/graphql/sources/public_api_source.rb`）
 - 公開 API：操作者を必須の引数に取り、scope を掛けた後に AR のレコードではなく値のオブジェクト（`*_value.rb`）を返す。書く操作と読む問い合わせは別のモジュールに分ける（`Purchasing::Ordering` と `Purchasing::PurchaseOrders`、`Sales::OrderAllocation` と `Sales::SalesOrders`、`Fulfillment::Shipping` と `Fulfillment::ShipmentRequests`）
-- 腐敗防止層：`packs/sales/app/public/sales/purchase_order_translator.rb` が、発注側の自社品番を受注側の品目へ読み替えて受注を作る
+- 腐敗防止層：購買のイベントの受け手 `packs/sales/app/public/sales/purchase_order_translator.rb` が、発注側の自社品番を受注側の品目へ読み替え（翻訳）、受注を作る
 - 状況の導出：受注・発注・出荷依頼の状況は保存せず、時刻列から SQL の式 1 つで導出する（`packs/sales/app/models/sales/sales_order_status.rb`、`packs/purchasing/app/models/purchasing/purchase_order_status.rb`、`packs/fulfillment/app/models/fulfillment/shipment_request_status.rb`）。イベントが想定外の順で届いても遷移表から外れず、一覧の表示・状況での絞り込み・件数・ダッシュボードの件数が同じ式を読むので、数と飛び先の一覧が食い違わない。別のコンテキストの値（引当の数量、出荷依頼の受注の取消と審査）は、相手の公開 API が scope を掛けた後の副問い合わせを値で渡す（[`adr/010-状況の導出をSQLの式1つにする.md`](adr/010-状況の導出をSQLの式1つにする.md)）
 - 発注側の写し：発注側は、受注確定の品目名と単価・出荷計上を、自社の表に写して持つ（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`、`packs/purchasing/app/models/purchasing/inbound_shipment.rb`）。相手の伝票を読みに行かない
 - 在庫の品目の写し：在庫は受注に依存できないので、受注の公開 API が品目を書くのと同じトランザクションで在庫の公開 API を呼び、品目のコードと名前を在庫の表に写す（`packs/sales/app/public/sales/catalog.rb`、`packs/inventory/app/public/inventory/item_labels.rb`、[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）。写しに外部キーを張らず、写しを書く経路と元から作り直すタスク（`bin/rails read_models:rebuild`）が同じ写しを作ることを一致の spec（`spec/scenarios/read_model_copies_spec.rb`）で確かめる
@@ -128,7 +128,7 @@ bundle exec rspec spec/packwerk
 
 ```sh
 bundle exec rspec packs/sales/spec/models packs/purchasing/spec/models packs/fulfillment/spec/models   # 導出表の行ごとに 1 つ
-bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappings_spec.rb          # 腐敗防止層と照合のやり直し
+bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappings_spec.rb          # 品番の読み替え（腐敗防止層）と照合のやり直し
 ```
 
 **状態**：実装済み（M4・M5・M10・M11・M14、請求書の写し（受領請求書）は M25、状況を SQL の式 1 つで導出するのは M40、在庫の品目の写しは M46、出荷依頼の受注番号の写しは M50）。

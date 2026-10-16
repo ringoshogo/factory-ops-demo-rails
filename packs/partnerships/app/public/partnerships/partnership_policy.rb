@@ -18,5 +18,9 @@ module Partnerships
     def establish? = user.admin?
 
     def manage? = user.admin? && show?
+
+    # 自社テナントの取引用コードを返してよいか。取引用コードを知った者は受注側として取引関係を結べるので、admin に限る。
+    # 対象は無く、操作者に対して評価する（docs/architecture/graphql-schema.md「役割による制限」）
+    def show_partner_code? = user.admin?
   end
 end

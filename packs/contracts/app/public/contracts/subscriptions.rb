@@ -1,7 +1,9 @@
 module Contracts
   # 配送表。イベントごとに、受け手のクラス名と、宛先テナントを示すペイロードの項目を並べる。
   # 1 つのイベントが別のテナントの受け手へ届くことがあるので、宛先は受け手ごとに書く。
-  # 受け手を文字列で書くので、contracts は受け手のパッケージに依存しない
+  # 全パッケージの受け手を 1 か所で名指しする、意図した集中登録である。受け手を文字列で書くので、contracts は受け手のパッケージに
+  # 実行時に EventJob が名前を解決するときだけ依存し、packwerk の依存は持たない（docs/architecture/context-map.md「コンテキスト」）。
+  # 受け手を定数で参照して呼ぶ箇所は本体のコードに置かない（spec/packwerk/entry_callers_spec.rb）
   module Subscriptions
     Route = Data.define(:receiver, :tenant_key)
 

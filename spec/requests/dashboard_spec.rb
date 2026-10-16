@@ -18,7 +18,7 @@ RSpec.describe "受注側のダッシュボード", type: :request do
   def dashboard = travel_to(now) { query(screen).dig("supplier", "dashboard") }
 
   def stock_below(code)
-    as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item, code:).id, on_hand: 1, safety_stock: 5) }
+    as_supplier { FactoryBot.create(:stock, item_id: FactoryBot.create(:item, :labeled, code:).id, on_hand: 1, safety_stock: 5) }
   end
 
   before do
@@ -36,7 +36,7 @@ RSpec.describe "受注側のダッシュボード", type: :request do
   it "画面の問い合わせが、4 つの公開 API と同じ値を返す。member も読め、今日は日本時間で決まる" do
     expected = as_supplier do
       { counts: Sales::SalesOrders.count_by_status(actor),
-        stocks: Inventory::Stocks.below_safety_stock(actor).map(&:item_id),
+        stocks: Inventory::Stocks.below_safety_stock(actor, limit: 100).map(&:item_id),
         requests: Fulfillment::ShipmentRequests.due_within(actor, today:, days: 7).map(&:id),
         unbilled: Billing::BillableItems.unbilled_total(actor) }
     end
@@ -114,6 +114,19 @@ RSpec.describe "受注側のダッシュボード", type: :request do
     expect(columns.to_h { |column| [ column.alias, column.arguments.select { %w[orderBy thenBy].include?(_1.name) }.map(&:to_query_string) ] })
       .to eq("awaitingPartMatch" => open, "received" => open, "partiallyAllocated" => open, "allocated" => open,
         "shipped" => done, "inspected" => done, "cancelled" => done)
+  end
+
+  # 上限は仕様の値（100 件）で、定数を差し替えずに書く（docs/guides/testing.md「層への配分」）。前の準備で 2 件がある
+  it "安全在庫を下回る在庫が上限ちょうどの 100 件ならすべて返し、101 件なら品目コードの順の先頭 100 件を返す" do
+    codes = Array.new(98) { format("C-%03d", _1) }
+    codes.each { stock_below(_1) }
+    expect(dashboard.fetch("stocksBelowSafetyStock").size).to eq(100)
+
+    stock_below("A-LAST")
+    returned = dashboard.fetch("stocksBelowSafetyStock").map { _1.dig("item", "code") }
+    expect(returned.size).to eq(100)
+    expect(returned.first).to eq("A-LAST")
+    expect(returned).not_to include("NUT-1")
   end
 
   it "安全在庫を下回る在庫を、品目コードの昇順で上限の件数まで返す" do

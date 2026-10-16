@@ -42,10 +42,12 @@ module Inventory
       SqlSubquery.of(Scope.call(actor, Stock.all).select(:item_id, :safety_stock), item_id: "item_id", safety_stock: "safety_stock")
     end
 
-    # 有効在庫が安全在庫より小さい在庫。等しい在庫は返さない（docs/architecture/data-model.md「在庫（`inventory`）」）。
-    # 在庫は品目コードを持たないので、並べ替えと件数の上限はルートパッケージが品目コードで行う
-    def self.below_safety_stock(actor)
-      Scope.call(actor, Stock.below_safety_stock).order(:item_id).map { to_value(_1) }
+    # 有効在庫が安全在庫より小さい在庫を、品目の写しのコード → 品目 ID の順に limit 件まで返す。等しい在庫は返さない
+    # （docs/architecture/data-model.md「在庫（`inventory`）」）。写しの無い在庫（引当が作った行）は最後に並ぶ。
+    # 写しのコードの列は受注の品目のコードと同じ照合順序なので、品目コードの順と同じになる
+    def self.below_safety_stock(actor, limit:)
+      labeled(Scope.call(actor, Stock.below_safety_stock))
+        .order(LABELS[:code].asc.nulls_last, Stock.arel_table[:item_id].asc).limit(limit).map { to_value(_1) }
     end
 
     # filter の types は移動の種類で絞る。空の配列は 0 件で、nil なら絞らない

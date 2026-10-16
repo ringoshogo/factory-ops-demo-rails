@@ -185,6 +185,22 @@ packs/sales cannot have privacy violations on packs/inventory because strict mod
 
 `purchasing_uses_only_published_catalog_spec.rb` は、packwerk が区別できない範囲を受け持つ。packwerk はパッケージ単位で依存を判定するので、`purchasing` から `sales` への依存を宣言すると、`sales` の公開 API のどのクラスでも参照できる。このテストは Prism（Ruby の構文解析器）で `packs/purchasing` の定数の参照を集め、`Sales::PublishedCatalog` 以外を落とす。
 
+## 層ごとの責務
+
+コードを足す人と、計画・実装・逸脱を検査するレビュアーは、判断と不変条件をどの層に置くかを次の表で決める。パッケージの境界は packwerk が守るが、同じパッケージの中のどの層に判断を置くかは packwerk には見えない。置く層を誤ると、同じ規則を守る場所が 2 つになり、片方の入口（CSV の取り込み・シード・ジョブ）が規則の外に残る。
+
+| 層 | 置くもの | 置かないもの | 守る仕組み |
+|---|---|---|---|
+| GraphQL のリゾルバと mutation（`app/graphql/resolvers/`・`app/graphql/mutations/`） | 視点・規則・監査の宣言。対象を公開 API で引く `find_target` と、公開 API を呼ぶ `perform` | 業務の判断と不変条件（品目が自社のものか、など）。役割の判断 | 宣言の列挙テスト `spec/graphql/authorization_declarations_spec.rb` と入口の行列 `spec/matrix/graphql_matrix_spec.rb`（[graphql-schema.md「基底クラス」](../architecture/graphql-schema.md#基底クラス)） |
+| 型（`app/graphql/types/`） | 公開 API の値を包んで委譲する。役割で見せ方が変わるフィールドは、policy の規則を操作者で評価し、偽なら空を返すだけにする | 並べ替えと件数の上限。役割の判断（`user.admin?` を型に直に書く） | 入口の行列の `member` の行（`viewer.partnerCode`）。並べ替えと上限を型に置かないことは、機械では落とさず、レビューが見る（[graphql-schema.md「役割による制限」](../architecture/graphql-schema.md#役割による制限)・「読み取りの一覧」） |
+| policy（`packs/*/app/public/` の `*Policy`） | 可視範囲の scope と、操作ごとの規則。役割の判断はここだけに置く | 業務の不変条件（出荷済みの受注の取消の拒否など） | 入口の行列（[graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」](../architecture/graphql-schema.md#認可宣言の無い型リゾルバmutation-は拒否する)） |
+| 公開 API（`packs/*/app/public/`） | 持ち主のコンテキストの業務の判断と不変条件（在庫は自社の品目にだけできる、など）。scope を掛けた読み取り。値・ID・件数・`OperationResult`・`Page`・`SqlSubquery` を返す | relation とモデルを返すこと。不変条件を呼ぶ側に任せること | 戻り値のガード `spec/support/public_api_returns.rb`（`spec/platform/public_api_returns_spec.rb`）と packwerk（[ADR 002](../adr/002-packwerkを初日からCIで強制する.md)、[data-model.md「在庫（`inventory`）」](../architecture/data-model.md#在庫inventory)） |
+| イベントの受け手（配送表の受け手の `handle`） | テナントをまたぐ連結の受け口。相手の言葉を自コンテキストの言葉に読み替えた後に、自コンテキストの操作を呼ぶ。`EventJob` からだけ呼ばれる | 同じテナントの中のコンテキストの連結。同じテナントの中は同期の呼び出しでつなぎ、イベントにするのはテナントをまたぐ連結と「出荷可能」だけである | `EventJob` からだけ呼ばれることは、受け手の参照の検査 `spec/packwerk/entry_callers_spec.rb` が落とす。同じテナントの中を同期でつなぐことは機械では落とさず、計画レビューと実装レビューが見る（[ADR 012](../adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md)、[context-map.md「コンテキスト」](../architecture/context-map.md#コンテキスト)） |
+| 操作者のいない入口の公開 API | テナントの設定を求め、所有の条件を `Current.tenant_id` で書く操作。表に書いた場所からだけ呼ばれる | 表の場所の外からの呼び出し | 同じ `spec/packwerk/entry_callers_spec.rb`（[graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」](../architecture/graphql-schema.md#認可宣言の無い型リゾルバmutation-は拒否する) の表） |
+| ルートパッケージの `lib/`（`DemoWorld`・rake タスク・`DemoReset`） | 公開 API だけを使って世界を作り、運用の操作を流す。`admin` に限る操作は `DemoWorld::Operations` を通し、mutation の宣言の規則を評価する | 非公開の定数の参照。policy と規則の名前の書き写し | packwerk と `spec/scenarios/demo_world_spec.rb`（[graphql-schema.md「役割による制限」](../architecture/graphql-schema.md#役割による制限)） |
+
+> 2026-10-16 の監査で、取引関係の relation を返す公開 API、在庫の不変条件を呼ぶ側の 2 か所が守る形、同じテナントの中の受注から出荷への非同期が、照らす一覧の無いままレビューを通っていた。
+
 ## よくある作業の手順
 
 ### 新しいパッケージを足す
@@ -210,7 +226,7 @@ packs/sales cannot have privacy violations on packs/inventory because strict mod
 
 - **置き場**：`packs/<パッケージ>/app/public/<パッケージ>/` に置く。
 - **名前**：`app/models/<パッケージ>/` と `app/public/<パッケージ>/` は同じ名前空間に入るので、公開 API のモジュールをモデルと同じ名前にできない。モデルの名前の複数形にする（`Sales::SalesOrders`・`Purchasing::ReceiptInspections`）。
-- **返す値**：AR モデルを返さず、`Data.define` の読み取り用の値（`Inventory::StockValue` など）に詰めて返す。AR モデルを返すと、受け取った側がそのモデルを書き換えられる。
+- **返す値**：AR モデルも relation も返さず、`Data.define` の読み取り用の値（`Inventory::StockValue` など）に詰めて返す。AR モデルを返すと、受け取った側がそのモデルを書き換えられる。relation を返すと、受け取った側が `unscope`・`rewhere`・`update_all` で scope と書き込みの入口を越えられる。別のコンテキストの SQL に値を渡すときは `SqlSubquery` で返す（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 3）。全 spec の流れで戻り値を確かめるガード（`spec/support/public_api_returns.rb`）が、`app/public/` の公開の特異メソッドの戻り値を配列・Hash・`Set`・`Data` の項目・`OperationResult` の値までたどり、relation かモデルがあれば落とす。ほかの層との分担は「層ごとの責務」にある。
 - **引数**：操作者（`Partnerships::Actor`）を必須の引数にし、自パッケージの policy の scope（`Inventory::Scope` など）を掛けてから読む。
 
 非公開のクラスを `app/public/` へ移すだけで違反を消すことは避ける。公開 API が抜け道として増えていくことは、プライバシーの検査を見直す条件である（ADR 002「見直す条件」）。

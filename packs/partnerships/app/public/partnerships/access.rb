@@ -5,11 +5,16 @@ module Partnerships
   module Access
     PERMISSIONS = PartnershipGrant::PERMISSIONS
 
-    # 発注側の操作者に permission を与えている受注側テナントの ID。他の relation の条件に埋め込む副問い合わせとして返す
-    def self.permitting_suppliers(actor, permission:)
-      raise ArgumentError, "unknown permission: #{permission}" unless PERMISSIONS.include?(permission.to_s)
+    # 発注側の操作者に permission を与えている受注側テナントの副問い合わせ。別のコンテキストの一覧が、SqlSubquery#contains で
+    # 行を絞るために結ぶ。scope を掛けた後に SQL の文字列にするので、受け取る側は所有の条件を外せない。役割の名前（tenant_id）を返し、
+    # 受け取る側が取引関係の列を書かない（docs/adr/010-状況の導出をSQLの式1つにする.md 決定 2）
+    def self.permitting_suppliers_sql(actor, permission:)
+      SqlSubquery.of(permitting(actor, permission).select(:owner_tenant_id), tenant_id: "owner_tenant_id")
+    end
 
-      Scope.call(actor, :as_buyer).joins(:grants).where(partnership_grants: { permission: permission.to_s }).select(:owner_tenant_id)
+    # 同じ条件の受注側テナントの ID。値ごとに規則を評価する側が、1 回の実行に 1 回だけ引いて使う
+    def self.permitting_supplier_ids(actor, permission:)
+      permitting(actor, permission).pluck(:owner_tenant_id).to_set.freeze
     end
 
     # 答えを使って書き込む操作は lock: true を渡す。問い合わせの前に組のロックを取り、
@@ -33,5 +38,12 @@ module Partnerships
         [ "partnership:#{supplier_tenant_id}:#{buyer_tenant_id}" ])
       nil
     end
+
+    def self.permitting(actor, permission)
+      raise ArgumentError, "unknown permission: #{permission}" unless PERMISSIONS.include?(permission.to_s)
+
+      Scope.call(actor, :as_buyer).joins(:grants).where(partnership_grants: { permission: permission.to_s })
+    end
+    private_class_method :permitting
   end
 end

@@ -11,13 +11,12 @@ module Mutations
     argument :reason, String, required: false
     result_field :stock, Types::StockType
 
-    # 在庫は受注に依存しないので、品目が自社のものかはここで受注の公開 API に問い合わせる
     def find_target(item_id:, **)
-      Sales::Catalog.item(current_user, item_id)
+      Inventory::ItemLabels.find(current_user, item_id)
     end
 
     def perform(target, type:, quantity:, reason: nil, **)
-      Inventory::Adjustment.adjust(current_user, item_id: target.id, type:, quantity:, reason:)
+      Inventory::Adjustment.adjust(current_user, item_id: target.item_id, type:, quantity:, reason:)
     end
   end
 end

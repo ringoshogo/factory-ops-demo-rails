@@ -10,10 +10,15 @@ RSpec.describe "引当と出庫の競合" do
   let(:item_id) { SecureRandom.uuid }
   let(:sales_order_line_id) { SecureRandom.uuid }
 
-  before { Tenancy.with_tenant(supplier.id) { Inventory::Adjustment.adjust(actor, item_id:, type: "inbound", quantity: 10) } }
+  before do
+    Tenancy.with_tenant(supplier.id) do
+      FactoryBot.create(:item_label, item_id:)
+      Inventory::Adjustment.adjust(actor, item_id:, type: "inbound", quantity: 10)
+    end
+  end
 
   after do
-    delete_owned_rows([ supplier.id ], %w[stock_movements allocations stocks])
+    delete_owned_rows([ supplier.id ], %w[stock_movements allocations stocks item_labels])
   end
 
   def allocate(quantity) = Inventory::Allocation.allocate(actor, [ { sales_order_line_id:, item_id:, quantity: } ])

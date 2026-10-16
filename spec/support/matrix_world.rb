@@ -103,6 +103,10 @@ class MatrixWorld
     @rows = self.class.tenant_tables.index_with do |table|
       PERSONAS.index_with { |persona| as(persona) { FactoryBot.create(self.class.factory_name(table)) } }
     end
+    # 在庫の調整は、自社の品目の写しのある品目にだけ在庫を作る（Inventory::Adjustment）。品目の表ごとの行に写しを書く
+    PERSONAS.each do |persona|
+      as(persona) { row("items", persona).then { FactoryBot.create(:item_label, item_id: _1.id, code: _1.code, name: _1.name) } }
+    end
     @partnerships = PARTNERSHIPS.to_h do |buyer, spec|
       partnership = as(:supplier) do
         FactoryBot.create(:partnership, *spec.fetch(:traits, []), buyer_tenant_id: tenants[buyer], permissions: spec[:permissions])
@@ -150,7 +154,7 @@ class MatrixWorld
   # ダッシュボードの集計に当たる行。受注と未請求の明細は表ごとの行で足りる。在庫と出荷依頼は、factory の既定では
   # 安全在庫を割らず期限も無いので、ここで足す。どの集計も自社の行を数えるので、集計の公開 API が scope を外すと、
   # RLS の SELECT を開いた入口の行列で他社のこの行が数に入る（docs/guides/testing.md「行列テストとの分担」）。
-  # 在庫はダッシュボードが品目のコードで並べるので、自社の品目に作る
+  # 在庫はダッシュボードが品目の写しのコードで並べるので、写しのある自社の品目に作る
   def add_dashboard_rows(persona)
     FactoryBot.create(:stock, item_id: row("items", persona).id, on_hand: 1, safety_stock: 2)
     FactoryBot.create(:shipment_request, due_date: Date.current)
@@ -172,7 +176,7 @@ class MatrixWorld
     [ FILTER_ITEM_NAME, "当たらない品目" ].each { |name| FactoryBot.create(:item_label, item_id: FactoryBot.create(:stock).item_id, name:) }
   end
 
-  # 受注側の ACL が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、
+  # 受注側の購買のイベントの受け手が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、
   # 出荷が「出荷可能」から作るのと同じ形に、受注を全量で出荷する
   def link_orders(buyer)
     purchase_order = as(buyer) { FactoryBot.create(:purchase_order, supplier_tenant_id: tenants[:supplier]) }

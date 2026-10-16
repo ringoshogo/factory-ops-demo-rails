@@ -14,6 +14,7 @@ RSpec.describe Fulfillment::Shipping do
   # 在庫を 10 入れ、出荷依頼の明細 2 つ（3 と 2）を全量で引き当て、有効な出荷指示を作っておく
   let!(:request) do
     Tenancy.with_tenant(supplier.id) do
+      FactoryBot.create(:item_label, item_id:)
       Inventory::Adjustment.adjust(actor, item_id:, type: "inbound", quantity: 10)
       FactoryBot.create(:shipment_request).tap do |request|
         FactoryBot.create(:shipping_instruction, shipment_request: request) if instructed
@@ -28,7 +29,7 @@ RSpec.describe Fulfillment::Shipping do
   after do
     delete_owned_rows([ supplier.id, request.buyer_tenant_id ], %w[
       shipment_lines shipments shipping_instructions shipment_request_lines shipment_requests
-      stock_movements allocations stocks cancellation_reviews sales_orders
+      stock_movements allocations stocks item_labels cancellation_reviews sales_orders
     ])
   end
 

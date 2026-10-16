@@ -79,7 +79,7 @@ RSpec.describe Imports::RunJob do
     before do
       stub_const("Imports::Staging::CHUNK_ROWS", 2)
       stub_const("Imports::Applying::CHUNK_ROWS", 2)
-      tenancy { %w[A B C D E].each { FactoryBot.create(:item, code: _1) } }
+      tenancy { %w[A B C D E].each { FactoryBot.create(:item, :labeled, code: _1) } }
     end
 
     let(:import) { start("stocks", stocks_csv("A,1", "B,2", "C,3", "D,4", "E,5")) }
@@ -131,7 +131,7 @@ RSpec.describe Imports::RunJob do
   describe "同じ取り込みの 2 つのジョブ" do
     # 後のジョブが置き場へ写す段階の始めを過ぎた後に、先のジョブが取り込みを終えてファイルの中身を消す順を、1 つの接続で作る
     it "置き場へ写し始めた後のジョブは、先のジョブが取り込みを終えていたら、例外にせずに何も書かずに終える" do
-      tenancy { FactoryBot.create(:item, code: "A") }
+      tenancy { FactoryBot.create(:item, :labeled, code: "A") }
       import = start("stocks", stocks_csv("A,2"))
       first_check = true
       allow(Imports::Chunk).to receive(:locked).and_wrap_original do |original, *args, &block|
@@ -153,7 +153,7 @@ RSpec.describe Imports::RunJob do
 
   describe "件数の冪等" do
     it "成功 2 行・失敗 1 行のチャンクを反映した後、カーソルを保存する前に止まった実行をもう一度流しても、件数も品目も在庫も増えない" do
-      tenancy { %w[A B].each { FactoryBot.create(:item, code: _1) } }
+      tenancy { %w[A B].each { FactoryBot.create(:item, :labeled, code: _1) } }
       import = start("stocks", stocks_csv("A,3", "NONE,1", "B,4"))
       original = pending_jobs(import).first.arguments
 
@@ -268,7 +268,7 @@ RSpec.describe Imports::RunJob do
 
     it "在庫は目標の在庫数で、引当済みの数量より少なくする行と、同じ品目コードの 2 行目を失敗にする" do
       tenancy do
-        %w[A B].each { FactoryBot.create(:item, code: _1) }
+        %w[A B].each { FactoryBot.create(:item, :labeled, code: _1) }
         a = Sales::Catalog.ids_by_codes(actor, %w[A]).fetch("A")
         Inventory::Adjustment.set_quantity(actor, item_id: a, quantity: 5, reason: "棚卸")
         Inventory::Allocation.allocate(actor, [ { sales_order_line_id: SecureRandom.uuid, item_id: a, quantity: 4 } ])
@@ -284,7 +284,7 @@ RSpec.describe Imports::RunJob do
 
     # 上限は列の型（数量は integer、単価は bigint）の最大値。上限ちょうどと上限 + 1 を仕様の値で書く。定数から値を作ると、定数を誤って変えても通るからである
     it "数量は 2147483647 まで、単価は 9223372036854775807 までを反映し、1 大きい値の行を失敗にする" do
-      tenancy { %w[A B].each { FactoryBot.create(:item, code: _1) } }
+      tenancy { %w[A B].each { FactoryBot.create(:item, :labeled, code: _1) } }
       stocks = start("stocks", stocks_csv("A,2147483647", "B,2147483648"))
       prices = start("items", items_csv("MAX-1,上限,個,10,false,9223372036854775807,", "MAX-2,上限超え,個,10,false,9223372036854775808,"))
 
@@ -307,7 +307,7 @@ RSpec.describe Imports::RunJob do
     it "見出しを除いて 50,000 行までを受け付け、超えたファイルは取り込み全体を失敗にする" do
       expect(Imports::Staging::MAX_ROWS).to eq(50_000)
       stub_const("Imports::Staging::MAX_ROWS", 2)
-      tenancy { %w[A B C].each { FactoryBot.create(:item, code: _1) } }
+      tenancy { %w[A B C].each { FactoryBot.create(:item, :labeled, code: _1) } }
       within = start("stocks", stocks_csv("A,1", "B,1"))
       over = start("stocks", stocks_csv("A,1", "B,1", "C,1"))
 
@@ -320,7 +320,7 @@ RSpec.describe Imports::RunJob do
     end
 
     it "UTF-8 でないファイルと、CSV として壊れたファイルは、取り込み全体を失敗にする。BOM は読み飛ばす" do
-      tenancy { FactoryBot.create(:item, code: "A") }
+      tenancy { FactoryBot.create(:item, :labeled, code: "A") }
       broken = { "invalid_encoding" => "item_code,quantity\n\xff,1\n".b, "malformed_csv" => "item_code,quantity\n\"A,1\n" }
       imports = broken.transform_values { start("stocks", _1) }
       with_bom = start("stocks", "﻿#{stocks_csv('A,2')}")
@@ -334,7 +334,7 @@ RSpec.describe Imports::RunJob do
 
   describe "部分失敗" do
     it "3 行のうち 1 行が不正なファイルは、反映が 2 行・失敗が 1 行・状況が一部失敗になり、終わりと件数をログに出す" do
-      tenancy { %w[A B C].each { FactoryBot.create(:item, code: _1) } }
+      tenancy { %w[A B C].each { FactoryBot.create(:item, :labeled, code: _1) } }
       import = start("stocks", stocks_csv("A,1", "B,x", "C,3"))
 
       run_all(import)
@@ -378,7 +378,7 @@ RSpec.describe Imports::RunJob do
     end
 
     it "在庫の取り込みは、member の名義でも反映する" do
-      tenancy { FactoryBot.create(:item, code: "A") }
+      tenancy { FactoryBot.create(:item, :labeled, code: "A") }
       import = start("stocks", stocks_csv("A,2"))
       tenancy { admin.update!(role: "member") }
 

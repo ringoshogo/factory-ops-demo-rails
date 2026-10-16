@@ -121,9 +121,9 @@ DB の既定の照合順序は、公式の `postgres` のイメージが initdb 
 | `stock_movements`（在庫移動履歴） | `item_id`・`type`（`inbound` / `outbound` / `allocate` / `deallocate` / `ship`）・`quantity`（正の数）・`reason`・`allocation_id` | 追記だけ。増減の向きは `type` が決める。`allocation_id` は引当を動かす移動（`allocate` / `deallocate` / `ship`）にだけ入る |
 | `item_labels`（品目の写し） | `item_id`→・`code`（照合順序 `pg_c_utf8`）・`name`（照合順序 `ja-x-icu`） | `(owner, item_id)` 一意。受注の品目への外部キーは張らない |
 
-在庫の数量（`on_hand`・`allocated`）を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。安全在庫（`safety_stock`）は数量ではないので、移動履歴を残さずに `Inventory::Stock#change_safety_stock!` だけで変える。これを呼ぶ公開 API は、シードと E2E の世界の準備のための `Inventory::Stocks.set_safety_stock` だけで、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（「RLS」の `Partnerships::Onboarding.register` と同じ条件）。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。行の無い品目の在庫は空として返す。
+在庫の数量（`on_hand`・`allocated`）を変える処理は、すべて 1 つの内部メソッド（`Inventory::Stock#move!`）を通す。このメソッドは、`stocks` の更新と `stock_movements` の追記を同じトランザクションで行う。`Inventory::Stock` は `move!` の外での数量の書き換えを読み取り専用として拒否し、`Inventory::StockMovement` は書いた行の変更を拒否する。安全在庫（`safety_stock`）は数量ではないので、移動履歴を残さずに `Inventory::Stock#change_safety_stock!` だけで変える。これを呼ぶ公開 API は、シードと E2E の世界の準備のための `Inventory::Stocks.set_safety_stock` だけで、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（「RLS」の `Partnerships::Onboarding.register` と同じ条件）。在庫は自社の品目にだけできる。入出庫の調整と在庫数の設定（`Inventory::Adjustment`）は、自社の品目の写しで品目を確かめ、写しの無い品目 ID を何も書かずに `NOT_FOUND` にする。在庫の行は、品目の最初の入出庫か引当のときに数量 0 で作る。引当は、照合済みの受注明細の品目 ID を受注が渡すので、写しを確かめない。行の無い品目の在庫は空として返す。
 
-品目の写しは、在庫の一覧を品目のコードと名前で並べ、検索するためだけに持つ、受注の品目（`items`）の写しである。在庫は受注に依存しないので、受注の品目を結べない。品目のコードか名前を書く受注の公開 API（`Sales::Catalog.save`・`Sales::Catalog.bulk_upsert`）が、同じトランザクションで在庫の公開 API `Inventory::ItemLabels.put` を呼んで写す。既存の DB と、写しを書く経路の抜けは、元から作り直す rake タスク `read_models:rebuild` で埋める。写しの無い在庫は拒まず、一覧で品目のコードと名前で並べると最後に置き、検索には当てない。写しの `item_id` は受注の品目を指すコンテキストをまたぐ参照なので、外部キーを張らない（「全テーブルに共通の規則」）。在庫から写しへも外部キーを張らず、写しの抜けを一致の spec で守る理由は `../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md` 決定 2 にある。
+品目の写しは、在庫の一覧を品目のコードと名前で並べ、検索するためと、調整と在庫数の設定が自社の品目かを確かめるために持つ、受注の品目（`items`）の写しである。在庫は受注に依存しないので、受注の品目を結べない。品目のコードか名前を書く受注の公開 API（`Sales::Catalog.save`・`Sales::Catalog.bulk_upsert`）が、同じトランザクションで在庫の公開 API `Inventory::ItemLabels.put` を呼んで写す。既存の DB と、写しを書く経路の抜けは、元から作り直す rake タスク `read_models:rebuild` で埋める。写しの無い在庫は引当が作った行だけで、一覧とダッシュボードの安全在庫で品目のコードと名前で並べると最後に置き、検索には当てない。写しの `item_id` は受注の品目を指すコンテキストをまたぐ参照なので、外部キーを張らない（「全テーブルに共通の規則」）。在庫から写しへも外部キーを張らず、写しの抜けを一致の spec で守る理由は `../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md` 決定 2 にある。
 
 引当は、受注明細ごとに 1 行を持ち、未引当の量を有効在庫の範囲で足していく。有効在庫が足りなければ、引き当てられた分だけ引き当て、残りは次の引当で埋める。解除（`released`）と消費（`consumed`）は終わりの状態で、その明細は引き当て直さない。受注明細 ID ごとの引当数量は、解除した引当を数えない。安全在庫を下回るとは、有効在庫が `safety_stock` より小さいことをいう。
 
@@ -289,7 +289,7 @@ CSV は UTF-8 で、先頭の BOM は読み飛ばす。1 行目の見出しが�
 
 1. 取り込みを始めたユーザーを、いまの役割で操作者にし、取り込みの開始の規則（`Imports::ImportPolicy#start?`）を評価し直す。満たさなければ、そのチャンクに何も書かずに取り込み全体を `not_permitted` で失敗にする。品目の取り込みは単価を変えるので、`admin` でなくなったユーザーの名義で単価を変え続けない。
 2. 品目は、検証を通った行の品目の列（コード・名前・単位・税率・公開）を `Sales::Catalog.bulk_upsert` が 1 つの `upsert_all` で書き、新しい品目には有効期間 `(,)` の単価の行を作る。単価の空の新しい品目の行は書かずに失敗にする。既存の品目の単価には `bulk_upsert` は触れない。単価の列は、改定日の単価をチャンクごとにまとめて引き、違う行だけを `Sales::ItemPrices.schedule`（改定の予約）で反映する。既存の品目の単価を変える入口を改定の予約と訂正にまとめるためである（`context-map.md`「自社の中の役割」）。失敗する行は書き込みに含めないので、戻す書き込みが無い。
-3. 在庫は、品目コードを `Sales::Catalog.ids_by_codes` で品目 ID にし、品目 ID の昇順に、行ごとのセーブポイントで `Inventory::Adjustment.set_quantity` を呼ぶ。失敗した行の書き込みだけを戻す。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。並んだ取り込みと引当は、在庫の行を品目 ID の昇順でロックする。
+3. 在庫は、品目コードを `Sales::Catalog.ids_by_codes` で品目 ID にし、品目 ID の昇順に、行ごとのセーブポイントで `Inventory::Adjustment.set_quantity` を呼ぶ。コードから ID を引くのは受注の公開 API で、自社の品目であることの保証は在庫数の設定が写しで持つ（「在庫（`inventory`）」）。写しは品目と同じトランザクションで書く。写しを書く経路の抜けと、写しの表を足した後の既存の DB は、`read_models:rebuild` が埋めるまで写しが無く、その行は在庫数の設定が `NOT_FOUND` で拒み、行の失敗になる。失敗した行の書き込みだけを戻す。在庫は `Inventory::Stock#move!` を通すので、取り込みでも移動履歴が残る。並んだ取り込みと引当は、在庫の行を品目 ID の昇順でロックする。
 
 ## 取消と出荷の競合を止める場所
 

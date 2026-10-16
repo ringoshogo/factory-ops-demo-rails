@@ -258,8 +258,8 @@ RSpec.describe Page do
     end
 
     it "first と after によらず、ページと同じ relation の行を数える" do
-      first = tenancy { described_class.of(AuditLog.all, first: 1, after: nil) { _1 } }
-      second = tenancy { described_class.of(AuditLog.all, first: 1, after: tenancy { first.cursors.sole }) { _1 } }
+      first = tenancy { described_class.of(AuditLog.all, first: 1, after: nil) { _1.map(&:id) } }
+      second = tenancy { described_class.of(AuditLog.all, first: 1, after: tenancy { first.cursors.sole }) { _1.map(&:id) } }
 
       expect(tenancy { [ first.total_count, second.total_count ] }).to eq([ 3, 3 ])
     end
@@ -272,12 +272,12 @@ RSpec.describe Page do
 
       expect(sql).to contain_exactly(a_string_matching(/\ASELECT COUNT\(\*\)/))
       expect(mapped).to be(false)
-      expect(count_sql { tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1 }.values } })
+      expect(count_sql { tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1.map(&:id) }.values } })
         .to contain_exactly(a_string_matching(/LIMIT/))
     end
 
     it "Tenancy.with_tenant の外で行と件数を読むと例外にする" do
-      built = tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1 } }
+      built = tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1.map(&:id) } }
 
       expect { built.values }.to raise_error(Tenancy::MissingTenant)
       expect { built.total_count }.to raise_error(Tenancy::MissingTenant)
@@ -285,7 +285,7 @@ RSpec.describe Page do
     end
 
     it "一度読んだ後も、テナントの外と別のテナントの中で読むと例外にする" do
-      built = tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1 }.tap { [ _1.values, _1.total_count ] } }
+      built = tenancy { described_class.of(AuditLog.all, first: 2, after: nil) { _1.map(&:id) }.tap { [ _1.values, _1.total_count ] } }
       other = FactoryBot.create(:tenant)
 
       %i[values cursors has_next_page total_count].each do |reader|

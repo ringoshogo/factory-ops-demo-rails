@@ -122,7 +122,7 @@ RSpec.describe "取り込み", type: :request do
   end
 
   it "取り込みの進み具合と失敗した行を、supplier.imports・supplier.import・Import.rowErrors で読む" do
-    Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code: "A") }
+    Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled, code: "A") }
     login_as(member)
     upload("item_code,quantity\nA,4\nB,1\n")
     import_id = start_import(response.parsed_body.fetch("id"), "STOCKS").dig("data", "startImport", "import", "id")

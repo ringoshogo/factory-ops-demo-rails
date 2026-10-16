@@ -19,7 +19,7 @@
    - `GraphqlController` は、スキーマを実行する前に、ログの文脈（リクエスト ID・テナント・ユーザー・操作名・相関 ID）を `Rails.event.set_context` で設定する。文脈は Fiber のストレージにあり、Dataloader の Fiber は作られた時点の値を写して持つので、実行の途中で設定した値はフィールドの解決に届かない（`../implementation-plan.md` M18）。
    - セッションは Cookie に置き、サーバーに残さない。そのため、セッションを消しても、写した Cookie を送り直せば使えてしまう。これを防ぐため、ユーザーごとにセッションの世代（`users.session_version`、`data-model.md`「取引関係と権限付与（`partnerships`）」）を持たせ、ログアウトとパスワードの変更で世代を進める。パスワードの変更では DB のトリガーが進めるので、書き換える経路を問わない。ログアウトは、世代が今と同じセッションのときだけ進める。無効になった Cookie で、他の端末のログインを切らせないためである。公開の配置（`deploy/`）では、全員がログインの画面に並ぶ同じアカウントを使うので、`web` に `SHARED_DEMO_ACCOUNTS=1` を渡し、ログアウトで世代を進めず Cookie を消すだけにする。世代を進めると、同じアカウントのほかの訪問者が全員切れるからである。このとき、ログアウトの前に写し取られた Cookie は期限まで使えるままになる。公開の配置では資格情報がログインの画面に出ているので、この保証を外す。セッションの期限は、最後のリクエストから 12 時間とする（`config/application.rb` の `expire_after`）。Rails は応答のたびに期限を延ばした Cookie を書き直すが、画面（`frontend/`）では、Next がブラウザへ Cookie を写せるのは server action と route handler の応答だけで、サーバーコンポーネントの読み取りの応答では写せない。そのため画面の利用者の期限は、ログインか最後の書き込みから 12 時間になる（`frontend/lib/graphql/request.ts`）。
 2. **視点の入口**：クエリは `buyer` か `supplier` のどちらかの入口から始まる（「視点ごとに型を分ける」）。
-3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。別のコンテキストの値を SQL の中で読む公開 API（受注の状況が読む在庫の引当数量）には、相手の公開 API が、scope を掛けた後に SQL の文字列にした副問い合わせを、列の名前と一緒に値（`SqlSubquery`、`packs/platform`）で返す。受け取る側は条件を足さずに副問い合わせとして結ぶだけで、相手の relation もモデルも受け取らない。relation を受け取ると、`unscope`・`rewhere`・`update_all` で相手の scope と書き込みの入口を越えられるからである。所有テナントの無い表の値（受注・発注・出荷依頼の一覧を取引先の名前で並べるときのテナントの名前）は、相手の公開 API が scope を掛けずに、返す列を ID と名前に絞った副問い合わせを同じ値で返す（`../adr/010-状況の導出をSQLの式1つにする.md` 決定 2）。
+3. **公開 API の呼び出し**：リゾルバは、コンテキストの公開 API（`packs/*/app/public/`）を、操作者（`Partnerships::Actor`）を必須の引数にして呼ぶ。公開 API は、自コンテキストの policy の scope を掛けてから値を返す。別のコンテキストの値を SQL の中で読む公開 API（受注の状況が読む在庫の引当数量）には、相手の公開 API が、scope を掛けた後に SQL の文字列にした副問い合わせを、列の名前と一緒に値（`SqlSubquery`、`packs/platform`）で返す。受け取る側は条件を足さずに副問い合わせとして結ぶ（`as`・`lookup`）か、行を絞る条件にする（`contains`。出荷の経路 3 が取引関係の公開 API `Partnerships::Access.permitting_suppliers_sql` で受注側を絞る）だけで、相手の relation もモデルも受け取らない。relation を受け取ると、`unscope`・`rewhere`・`update_all` で相手の scope と書き込みの入口を越えられるからである。値ごとに規則を評価する側は、副問い合わせの代わりに ID の集合（`Partnerships::Access.permitting_supplier_ids`）を受け取る。公開 API が relation もモデルも返さないことは、全 spec の流れで戻り値を確かめるガード（`spec/support/public_api_returns.rb`）が守る（`../guides/packs-and-packwerk.md`「層ごとの責務」）。所有テナントの無い表の値（受注・発注・出荷依頼の一覧を取引先の名前で並べるときのテナントの名前）は、相手の公開 API が scope を掛けずに、返す列を ID と名前に絞った副問い合わせを同じ値で返す（`../adr/010-状況の導出をSQLの式1つにする.md` 決定 2）。
 4. **型ごとの認可**：返った値を GraphQL の型に包むとき、型が宣言した policy の `show?` を評価する（「認可」）。
 5. **入れ子のフィールド**：別のコンテキストの値が要るフィールドは、Dataloader でまとめて公開 API を呼ぶ（「ページングと N+1」）。
 
@@ -472,8 +472,39 @@ Active Record の関連は、どの段にも当たらない。関連はコンテ
 以下、2 段目と 3 段目を述べる。
 
 - **可視範囲（scope）**：各コンテキストの policy の `relation_scope` に置く。コンテキストの公開 API は、操作者を必須の引数に取り、内部で scope を掛けてから値を返す。操作者を渡さずにレコードを返す公開 API は作らない。scope は所有の条件を明示し、RLS に任せない。自社のデータを返す scope は `owner_tenant_id` が操作者のテナントであることを、経路 3 の scope は `buyer_tenant_id` が操作者のテナントであることと権限付与を条件にする。RLS は経路 1〜3 の相手の行も返すので、RLS に任せると、受注側の一覧や ID 指定の入口に相手の公開品目・取引関係・出荷が自社の物として混ざる。型の `show?` も同じ条件で判定する。
-- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。ログインの `Partnerships::Authentication.authenticate` は RLS の外で動く認証専用の関数でメールアドレスから引き、シードと E2E の準備がテナントを作る `Partnerships::Onboarding.register` は、作ったテナントの中でだけユーザーを書く。同じ準備が、作った世界をもう一度作らないために引く `Partnerships::Onboarding.tenant_id(code:)` も、テナントが決まる前の入口で、テナントの ID だけを返す。どちらも、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（`Platform::DemoWorldGate`）。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）。在庫の品目の写しを書く `Inventory::ItemLabels.put` と、それを元から作り直す `Sales::Catalog.rebuild_item_labels`（rake タスク `read_models:rebuild` が呼ぶ）も、この入口の公開 API で、件数だけを返す。同じタスクが出荷依頼の受注番号の写しを作り直すために呼ぶ `Sales::SalesOrders.order_numbers`（受注の ID と受注番号の組を返す）と `Fulfillment::ShipmentRequests.put_order_numbers`（書き直した数を返す）も、この入口の公開 API である。`put` は品目の保存と取り込み（操作者のいる入口）の中からも呼ばれるが、写しは誰が保存しても同じ値になるので、操作者を取らない（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）
+- **操作者のいない入口の公開 API**：ジョブ・rake タスク・イベントの受け手・認証には、代わって操作する人がいない。この入口から呼ぶ公開 API は操作者を取らず、次の 3 つを守る。`Tenancy.require_tenant!` を通し、テナントの設定の外では例外にする。所有の条件を `Current.tenant_id` で明示し、RLS に任せない。レコードではなく、ID・件数・真偽値・値を返す。架空のシステムの操作者を作って渡さない。監査の行は、人の操作を `actor_type` の `user`、操作者のいない入口の書き込みを `system` と書き分けており（`data-model.md`「監査ログ（`platform`）」）、架空の操作者を渡すとこの区別が薄まるからである。テナントが決まる前の入口だけは、`Tenancy.require_tenant!` を通さない。どの公開 API がこの入口のもので、どこから呼んでよいかは、下の表が正本である
 - **型・入口・操作ごとの規則**：GraphQL の基底クラスが、宣言された policy の規則を評価する。
+
+操作者のいない入口の公開 API と、呼んでよい場所は次のとおりである。場所は、ファイルのパスか、その中から呼んでよい定数（入れ子の定数を含む）で書く。イベントの受け手の `handle` は、配送表（`Contracts::Subscriptions`）を読んだ `EventJob` からだけ呼ばれ、表には載せない。公開 API を足すか、呼ぶ場所を足す人は、この表の行を同じ変更で直す。`spec/packwerk/entry_callers_spec.rb` が、本体のコードの呼び出しが表の場所の外に無いことと、`packs/*/app/public` の公開の特異メソッドのうち `Tenancy.require_tenant!` を直に呼ぶか同じ定数の非公開の補助を通して呼ぶもの（受け手の `handle` を除く）が、表の「求める」の行と等しいことを確かめる。
+
+| 公開 API | 呼んでよい場所 | テナント |
+|---|---|---|
+| `Partnerships::Authentication.authenticate` | `SessionsController`、`DemoWorld` | 決まる前 |
+| `Partnerships::Onboarding.register` | `DemoWorld` | 決まる前 |
+| `Partnerships::Onboarding.tenant_id` | `DemoWorld` | 決まる前 |
+| `Partnerships::Authentication.actor` | `GraphqlController`、`ImportFilesController` | 求める |
+| `Partnerships::Authentication.acting_user` | `Imports::Applying`、`DemoWorld` | 求める |
+| `Partnerships::Authentication.revoke_sessions` | `SessionsController` | 求める |
+| `Partnerships::Recipients.admin_ids` | `Notifications::Email`、`Notifications::BestEffortMailJob` | 求める |
+| `Partnerships::Recipients.emails` | `Notifications::BestEffortMailJob`、`Notifications::CriticalDeliveryJob` | 求める |
+| `Notifications::Email.deliver_critical` | `Purchasing::BillingEventReceiver` | 求める |
+| `Notifications::Email.deliver_best_effort` | `Sales::PartMatching` | 求める |
+| `Notifications::Email.redeliver_failed` | `lib/tasks/notifications.rake` | 求める |
+| `Imports::Files.purge_abandoned` | `Imports::PurgeAbandonedFilesJob` | 求める |
+| `Imports::Runs.reenqueue` | `lib/tasks/imports.rake` | 求める |
+| `Sales::ItemPrices.backfill` | `lib/tasks/sales.rake` | 求める |
+| `Inventory::ItemLabels.put` | `Sales::Catalog` | 求める |
+| `Sales::Catalog.rebuild_item_labels` | `lib/tasks/read_models.rake` | 求める |
+| `Sales::SalesOrders.order_numbers` | `lib/tasks/read_models.rake` | 求める |
+| `Fulfillment::ShipmentRequests.put_order_numbers` | `lib/tasks/read_models.rake` | 求める |
+| `Billing::BillableItems.confirm` | `Sales::PurchasingEventReceiver` | 求める |
+
+表の行の理由は次のとおりである。
+
+- テナントが決まる前の 3 つ：ログインの `authenticate` は、RLS の外で動く認証専用の関数でメールアドレスから引く。シードと E2E の準備がテナントを作る `Onboarding.register` は、作ったテナントの中でだけユーザーを書く。同じ準備が、作った世界をもう一度作らないために引く `Onboarding.tenant_id` は、テナントの ID だけを返す。`Onboarding` の 2 つは、本番の環境では `DEMO_WORLD_ENABLED=1` を渡したプロセスでだけ呼べる（`Platform::DemoWorldGate`）。公開の配置は、この変数を毎日の作り直しにだけ渡し、Web とワーカーには渡さない（`../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 4）
+- 認証の残りの 3 つと通知の宛先の 2 つは、非公開の `own_users` を通してテナントの設定を求める
+- 在庫の品目の写しを書く `ItemLabels.put` と、それを元から作り直す `Catalog.rebuild_item_labels`（rake タスク `read_models:rebuild` が呼ぶ）は、件数だけを返す。同じタスクが出荷依頼の受注番号の写しを作り直すために呼ぶ `SalesOrders.order_numbers`（受注の ID と受注番号の組を返す）と `ShipmentRequests.put_order_numbers`（書き直した数を返す）も同じである。`put` は品目の保存と取り込み（操作者のいる入口）の中からも `Sales::Catalog` を通して呼ばれるが、写しは誰が保存しても同じ値になるので、操作者を取らない（`../adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`）
+- 請求対象明細を書く `BillableItems.confirm` は、検収完了を受けた受注の受け手が、同じテナントの中の同期の呼び出しで呼ぶ（`../adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md`）
 
 policy は、コンテキストの公開 API として `packs/<パッケージ>/app/public/<名前空間>/` に置く。GraphQL 層は、公開 API が返す値に対して同じ policy の規則を評価する。scope と規則が同じ policy クラスにあるので、可視範囲の定義は 1 か所に保たれる（`decisions.md` 2 章「可視範囲」）。
 
@@ -537,6 +568,7 @@ scope を通った値が型の `show?` で拒否されることは、通常は�
 | 単価の改定の予約と訂正 | `scheduleItemPrice`・`correctItemPrice` | `Sales::ItemPolicy#change_price?` |
 | 品目の CSV の取り込み | `startImport`（種類が `items` のとき） | `Imports::ImportPolicy#start?`（対象は取り込みの依頼の値で、置いたファイルと種類を持つ。種類が `items` なら `admin` に限り、`stocks` なら役割を問わない。取り込みのジョブも、チャンクごとに同じ規則を、取り込みを始めたユーザーのいまの役割で評価し直す） |
 | 監査ログを読む | `viewer.auditLogs` | `Platform::AuditLogPolicy#index?` |
+| 自社テナントの取引用コードを読む | `viewer.partnerCode` | `Partnerships::PartnershipPolicy#show_partner_code?`（対象なし）。拒否は `FORBIDDEN` でなく空で返す。型は規則を操作者で評価し、偽なら `null` を返すだけにする |
 
 規則は、mutation の基底クラスが公開 API の操作を呼ぶ前に評価する。`member` が `admin` に限る mutation を呼ぶと、何も書かれずに `FORBIDDEN` になる（「1 回のリクエストがたどる道」1 のロールバック）。公開 API は役割を確かめないので、GraphQL を通らない入口（ジョブ・rake タスク・シード）から `admin` に限る操作の公開 API を呼ぶ人は、呼ぶ前に同じ規則を評価する。取り込みのジョブが、チャンクごとに `Imports::ImportPolicy#start?` を評価し直してから単価の改定の予約を呼ぶのがその形である。シードと E2E の世界を作る `DemoWorld` は、`admin` に限る操作を `DemoWorld::Operations`（`lib/demo_world/operations.rb`）からだけ呼ぶ。`Operations` は mutation の基底クラスと同じく、対象を公開 API で引いてから同じ規則を操作者で評価し、拒否なら公開 API を呼ばずに例外で止まる。`spec/scenarios/demo_world_spec.rb` が、`member` の操作者ではどの操作も止まることと、`DemoWorld` が `Operations` の外から `admin` に限る公開 API を呼ばないことを確かめる。入口の行列（`spec/matrix/graphql_matrix_spec.rb`）は、読み取りと mutation のすべての行に許す役割を持ち、全ペルソナの `member` でも呼ぶ。`admin` に限る mutation は、値を返すペルソナの `member` に `FORBIDDEN` になって何も書かないことを確かめる。`admin` に限る読み取りは、`member` に返す結果を行ごとに持ち（`viewer.auditLogs` は `FORBIDDEN`、`viewer.partnerCode` は `null`）、どのペルソナの `member` にもその結果になることを確かめる。`member` に許す行は、どのペルソナの `member` にも `admin` と同じ結果になり、mutation が値を返さないときは何も書かないことを確かめる。役割を問わない読み取りの規則に誤って `user.admin?` を足すと、`member` の結果が `FORBIDDEN` に変わって落ちる。入力で許す役割が変わる mutation は、行列に変種ごとの行（`Mutation.startImport` と `Mutation.startImport#stocks`）を持つ。
 
@@ -692,7 +724,7 @@ type SalesOrderStatusCount {
 集計の境界は次のとおりである。どれも自社のデータだけを数え、受注一覧と出荷依頼の一覧と同じ導出で状況を決める。今日は、ほかの業務の日付と同じく、アプリの時刻帯（`config.time_zone` の `Asia/Tokyo`）の `Date.current` で決める（`context-map.md`「検収と請求の流れ」）。リゾルバに時刻帯を直に書かない。
 
 - **受注の件数**：受注一覧の状況（「状況の enum」の `SalesOrderStatus`）ごとに数える。取消済も 1 つの状況として数える。画面の受注一覧のタブの件数と一致させるためである。一覧の `statuses` と同じ状況の式で `GROUP BY` して数える。
-- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。条件は在庫のモデルの scope（`Inventory::Stock.below_safety_stock`）の 1 つにあり、在庫の一覧の `filter: { belowSafetyStock: true }` も同じ scope で絞る。集計の数と、そこから飛ぶ一覧の件数を合わせるためである。在庫は品目コードを持たないので、品目コードでの並べ替えと 100 件の上限は、ルートパッケージが `Sales::Catalog.items_for` で引いたコードで行う。
+- **安全在庫**：有効在庫（`on_hand - allocated`）が `safety_stock` より小さい在庫だけを返す。等しい在庫は返さない（`data-model.md`「在庫（`inventory`）」）。条件は在庫のモデルの scope（`Inventory::Stock.below_safety_stock`）の 1 つにあり、在庫の一覧の `filter: { belowSafetyStock: true }` も同じ scope で絞る。集計の数と、そこから飛ぶ一覧の件数を合わせるためである。並べ替えと 100 件の上限は在庫の公開 API（`Inventory::Stocks.below_safety_stock(actor, limit:)`）が持ち、品目の写しのコード → 品目 ID の順に並べ、写しの無い在庫（引当が作った行）を最後に置く。写しのコードの列は受注の品目のコードと同じ照合順序なので、品目コードの順と同じになる。型は上限を渡して返すだけにする。
 - **出荷期限**：状況が出荷待ち・出荷指示済・出荷停止中の出荷依頼のうち、`due_date` が今日から 7 日後以下のものを返す。期限を過ぎたものも含める。状況は、出荷依頼の一覧の `statuses` と同じ式で絞る。
 - **未請求の合計**：税は請求書・税率ごとに 1 回だけ丸めるので、締める前の明細には税額を出さず、税抜きの合計だけを返す。
 
@@ -725,7 +757,7 @@ type SalesOrderStatusCount {
 | `rejectCancellationReview` | `Sales::CancellationReviews.reject` | 取消却下 |
 | `createShippingInstruction`・`cancelShippingInstruction` | `Fulfillment::Instructions`（どちらも出荷依頼 ID で指定する。取消は有効な指示を取り消す。作成は受注の行をロックして取消と審査を読み、取消済の受注・取消の審査中の受注・出荷済の出荷依頼と、有効な指示の重複は `CONFLICT`、受注の行の無い出荷依頼は `NOT_FOUND`。取消は出荷済の出荷依頼と有効な指示の不在が `CONFLICT`） | なし |
 | `postShipment` | `Fulfillment::Shipping.post`（出荷依頼 ID と出荷日で指定し、有効な指示のある出荷依頼を全量で計上する。受注の行をロックし、取消済か取消の審査中の受注の出荷依頼は `CONFLICT`、受注の行の無い出荷依頼は `NOT_FOUND`。`Inventory::Allocation` で引当を消費し、`active` でない引当があれば `CONFLICT`。同じトランザクションで `Sales::OrderShipping.mark_shipped` が受注を出荷済みにする） | 出荷計上 |
-| `adjustStock` | `Inventory::Adjustment.adjust`（入庫・出庫。出庫は有効在庫までに限り、超えれば `INVALID_INPUT`。品目は在庫が受注に依存しないので、mutation が `Sales::Catalog` で自社の品目かを確かめ、見えなければ `NOT_FOUND`） | なし |
+| `adjustStock` | `Inventory::Adjustment.adjust`（入庫・出庫。出庫は有効在庫までに限り、超えれば `INVALID_INPUT`。品目は在庫の公開 API が自社の品目の写しで確かめる。mutation は対象を `Inventory::ItemLabels.find` で引き、見えなければ `NOT_FOUND`。公開 API も写しの無い品目 ID を何も書かずに `NOT_FOUND` にする） | なし |
 | `setBillingTerm` | `Billing::Terms.set`（取引先 ID と締め日。取引先は自社が受注側の取引関係の相手に限り、それ以外は `NOT_FOUND`） | なし |
 | `closeBillingPeriod` | `Billing::Closing.close`（取引先 ID と締め日で、下書きの請求書を作る。入力と状態の結果は `data-model.md`「請求（`billing`）」） | なし |
 | `discardDraftInvoice` | `Billing::Closing.discard`（請求書 ID で指定し、消した請求書の ID を返す。発行済みは `CONFLICT`） | なし |
@@ -734,7 +766,7 @@ type SalesOrderStatusCount {
 | `revokePartnership` | `Partnerships::Management.revoke` | なし |
 | `grantPermission`・`withdrawPermission` | `Partnerships::Management` | なし |
 
-受注側の ACL がイベントを受けて出すイベントは、上の表に載らない。ACL は、「発注登録」を受けて「受注確定」か「品番照合待ち」を出し、「取消依頼」を受けて受注が出荷済みか取消済なら「取消却下」を出す。「取消依頼」で作る審査は出荷が同期で読み、「検収完了」で確定する請求対象は請求の公開 API を同期で呼んで書くので、どちらもイベントを出さない。取引関係の失効はイベントを出さない。失効の効果は、各公開 API が `Partnerships::Access` に問い合わせた時点で現れる（`context-map.md`「取引関係の失効」）。
+受注側の購買のイベントの受け手がイベントを受けて出すイベントは、上の表に載らない。受け手は、「発注登録」を受けて「受注確定」か「品番照合待ち」を出し、「取消依頼」を受けて受注が出荷済みか取消済なら「取消却下」を出す。「取消依頼」で作る審査は出荷が同期で読み、「検収完了」で確定する請求対象は請求の公開 API を同期で呼んで書くので、どちらもイベントを出さない。取引関係の失効はイベントを出さない。失効の効果は、各公開 API が `Partnerships::Access` に問い合わせた時点で現れる（`context-map.md`「取引関係の失効」）。
 
 mutation の引数と戻り値は、次の形に揃える。
 

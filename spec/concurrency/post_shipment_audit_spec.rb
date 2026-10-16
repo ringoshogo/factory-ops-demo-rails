@@ -13,6 +13,7 @@ RSpec.describe "出荷の計上の競合と監査ログ" do
   # 在庫を 10 入れ、出荷依頼の明細 1 つを全量で引き当て、有効な出荷指示を作っておく
   let!(:request) do
     Tenancy.with_tenant(supplier.id) do
+      FactoryBot.create(:item_label, item_id:)
       Inventory::Adjustment.adjust(actor, item_id:, type: "inbound", quantity: 10)
       FactoryBot.create(:shipping_instruction).shipment_request.tap do |request|
         line = FactoryBot.create(:shipment_request_line, shipment_request: request, item_id:, quantity: 3)
@@ -24,7 +25,7 @@ RSpec.describe "出荷の計上の競合と監査ログ" do
   after do
     delete_owned_rows([ supplier.id, request.buyer_tenant_id ], %w[
       shipment_lines shipments shipping_instructions shipment_request_lines shipment_requests
-      stock_movements allocations stocks sales_orders
+      stock_movements allocations stocks item_labels sales_orders
     ])
   end
 

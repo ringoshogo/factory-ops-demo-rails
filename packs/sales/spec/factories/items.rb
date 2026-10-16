@@ -18,6 +18,12 @@ FactoryBot.define do
     trait :published do
       published { true }
     end
+
+    # 同じテナントの在庫の写しも書く。在庫の調整と在庫数の設定は、写しの無い品目を拒む（Inventory::Adjustment）。
+    # 既定で写しを作らないのは、写しの無い品目に写しを足す作り直しの spec が、写しの無い品目を前提にするからである
+    trait :labeled do
+      after(:create) { |item| Inventory::ItemLabels.put([ { item_id: item.id, code: item.code, name: item.name } ]) }
+    end
   end
 
   # 既定は、単価の行の無い品目の、有効期間 (,) の現在の行

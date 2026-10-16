@@ -1,4 +1,5 @@
 require "rails_helper"
+require_relative "../../../../../spec/support/cross_read"
 
 # 取引関係の公開 API の判定と可視範囲（docs/architecture/data-model.md「取引関係と権限付与（`partnerships`）」）
 RSpec.describe "Partnerships::Access と Directory" do
@@ -58,6 +59,66 @@ RSpec.describe "Partnerships::Access と Directory" do
 
     it "知らない権限は例外" do
       expect { permitted?(permission: "delete_everything") }.to raise_error(ArgumentError)
+    end
+  end
+
+  # 経路 3 の出荷の scope と規則が使う、権限を与えている受注側。ID の集合と、副問い合わせを SqlSubquery#contains で結んだ絞り込みの
+  # 両方が同じ集合を返すことを確かめる
+  describe "Access.permitting_supplier_ids と permitting_suppliers_sql" do
+    def ids(actor = buyer_actor, permission: "view_shipments")
+      Tenancy.with_tenant(actor.tenant_id) { Partnerships::Access.permitting_supplier_ids(actor, permission:) }
+    end
+
+    # 副問い合わせで絞ったテナントの ID。結ぶ側は役割の名前（tenant_id）だけを書く
+    def contained(actor = buyer_actor, permission: "view_shipments")
+      Tenancy.with_tenant(actor.tenant_id) do
+        suppliers = Partnerships::Access.permitting_suppliers_sql(actor, permission:)
+        Partnerships::Tenant.where(suppliers.contains(:tenant_id, Partnerships::Tenant.arel_table[:id])).pluck(:id).to_set
+      end
+    end
+
+    it "有効な関係と付与のある受注側だけを返し、失効した関係と付与の無い関係の受注側を返さない" do
+      partnership(permissions: %w[view_shipments])
+      revoked = FactoryBot.create(:tenant)
+      Tenancy.with_tenant(revoked.id) { FactoryBot.create(:partnership, :revoked, buyer_tenant_id: buyer.id, permissions: %w[view_shipments]) }
+      ungranted = FactoryBot.create(:tenant)
+      Tenancy.with_tenant(ungranted.id) { FactoryBot.create(:partnership, buyer_tenant_id: buyer.id, permissions: %w[view_catalog]) }
+
+      expect(ids).to eq(Set[supplier.id])
+      expect(ids).to be_frozen
+      expect(contained).to eq(Set[supplier.id])
+      # 対照：付与のある権限を問えば、付与の無い関係の受注側も返る
+      expect(ids(permission: "view_catalog")).to eq(Set[ungranted.id])
+      expect(contained(permission: "view_catalog")).to eq(Set[ungranted.id])
+    end
+
+    it "知らない権限は、どちらも例外" do
+      expect { ids(permission: "delete_everything") }.to raise_error(ArgumentError)
+      expect { contained(permission: "delete_everything") }.to raise_error(ArgumentError)
+    end
+
+    # RLS は自社が発注側でない関係を隠すので、scope を外しても上の example は落ちない。RLS の SELECT と UPDATE を開いて確かめる
+    # （docs/guides/testing.md「行列テストとの分担」）
+    describe "RLS の SELECT と UPDATE を開いたとき" do
+      include_context "RLS の SELECT と UPDATE を開く"
+
+      it "他社が発注側の関係の受注側を、ID の集合も副問い合わせの絞り込みも返さない" do
+        partnership(permissions: %w[view_shipments])
+        other_supplier = FactoryBot.create(:tenant)
+        theirs = Tenancy.with_tenant(other_supplier.id) do
+          FactoryBot.create(:partnership, buyer_tenant_id: FactoryBot.create(:tenant).id, permissions: %w[view_shipments])
+        end
+
+        Tenancy.with_tenant(buyer.id) do
+          cross_read!
+          # 対照：開いた後は、他社が発注側の関係が見える
+          expect(Partnerships::Partnership.where(id: theirs.id)).to exist
+          expect(Partnerships::Access.permitting_supplier_ids(buyer_actor, permission: "view_shipments")).to eq(Set[supplier.id])
+          suppliers = Partnerships::Access.permitting_suppliers_sql(buyer_actor, permission: "view_shipments")
+          expect(Partnerships::Tenant.where(suppliers.contains(:tenant_id, Partnerships::Tenant.arel_table[:id])).pluck(:id))
+            .to eq([ supplier.id ])
+        end
+      end
     end
   end
 
@@ -140,6 +201,11 @@ RSpec.describe "Partnerships::Access と Directory" do
       expect(Partnerships::PartnershipPolicy.new(value, user: supplier_actor).apply(:manage?)).to be(true)
       expect(Partnerships::PartnershipPolicy.new(value, user: actor_of(supplier, role: "member")).apply(:manage?)).to be(false)
       expect(Partnerships::PartnershipPolicy.new(value, user: buyer_actor).apply(:manage?)).to be(false)
+    end
+
+    it "自社の取引用コードを返す規則は、admin にだけ真" do
+      expect(Partnerships::PartnershipPolicy.new(user: supplier_actor).apply(:show_partner_code?)).to be(true)
+      expect(Partnerships::PartnershipPolicy.new(user: actor_of(supplier, role: "member")).apply(:show_partner_code?)).to be(false)
     end
   end
 end

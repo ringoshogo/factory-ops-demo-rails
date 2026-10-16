@@ -13,6 +13,13 @@ SqlSubquery = Data.define(:sql, :columns) do
 
   def column(table_alias, role) = table_alias[columns.fetch(role)]
 
+  # value が role の役割の列の値のどれかに等しい条件（Arel のノード。value IN (SELECT <列> FROM (<sql>) AS contains)）。
+  # 結ぶ側の行を、副問い合わせの行の値で絞る。結合と違って結ぶ側の行の数を変えない
+  def contains(role, value)
+    table = as("contains")
+    Arel::Nodes::In.new(value, Arel::SelectManager.new(table).project(column(table, role)).ast)
+  end
+
   # key の役割の列が value に等しい 1 行の、role の役割の列を引くスカラーの副問い合わせ（Arel のノード）。
   # 結ぶ側の行ごとに 1 つの値を返すので、結合と違って結ぶ側の行の数を変えない。当たる行が無ければ空になり、
   # 2 行以上当たれば SQL のエラーになる

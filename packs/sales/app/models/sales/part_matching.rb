@@ -1,9 +1,10 @@
 module Sales
   # 得意先品番の照合（docs/architecture/context-map.md「発注の連結と品番の照合」2〜5）。
-  # 受注を作る ACL と、対応表を登録して照合をやり直す PartMappings の両方が使う
+  # 受注を作る購買のイベントの受け手（PurchaseOrderTranslator）と、対応表を登録して照合をやり直す PartMappings の両方が使う、
+  # 発注側の品番から受注側の品目への読み替え（翻訳）
   module PartMatching
     # 取引先ごとに、受注を作る照合と対応表の登録を直列にする。ロックを取ってから対応表を読む。
-    # 直列にしないと、ACL が対応表を読んだ後・受注をコミットする前に登録が終わり、照合し直す受注を見落とす
+    # 直列にしないと、受け手が対応表を読んだ後・受注をコミットする前に登録が終わり、照合し直す受注を見落とす
     def self.lock(customer_tenant_id)
       SalesOrder.connection.select_value("SELECT 1 FROM pg_advisory_xact_lock(hashtextextended($1, 0))", "PartMatching",
         [ "customer_part_mappings:#{Current.tenant_id}:#{customer_tenant_id}" ])

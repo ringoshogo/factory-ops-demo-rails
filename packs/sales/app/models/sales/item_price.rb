@@ -18,7 +18,7 @@ module Sales
     scope :valid_on, ->(date) { where("item_prices.valid_period @> ?::date", date) }
     scope :in_valid_order, -> { order(Arel.sql("lower(item_prices.valid_period) ASC NULLS FIRST")) }
 
-    # 単価の有効日の今日。ACL が受注日に使う日付と同じにし、カタログで見た単価と、同じ時点の発注の受注明細の単価を揃える
+    # 単価の有効日の今日。購買のイベントの受け手が受注日に使う日付と同じにし、カタログで見た単価と、同じ時点の発注の受注明細の単価を揃える
     # （docs/adr/006 決定 6）
     def self.today = Date.current
 

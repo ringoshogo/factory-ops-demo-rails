@@ -9,7 +9,7 @@ RSpec.describe "ログの衛生", type: :request do
   let!(:member) do
     Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user, email: "leak-user@example.com", password: "Leak-Pw-1234") }
   end
-  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item) } }
+  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled) } }
 
   # どの行にも現れてはならない値
   let(:forbidden) do

@@ -11,7 +11,7 @@ RSpec.describe "取消と出荷の計上の競合" do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
-  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item) } }
+  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled) } }
   # 在庫を 10 入れ、受注の明細 2 つ（3 と 2）を全量で引き当て、同じ明細の出荷依頼に有効な出荷指示を作っておく
   let!(:order) do
     Tenancy.with_tenant(supplier.id) do
@@ -37,7 +37,7 @@ RSpec.describe "取消と出荷の計上の競合" do
   after do
     delete_owned_rows([ supplier.id, buyer.id ], %w[
       shipment_lines shipments shipping_instructions shipment_request_lines shipment_requests
-      stock_movements allocations stocks cancellation_reviews sales_order_lines sales_orders item_prices items
+      stock_movements allocations stocks item_labels cancellation_reviews sales_order_lines sales_orders item_prices items
     ])
   end
 

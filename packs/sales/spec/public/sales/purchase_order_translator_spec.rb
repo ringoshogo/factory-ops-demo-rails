@@ -1,6 +1,6 @@
 require "rails_helper"
 
-# 受注側の腐敗防止層。「発注登録」から受注を 1 件だけ作り、全明細が照合できれば「受注確定」、できなければ「品番照合待ち」を出す。
+# 購買の「発注登録」の受け手。品番を読み替え（腐敗防止層の役）、受注を 1 件だけ作り、全明細が照合できれば「受注確定」、できなければ「品番照合待ち」を出す。
 # 発注側へ返すイベントは、受注側の内部の ID を運ばない（docs/architecture/context-map.md「発注の連結と品番の照合」2〜4）
 RSpec.describe Sales::PurchaseOrderTranslator do
   include ActiveSupport::Testing::TimeHelpers

@@ -13,7 +13,7 @@ RSpec.describe "出荷計上の還流と経路 3", type: :request do
       FactoryBot.create(:partnership, buyer_tenant_id: buyer.id, permissions: %w[place_orders view_shipments])
     end
   end
-  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code: "BOLT-8") } }
+  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled, code: "BOLT-8") } }
   let!(:mapping) do
     Tenancy.with_tenant(supplier.id) do
       FactoryBot.create(:customer_part_mapping, customer_tenant_id: buyer.id, customer_part_number: "MY-BOLT", item:)
