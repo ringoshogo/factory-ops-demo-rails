@@ -2817,8 +2817,8 @@ cd frontend && npm run test:e2e   # 0 failures
 
 **作るもの**
 
-1. `guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md`「bin/rails で流す運用のタスク」の `temp_databases:list` の行が指す節と、`handoff.md`「次にやること」の参照も合わせる
+1. `guides/dev-cycle.md`「着手の前に」の、取りまとめ役が担当を止めるときに一時の DB を消す段落を、#85 で足した担当を止める段落（完了報告を受けて担当に終わりの依頼を送り、エージェントの一覧を読む段落）に寄せる。`guides/bin.md`「bin/rails で流す運用のタスク」の `temp_databases:list` の行が指す節と、`handoff.md`「次にやること」の参照も合わせる。寄せた先は、「実装レビュー」の後に足した節「担当を止めるとき」で、止める順の 3 段（終わりの依頼・一時の DB・エージェントの一覧）にした（OI-227）。一時の DB を消すことを書いたほかの文書（`README.md` の E2E の段落、`handoff.md`「開発環境」、`guides/config.md` の一時の DB の段落、`guides/bin.md` の 2 つのタスクの行）は、この節を指す
 
 **完了条件**：共通の完了条件。寄せた後に、一時の DB を消す手順と担当を止める手順を `git grep` で数え、`guides/dev-cycle.md` の 1 か所と、それを指す参照だけになることを確かめる。
 
-**実装する文書の節**：`guides/dev-cycle.md`「着手の前に」と #85 の担当を止める段落、`guides/bin.md`「bin/rails で流す運用のタスク」、`handoff.md`「次にやること」
+**実装する文書の節**：`guides/dev-cycle.md`「着手の前に」と #85 の担当を止める段落（寄せた先は「担当を止めるとき」）、`guides/bin.md`「bin/rails で流す運用のタスク」、`handoff.md`「次にやること」

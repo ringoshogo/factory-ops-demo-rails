@@ -113,7 +113,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 
 test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられる。E2E は `factory_ops_e2e` を渡し、rspec のテスト DB と分ける。E2E の準備（`lib/tasks/e2e.rake`）は DB を作り直すので、同じ DB を使うと rspec の DB を消す。準備は、`TEST_DATABASE` が無いか rspec のテスト DB の名前なら止まる。rspec を別の DB で並べて流すときは、名前に `_test` を区切りとして含める（`factory_ops_m49_test` の形）。行列の spec（`spec/support/matrix_cross_read.rb`）は、全行を読ませるポリシーを足す前に DB の名前を見て、テストの DB と分からなければ止まるからである。
 
-担当ごとに替える一時の DB の名前は、`factory_ops_` で始め、`_` で区切った語に `test`（rspec、`TEST_DATABASE`）か `e2e`（E2E、`E2E_DATABASE`）を含める（`factory_ops_m51_test`・`factory_ops_m51_e2e`）。一時の DB は作る入口（`bin/ci` の `db:test:prepare`、E2E の `start-rails.sh` の `db:drop db:prepare`）が作り、作った担当が止まっても残るので、`RAILS_ENV=test bin/rails temp_databases:list` で一覧し、`RAILS_ENV=test bin/rails "temp_databases:drop[<名前>]"` で消す（[bin.md「bin/rails で流す運用のタスク」](bin.md#binrails-で流す運用のタスク)）。2 つのタスクは名前の規則に合う DB だけを扱い、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）は扱わない。削除は名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続して `DROP DATABASE` を `FORCE` なしで流すので、接続中の DB は PostgreSQL が失敗させる。動いている担当の DB を、その接続ごと切って消さないためである。test の環境でだけ動く（`lib/temp_databases.rb`）。
+担当ごとに替える一時の DB の名前は、`factory_ops_` で始め、`_` で区切った語に `test`（rspec、`TEST_DATABASE`）か `e2e`（E2E、`E2E_DATABASE`）を含める（`factory_ops_m51_test`・`factory_ops_m51_e2e`）。一時の DB は作る入口（`bin/ci` の `db:test:prepare`、E2E の `start-rails.sh` の `db:drop db:prepare`）が作り、作った担当が止まっても残るので、取りまとめ役が担当を止めるときに、一覧と削除のタスク（[bin.md「bin/rails で流す運用のタスク」](bin.md#binrails-で流す運用のタスク)）で消す（[dev-cycle.md「担当を止めるとき」](dev-cycle.md#担当を止めるとき)）。2 つのタスクは名前の規則に合う DB だけを扱い、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）は扱わない。削除は名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続して `DROP DATABASE` を `FORCE` なしで流すので、接続中の DB は PostgreSQL が失敗させる。動いている担当の DB を、その接続ごと切って消さないためである。test の環境でだけ動く（`lib/temp_databases.rb`）。
 
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
 
@@ -379,7 +379,7 @@ GHCR にイメージを置くのは `publish` のジョブだけで、main へ�
 
 GitHub Actions は `bin/ci` を呼ばず、同じ検査を `.github/workflows/ci.yml` から直接流す（[bin.md「CI が使うもの」](bin.md#ci-が使うもの)）。
 
-ワークフローが流す `bin/` のコマンドの名前は、`config/ci.rb` の工程と `implementation-plan.md`「共通の完了条件」の一覧にもあることを `spec/platform/ci_checks_spec.rb` が確かめる。実装者は完了条件の一覧のとおりに手元で流すので、一覧に無い検査は CI で初めて落ちるからである。ステップの順と契機ごとの `BASE_REF` の式、コマンドの引数は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。この節で spec が確かめると書いたもの（`npm ls --all` の順と置き場、`publish` の `if:` が `success()` を比べず関数の引数にも入れずに含み、`!` と `||` と `failure`・`cancelled`・`always` を含まないことなど）は、壊れると確かめないまま通すか、確かめていないイメージを置く規則なので、例外として照らす。式の形は照らさず、含む・含まないの条件で照らす。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
+ワークフローが流す `bin/` のコマンドの名前は、`config/ci.rb` の工程と `implementation-plan.md`「共通の完了条件」の一覧にもあることを `spec/platform/ci_checks_spec.rb` が確かめる。実装者は完了条件の一覧のとおりに手元で流すので、一覧に無い検査は CI で初めて落ちるからである。ステップの順と契機ごとの `BASE_REF` の式、コマンドの引数は、spec で守らない。YAML の式を文字列で照らす spec は、式の書き換えに追従できないからである。この節で spec が確かめると書いたもの（`npm ls --all` の順と置き場、`publish` の `if:` が `success()` を比べず関数の引数にも入れずに含み、`!` と `||` と `failure`・`cancelled`・`always` を含まないことなど）は、壊れると確かめないまま通すか、確かめていないイメージを置く規則なので、例外として照らす。式の形は、`success()` を囲む括弧が関数の呼び出しか添字かのほかは照らさず、含む・含まないの条件で照らす。配線を変えた人は、その PR で、検査が落ちるべき変更を作業ツリーに入れて CI と同じコマンドで落ちることを手で確かめ、証跡に書く（OI-59）。
 
 ## 使っていない機能の設定
 

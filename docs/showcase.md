@@ -263,7 +263,7 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 | N+1 を作らない | Bullet と、画面の問い合わせごとのクエリ数の予算 `spec/graphql/query_budget_spec.rb` | 実装済み |
 | 画面のコメントに経緯・マイルストーンの番号を書かない | `frontend/scripts/check-comments.mjs`（`npm run lint`） | 実装済み |
 | 画面は Rails を 1 か所から呼び、Next のデータのキャッシュを使わない | ESLint の規則（`frontend/eslint.config.mjs`） | 実装済み |
-| CI のランナーを版の数字で固定し、GHCR に push して `packages: write` を持つのは `publish` のジョブだけにする。`publish` はほかのすべてのジョブを `needs` に持ち、`if:` で `success()` を否定・論理和・比べ・関数の引数で迂回せず、どのジョブにも `continue-on-error` を置かない。画面の依存の木を `npm ls --all` で確かめる | `spec/platform/ci_checks_spec.rb` | 実装済み |
+| CI のランナーを版の数字で固定し、GHCR に push して `packages: write` を持つのは `publish` のジョブだけにする。`publish` はほかのすべてのジョブを `needs` に持ち、`if:` で `success()` を否定・論理和・比べ・関数の引数・添字で迂回せず、どのジョブにも `continue-on-error` を置かない。画面の依存の木を `npm ls --all` で確かめる | `spec/platform/ci_checks_spec.rb` | 実装済み |
 | 並びとロックの順が照合順序に依る列は、列の定義で照合順序を持ち、版の記録がイメージの版と等しい | `spec/platform/collations_spec.rb` | 実装済み |
 | Dependabot の更新をエコシステムごとにまとめ、画面の Node の主版を `engines` と CI とイメージでそろえる | `spec/platform/dependency_updates_spec.rb` | 実装済み |
 
@@ -321,7 +321,7 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/te
 - 監査ログ：mutation とイベントのジョブの基底クラスが記録し、表は追記だけ（M19）
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
-- 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは PR と main への push のたびに arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）。`publish` の `if:` は `success()` を明示し、`needs` の失敗・取消・skip で止める守りを YAML の行で読めるようにした。`success()` を書いていても、否定・論理和・比べ・関数の引数で真の値に変えると落ちた `needs` でも流れるので、その形を spec が落とす。画面の依存の木は `frontend` のジョブが `npm ci` の後に `npm ls --all` で確かめ、入れ子の依存の peer の範囲から外れた更新の PR を落とす
+- 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは PR と main への push のたびに arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）。`publish` の `if:` は `success()` を明示し、`needs` の失敗・取消・skip で止める守りを YAML の行で読めるようにした。`success()` を書いていても、否定・論理和・比べ・関数の引数・添字で真の値に変えると落ちた `needs` でも流れるので、その形を spec が落とす。画面の依存の木は `frontend` のジョブが `npm ci` の後に `npm ls --all` で確かめ、入れ子の依存の peer の範囲から外れた更新の PR を落とす
 
 **どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）、`spec/platform/deploy_manifests_spec.rb`（マニフェストの規則）・`spec/platform/demo_reset_spec.rb`（作り直しの順と、失敗しても Web とワーカーを戻すこと）と CI の `manifests`・`images`・`publish` のジョブ、`publish` の条件と権限と、`npm ls --all` の置き場を確かめる `spec/platform/ci_checks_spec.rb`（M41・M42・M48・M51）。
 

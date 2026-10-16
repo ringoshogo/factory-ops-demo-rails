@@ -184,7 +184,7 @@ PR を出した担当は、CI の結果を `GH_TOKEN=$(gh auth token -u ringosho
 担当は、完了報告の前に、自分が立てたサブエージェントがすべて止まっていることを確かめ、報告に書く。取りまとめ役は、完了報告を受けて、次の順に担当を止める。
 
 1. 担当に終わりの依頼を送り、終わったことを確かめる
-2. `RAILS_ENV=test bin/rails temp_databases:list` で一時の DB を読み、その担当が作った DB（依頼に書いた `TEST_DATABASE`・`E2E_DATABASE` の名前）を `RAILS_ENV=test bin/rails "temp_databases:drop[<名前>]"` で消す（`guides/bin.md`「bin/rails で流す運用のタスク」）。一時の DB は作った担当が止まっても残り、照合順序の版を改める手間が残った数だけ増える。ほかの担当の DB と、接続の残る DB は消さない
+2. `RAILS_ENV=test bin/rails temp_databases:list` で一時の DB を読み、その担当が作った DB（依頼に書いた `TEST_DATABASE`・`E2E_DATABASE` の名前）を `RAILS_ENV=test bin/rails "temp_databases:drop[<名前>]"` で消す（`guides/bin.md`「bin/rails で流す運用のタスク」）。一時の DB は作った担当が止まっても残り、照合順序の版を改める手間が残った数だけ増える。ほかの担当の DB と、接続の残る DB は消さない。接続が残って消せなければ、接続を持つプロセス（担当が起こした E2E の Rails や `bin/jobs`）を止めてから流し直し、止められなければ残した DB の名前を作者への報告に書く
 3. エージェントの一覧（`ListAgents`）を読み、動いている（running）もののほかに、止まったまま残っている担当やサブエージェントがあれば止める。止まったものは自分からは消えないので、立てた者が止めない限り、何日も一覧に残る
 
 マイルストーンの区切りごとと、作者に進み具合を報告する前にも、3 の一覧を読む。
