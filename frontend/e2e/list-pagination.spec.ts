@@ -15,7 +15,7 @@ async function names(page: Page): Promise<string[]> {
   return rows(page).locator("td:nth-child(2)").allInnerTexts();
 }
 
-/** 流用元の画面が名前を並べる比べ方。DB の名前の列の照合順序 ja-x-icu と同じ並びになる。 */
+/** 流用元の画面が名前と単位を並べる比べ方。DB の名前と単位の列の照合順序 ja-x-icu と同じ並びになる。 */
 const byJapanese = new Intl.Collator("ja").compare;
 
 test("品目の一覧を名前の昇順で 2 ページ目まで読むと、1 ページ目と重ならず、合わせて totalCount の件数になる", async ({ page }, testInfo) => {
@@ -214,7 +214,7 @@ test("受注一覧の見出しを Shift を押して押すと 2 つ目の並べ�
   await expect(page.locator("[data-sort-rank]")).toHaveCount(0);
 });
 
-test("出荷依頼の受注番号の見出しを押すと受注番号の順に並び、品目の単価の見出しを Shift を押して押すと、単位の同じ品目が単価の順に並ぶ", async ({ page }, testInfo) => {
+test("出荷依頼の受注番号の見出しを押すと受注番号の順に並び、品目の単価の見出しを Shift を押して押すと、単位のまとまりが流用元の順に並び、単位の同じ品目が単価の順に並ぶ", async ({ page }, testInfo) => {
   await login(page, testInfo, "supplier_admin");
   await page.goto("/supplier/shipment-requests");
   // 出荷は受注に依存しないので、受注番号は「出荷可能」のイベントで写した値で並ぶ。表示は受注の値で、並びと食い違えば崩れる
@@ -237,6 +237,10 @@ test("出荷依頼の受注番号の見出しを押すと受注番号の順に�
   const units = await column(page, 3);
   const prices = (await column(page, 4)).map((text) => Number(text.replace(/[^0-9]/g, "")));
   expect(runs(units)).toEqual([...new Set(units)]);
+  // 単位のまとまりは、流用元と同じ比べ方の順に並ぶ。DB の既定の照合順序 (en_US.utf8) では、コードポイントの順に本が箱より先になる。
+  // 対照：1 ページ目に、並びを比べられるだけの単位がある
+  expect(runs(units).length).toBeGreaterThanOrEqual(3);
+  expect(runs(units)).toEqual([...runs(units)].sort(byJapanese));
   const pairs = units.slice(1).map((u, i) => ({ same: u === units[i], before: prices[i], after: prices[i + 1] }));
   expect(pairs.filter((p) => p.same && p.before > p.after)).toEqual([]);
   // 対照：単位の同じ品目に、単価の違う組がある

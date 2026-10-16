@@ -195,3 +195,75 @@ PR #93 は、main に入ったサイクル 07 の末の `dev-cycle.md`「着手�
 ### 残件の処理
 
 引当先が M51 の行は、着手の前と PR の前に台帳を読んだ。OI-202 は `9b36fb1` で閉じた。OI-203（`decided`）は作るもの 7 で反映した。IB-117・IB-123・IB-130 は M51 で実装した。取りまとめ役の判断の受け口（`decisions.md`）で D-1 を読んだ。
+
+## M50 の残り：品目の単位の照合順序
+
+`m50-rest`（base は `main`）。M51 の `m51-local-checks` の先端 `bb07c5f` から切った。計画の PR #91 と M51 の PR #92・#93 が未マージの間は、それらの commit も PR の差分に見える。M50 の残りの差分は `bb07c5f..` である。
+
+作者の判断（OI-199 の (a)）で、品目の単位（`items.unit`）の列を `ja-x-icu` にし、流用元の `Intl.Collator("ja")` と同じ並び（個 < 箱 < 本）にした。受注番号の写し（`shipment_requests.sales_order_no`）は既定の照合順序のままである。
+
+Codex も Claude も Go だった。どちらの系統も、`bb07c5f..b406cdf` の diff を `b406cdf` を展開したディレクトリと `git show` で読んだ。Codex は、手元の DB への接続が実行の環境で許されず、rspec・E2E・マイグレーションの往復を流さず、Rails 8.1.4 の `change_column` の原文と証跡を照らした。Claude は、手元の psql で `items.unit` の列の定義と 5 つの単位の並びを、`node` で `Intl.Collator("ja")` の並びを読み取りで確かめた。Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上が無かったので、読み直しには出していない。
+
+| 系統 | 判定 | 読み直し |
+|---|---|---|
+| Codex | Go（指摘なし） | 出していない（High が無かった） |
+| Claude | Go（Low 1） | 出していない（同上） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘なし |
+| 参照の維持 | 指摘なし | 指摘（R1） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Low | Claude | R1：`data-model.md`「文字列の照合順序」の表の行末の「同じ順位の名前をバイトの順で決める」が、同じ行の「名前と単位の組」と範囲がずれる | 「同じ順位の値」に直した。「同じ順位の名前」を `git grep` し、正本に残らないことを確かめた（サイクル 07 の証跡の 1 件だけ） | この節を載せた commit |
+
+違和感（Codex はなし）：
+
+- Claude 1：E2E のテストの名前に、足した期待（単位のまとまりが流用元の順に並ぶ）が表れていない → テストの名前に足した。`list-pagination.spec.ts` を流し直し、7 passed
+- Claude 2：表の理由の欄に、規範と観測（既定の `en_US.utf8` での並び）が並ぶ → 観測の文を表から外した。観測はこの節の「計画との違い」にある
+
+### 実装の記録
+
+#### 計画との違い
+
+- 文書の直しを 2 つ足した。単位の「箱」は ICU でも `Intl.Collator("ja")` でも訓読み（ハコ）の順に並ぶので、`architecture/data-model.md`「文字列の照合順序」の表の理由の「よく使う漢字を音読みの順」を「読みの順（多くは音読み）」に直した。`architecture/graphql-schema.md`「ページングと N+1」は、表に `UNIT` を挙げながら単位の並びを書いた箇条が無かったので、品目名の並びの箇条に単位も同じ規則で並ぶことを足した。計画の節の「残りの文書に残すこと」も同じ commit（`bff0c82`）で直した。
+- 単位の並びの request spec は、計画の `orderBy` の単位に、`thenBy` の品目コードを足した。単位が「個」の品目が 2 つ（`A-1`・`B-1`）あり、主キーの順に頼らずに期待を書くためである。ページの境目は単位の境目を含み、単位のカーソルで続きを読むことは変わらない。
+- 手元の PostgreSQL 18 と Node 22 で、5 つの単位は次の順に並んだ。`ja-x-icu` と `Intl.Collator("ja")` は「個 < 袋 < 台 < 箱 < 本」、DB の既定（`en_US.utf8`）は「個 < 台 < 本 < 箱 < 袋」である（`psql` と `node -e` で確かめた）。E2E の世界の品目は 1 ページ（20 件）を超え、単位で並べた 1 ページ目の単位のまとまりは、既定では「袋」が 2 ページ目に回って「個・台・本・箱」になった（下の RED）。
+
+#### RED と、壊して落ちる記録
+
+RED は、`bb07c5f` の作業ツリーに spec だけを足して流した（`TEST_DATABASE=factory_ops_m50r_test`、Ruby 3.4.11・PostgreSQL 18）。
+
+- `spec/platform/collations_spec.rb` の 1 つ目の example と `spec/requests/catalog_spec.rb` の単位の example（22 examples, 2 failures）：前者は `"items.unit" => "ja-x-icu"` に対して `got: … "items.unit" => "default"`、後者は `expected: ["A-1", "B-1", "D-1", "C-1"] got: ["A-1", "B-1", "C-1", "D-1"]`（「本」の `C-1` が「箱」の `D-1` より先）
+- `frontend/e2e/list-pagination.spec.ts` の、品目を単位と単価で並べる example（`E2E_DATABASE=factory_ops_m50r_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e -- e2e/list-pagination.spec.ts -g "出荷依頼の受注番号の見出し"`。1 failed）：足した `expect(runs(units)).toEqual([...runs(units)].sort(byJapanese))` が、`["個", "台", "本", "箱"]` に対して「箱」が「本」より先の並びを期待して落ちた。対照の 3 つ以上の単位の期待は通った
+
+マイグレーションを足した後に、同じ 3 つを流して通った（rspec は 3 ファイルで 41 examples, 0 failures、E2E は 1 passed）。
+
+壊して落ちる記録は、マイグレーションのファイルと `db/structure.sql` を一時ファイルの置き場に複製してから壊し、複製から戻した。
+
+| 確かめる example | 壊したもの | 落ちたもの |
+|---|---|---|
+| `collations_spec.rb` の対応の example と、`catalog_spec.rb`（request）の単位の example | テストの DB でマイグレーションを戻し、`up` の `change_column` を外した形で流し直す | 2（どちらも RED と同じ食い違い） |
+
+`down` は、テストの DB で `db:rollback` を流すと `items.unit` が `default`・NOT NULL に戻り、`db:migrate` で `ja-x-icu`・NOT NULL になることを `pg_attribute` で確かめた。
+
+### 確かめたこと
+
+`bff0c82` の作業ツリーで、Ruby 3.4.11・PostgreSQL 18・Node 22 で流した。
+
+```sh
+TEST_DATABASE=factory_ops_m50r_test bundle exec rspec spec/platform/collations_spec.rb spec/requests/catalog_spec.rb packs/sales/spec/public/sales/catalog_spec.rb   # 41 examples, 0 failures
+TEST_DATABASE=factory_ops_m50r_test bin/ci   # すべての工程が通った。rspec は 3117 examples, 0 failures。bin/check-structure を含む
+cd frontend && npm run lint && npm run typecheck   # 通った
+cd frontend && E2E_DATABASE=factory_ops_m50r_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # 72 passed、26 skipped（acceptance.spec.ts。E2E_SCREENSHOTS が無い）。1.4 分、load average 6.13 → 10.41
+```
+
+分岐の網羅率の警告は 0 件だった（足した行と変えた行の分岐は、すべてどれかの example が通った）。「名前の列」を `git grep` し、`ja-x-icu` の列を名前の列だけと書いた文が、計画の M49 の節（M49 の時点の決定）と証跡のほかに残らないことを確かめた。`spec/requests/purchase_orders_spec.rb` の「名前の列の照合順序」は、取引先の名前の並びを確かめる example のコメントで、名前の列だけを指すので直していない。
+
+### 残件の処理
+
+引当先が M50 の行（OI-186・OI-193・OI-194・OI-199・OI-200）は、着手の前と PR の前に台帳を読み、どれも `decided` だった。OI-199 の判断（a）をこの節の作るもので反映した。`bin/check-open-items --due M50` は通った。取りまとめ役の判断の受け口（`decisions.md`）には、着手の時も commit の前も判断が無かった。

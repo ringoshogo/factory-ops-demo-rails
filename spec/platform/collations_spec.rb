@@ -14,11 +14,11 @@ RSpec.describe "文字列の列の照合順序" do
   end
 
   # 品目コードは、取り込みが Ruby の文字列の比べ方（バイトの順）で行ロックを取る列なので、コードポイントの順の pg_c_utf8 にする。
-  # 名前は画面に並べる列なので、流用元の Intl.Collator("ja") と同じ規則で並べる ja-x-icu にする
-  it "品目コードの列は pg_c_utf8、テナントと品目の名前の列は ja-x-icu を持つ" do
-    expect(collations(%w[items.code item_labels.code tenants.name items.name item_labels.name])).to eq(
+  # 名前と単位は画面に並べる日本語の列なので、流用元の Intl.Collator("ja") と同じ規則で並べる ja-x-icu にする
+  it "品目コードの列は pg_c_utf8、画面に並べる日本語の列（名前と単位）は ja-x-icu を持つ" do
+    expect(collations(%w[items.code item_labels.code tenants.name items.name item_labels.name items.unit])).to eq(
       "items.code" => "pg_c_utf8", "item_labels.code" => "pg_c_utf8",
-      "tenants.name" => "ja-x-icu", "items.name" => "ja-x-icu", "item_labels.name" => "ja-x-icu"
+      "tenants.name" => "ja-x-icu", "items.name" => "ja-x-icu", "item_labels.name" => "ja-x-icu", "items.unit" => "ja-x-icu"
     )
   end
 

@@ -742,7 +742,7 @@ CREATE TABLE public.items (
     owner_tenant_id uuid NOT NULL,
     code character varying NOT NULL COLLATE pg_catalog.pg_c_utf8,
     name character varying NOT NULL COLLATE pg_catalog."ja-x-icu",
-    unit character varying NOT NULL,
+    unit character varying NOT NULL COLLATE pg_catalog."ja-x-icu",
     tax_rate_percent integer DEFAULT 10 NOT NULL,
     published boolean DEFAULT false NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
@@ -4838,6 +4838,7 @@ ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20261015000000'),
 ('20261014200000'),
 ('20261014100000'),
 ('20261014000000'),

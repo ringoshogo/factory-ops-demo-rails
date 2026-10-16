@@ -119,7 +119,7 @@ test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられ
 
 ### 照合順序の版
 
-名前の列の照合順序 `ja-x-icu`（[data-model.md「文字列の照合順序」](../architecture/data-model.md#文字列の照合順序)）は ICU が実装し、ICU の版が上がると並びが変わりうる。PostgreSQL は、照合順序ごとに作ったときの ICU の版を `pg_collation.collversion` に記録し、イメージの ICU の版（`pg_collation_actual_version`）と違えば、その照合順序を使うたびに警告を出す。記録は DB ごとにあり、新しい DB は `template1` の記録を写す。そのため、DB を消して作り直しても、`template1` の記録が古ければ古い版のまま残る。
+名前と単位の列の照合順序 `ja-x-icu`（[data-model.md「文字列の照合順序」](../architecture/data-model.md#文字列の照合順序)）は ICU が実装し、ICU の版が上がると並びが変わりうる。PostgreSQL は、照合順序ごとに作ったときの ICU の版を `pg_collation.collversion` に記録し、イメージの ICU の版（`pg_collation_actual_version`）と違えば、その照合順序を使うたびに警告を出す。記録は DB ごとにあり、新しい DB は `template1` の記録を写す。そのため、DB を消して作り直しても、`template1` の記録が古ければ古い版のまま残る。
 
 PostgreSQL のイメージを上げた人は、クラスタ（手元の `compose.yaml` のボリューム、公開の配置の PVC）ごとに、次の順で記録を改める。CI は毎回新しいクラスタを作るので、記録と実際の版が食い違わない。手元では、`spec/platform/collations_spec.rb` が食い違いを落とす。
 

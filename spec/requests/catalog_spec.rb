@@ -204,6 +204,21 @@ RSpec.describe "カタログの GraphQL", type: :request do
         .to eq(%w[D-1 A-1 B-1 E-1 C-1])
     end
 
+    # 単位の列の照合順序 ja-x-icu は、漢字を読みの順（箱のハコが本のホンより前）で並べ、流用元の Intl.Collator("ja") と
+    # 同じ並びになる。DB の既定の照合順序（en_US.utf8）では、コードポイントの順に本が箱より先になる。単位の境目のカーソルも
+    # 同じ照合順序で比べる
+    it "orderBy の単位で、個・箱・本の順に 1 件ずつのページで並べる" do
+      Tenancy.with_tenant(supplier.id) do
+        FactoryBot.create(:item, code: "C-1", unit: "本")
+        FactoryBot.create(:item, code: "D-1", unit: "箱")
+      end
+      login_as(supplier_member)
+
+      # A-1・B-1 は単位が個
+      expect(item_codes(orderBy: { field: "UNIT", direction: "ASC" }, thenBy: [ { field: "CODE", direction: "ASC" } ]))
+        .to eq(%w[A-1 B-1 D-1 C-1])
+    end
+
     it "orderBy を省いた空でない thenBy と、同じ field を 2 回書いた並べ替えをトップレベルのエラーにする" do
       login_as(supplier_member)
       query = "query($orderBy: ItemOrder, $thenBy: [ItemOrder!]) { supplier { items(orderBy: $orderBy, thenBy: $thenBy) { totalCount } } }"
