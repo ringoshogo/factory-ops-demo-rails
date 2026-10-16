@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { approveCancellationReview, cancelSalesOrder, rejectCancellationReview } from "@/lib/actions/fulfillment";
 import { IDLE, type FormState } from "@/lib/form-state";
-import { totalAmountText, yen } from "@/lib/format";
+import { isCancelled, pendingLineText, totalAmountText, yen } from "@/lib/format";
 import type { SupplierSalesOrderQuery } from "@/lib/graphql/generated";
 import {
   canAllocate,
@@ -138,7 +138,10 @@ export function SalesOrderDetail({ order, businessDate, admin }: { order: Order;
                     {line.item.code} {line.itemName ?? line.item.name}
                   </>
                 ) : (
-                  <span className="text-caution">品番照合待ち</span>
+                  // 取り消した受注の明細はもう照合を待たないので、注意の色にせず得意先品番と同じ色で出す
+                  <span className={isCancelled("salesOrder", order.status) ? "text-muted-foreground" : "text-caution"}>
+                    {pendingLineText("salesOrder", order.status)}
+                  </span>
                 )}
                 <span className="text-muted-foreground ml-2 text-xs font-normal">得意先品番 {line.customerPartNumber}</span>
               </span>
