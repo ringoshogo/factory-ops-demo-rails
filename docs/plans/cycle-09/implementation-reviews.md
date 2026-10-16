@@ -701,3 +701,46 @@ PR #102 の CI は、push のたびに `pull_request` で流れた（`publish` �
 ### 残件の処理
 
 引当先が M55 の行（OI-215〜OI-218。どれも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。OI-219（`judgment`）は計画のとおりに作った。計画が書き切らなかった 3 つを OI-224 に `judgment` で積み、戻り値のガードの確かめの外を IB-150 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。
+
+## M56 担当を止める手順を 1 か所にする
+
+`cycle-09-end`（base は `main`）。サイクル末の担当が `origin/main` の `c35a702`（#85 を祖先に持つ）から切ったブランチで、サイクル末の成果物と同じ PR に載せる。M56 は文書だけの直しで、`guides/dev-cycle.md`「2. マイルストーンの実装」の TDD の対象外なので、計画の完了条件（`git grep` で数える）で確かめた。実装レビューは、取りまとめ役の指示で、サイクル末の逸脱検査と同じ依頼で 2 系統に出した（`conformance.md`）。どちらの系統も、`ac957e2` を展開したディレクトリと `c35a702..ac957e2` の diff だけを読み、テストは流さなかった。同じ依頼で、知見の収穫の正本の直し（`showcase.md`・`data-model.md`・`testing.md`・`spec/requests/purchase_orders_spec.rb` のコメント）も同じ観点で読ませた。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Conditional Go（Medium 2） |
+| Claude | Go（Medium 1・Low 4） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1・R2） | 指摘（R1・R2） |
+| 正しさ | 指摘なし | 指摘（R3） |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘なし | 指摘なし |
+| 参照の維持 | 指摘（R1） | 指摘（R4・R5） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex R1・Claude R2 | 完了条件は一時の DB を消す手順が `dev-cycle.md` の 1 か所と参照だけになるとするが、`README.md`・`handoff.md`・`config.md` が一覧と削除のコマンドを並べた手順を持つ。数えた結果が証跡に無い（Claude は Low で、残す理由を書く案） | 3 か所と `bin.md` の削除のタスクの行を、`dev-cycle.md`「担当を止めるとき」とタスクの表を指す参照にした。数えた結果は下の「手元で流したもの」に書いた（逸脱検査の D1） | `0334a68` |
+| Medium | Codex R2・Claude R1 | OI-208 が `open` のままで、`--due M56` が落ちる | `closed` にし、IB-132 の結果の欄に寄せたことを書いた（逸脱検査の D3） | 台帳の棚卸しの commit |
+| Low | Claude R3 | 接続が残って DB を消せなかったときの手順が無い | 段 2 に、接続を持つプロセスを止めてから流し直し、止められなければ残した名前を作者への報告に書くことを足した | `0334a68` |
+| Low | Claude R4 | 計画の M56 の節が、寄せた先の節の名前を書いていない | 作るもの 1 と実装する文書の節に、寄せた先の「担当を止めるとき」と、それを指す文書を書いた。寄せる先を変えた決めを OI-227（`judgment`）に積んだ | `0334a68` |
+| Low | Claude R5 | 見せどころの `publish` の迂回の形が、`config.md` と spec の挙げる添字を落とす | テーマ 8 の表と、テーマ 10 の公開の配置の箇条に添字を足した | `0334a68` |
+
+違和感は、Claude の 2 つ（エージェントの一覧を読む段を一時の DB を消す段の前に置くか、`bin.md` の削除のタスクの行も新しい節を指すか）だった。前者は IB-153 に積み、後者は R1 の直しで当てた。Codex は「なし」だった。
+
+### 実装の記録
+
+`guides/dev-cycle.md`「着手の前に」にあった一時の DB を消す段落と、#85 で足した終わりの依頼とエージェントの一覧の段落を、「実装レビュー」の後に足した節「担当を止めるとき」の 3 段（終わりの依頼 → 一時の DB → エージェントの一覧）にまとめた（`277921a`）。一時の DB は接続の残る間は消せないので、担当が終わったことを確かめた後に消す順にした。計画は「#85 の段落に寄せる」としたが、担当を止めるのはマイルストーンを終えた後で、「着手の前に」は読み手が引く節として合わないので（IB-132 の理由）、新しい節にした（OI-227）。文書の直しで spec は足していない。節の参照は `spec/rubocop/section_references_spec.rb` が確かめ、節の名前を誤れば落ちる。
+
+### 手元で流したもの
+
+```sh
+git grep -n -e "ListAgents" -e "temp_databases:drop" -e "temp_databases:list" -- ':!docs/plans/cycle-0*' ':!docs/plans/open-items.md' ':!docs/plans/improvement-backlog.md' ':!docs/implementation-plan.md' ':!lib' ':!spec'
+# 0334a68 で 5 行：dev-cycle.md「担当を止めるとき」の段 2・段 3、bin.md の 2 つのタスクの行（どちらも「担当を止めるとき」を指す）、
+# handoff.md「リポジトリの状態」の M51 の要約（タスクを足したという記録）
+bundle exec rspec spec/rubocop/section_references_spec.rb   # 3 examples, 0 failures
+bin/check-open-items --due M56 && bin/check-commit-refs     # 台帳の棚卸しの commit で通った
+```
+
+`README.md`・`handoff.md`「開発環境」・`config.md` の一時の DB の段落は、`0334a68` で「担当を止めるとき」を指す参照になり、上の grep には当たらない。
