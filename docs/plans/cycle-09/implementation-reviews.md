@@ -522,3 +522,127 @@ PR #101 の CI は、push のたびに `pull_request` で流れた（`publish` �
 ### 残件の処理
 
 引当先が M54 の行（OI-211・OI-213。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜7 で反映した。OI-208 は、取りまとめ役の指示で引当先を M56 に移した（内容の欄に指示を書いた。状態が `open` の行は結果の欄に書けないので、検査に合わせて内容の欄にした）。移し先の形の判断を OI-221、計画が書き切らなかった 4 つを OI-222 に `judgment` で積み、出荷依頼の受注番号の写しを受注の副問い合わせに替える候補を IB-147 に積んだ。IB-140 は計画のとおり起票済みのまま。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。
+
+## M55 責務と関心の分離の崩れを直す：公開 API の戻り値、在庫の不変条件、層ごとの責務
+
+`m55-separation`（base は `main`）。M54 の先端 `42d5416`（`origin/m54-same-tenant-sync`）から切った。計画と M52〜M54 の PR（#98〜#101）が未マージの間は、それらの commit も PR の差分に見える。M55 の差分は `42d5416..` である。
+
+### 実装の記録
+
+下の spec の行の番号は、実装レビューに出す版のものである。
+
+#### 計画との違い
+
+- 前提にした M54 の結果は、実物と合っていた。ADR 012（同じテナントの中は同期、「出荷可能」だけがイベント）、`Billing::BillableItems.confirm` の呼ぶ側が `Sales::PurchasingEventReceiver` であること、消えた受け手（`Sales::FulfillmentEventReceiver`・`Billing::SalesEventReceiver`）が配送表に無いことを、着手の時に読んで確かめた。操作者のいない公開 API は、計画レビューの調べのとおり 16 個（受け手の `handle` を除く）だった
+- 作るもの 1 のガードの例外 `PublicApiReturns::Violation` は `Exception` から継ぐ。計画は例外の種類を名指ししていない。呼ぶ側の `rescue StandardError`（ジョブの `retry_on` など）に拾われると違反が黙って消えるので、RSpec の期待の失敗と同じ形にした（OI-224 の (1)）
+- 作るもの 1 のガードを入れた後の全件で、`packs/platform/spec/models/page_spec.rb` の 3 つの example が、`Page.of` のブロックで行のモデルをそのまま返していたためにガードの例外で落ちた。ブロックを ID に写す形に直した（下の「ガードと写しで落ちた spec」）。計画はこの spec を名指ししていない
+- 作るもの 1 の (i) の静的な集め方は、計画のとおり Prism で `def self.` と `class << self` の中の `def` を数え、`private_class_method` と `class << self` の中の `private` の後を除く。確かめない種類は、ガードの実装（`PublicApiReturns.unchecked?`）からではなく、spec が計画の一覧（`Data`・イベントの型・policy・ジョブ・例外）から自分で決める。ガードの側から集めると、ガードの抜けを spec が写し取るからである（`guides/dev-cycle.md`「テストから書く」）
+- 作るもの 3 の E の表の形：計画は列を名指ししていない。「公開 API」「呼んでよい場所」「テナント」（`決まる前` か `求める`）の 3 列にし、場所は ` で囲んだファイルのパスか定数を「、」で並べ、定数はその中の入れ子も含めた（OI-224 の (2)）。表の行の理由（テナントが決まる前の 3 つ、`own_users` を通す 5 つ、写しの 4 つ、`confirm`）は、表の下の箇条に移し、散文の列挙を消した
+- 作るもの 3 の F：計画の「対応が食い違うときは例外にする」を、`DemoWorld::Operations::Mismatch` にした。規則を評価する前に、操作の対象の有無と mutation の `find_target` の有無を比べる。食い違いの例外を外しても計画の example は落ちないので、`demo_world_spec.rb` の同じ example に、対象の有無を食い違えて呼ぶと `Mismatch` になることと、食い違わなければ通る対照を足した（OI-224 の (3)）
+- 作るもの 3 の H：`verify!` の前に送信先を別の値にする手段は、`Provider` の `@current` を spec から直に書く形にした。送信先を差し替える公開のメソッドは無く、足すと本番のコードに試験のための入口が増えるからである
+- 作るもの 4 の一覧の守る仕組みの列：型の「並べ替えと上限を持たない」は機械で落とす spec が無いので、レビューが見ると書いた
+- 計画の壊して落ちる記録の表の 2 行が、実物と違った。`permitting_suppliers_sql` から `Scope` を外したときに `partner_shipments_spec.rb` の付与の無い関係の example は落ちない（付与を消した関係は、RLS の下でも行を返さない）。`ItemLabels.find` から `Scope` を外したときに他社の写しの example は落ちない（RLS が他社の写しを隠す）。どちらも `cross_read!` の example だけが落ちる。計画の表の 2 行を、落ちた example に直した
+
+#### RED
+
+期待の不一致で落ちたものは、計画が名指しした 3 つである。
+
+| spec | 流した版 | 落ちた example | 落ち方 |
+|---|---|---|---|
+| `packs/fulfillment/spec/public/fulfillment/partner_shipments_spec.rb` と入口の行列の `PurchaseOrder.supplierShipments` | ガード（`spec/support/public_api_returns.rb` と `rails_helper.rb` の取り付け）だけを足し、`permitting_suppliers` を直す前の `42d5416` のコード | 前者の 5 つすべてと、後者の 10 行すべて（5 examples, 5 failures と 10 examples, 10 failures） | `PublicApiReturns::Violation: Partnerships::Access.permitting_suppliers が ActiveRecord::Relation を返した` |
+| `packs/inventory/spec/public/inventory/adjustment_spec.rb` | 写しの確かめの example を足し、`Inventory::Adjustment` を直す前のコード | 写しの無い品目 ID と他社の写しの品目 ID の `adjust`・`set_quantity` の 2 つと、`cross_read!` の 2 つ（10 examples, 4 failures） | `expected: [[:not_found, [:item_id]]] got: []` |
+| `packs/notifications/spec/models/notifications/provider_spec.rb` | 期待を書き換え、`Setup.verify!` を直す前のコード | 起動時の確かめの example（5 examples, 1 failure） | `expected: nil got: Notifications::FakeProvider` |
+
+次の spec は、足したメソッドが無いと読み込みの失敗（`NoMethodError`・`NameError`）でしか落ちないか、振る舞いを変えずに置き場を移す直しなので、壊して落ちる記録で RED に代える。ガードの spec の (i)〜(iv) は、補助が無いと読み込みの失敗でしか落ちない。
+
+- `spec/platform/public_api_returns_spec.rb`（(i)〜(iv)）
+- `packs/partnerships/spec/public/partnerships/access_spec.rb` の `permitting_supplier_ids`・`permitting_suppliers_sql` の 3 つと `show_partner_code?` の 1 つ、`packs/platform/spec/models/sql_subquery_spec.rb`
+- `packs/inventory/spec/public/inventory/item_labels_spec.rb` の `.find` の 2 つ、`stocks_spec.rb` の並びと上限の 2 つ
+- `spec/packwerk/entry_callers_spec.rb`、`spec/scenarios/demo_world_spec.rb` の表と対象の example
+
+#### ガードと写しで落ちた spec
+
+作るもの 1 のガードを入れ、`permitting_suppliers` を直した後に全件を流した（`0bef45f` の前の作業ツリー、`bundle exec rspec`）。3129 examples, 3 failures で、落ちたのは `page_spec.rb:267`・`:279`・`:287` だけだった。どれも `Page.of(...) { _1 }` が行のモデルを `values` で返すので、ガードの `Page#values` の確かめが例外にした。ブロックを `{ _1.map(&:id) }` に直した。`receivers_spec.rb`・`bullet_spec.rb`・`query_budget_spec.rb` の `and_wrap_original` は、ガードを付けた後も通った。
+
+作るもの 2 で調整と在庫数の設定が写しを求めるようにした後、`git grep` で調整・在庫数の設定・`adjustStock`・在庫の取り込みを呼ぶ spec（30 の spec のファイル）と `spec/matrix`・`packs/inventory/spec` を流した。1869 examples, 68 failures で、計画の一覧の spec のほかに落ちた spec は無かった。`spec/requests/imports_spec.rb` の在庫の取り込みの example は、この grep に当たらず、`bin/ci` の全件で落ちた（`appliedRows` が 0）。同じく品目を `:labeled` にした。
+
+| spec | 落ちた数 | 直し方 |
+|---|---|---|
+| `allocation_spec.rb`・`shipping_spec.rb`・`shipping_lock_spec.rb`・`post_shipment_audit_spec.rb`・`stock_allocation_spec.rb`（乱数の品目 ID） | 6・9・7・1・2 | 同じ品目 ID の写しを `:item_label` の factory で作る。競合テストは後始末の表に `item_labels` を足す |
+| `order_allocation_spec.rb`・`cancellation_reviews_spec.rb`・`order_cancellation_spec.rb`・`order_allocation_lock_spec.rb`・`cancel_vs_ship_spec.rb`（写しの無い factory の品目） | 2・4・7・1・4 | 品目を `:labeled` の trait で作る。競合テストは後始末の表に `item_labels` を足す |
+| `parallel_imports_spec.rb`・`run_job_spec.rb`（在庫の CSV） | 2・10 | 在庫の取り込みに使う品目を `:labeled` で作る |
+| `spec/requests/inventory_spec.rb`・`log_hygiene_spec.rb`・`shipping_spec.rb`・`supplier_shipments_spec.rb` | 2・1・2・6 | 同上 |
+| 入口の行列の `Mutation.adjustStock` | 2 | 世界の品目の表ごとの行に写しを書く（`matrix_world.rb`）。期待は変えずに通った |
+
+`dashboard_spec.rb` は落ちなかったが、作るもの 3 の C で写しのコードで並べるので、在庫の品目を `:labeled` にした。
+
+#### 壊して落ちる記録
+
+壊す前にファイルを一時の置き場に複製し、複製から戻した。数は、壊した版でそこに書いた spec だけを流した結果である。
+
+| 壊し方 | 落ちた example |
+|---|---|
+| permitting_suppliers_sql が relation を返す | `partner_shipments_spec.rb` の 5 つ・`graphql_matrix_spec.rb` の 11 つ（16 examples, 16 failures） |
+| ガードから Relation を外す | `public_api_returns_spec.rb:98`、`public_api_returns_spec.rb:122`（5 examples, 2 failures） |
+| ガードから Base を外す | `public_api_returns_spec.rb:138`、`public_api_returns_spec.rb:98`（5 examples, 2 failures） |
+| OperationResult をたどらない | `public_api_returns_spec.rb:98`（5 examples, 1 failure） |
+| Hash のキーをたどらない | `public_api_returns_spec.rb:98`（5 examples, 1 failure） |
+| Hash の値をたどらない | `public_api_returns_spec.rb:98`（5 examples, 1 failure） |
+| Set をたどらない | `public_api_returns_spec.rb:98`（5 examples, 1 failure） |
+| 配列をたどらない | `public_api_returns_spec.rb:138`、`public_api_returns_spec.rb:98`（5 examples, 2 failures） |
+| Data をたどらない | `public_api_returns_spec.rb:98`（5 examples, 1 failure） |
+| Page#values を確かめない | `public_api_returns_spec.rb:138`（5 examples, 1 failure） |
+| glob から sales を外す | `public_api_returns_spec.rb:83`（5 examples, 1 failure） |
+| 確かめない種類に Module を足す | `public_api_returns_spec.rb:83`（5 examples, 1 failure） |
+| TracePoint の代わりに prepend で包む | `public_api_returns_spec.rb:122`（5 examples, 1 failure） |
+| permitting_supplier_ids から権限の条件を外す | `access_spec.rb:80`、`access_spec.rb:95`（23 examples, 2 failures） |
+| permitting_supplier_ids から Scope を外す | `access_spec.rb:95`、`access_spec.rb:105`（23 examples, 2 failures） |
+| permitting_suppliers_sql から Scope を外す | `access_spec.rb:95`、`access_spec.rb:105`（23 examples, 2 failures） |
+| contains を常に真にする | `sql_subquery_spec.rb:10`・`access_spec.rb:80`、`access_spec.rb:105`・`partner_shipments_spec.rb:60`（25 examples, 4 failures） |
+| adjust・set_quantity の写しの確かめから Scope を外す | `adjustment_spec.rb[3:3:1]`、`adjustment_spec.rb[3:3:2]`（10 examples, 2 failures） |
+| adjust・set_quantity の写しの確かめを消す | `adjustment_spec.rb` の 4 つ（10 examples, 4 failures） |
+| adjust だけ写しの確かめを消す | `adjustment_spec.rb[3:1]`、`adjustment_spec.rb[3:3:1]`（10 examples, 2 failures） |
+| ItemLabels.find から Scope を外す | `item_labels_spec.rb:92`（8 examples, 1 failure） |
+| below_safety_stock を品目 ID だけで並べる | `stocks_spec.rb:39`、`stocks_spec.rb:51`・`dashboard_spec.rb:119`（26 examples, 3 failures） |
+| 写しの無い在庫を先に並べる | `stocks_spec.rb:39`（26 examples, 1 failure） |
+| below_safety_stock の limit を外す | `stocks_spec.rb:51`・`dashboard_spec.rb:119`（26 examples, 2 failures） |
+| show_partner_code? を true にする | `access_spec.rb:206`・`graphql_matrix_spec.rb` の 5 つ（15 examples, 6 failures） |
+| verify! が作り直しをやめる | `provider_spec.rb:24`（5 examples, 1 failure） |
+| Operations の表から correct_item_price を消す | `demo_world_spec.rb` の 4 つ（4 examples, 4 failures） |
+| grant_permission に対象を渡さない | `demo_world_spec.rb` の 4 つ（4 examples, 4 failures） |
+| 対象の食い違いの例外を外す | `demo_world_spec.rb:266`（4 examples, 1 failure） |
+| E の spec が受け手の参照を集めない | `entry_callers_spec.rb:221`（6 examples, 1 failure） |
+| E の spec が呼んでよい場所を広げる | `entry_callers_spec.rb:231`（6 examples, 1 failure） |
+| E の spec が require_tenant! を集めない | `entry_callers_spec.rb:186`、`entry_callers_spec.rb:249`（6 examples, 2 failures） |
+| E の spec が非公開の特異メソッドをたどらない | `entry_callers_spec.rb:186`、`entry_callers_spec.rb:249`（6 examples, 2 failures） |
+
+`access_spec.rb:95`（知らない権限は例外）が `Scope` と権限の条件を外す壊し方でも落ちたのは、壊した版が共通の非公開の補助（`permitting`）を通らない形にしたので、権限の確かめも一緒に外れたからである。`demo_world_spec.rb` の表から操作を消す壊し方と対象を渡さない壊し方は、世界を作る `DemoWorld.build` が同じ操作を呼ぶので、グループの 4 つすべてが落ちた。
+
+落ちなかったもの：
+
+- `DemoWorld::Operations` の対象の食い違いの例外を外しても、計画の example（表と、各操作が対象を渡すか）は落ちない。対象の有無が合っていれば例外の分岐を通らないからで、食い違えて呼ぶ example を足すと、それだけが落ちた（上の表）
+- E の spec が受け手の参照を集めないとき、本体のコードの (i) は落ちず、(i) の負例だけが落ちる。本体のコードに受け手の参照が無いので、集めなくても空になる
+
+### 確かめたこと
+
+#### 手元で流したもの
+
+```sh
+TEST_DATABASE=factory_ops_m55_test BASE_REF=origin/m54-same-tenant-sync bin/ci   # c831336 で、すべての工程が通った。rspec は 3145 examples, 0 failures
+bin/check-open-items --due M55 && bin/check-commit-refs   # 通った
+git grep -nw permitting_suppliers -- . ':!docs/plans' ':!docs/implementation-plan.md'   # 0 件
+git grep -n -e '在庫は品目コードを持たない' -e '品目の存在は呼ぶ側' -e '在庫は受注に依存しないので、品目が自社のものか' -e '業務の言葉を持たず' -- . ':!docs/plans' ':!docs/implementation-plan.md'   # 0 件
+git grep -n ACL -- . ':!docs/plans' ':!docs/implementation-plan.md'   # architecture/decisions.md の権限表の 1 行だけ
+cd frontend && npm run codegen:check && npm run lint && npm run typecheck   # 通った（Node 22、npm ci の後）
+cd frontend && E2E_DATABASE=factory_ops_m55_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # c831336 で 74 passed・26 skipped（1.9 分）
+```
+
+`bin/packwerk validate && bin/packwerk check` は依存を変えずに通った。分岐の網羅率の警告は、`c831336` の `bin/ci`（基準は `42d5416`）で 0 件だった。公開 API の戻り値のガードの「どの spec も呼ばなかった」一覧は、全件では出なかった（0 件）。`6a1ed61` の最初の `bin/ci` は、上の `imports_spec.rb` の 1 件で落ちた。
+
+「腐敗防止層」が残る行は次のとおりで、どれも品番の読み替え（翻訳）の役を指す。`context-map.md` の関係の表の「購買 → 受注」の種類と説明の行・「発注の連結と品番の照合」の手順 2、`handoff.md` の品番の行、`showcase.md` の 3 行（何を示すかの文・腐敗防止層の箇条・spec のコメント）、`purchase_order_translator.rb` と `purchase_order_translator_spec.rb` の冒頭のコメント。
+
+rspec の件数は、M54 の 3119 から 3145 になった。
+
+### 残件の処理
+
+引当先が M55 の行（OI-215〜OI-218。どれも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。OI-219（`judgment`）は計画のとおりに作った。計画が書き切らなかった 3 つを OI-224 に `judgment` で積み、戻り値のガードの確かめの外を IB-150 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。
