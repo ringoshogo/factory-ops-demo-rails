@@ -9,7 +9,7 @@ RSpec.describe Sales::PurchaseOrderTranslator do
   let(:buyer) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
 
-  around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
+  around { |example| TenantExample.run(example, supplier.id) }
 
   let!(:item) { FactoryBot.create(:item, code: "BOLT-8", name: "六角ボルト M8", unit_price: 120) }
   let!(:mapping) { FactoryBot.create(:customer_part_mapping, customer_tenant_id: buyer.id, customer_part_number: "MY-BOLT", item:) }

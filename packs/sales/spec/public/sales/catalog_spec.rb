@@ -9,7 +9,7 @@ RSpec.describe Sales::Catalog do
     Partnerships::Actor.new(user_id: SecureRandom.uuid, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "")
   end
 
-  around { |example| Tenancy.with_tenant(supplier.id) { example.run } }
+  around { |example| TenantExample.run(example, supplier.id) }
 
   def save(code: "N-1", name: "新品目", unit: "個", unit_price: 300, tax_rate_percent: 10)
     described_class.save(actor, code:, name:, unit:, unit_price:, tax_rate_percent:)

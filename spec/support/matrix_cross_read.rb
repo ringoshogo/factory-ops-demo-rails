@@ -103,7 +103,8 @@ module MatrixCrossRead
       # 接続を待たせる。待つのはアプリのロールの側なので LOCK_TIMEOUT では終わらず、rspec が止まる
       if connection.transaction_open?
         raise "所有ロールの接続にトランザクションが残っている（#{connection.open_transactions} 段）。前の example の後始末が" \
-          "トランザクションを巻き戻せなかったので、ポリシーを足し外ししない。先に落ちた example とその around のフックを見る"
+          "トランザクションを巻き戻せなかったので、ポリシーを足し外ししない。先に落ちた example とその around のフックを見る。" \
+          "example をテナントで包む around は TenantExample.run を通す（docs/guides/testing.md「層への配分」）"
       end
 
       yield connection

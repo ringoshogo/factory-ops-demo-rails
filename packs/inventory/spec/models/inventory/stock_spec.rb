@@ -5,7 +5,7 @@ require "prism"
 RSpec.describe Inventory::Stock do
   let(:tenant) { FactoryBot.create(:tenant) }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   let(:stock) { FactoryBot.create(:stock, on_hand: 10) }
 

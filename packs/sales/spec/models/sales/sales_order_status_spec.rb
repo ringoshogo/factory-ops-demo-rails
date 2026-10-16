@@ -8,7 +8,7 @@ RSpec.describe Sales::SalesOrderStatus do
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
   let(:now) { Time.current }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   # allocated は照合済みの明細（数量 2）ごとの引当数量で、0 なら引当を作らない。unmatched は照合前の明細の数で、
   # 品番照合待ちの受注が引当済の条件にも当たるように全量を引き当てる（実際の引当は照合の後にしかできない）

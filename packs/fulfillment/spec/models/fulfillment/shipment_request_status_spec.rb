@@ -8,7 +8,7 @@ RSpec.describe Fulfillment::ShipmentRequestStatus do
   let(:tenant) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "") }
 
-  around { |example| Tenancy.with_tenant(tenant.id) { example.run } }
+  around { |example| TenantExample.run(example, tenant.id) }
 
   # instructed は有効な出荷指示を、shipped は出荷指示と出荷実績を、held は同じ受注への解除前の出荷停止を作る
   def request(instructed: false, shipped: false, held: false, **attributes)

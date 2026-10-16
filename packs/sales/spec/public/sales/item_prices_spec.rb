@@ -24,7 +24,7 @@ RSpec.describe Sales::ItemPrices do
 
   around do |example|
     foreign
-    Tenancy.with_tenant(supplier.id) { example.run }
+    TenantExample.run(example, supplier.id)
   end
 
   def failures(result) = result.failures.map { [ _1.code, _1.path ] }
