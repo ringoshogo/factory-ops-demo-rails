@@ -113,15 +113,16 @@ bundle exec rspec spec/packwerk
 - [`architecture/context-map.md`](architecture/context-map.md)「コンテキスト間の関係」「発注の連結と品番の照合」
 - [`architecture/data-model.md`](architecture/data-model.md)「状態は保存せず、時刻列から導出する」
 - [`architecture/decisions.md`](architecture/decisions.md)「全体の方針」（リポジトリ層・DTO の詰め替えを採らない）、4 章（手続きクラスは条件を満たす操作にだけ作る）
+- [`guides/packs-and-packwerk.md`](guides/packs-and-packwerk.md)「層ごとの責務」（業務の判断は公開 API、役割の判断は policy、型は委譲だけ。計画レビュー・実装レビュー・逸脱検査が、判断を置いた層と同期と非同期の分け方をこの一覧に照らす）
 
 **どこで守っているか**
 - 入口：`app/controllers/graphql_controller.rb` が認証とテナントの設定をし、スキーマの実行全体を 1 つのトランザクションで包む
 - GraphQL 層：mutation は公開 API を呼ぶだけで業務規則を持たない（`app/graphql/mutations/place_purchase_order.rb`）。別のコンテキストの値は Dataloader でまとめて公開 API から引く（`app/graphql/sources/public_api_source.rb`）
-- 公開 API：操作者を必須の引数に取り、scope を掛けた後に AR のレコードではなく値のオブジェクト（`*_value.rb`）を返す。書く操作と読む問い合わせは別のモジュールに分ける（`Purchasing::Ordering` と `Purchasing::PurchaseOrders`、`Sales::OrderAllocation` と `Sales::SalesOrders`、`Fulfillment::Shipping` と `Fulfillment::ShipmentRequests`）
+- 公開 API：操作者を必須の引数に取り、scope を掛けた後に、モデルも relation も返さず、値のオブジェクト（`*_value.rb`）・ID・件数・`OperationResult`・`Page`・副問い合わせの値（`SqlSubquery`）で渡す。relation を返すと、呼ぶ側がその上に別の scope や書き込みを重ねて、公開 API の判断を迂回できるからである。全 spec の流れで、呼ばれた公開 API の戻り値と入れ物の中身を確かめるガード（`spec/support/public_api_returns.rb`）が、モデルか relation を返すと落とす。書く操作と読む問い合わせは別のモジュールに分ける（`Purchasing::Ordering` と `Purchasing::PurchaseOrders`、`Sales::OrderAllocation` と `Sales::SalesOrders`、`Fulfillment::Shipping` と `Fulfillment::ShipmentRequests`）
 - 腐敗防止層：購買のイベントの受け手 `packs/sales/app/public/sales/purchase_order_translator.rb` が、発注側の自社品番を受注側の品目へ読み替え（翻訳）、受注を作る
 - 状況の導出：受注・発注・出荷依頼の状況は保存せず、時刻列から SQL の式 1 つで導出する（`packs/sales/app/models/sales/sales_order_status.rb`、`packs/purchasing/app/models/purchasing/purchase_order_status.rb`、`packs/fulfillment/app/models/fulfillment/shipment_request_status.rb`）。イベントが想定外の順で届いても遷移表から外れず、一覧の表示・状況での絞り込み・件数・ダッシュボードの件数が同じ式を読むので、数と飛び先の一覧が食い違わない。別のコンテキストの値（引当の数量、出荷依頼の受注の取消と審査）は、相手の公開 API が scope を掛けた後の副問い合わせを値で渡す（[`adr/010-状況の導出をSQLの式1つにする.md`](adr/010-状況の導出をSQLの式1つにする.md)）
 - 発注側の写し：発注側は、受注確定の品目名と単価・出荷計上を、自社の表に写して持つ（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`、`packs/purchasing/app/models/purchasing/inbound_shipment.rb`）。相手の伝票を読みに行かない
-- 在庫の品目の写し：在庫は受注に依存できないので、受注の公開 API が品目を書くのと同じトランザクションで在庫の公開 API を呼び、品目のコードと名前を在庫の表に写す（`packs/sales/app/public/sales/catalog.rb`、`packs/inventory/app/public/inventory/item_labels.rb`、[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）。写しに外部キーを張らず、写しを書く経路と元から作り直すタスク（`bin/rails read_models:rebuild`）が同じ写しを作ることを一致の spec（`spec/scenarios/read_model_copies_spec.rb`）で確かめる
+- 在庫の品目の写し：在庫は受注に依存できないので、受注の公開 API が品目を書くのと同じトランザクションで在庫の公開 API を呼び、品目のコードと名前を在庫の表に写す（`packs/sales/app/public/sales/catalog.rb`、`packs/inventory/app/public/inventory/item_labels.rb`、[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）。調整と在庫数の設定は、呼ぶ側（画面の mutation・CSV の取り込み）に品目の確かめを任せず、在庫自身が自社の品目の写しで品目を確かめ、写しの無い品目を何も書かずに拒む（`packs/inventory/app/public/inventory/adjustment.rb`、[`architecture/data-model.md`](architecture/data-model.md)「在庫（`inventory`）」）。写しに外部キーを張らず、写しを書く経路と元から作り直すタスク（`bin/rails read_models:rebuild`）が同じ写しを作ることを一致の spec（`spec/scenarios/read_model_copies_spec.rb`）で確かめる
 - 出荷依頼の受注番号の写し：写しを作った時点では出荷は受注に依存しなかったので、受注番号を「出荷可能」のイベントで運び、出荷依頼の表に写す（`packs/contracts/app/public/contracts/sales_order_ready_for_shipment.rb`、`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`）。依存の向きを変えずに相手の値で並べ、品目の写しと同じ作り直しのタスクと一致の spec で守る（[`adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md`](adr/011-在庫の一覧のために品目のコードと名前を同期で写す.md)）
 
 **どう確かめられるか**
@@ -131,7 +132,7 @@ bundle exec rspec packs/sales/spec/models packs/purchasing/spec/models packs/ful
 bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappings_spec.rb          # 品番の読み替え（腐敗防止層）と照合のやり直し
 ```
 
-**状態**：実装済み（M4・M5・M10・M11・M14、請求書の写し（受領請求書）は M25、状況を SQL の式 1 つで導出するのは M40、在庫の品目の写しは M46、出荷依頼の受注番号の写しは M50）。
+**状態**：実装済み（M4・M5・M10・M11・M14、請求書の写し（受領請求書）は M25、状況を SQL の式 1 つで導出するのは M40、在庫の品目の写しは M46、出荷依頼の受注番号の写しは M50、公開 API の戻り値のガードと在庫の品目の確かめと層ごとの責務の一覧は M55）。
 
 ### 4. 整合性の設計
 
@@ -258,10 +259,11 @@ bundle exec rspec spec/graphql spec/matrix/graphql_matrix_spec.rb
 | 主キーは DB の `uuidv7()` で作る | `spec/db/uuidv7_default_spec.rb` | 実装済み |
 | マイグレーションの結果と `structure.sql` が一致する | `bin/check-structure`（migrate と load の両経路を比べる） | 実装済み |
 | コメントに経緯・マイルストーンの番号を書かない | カスタム Cop `FactoryOps/NoHistoryComment` | 実装済み |
+| 公開 API はモデルも relation も返さない | 全 spec の流れで戻り値を確かめる `spec/support/public_api_returns.rb` と `spec/platform/public_api_returns_spec.rb` | 実装済み |
 | N+1 を作らない | Bullet と、画面の問い合わせごとのクエリ数の予算 `spec/graphql/query_budget_spec.rb` | 実装済み |
 | 画面のコメントに経緯・マイルストーンの番号を書かない | `frontend/scripts/check-comments.mjs`（`npm run lint`） | 実装済み |
 | 画面は Rails を 1 か所から呼び、Next のデータのキャッシュを使わない | ESLint の規則（`frontend/eslint.config.mjs`） | 実装済み |
-| CI のランナーを版の数字で固定し、GHCR に push して `packages: write` を持つのは `publish` のジョブだけにする。`publish` はほかのすべてのジョブを `needs` に持ち、どのジョブにも `continue-on-error` を置かない。画面の依存の木を `npm ls --all` で確かめる | `spec/platform/ci_checks_spec.rb` | 実装済み |
+| CI のランナーを版の数字で固定し、GHCR に push して `packages: write` を持つのは `publish` のジョブだけにする。`publish` はほかのすべてのジョブを `needs` に持ち、`if:` で `success()` を否定・論理和・比べ・関数の引数・添字で迂回せず、どのジョブにも `continue-on-error` を置かない。画面の依存の木を `npm ls --all` で確かめる | `spec/platform/ci_checks_spec.rb` | 実装済み |
 | 並びとロックの順が照合順序に依る列は、列の定義で照合順序を持ち、版の記録がイメージの版と等しい | `spec/platform/collations_spec.rb` | 実装済み |
 | Dependabot の更新をエコシステムごとにまとめ、画面の Node の主版を `engines` と CI とイメージでそろえる | `spec/platform/dependency_updates_spec.rb` | 実装済み |
 
@@ -292,7 +294,7 @@ bin/check-structure
 - 重要シナリオ S1〜S5（テナントの境界・失効・連結・競合・請求の金額）は、置き場からタグが付く。`spec/scenarios` の S1・S2・S3・S5 には `:scenario` が、競合の S4 を置く `spec/concurrency`・`packs/*/spec/concurrency` には `:concurrency` が付き、それぞれ `--tag` で単独で流せる。絞り込みの結果が 0 件なら失敗する
 - 同時実行は、2 つの接続を別のスレッドで動かし、後の接続が先の接続のロックを待つことを pid で確かめる（`spec/support/concurrency.rb`）
 - 一覧のために別のコンテキストへ写した値は、`spec/scenarios/read_model_copies_spec.rb` が、シードと E2E の世界を作った後と品目を変えた後に、元から作り直しても何も書かないことを確かめる。品目の写しと、出荷依頼に写した受注番号の両方を読み、受注番号の写しを空にするか書き換えた対照で、作り直しが書き直すことも確かめる
-- 画面は、Playwright の E2E が Rails・`bin/jobs`・Next を起こして通す。S1・S2 を画面でも確かめ、全画面の寸法とコントラストを測り、集計の数と飛び先の一覧の件数が一致することを確かめる（`frontend/e2e/`）。手元の E2E の Rails も、CI と同じく起動の時にアプリを読み込んでから答えるので、最初の要求の遅さと読み込みの誤りの出方が手元と CI で変わらない（`frontend/e2e/start-rails.sh`、[`guides/config.md`](guides/config.md)「環境ごとの設定」）
+- 画面は、Playwright の E2E が Rails・`bin/jobs`・Next を起こして通す。S1・S2 を画面でも確かめ、全画面の寸法とコントラストを測り、集計の数と飛び先の一覧の件数が一致することを確かめる（`frontend/e2e/`）。手元の E2E の Rails も、CI と同じく起動の時にアプリを読み込んでから答えるので、最初の要求の遅さと読み込みの誤りの出方が手元と CI で変わらない（`frontend/e2e/start-rails.sh`、[`guides/config.md`](guides/config.md)「環境ごとの設定」）。読み込みの変数を外しても E2E は通るので、変数が読み込みを効かせることと、起動のスクリプトが Rails より前に変数を渡すことは、別のガード（`spec/platform/e2e_eager_load_spec.rb`）が確かめる
 - 1 つの example の失敗が後ろのテストを止めない：テストの DB に RLS を開くポリシーを足し外しする補助は、表のロックを待つ時間に上限を置き、打ち切ったらロックを持つ接続を出す。example をテナントで包む around は、example が SQL のエラーで落ちたときだけテナントのセーブポイントを巻き戻して抜ける補助を通すので、送出せず、example のトランザクションが残って後ろのグループを止めない。補助を通さずにテナントかトランザクションで直に包む around は、spec のファイルを構文木で読むガードが落とす（`spec/support/matrix_cross_read.rb`・`spec/support/tenant_example.rb`、`spec/matrix/cross_read_spec.rb`・`spec/platform/tenant_example_spec.rb`、[`guides/testing.md`](guides/testing.md)「層への配分」「行列テストとの分担」）
 
 **どう確かめられるか**
@@ -304,7 +306,7 @@ bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちら�
 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
-**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、手元の E2E の起動の時の読み込みは M51。テナントで包む around の補助とガードは M52（M51 の全 spec に効く補助を置き換えた）。
+**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、手元の E2E の起動の時の読み込みは M51。テナントで包む around の補助とガードと、E2E の読み込みの変数のガードは M52（M51 の全 spec に効く補助を置き換えた）。
 
 ### 10. 運用性
 
@@ -319,11 +321,11 @@ bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/te
 - 監査ログ：mutation とイベントのジョブの基底クラスが記録し、表は追記だけ（M19）
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
-- 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは PR と main への push のたびに arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）。`publish` の `if:` は `success()` を明示し、`needs` の失敗・取消・skip で止める守りを YAML の行で読めるようにした。画面の依存の木は `frontend` のジョブが `npm ci` の後に `npm ls --all` で確かめ、入れ子の依存の peer の範囲から外れた更新の PR を落とす
+- 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは PR と main への push のたびに arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）。`publish` の `if:` は `success()` を明示し、`needs` の失敗・取消・skip で止める守りを YAML の行で読めるようにした。`success()` を書いていても、否定・論理和・比べ・関数の引数・添字で真の値に変えると落ちた `needs` でも流れるので、その形を spec が落とす。画面の依存の木は `frontend` のジョブが `npm ci` の後に `npm ls --all` で確かめ、入れ子の依存の peer の範囲から外れた更新の PR を落とす
 
 **どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）、`spec/platform/deploy_manifests_spec.rb`（マニフェストの規則）・`spec/platform/demo_reset_spec.rb`（作り直しの順と、失敗しても Web とワーカーを戻すこと）と CI の `manifests`・`images`・`publish` のジョブ、`publish` の条件と権限と、`npm ls --all` の置き場を確かめる `spec/platform/ci_checks_spec.rb`（M41・M42・M48・M51）。
 
-**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43、`npm ls --all` と PR ごとの組み立ては M48、`publish` の `success()` の明示は M51）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
+**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43、`npm ls --all` と PR ごとの組み立ては M48、`publish` の `success()` の明示は M51、`success()` の迂回を止める期待は M52）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
 
 ### 11. チーム開発
 

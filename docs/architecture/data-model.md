@@ -160,7 +160,7 @@ DB の既定の照合順序は、公式の `postgres` のイメージが initdb 
 | `received_invoices`（「請求書発行」の写し） | `invoice_id`→・`supplier_tenant_id`→・`invoice_number`・`period_start`・`period_end`・`issued_on`・`subtotal`・`tax_total`・`total` | `invoice_id` 一意。`total = subtotal + tax_total` |
 | `received_invoice_lines` | `purchase_order_line_id`・`item_name`・`unit_price`・`quantity`・`tax_rate_percent`・`amount` | 発注明細へ複合外部キーでつなぐ。他社の発注明細を運ぶ「請求書発行」は、受け手で失敗する |
 
-購買が持つ相手側の ID は、`supplier_tenant_id`・`shipment_id`・`invoice_id` の 3 つだけである。受注・受注明細・品目の ID は、イベントが運ばないので購買には入らない（「イベントの受け口と冪等キー」）。
+購買が持つ相手側の ID は、`supplier_tenant_id`・`shipment_id`・`invoice_id` の 3 つだけである。受注・受注明細・品目の ID は、購買には入らない。「出荷計上」は受注 ID と受注明細 ID も運ぶが、購買は保存しない（「イベントの受け口と冪等キー」）。
 
 ### 請求（`billing`）
 
