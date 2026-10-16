@@ -181,3 +181,36 @@ M52 の読み直し 1 を終えた後、作者は 2026-10-16 の議論で 2 つ�
 注意すること：受注を取り消しても、出荷指示の行は `active` のまま残る。`ShippingInstruction.active` を数える箇所（`shipment_requests.rb` の出荷指示の読み込みと件数）は、取消済の受注の出荷依頼の指示を除く（調査の担当の Codex の系統も同じことを挙げた）。
 
 退けた形：受注が出荷を呼ぶ形（出荷計上の受注への分が非同期のまま残り、上流が下流に依存する。取消は在庫より前に出荷依頼をロックするよう順を変えないとデッドロックする）、出荷依頼の写しを無くす形（作業が大きく、デッドロックの対策にならない）、ルートパッケージで束ねる形（`context-map.md`「疎結合を守る規則」5 に反し、「出荷停止」は `Sales::PurchasingEventReceiver` の中から出るので束ねられない）、`Contracts.publish` が同じテナントの受け手をすぐに呼ぶ形（取消と計上が逆の順でロックを取り、デッドロックする）。どれも ADR 012 に書く（M54 の作るもの 7）。
+
+### M53・M54 の判定
+
+M53・M54 の初回は `6a3ebc0` を読んだ。M52 と同じく、読む版を展開したディレクトリだけを読ませ、Codex は `--skip-git-repo-check` を付けて流した。Claude のサブエージェントは最終報告を返さずに終わり、結果のファイルから読んだ。
+
+| マイルストーン | 初回 Claude | 初回 Codex |
+|---|---|---|
+| M53 | Conditional Go | Conditional Go |
+| M54 | Go | Conditional Go |
+
+High は 3 件だった（Claude M53-1 と Codex M53-2 は同じ）。どれも計画の形（値の項目・検査の置き場・書き込みの入口の契約）を変える直しなので、読み直しに出した。直した版は `01854af` である。
+
+### M53・M54 の指摘と対応
+
+| 出典 | 重大度 | 指摘 | 直した節と内容 |
+|---|---|---|---|
+| Claude M53-1・Codex M53-2 | High | 発注の詳細の `query_budget_spec.rb` の行は同じ発注の下の入荷を増やして比べるので、発注のフィールドの `timeline` を足すと落ちる。`PublicApiSource` で呼ぶ公開 API は `NESTED_APIS` の行を求める | M53 の作るもの 3 と完了条件。`query_budget_spec.rb` には足さず、`NESTED_APIS` に `timeline_for` の行を足す。一括の読み込みは、単体で SQL の件数（1 回）で確かめる |
+| Codex M53-1 | High | 型の認可をそろえる先の `PurchaseOrderPolicy#show?` は値の `owner_tenant_id` を読むが、値に無い | M53 の作るもの 2。値に `owner_tenant_id` を持たせ、`Scope` を通した自社の発注から入れ、フィールドには出さない。request spec で空でない `timeline` が認可を通ることを確かめる |
+| Codex M54-1 | High | 新しい書き込みの入口（`mark_shipped`・`confirm`）の引数・操作者・テナントの設定・見えない ID の扱いと、テナントの境界への影響が書かれていない（Claude M54-2 も Medium で挙げた） | M54 の作るもの 2・4。`OrderShipping` の 3 つは `Scope` の自社の受注だけを読み書きし、見えない受注には書かずに `NOT_FOUND`。`confirm` は操作者を取らず、テナントの設定を求め、所有テナントを `Current.tenant_id` で書く。それぞれの単体で、他社の ID・RLS を開いたとき・冪等・設定の無いときを確かめる |
+| Claude M53-2・Codex M53-3 | Medium | 取消却下の発行元に、自動の却下（`PurchasingEventReceiver.publish_rejected`）が漏れている。`confirmed_at` を渡すことも書かれていない | M53 の作るもの 1 と完了条件。発行元を 5 つ挙げ、各発行元の spec に `occurred_at` の example を置き、`packs/sales/spec` を完了条件に足した。OI-212 も合わせた |
+| Claude M53-3 | Medium | `NESTED_APIS` の行と、他社の発注の ID を渡す単体が無い | M53-1 の直しと、単体の他社の行の example（自社と他社の発注の ID を両方渡す） |
+| Claude M53-4 | Medium | 同じ発注の明細 2 行を含む請求書で `invoice_received` が重なる | M53 の作るもの 2。請求書と発注の組ごとに `EXISTS` で 1 つにまとめ、単体の準備と壊して落ちる記録を合わせた |
+| Claude M54-1・Codex M54-2 | Medium | S4 の審査の経路の期待が新しい形で成り立たず、受注の行ロックで待つことは pid だけでは確かめられない | M54 の完了条件の後の競合テスト。S4 を受注側の取消と計上・審査の承認と計上に、`shipping_lock_spec.rb` を審査の作成と計上・審査の作成と出荷指示の作成・審査の却下と計上に分け、待つ先を `pg_locks` の `relation` で確かめる。受注のロックを外す壊し方は `shipping_lock_spec.rb` で落ちると名指しした |
+| Claude M54-3 | Medium | 消す仕組みを前提にした文書の節（`data-model.md` の 2 節・ADR 010 決定 3・4・`testing.md`「行列テストとの分担」）と `git grep` の語に漏れがある | M54 の実装する文書の節と `git grep` の語。`lock_sites_spec.rb` の `Instructions.create` の理由も直すと書いた |
+| Claude M54-4 | Medium | 取消済の除外を足す 2 か所の 2 つ目は件数ではなく出荷予定日の並べ替えで、最初に落とす example が当たらない | M54 の作るもの 3 と最初に落とす example と壊して落ちる記録。`instructions_for` と `planned_date` に分けた |
+| Claude M53-5 | Low | Bullet は生の `UNION ALL` の繰り返しを捕まえない。並べる場所が決まっていない | M53 の作るもの 2 と単体。SQL の件数で数え、並べるのは Ruby の側と決めた |
+| Claude M53-6 | Low | 画面の検査（生成した型・lint・型検査）が完了条件に無い | M53 の完了条件 |
+| Claude M54-5 | Low | 表と列を消すマイグレーションの手順が無い | M54 の作るもの 5。前例と同じく `ignored_columns` → `safety_assured`、`down` は空で戻す |
+| Claude M54-6 | Low | 出荷指示を残す判断が OI-213 に無い。取消済の受注の指示の取消、`status_sql` に当たらないときの状況、「出荷計上」の受注の項目が決まっていない | M54 の作るもの 3 と範囲外、OI-213 |
+| Claude M54-7 | Low | E2E の全体と `spec/scenarios` が完了条件に無い | M54 の完了条件 |
+| Codex M54-3 | Low | packwerk の循環の検出の原文が無い | M54 の作るもの 1 |
+
+違和感：前提の表の M54 の行が、テナントをまたぐイベントそのものを同期にすると読める（Claude）。同じファイルから同じテナントへの発行だけを消し、テナントをまたぐイベントは残ると書き直した。Codex の違和感は「なし」だった。
