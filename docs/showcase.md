@@ -141,13 +141,13 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 - [`adr/005-イベントのジョブをトランザクション内で登録する.md`](adr/005-イベントのジョブをトランザクション内で登録する.md)
 - [`architecture/context-map.md`](architecture/context-map.md)「コンテキスト間の関係」（同期と非同期の使い分け）、「取引関係の失効」（組のロック）
 - [`architecture/data-model.md`](architecture/data-model.md)「イベントの受け口と冪等キー」「取消と出荷の競合を止める場所」
-- [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「発注側の視点」（状況と同じ行から組み立てる進み）
+- [`architecture/graphql-schema.md`](architecture/graphql-schema.md)「発注側の視点」（状況の式と同じ行を読んで組み立てる進み）
 
 **どこで守っているか**
 - イベントの登録：`packs/contracts/app/public/contracts.rb` の `Contracts.publish` だけが、トランザクションの中で `Contracts::EventJob`（`packs/contracts/app/public/contracts/event_job.rb`）を登録する。外で登録するとカスタム Cop `lib/rubocop/cop/factory_ops/event_job_enqueue.rb` と実行時の検査が落とす。outbox は置かない
 - 冪等キー：受け手ごとに業務の ID の一意制約で取る（例：受注の `source_purchase_order_id`、`packs/sales/app/public/sales/purchase_order_translator.rb`）
 - イベントの項目を足すとき：足す前に登録したジョブのペイロードは、イベントの型の `from_payload` だけが空で補い、発行元が呼ぶ `new` は全項目を求める。発行元の渡し忘れは引数の誤りで落ち、古いジョブは受け手まで届く（`packs/contracts/app/public/contracts/sales_order_ready_for_shipment.rb`、`packs/fulfillment/spec/public/fulfillment/sales_event_receiver_spec.rb`、[`architecture/data-model.md`](architecture/data-model.md)「イベントの受け口と冪等キー」）
-- 状況と同じ行から組み立てる進み：発注の詳細の進み（`PurchaseOrder.timeline`）は、履歴の表を持たず、状況の式（`Purchasing::PurchaseOrderStatus`）と同じ自社の発注・取消依頼・入荷・検収・受領請求書の行から `Purchasing::PurchaseOrderTimeline`（`packs/purchasing/app/models/purchasing/purchase_order_timeline.rb`）が 1 回の問い合わせで組み立てるので、状況と進みが食い違わない。受注側から届く出来事の時刻は、受け取った時刻ではなく、イベントが運ぶ受注側の発生の時刻（`occurred_at`）で、配送が遅れても発注側の取消依頼と前後が入れ替わらない（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`）
+- 状況の式と同じ行を読んで組み立てる進み：発注の詳細の進み（`PurchaseOrder.timeline`）は、履歴の表を持たず、状況の式（`Purchasing::PurchaseOrderStatus`）が読む発注の時刻列・入荷・検収に、取消依頼と受領請求書を足した自社の行から `Purchasing::PurchaseOrderTimeline`（`packs/purchasing/app/models/purchasing/purchase_order_timeline.rb`）が 1 回の問い合わせで組み立てるので、状況と進みが食い違わない。受注側から届く出来事の時刻は、受け取った時刻ではなく、イベントが運ぶ受注側の発生の時刻（`occurred_at`）で、配送が遅れても発注側の取消依頼と前後が入れ替わらない（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`）
 - 在庫の同期：`Inventory::Allocation`（`packs/inventory/app/public/inventory/allocation.rb`）を受注と出荷が同じトランザクションで呼び、有効在庫が負にならないことを行ロックと CHECK 制約で守る
 - ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も在庫から先を同じ順で取り、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
 - 引当の行を直列化の点にする：出荷の計上は `active` の引当だけを消費し、受注の取消は消費済みの引当を解除しない。同時に進んでもどちらか一方だけが成立する

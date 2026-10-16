@@ -125,7 +125,7 @@ RSpec.describe Purchasing::PurchaseOrders, ".list" do
   end
 end
 
-# 発注の進みのタイムライン。状況の式と同じ自社の行だけから組み立て、時刻の出来事は日本時間の日付と時刻で、日付の出来事は
+# 発注の進みのタイムライン。状況の式が読む行に取消依頼と受領請求書を足した自社の行だけから組み立て、時刻の出来事は日本時間の日付と時刻で、日付の出来事は
 # 同じ日の時刻の出来事の後ろに業務の順で並べる（docs/architecture/graphql-schema.md「発注側の視点」）
 RSpec.describe Purchasing::PurchaseOrders, ".timeline_for" do
   include ActiveSupport::Testing::TimeHelpers
@@ -185,6 +185,20 @@ RSpec.describe Purchasing::PurchaseOrders, ".timeline_for" do
 
     expect(timeline([ order.id ]).fetch(order.id).map(&:kind))
       .to eq(%i[ordered cancellation_requested cancellation_rejected supplier_cancelled])
+  end
+
+  # 回答待ちの依頼は回答の時刻を持たないので、回答の出来事を出さない
+  it "回答待ちの取消依頼は、取消依頼だけを出す" do
+    order = Tenancy.with_tenant(buyer.id) do
+      FactoryBot.create(:purchase_order, created_at: at("2026-10-01 10:00")).tap do
+        FactoryBot.create(:cancellation_request, purchase_order: _1, created_at: at("2026-10-01 11:00"))
+      end
+    end
+
+    expect(entries(timeline([ order.id ]).fetch(order.id))).to eq([
+      [ :ordered, Date.new(2026, 10, 1), at("2026-10-01 10:00") ],
+      [ :cancellation_requested, Date.new(2026, 10, 1), at("2026-10-01 11:00") ]
+    ])
   end
 
   # 業務の日付は日本時間で決める（docs/guides/testing.md「層への配分」）

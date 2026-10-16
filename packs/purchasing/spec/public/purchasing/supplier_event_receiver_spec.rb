@@ -204,6 +204,14 @@ RSpec.describe Purchasing::SupplierEventReceiver do
         expect(klass.from_payload(old).occurred_at).to be_nil
         expect(Array.wrap(written(klass, old))).to all(eq(received_at))
       end
+
+      # 同じイベントを 2 回届けると、2 回とも同じ時刻を書くので、空のときだけ書く条件を外しても落ちない。後から別の時刻を運ばせる
+      it "#{klass.name.demodulize} を後から別の発生の時刻で届けても、先に書いた時刻を書き換えない" do
+        written(klass, payload(klass))
+        later = payload(klass).merge("occurred_at" => (occurred_at + 1.hour).iso8601(6))
+
+        expect(Array.wrap(written(klass, later))).to all(eq(occurred_at))
+      end
     end
 
     it "new は occurred_at を求め、発行元が渡し忘れたら例外にする" do

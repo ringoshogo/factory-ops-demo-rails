@@ -1,5 +1,6 @@
 module Purchasing
-  # 発注の進みの出来事を、状況の式（PurchaseOrderStatus）と同じ自社の行から組み立てる（docs/architecture/graphql-schema.md「発注側の視点」）。
+  # 発注の進みの出来事を、状況の式（PurchaseOrderStatus）が読む発注の時刻列・入荷・検収に、取消依頼と受領請求書を足した自社の行から組み立てる
+  # （docs/architecture/graphql-schema.md「発注側の視点」）。
   # 履歴の表は持たず、上書きされて時刻が残らない出来事は出さない
   module PurchaseOrderTimeline
     # 出来事の業務の順。同じ日付と時刻の出来事はこの順で並べ、日付だけの出来事（出荷・検収・請求書の受領）は、

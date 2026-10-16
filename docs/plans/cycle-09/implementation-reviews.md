@@ -211,7 +211,61 @@ PR #98 の CI は、push のたびに `pull_request` で流れ、どれも通っ
 
 `m53-timeline`（base は `main`）。サイクル 09 の計画の `cycle-09-plan-m55` の先端 `7702f10` から切った。計画と M52 の PR が未マージの間は、それらの commit も PR の差分に見える。M53 の差分は `7702f10..` である。
 
+PR #100 の実装レビューは、実装者が 2 系統に同じ依頼で出した。どちらも Go だった。どちらの系統も、`7702f10..d3d4434` の diff を `git show d3d4434:<パス>` で読んだ。
+
+- Claude：作業ツリーが `d3d4434` と同じことを確かめてから、手元で M53 の完了条件の rspec を流した（1424 examples, 0 failures）。壊し方（取消依頼の枝の空の時刻の除外を外す）も流した。画面の検査と E2E は流していない
+- Codex：spec を流していない。読み取り専用の環境で rbenv が一時ファイルを作れず、`db:test:prepare` が起動の前に失敗したからである。受け手のコードを手元で評価して、再配送の期待を照らした
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High 以上の指摘が無いので、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go（Medium 1） |
+| Claude | Go（Medium 1・Low 1） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R1） | 指摘（R1・R2） |
+| 参照の維持 | 指摘なし | 指摘なし |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex | R1：受け手の再配送の example は、同じイベントを 2 回渡す。2 回とも同じ `occurred_at` を書くので、空のときだけ書く条件（`unless order.supplier_cancelled_at` など）を外しても通る | `supplier_event_receiver_spec.rb` の「発生の時刻」に、5 つのイベントごとの example を足した。後から 1 時間後の発生の時刻で届けても、先に書いた時刻を書き換えないことを確かめる（`:209`）。4 つの条件を 1 つずつ外すと、それぞれ足した example が落ちる（下の表） | この節を載せた commit |
+| Medium | Claude | R1：`timeline_for` の単体に、回答待ちの取消依頼を持つ発注の example が無い。取消依頼の枝の `WHERE events.occurred_at IS NOT NULL` を外しても、rspec の全体が通る | `purchase_orders_spec.rb` に、回答待ちの取消依頼が取消依頼だけを出す example を足した（`:191`）。条件を外すと、この example が `NoMethodError` で落ちる（下の表） | 同上 |
+| Low | Claude | R2：E2E は、請求書を発行した発注を「検収済で明細が 2 件」の行で選ぶ。この選び方は、世界の発注の組に頼る | 発注の組を決める側（`lib/demo_world.rb` の `ORDERS` のコメント）に、E2E の選び方の前提と、組を変えるときに E2E も変えることを書いた。受領請求書の画面には発注への手がかり（発注番号・リンク）が無いので、選び方そのものは変えていない | 同上 |
+
+あわせて、Claude の違和感 1 に沿って、進みが読む行の書き方を直した。前は「状況の式と同じ行から組み立てる」と書いていた。状況の式が読むのは発注の時刻列・入荷・検収だけで、取消依頼と受領請求書は式の外にある。そこで「状況の式が読む行に、取消依頼と受領請求書を足した行」と書いた。直した場所は次のとおりである。
+
+- 計画の M53 の目的と、マイルストーンの一覧の行
+- `graphql-schema.md`「発注側の視点」
+- `showcase.md` のテーマ 4
+- `purchase_order_timeline.rb` の冒頭のコメント
+- `purchase_orders_spec.rb` の冒頭のコメント
+
+直す前の形を `git grep`（「状況の式と同じ自社の行」「状況と同じ行」「と同じ自社の行」）で数え、証跡の外で 0 件であることを確かめた。
+
+| 壊し方（この節を載せた版） | 結果 |
+|---|---|
+| 受け手の `accept` から `return if order.accepted_at` を外す | 受注確定の後からの配送の example だけが落ちた（31 examples, 1 failure） |
+| 品番照合待ちの `unless order.awaiting_match_at` を外す | 品番照合待ちの同じ example だけが落ちた（31 examples, 1 failure） |
+| 受注取消の `unless order.supplier_cancelled_at` を外す | 受注取消の同じ example だけが落ちた（31 examples, 1 failure） |
+| `answer_cancellation` から `return if request.outcome` を外す | 承認・却下の同じ example 2 つと、既存の「回答が記録済みの依頼には、後から届いた回答を書かない」（`:113`）が落ちた（31 examples, 3 failures） |
+| 取消依頼の枝から `WHERE events.occurred_at IS NOT NULL` を外す | `purchase_orders_spec.rb:191` が、回答待ちの依頼の空の種類の `to_sym` で落ちた（13 examples, 1 failure） |
+
+違和感は次のように扱った。
+
+- Claude 1：「状況の式と同じ行」と書くと、読者は範囲を取り違える → 上のとおり書き方を直した
+- Claude 2：請求書の受領の日付は、受注側の発行日（`issued_on`）で、発注側が受け取った日ではない。名前と日付の意味がずれる → IB-146
+- Claude 3：`in_time_zone` に引数を渡さず `Time.zone` に従う。計画の文は `config.time_zone` と書く → 扱わない。`Time.zone` は `config.time_zone`（`Asia/Tokyo`）で、コードに `Time.use_zone` は無い。業務の日付を決めるほかの公開 API（`Date.current`）も `Time.zone` に従うので、そろえた
+- Codex 1：E2E の選び方が世界の偶然の特徴に頼る → Claude R2 と同じ対応
+- Codex 2：出来事の種類と enum の一致の検査が無い → IB-145 にある
+
 ### 実装の記録
+
+下の spec の行の番号は、実装レビューに出した `d3d4434` の版のものである。
 
 #### 計画との違い
 
@@ -280,4 +334,4 @@ cd frontend && E2E_DATABASE=factory_ops_m53_e2e PLAYWRIGHT_CHANNEL=chrome npm ru
 
 ### 残件の処理
 
-引当先が M53 の行（OI-210・OI-212。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。IB-139 は計画のとおり M53 で起票済みのまま。画面で計画が書き切らなかった 3 つを OI-220（`judgment`）に、出来事の種類の一覧と enum の一致の検査が無いことを IB-145 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前に読み、どの時点でも空だった。
+引当先が M53 の行（OI-210・OI-212。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。IB-139 は計画のとおり M53 で起票済みのまま。画面で計画が書き切らなかった 3 つを OI-220（`judgment`）に、出来事の種類の一覧と enum の一致の検査が無いことを IB-145 に、実装レビューの違和感（請求書の受領の日付の意味）を IB-146 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前に読み、どの時点でも空だった。
