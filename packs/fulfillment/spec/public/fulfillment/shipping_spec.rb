@@ -37,7 +37,7 @@ RSpec.describe Fulfillment::Shipping do
       .to eq(lines.map { [ _1.id, _1.quantity ] })
   end
 
-  it "出荷計上は、受注・購買の両方が要る ID と、明細ごとの受注明細 ID・発注明細 ID・数量を運ぶ" do
+  it "出荷計上は、購買が要る ID と、読む受け手の無い受注 ID・受注明細 ID を含めて、明細ごとの受注明細 ID・発注明細 ID・数量を運ぶ" do
     expect(Contracts).to receive(:publish) do |event|
       expect(event).to be_a(Contracts::ShipmentPosted)
       expect(event.to_payload).to include("sales_order_id" => request.sales_order_id, "purchase_order_id" => request.source_purchase_order_id,
