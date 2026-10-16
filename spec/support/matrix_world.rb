@@ -176,7 +176,7 @@ class MatrixWorld
     [ FILTER_ITEM_NAME, "当たらない品目" ].each { |name| FactoryBot.create(:item_label, item_id: FactoryBot.create(:stock).item_id, name:) }
   end
 
-  # 受注側の ACL が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、
+  # 受注側の購買のイベントの受け手が「発注登録」から作るのと同じ形に、発注と受注を明細ごと連結し、
   # 出荷が「出荷可能」から作るのと同じ形に、受注を全量で出荷する
   def link_orders(buyer)
     purchase_order = as(buyer) { FactoryBot.create(:purchase_order, supplier_tenant_id: tenants[:supplier]) }

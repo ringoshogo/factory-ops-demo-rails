@@ -2,7 +2,7 @@ require "rails_helper"
 require_relative "../support/events"
 
 # テナントをまたぐ一連の処理を、1 つの相関 ID でログから引ける（docs/guides/config.md「ログ」、
-# docs/architecture/data-model.md「イベントの受け口と冪等キー」）。発注側の発注の要求 → 「発注登録」 → 受注側の ACL →
+# docs/architecture/data-model.md「イベントの受け口と冪等キー」）。発注側の発注の要求 → 「発注登録」 → 受注側の購買のイベントの受け手 →
 # 「受注確定」 → 購買の受け手、の全ログ行が、発注の要求の request_id を相関 ID に持つ。
 # 受け手の行の因果 ID は、届いたイベントの event_id である
 RSpec.describe "相関 ID と因果 ID", type: :request do

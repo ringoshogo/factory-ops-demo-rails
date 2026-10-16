@@ -27,7 +27,7 @@ RSpec.describe Sales::PartMappings do
     Tenancy.with_tenant(supplier.id) { Sales::SalesOrders.list(actor, first: 10, after: nil).values.map(&:status) }
   end
 
-  it "ACL が照合待ちの受注をコミットする前に登録しても、登録は ACL のコミットを待って照合し直す" do
+  it "受け手が照合待ちの受注をコミットする前に登録しても、登録は受け手のコミットを待って照合し直す" do
     _, release, translator = hold_open(supplier.id) { Sales::PurchaseOrderTranslator.handle(event) }
 
     registering = in_thread(supplier.id) do

@@ -266,7 +266,7 @@ Rails は、executor で包まれた処理（Web の要求と、ワーカーが�
   - **イベントのジョブ**：付帯情報を必須とする。`Contracts::EventJob` は、受信の監査の行と配送の遅れの計測に使う項目（`Contracts::EventJob::REQUIRED_METADATA`）が 1 つでも無ければ、受け手を動かさずに `Contracts::EventJob::MissingMetadata` で失敗する。受信の監査の行を書けないまま受け手の書き込みだけを残すと、相手テナントに効果が及ぶ書き込みが記録されなくなるからである（[graphql-schema.md「監査ログ」](../architecture/graphql-schema.md#監査ログ)）。
   - **それ以外のジョブ**：項目の無いジョブも、付帯情報の文脈を設定せずに動かす。
 
-受け手の中で発行するイベントは、同じ相関 ID と、因果 ID として受け手が受け取ったイベントの `event_id` を持つ。これで、発注側の `placePurchaseOrder` の要求 → 「発注登録」 → 受注側の ACL → 「受注確定」 → 購買の受け手、の全ログが同じ相関 ID を持つ（`spec/contracts/correlation_spec.rb`）。テナントは途中で変わるので、相関 ID でログを引けるのは運用者だけで、テナントの利用者には相手側のログを見せない。
+受け手の中で発行するイベントは、同じ相関 ID と、因果 ID として受け手が受け取ったイベントの `event_id` を持つ。これで、発注側の `placePurchaseOrder` の要求 → 「発注登録」 → 受注側の購買のイベントの受け手 → 「受注確定」 → 購買の受け手、の全ログが同じ相関 ID を持つ（`spec/contracts/correlation_spec.rb`）。テナントは途中で変わるので、相関 ID でログを引けるのは運用者だけで、テナントの利用者には相手側のログを見せない。
 
 開発の環境で、2 社のイベントの配送が同じ相関 ID で並ぶことは、`bin/dev` と `bin/jobs` を動かして発注を 1 件登録し、次で確かめる。
 

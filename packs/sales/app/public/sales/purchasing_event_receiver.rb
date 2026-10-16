@@ -2,7 +2,7 @@ module Sales
   # 購買からの「取消依頼」と「検収完了」の受け手（docs/architecture/context-map.md「取消の流れ」2・4、「検収と請求の流れ」2・3）。
   # 受注側テナントの名義で、自社の受注に取消の審査を作るか、検収数量を記録して受注を検収済にし、請求に請求対象明細を書く。
   # 審査の行があることが、そのまま出荷の出荷停止になる。
-  # 取引関係の状態は見ない。「発注登録」の受け手は、受注を作る腐敗防止層（PurchaseOrderTranslator）である。
+  # 取引関係の状態は見ない。「発注登録」の受け手は、品番を読み替えて受注を作る PurchaseOrderTranslator である。
   # イベントの受け手は操作者のいない入口なので、テナントの設定を求め、所有の条件を RLS に任せずに書き、値を返さない
   # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）
   module PurchasingEventReceiver

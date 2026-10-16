@@ -228,7 +228,7 @@ RSpec.describe "発注登録と受注の連結", type: :request do
   end
 
   describe "連結の冪等性" do
-    context "受注側の ACL" do
+    context "受注側の購買のイベントの受け手" do
       let!(:placed) do
         Tenancy.with_tenant(buyer.id) do
           Purchasing::Ordering.place(buyer_actor, supplier_tenant_id: supplier.id,
