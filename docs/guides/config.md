@@ -113,7 +113,7 @@ API モードは CSRF 対策（フォームのトークン）を持たない。�
 
 test の環境の DB の名前は、環境変数 `TEST_DATABASE` で替えられる。E2E は `factory_ops_e2e` を渡し、rspec のテスト DB と分ける。E2E の準備（`lib/tasks/e2e.rake`）は DB を作り直すので、同じ DB を使うと rspec の DB を消す。準備は、`TEST_DATABASE` が無いか rspec のテスト DB の名前なら止まる。rspec を別の DB で並べて流すときは、名前に `_test` を区切りとして含める（`factory_ops_m49_test` の形）。行列の spec（`spec/support/matrix_cross_read.rb`）は、全行を読ませるポリシーを足す前に DB の名前を見て、テストの DB と分からなければ止まるからである。
 
-担当ごとに替える一時の DB の名前は、`factory_ops_` で始め、`_` で区切った語に `test`（rspec、`TEST_DATABASE`）か `e2e`（E2E、`E2E_DATABASE`）を含める（`factory_ops_m51_test`・`factory_ops_m51_e2e`）。一時の DB は作る入口（`bin/ci` の `db:test:prepare`、E2E の `start-rails.sh` の `db:drop db:prepare`）だけで、作った担当が止まっても残るので、`RAILS_ENV=test bin/rails temp_databases:list` で一覧し、`RAILS_ENV=test bin/rails "temp_databases:drop[<名前>]"` で消す（[bin.md「bin/rails で流す運用のタスク」](bin.md#binrails-で流す運用のタスク)）。2 つのタスクは名前の規則に合う DB だけを扱い、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）は扱わない。削除は名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続して `DROP DATABASE` を `FORCE` なしで流すので、接続中の DB は PostgreSQL が失敗させる。動いている担当の DB を、その接続ごと切って消さないためである。test の環境でだけ動く（`lib/temp_databases.rb`）。
+担当ごとに替える一時の DB の名前は、`factory_ops_` で始め、`_` で区切った語に `test`（rspec、`TEST_DATABASE`）か `e2e`（E2E、`E2E_DATABASE`）を含める（`factory_ops_m51_test`・`factory_ops_m51_e2e`）。一時の DB は作る入口（`bin/ci` の `db:test:prepare`、E2E の `start-rails.sh` の `db:drop db:prepare`）が作り、作った担当が止まっても残るので、`RAILS_ENV=test bin/rails temp_databases:list` で一覧し、`RAILS_ENV=test bin/rails "temp_databases:drop[<名前>]"` で消す（[bin.md「bin/rails で流す運用のタスク」](bin.md#binrails-で流す運用のタスク)）。2 つのタスクは名前の規則に合う DB だけを扱い、既定の 3 つ（`factory_ops_demo_rails_development`・`factory_ops_demo_rails_test`・`factory_ops_e2e`）は扱わない。削除は名前を明示したときだけ、所有ロールで保守用の DB（`postgres`）に接続して `DROP DATABASE` を `FORCE` なしで流すので、接続中の DB は PostgreSQL が失敗させる。動いている担当の DB を、その接続ごと切って消さないためである。test の環境でだけ動く（`lib/temp_databases.rb`）。
 
 開発とテストの接続先は、`compose.yaml` の PostgreSQL 18（ポート 5433）である。主キーに使う `uuidv7()` は 18 から入った関数である（[ADR 003](../adr/003-主キーにUUIDv7を使う.md)）。
 
@@ -332,7 +332,7 @@ curl -s localhost:9395/metrics | grep -E 'job_duration_seconds_count|queue_ready
 
 ## 環境ごとの設定
 
-`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）と、通知のメールの送信先（`config.x.notifications.*`。[ジョブ](#ジョブ)）と、本番の `assume_ssl` を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）と、本番の SMTP の生成時のコメントを消したほかは生成のままである。本番のメールは SMTP ではなく SendGrid の API へ送るからである。本デモの読み方で知っておくとよいのは次の 3 つ。
+`environments/` の 3 ファイルは、ログの書式（[ログ](#ログ)）と、N+1 の検出（Bullet。[graphql-schema.md「ページングと N+1」](../architecture/graphql-schema.md#ページングと-n1)）と、通知のメールの送信先（`config.x.notifications.*`。[ジョブ](#ジョブ)）と、本番の `assume_ssl` と、`test.rb` の起動の時の読み込みの条件（下の 1 つ目）を足し、使っていない部品の設定（`active_storage.service` と Action Cable の生成時のコメント。[使っていない機能の設定](#使っていない機能の設定)）と、本番の SMTP の生成時のコメントを消したほかは生成のままである。本番のメールは SMTP ではなく SendGrid の API へ送るからである。本デモの読み方で知っておくとよいのは次の 3 つ。
 
 - **`test.rb` の `eager_load = ENV["CI"].present? || ENV["E2E_EAGER_LOAD"].present?`**：CI ではテストの前に全コードを読み込む。`packs/*/app/` のファイル名と定数名が合わないなど、自動読み込みの誤りは CI で落ちる。E2E の Rails は、手元でも起動の時に読み込む。`frontend/e2e/start-rails.sh` が `E2E_EAGER_LOAD=1` を渡すので、手元の E2E も CI と同じく読み込んでから `/up` に答え、自動読み込みの誤りも手元で落ちる。読み込まないと、最初の要求が定数を読み込む時間だけ遅れ、ログインの後の画面の移りが期待の待ちを超えることがある。`CI` そのものは渡さない。`CI` は CI の上で動いていることを表し、読み込みのほかにも gem や道具が見て振る舞いを変えうるからである。
 - **`production.rb` に Solid Queue の `connects_to` が無い**：[ジョブ](#ジョブ) のとおり、意図して書いていない。
