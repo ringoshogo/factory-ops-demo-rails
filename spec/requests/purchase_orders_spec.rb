@@ -108,7 +108,7 @@ RSpec.describe "発注登録と受注の連結", type: :request do
     login_as(buyer_member)
     placed = place
     deliver_enqueued_events
-    # 出荷の計上は受注側の受け手も受けるので、受注と受注明細の ID は実在の行から取る
+    # 出荷の計上は受注と受注明細の ID も運ぶ。購買は保存しないが、運ぶ値は実在の行から取る
     sales_order_id, sales_order_line_id, line_id = select_values(supplier,
       "SELECT sales_order_id || ' ' || id || ' ' || source_purchase_order_line_id FROM sales_order_lines").sole.split
     Tenancy.with_tenant(supplier.id) do
