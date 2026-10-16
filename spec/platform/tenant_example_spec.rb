@@ -64,8 +64,11 @@ RSpec.describe "example をテナントで包む around" do
         "prepend_around { |example| Tenancy.with_tenant(tenant.id) { example.run } }",
         "append_around do |example|\n  Tenancy.with_tenant(tenant.id) { example.run }\nend"
       ].each { |source| expect(self.class.collect(source).wrapping).to eq([ 1 ]), source }
-      # 対照：packs/*/spec の glob が読めている。このファイルの内側の group だけでは満たさない
-      expect(collected.select { |path, _| path.start_with?("packs/") }.values.sum { _1.tenant_examples.size }).to be >= 1
+      # 対照：spec と packs/*/spec の両方の glob が読めている。spec はこのファイルの内側の group の around で満たし、
+      # packs はこのファイルでは満たさない
+      [ "spec/", "packs/" ].each do |root|
+        expect(collected.select { |path, _| path.start_with?(root) }.values.sum { _1.tenant_examples.size }).to be >= 1, root
+      end
 
       expect(wrapping).to eq([]), "TenantExample.run を通さずに example を包む around：\n#{wrapping.join("\n")}"
     end
