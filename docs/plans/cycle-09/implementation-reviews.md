@@ -330,8 +330,17 @@ bin/check-open-items --due M53 && bin/check-commit-refs   # 通った
 cd frontend && E2E_DATABASE=factory_ops_m53_e2e PLAYWRIGHT_CHANNEL=chrome npm run test:e2e   # e9b8290 で 74 passed・26 skipped（1.9 分）
 ```
 
-`bin/check-schema-compat` は、足した型と enum とフィールドを非破壊の変更として通した（落とす変更は無い）。分岐の網羅率の警告は、`e9b8290` の `bin/ci`（基準は `7702f10`）で 0 件だった。E2E の全体は、1 分の load average が 10 前後の間に 1 回流した。発注の詳細の寸法とコントラストは、`/buyer/purchase-orders/[id]` を測る既存の E2E（`frontend/e2e/support/screens.ts`）がそのまま測り、通った。
+`bin/check-schema-compat` は、足した型と enum とフィールドを非破壊の変更として通した（落とす変更は無い）。分岐の網羅率の警告は、`e9b8290` と `2bd0288` の `bin/ci`（基準は `7702f10`）でどちらも 0 件で、PR の CI の test のジョブの注釈も、どちらの先端でも 0 件だった。実装レビューの直しの後の `2bd0288` でも `TEST_DATABASE=factory_ops_m53_test BASE_REF=origin/cycle-09-plan-m55 bin/ci` が通った（3150 examples, 0 failures）。直しは spec・文書・コメントだけで、手元の E2E は流し直していない。
+
+PR #100 の CI は、push のたびに `pull_request` で流れ、どれも通った（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `d3d4434` | [38877978187](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38877978187) | success（e2e 3 分 38 秒・test 6 分 34 秒） |
+| `2bd0288` | [38879904483](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/38879904483) | success（e2e 3 分 49 秒・test 4 分 18 秒） |
+
+この表を載せた commit は証跡と `handoff.md` の件数だけを変える。その CI の結果は PR の checks で見る。E2E の全体は、1 分の load average が 10 前後の間に 1 回流した。発注の詳細の寸法とコントラストは、`/buyer/purchase-orders/[id]` を測る既存の E2E（`frontend/e2e/support/screens.ts`）がそのまま測り、通った。
 
 ### 残件の処理
 
-引当先が M53 の行（OI-210・OI-212。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。IB-139 は計画のとおり M53 で起票済みのまま。画面で計画が書き切らなかった 3 つを OI-220（`judgment`）に、出来事の種類の一覧と enum の一致の検査が無いことを IB-145 に、実装レビューの違和感（請求書の受領の日付の意味）を IB-146 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前に読み、どの時点でも空だった。
+引当先が M53 の行（OI-210・OI-212。どちらも `decided`）は、着手の前と PR の前に台帳を読み、作るもの 1〜4 で反映した。IB-139 は計画のとおり M53 で起票済みのまま。画面で計画が書き切らなかった 3 つを OI-220（`judgment`）に、出来事の種類の一覧と enum の一致の検査が無いことを IB-145 に、実装レビューの違和感（請求書の受領の日付の意味）を IB-146 に積んだ。取りまとめ役の判断の受け口（`decisions.md`）は、着手の時と各 commit の前と報告の前に読み、どの時点でも空だった。
