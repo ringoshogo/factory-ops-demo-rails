@@ -10,6 +10,9 @@ RSpec.describe Inventory::Allocation do
 
   around { |example| TenantExample.run(example, tenant.id) }
 
+  # 調整は自社の品目の写しのある品目にだけ在庫を作る（Inventory::Adjustment）
+  before { FactoryBot.create(:item_label, item_id:) }
+
   def stock = Inventory::Stocks.for_items(actor, [ item_id ]).fetch(item_id)
 
   def adjust(type, quantity) = Inventory::Adjustment.adjust(actor, item_id:, type:, quantity:)

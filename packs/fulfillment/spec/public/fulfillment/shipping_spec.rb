@@ -12,6 +12,7 @@ RSpec.describe Fulfillment::Shipping do
   let(:request) { FactoryBot.create(:shipping_instruction).shipment_request }
   # 出荷依頼の明細ごとに、在庫を入れて全量を引き当てておく
   let!(:lines) do
+    FactoryBot.create(:item_label, item_id:)
     Inventory::Adjustment.adjust(actor, item_id:, type: "inbound", quantity: 10)
     [ 3, 2 ].map do |quantity|
       FactoryBot.create(:shipment_request_line, shipment_request: request, item_id:, quantity:).tap do |line|

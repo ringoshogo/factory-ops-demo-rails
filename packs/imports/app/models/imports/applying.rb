@@ -61,7 +61,9 @@ module Imports
       raise "単価の改定の予約に失敗した（#{message(scheduled)}）" unless scheduled.success?
     end
 
-    # 在庫は品目 ID の昇順に、行ごとのセーブポイントで目標の数量に合わせる。並んだ取り込みと引当が、在庫の行を同じ順でロックする
+    # 在庫は品目 ID の昇順に、行ごとのセーブポイントで目標の数量に合わせる。並んだ取り込みと引当が、在庫の行を同じ順でロックする。
+    # 品目コードから ID を引くのは受注の公開 API で、自社の品目であることの保証は在庫数の設定（Inventory::Adjustment.set_quantity）が持つ。
+    # 写しは品目と同じトランザクションで書くので（docs/adr/011 決定 1）、コードが引けて写しの無い品目は起きない
     def self.apply_stocks(actor, import, rows)
       parsed, errors = parse(import, rows)
       item_ids = Sales::Catalog.ids_by_codes(actor, parsed.values.map { _1[:item_code] })

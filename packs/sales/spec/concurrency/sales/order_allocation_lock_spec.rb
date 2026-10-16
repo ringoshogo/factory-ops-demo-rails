@@ -6,7 +6,7 @@ RSpec.describe Sales::OrderAllocation do
 
   let!(:supplier) { FactoryBot.create(:tenant) }
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
-  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item) } }
+  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled) } }
   let!(:orders) do
     Tenancy.with_tenant(supplier.id) do
       Inventory::Adjustment.adjust(actor, item_id: item.id, type: "inbound", quantity: 10)
@@ -19,7 +19,7 @@ RSpec.describe Sales::OrderAllocation do
   # 全量を引き当てた受注の「出荷可能」のジョブも、受注側のテナントの分として消す
   after do
     delete_owned_rows([ supplier.id, *orders.map(&:customer_tenant_id) ],
-      %w[stock_movements allocations stocks sales_order_lines sales_orders item_prices items])
+      %w[stock_movements allocations stocks item_labels sales_order_lines sales_orders item_prices items])
   end
 
   it "先の引当がコミットするまで後の引当は在庫の行で待ち、後の引当は残りの有効在庫だけを引き当てる" do

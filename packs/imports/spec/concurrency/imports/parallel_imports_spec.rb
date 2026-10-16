@@ -9,7 +9,7 @@ RSpec.describe "並んだ取り込み" do
   let!(:tenant) { FactoryBot.create(:tenant).id }
   let!(:admin) { Tenancy.with_tenant(tenant) { FactoryBot.create(:user, :admin) } }
   let(:actor) { Tenancy.with_tenant(tenant) { Partnerships::Authentication.acting_user(admin.id) } }
-  let!(:item_ids) { Tenancy.with_tenant(tenant) { %w[A B].to_h { [ _1, FactoryBot.create(:item, code: _1).id ] } } }
+  let!(:item_ids) { Tenancy.with_tenant(tenant) { %w[A B].to_h { [ _1, FactoryBot.create(:item, :labeled, code: _1).id ] } } }
   # 2 つのスレッドが出すイベントを集める
   let(:events) { Queue.new }
   let(:collector) { Struct.new(:events) { def emit(event) = events << event }.new(events) }

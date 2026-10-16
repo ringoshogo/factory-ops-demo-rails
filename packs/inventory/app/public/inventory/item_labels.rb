@@ -7,6 +7,12 @@ module Inventory
       def +(other) = Counts.new(inserted: inserted + other.inserted, updated: updated + other.updated)
     end
 
+    # 自社の品目の写し。見えない品目は nil を返す。在庫の調整の mutation が、対象の品目を引く
+    def self.find(actor, item_id)
+      label = Scope.call(actor, ItemLabel.where(item_id:)).first
+      label && ItemLabelValue.new(**label.slice(*ItemLabelValue.members.map(&:to_s)).symbolize_keys)
+    end
+
     # labels は { item_id:, code:, name: } の配列で、品目 ID は重ならない。いまのテナントの写しを upsert し、件数だけを返す。
     # 操作者のいない入口なので、テナントの設定を求め、所有テナントを Current のテナントで明示して書く
     # （docs/architecture/graphql-schema.md「認可：宣言の無い型・リゾルバ・mutation は拒否する」）。

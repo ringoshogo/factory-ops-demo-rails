@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe "在庫と引当", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let(:member) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user) } }
-  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code: "BOLT-8") } }
+  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled, code: "BOLT-8") } }
   let!(:order) do
     Tenancy.with_tenant(supplier.id) do
       FactoryBot.create(:sales_order).tap { FactoryBot.create(:sales_order_line, :matched, sales_order: _1, item_id: item.id, quantity: 5) }

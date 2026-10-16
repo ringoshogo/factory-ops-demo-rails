@@ -1,6 +1,7 @@
 module Inventory
   # 入庫・出庫による在庫の調整（docs/architecture/graphql-schema.md「mutation の一覧」adjustStock）。
-  # 品目の存在は呼ぶ側が受注の公開 API で確かめる。在庫は受注に依存しないからである
+  # 在庫は自社の品目にだけできる。品目は、受注の公開 API が品目と同じトランザクションで書く自社の写し（ItemLabel）で確かめ、
+  # 写しの無い品目 ID は何も書かずに NOT_FOUND にする（docs/architecture/data-model.md「在庫（`inventory`）」）
   module Adjustment
     TYPES = %w[inbound outbound].freeze
     # 調整の理由の長さの上限（docs/architecture/graphql-schema.md「mutation の一覧」）
@@ -13,6 +14,8 @@ module Inventory
       if reason && reason.length > MAX_REASON_LENGTH
         return invalid_input(:reason, "Reason must be at most #{MAX_REASON_LENGTH} characters")
       end
+
+      return not_found unless labeled?(actor, item_id)
 
       result = nil
       Stock.transaction(requires_new: true) do
@@ -32,6 +35,7 @@ module Inventory
     # ロックの前に読んだ数量で差を取ると、同時の調整や引当とずれる。引当済みの数量より少ない目標は受け付けない
     def self.set_quantity(actor, item_id:, quantity:, reason:)
       return invalid_input(:quantity, "Quantity must be a non-negative integer") unless quantity.is_a?(Integer) && quantity >= 0
+      return not_found unless labeled?(actor, item_id)
 
       result = nil
       Stock.transaction(requires_new: true) do
@@ -48,7 +52,11 @@ module Inventory
       result
     end
 
+    # 写しは消さないので、確かめてから在庫の行をロックするまでの間に消えることは無い。写しの行はロックしない
+    def self.labeled?(actor, item_id) = Scope.call(actor, ItemLabel.where(item_id:)).exists?
+
     def self.invalid_input(attribute, message) = OperationResult.failure(:invalid_input, path: [ attribute ], message:)
-    private_class_method :invalid_input
+    def self.not_found = OperationResult.failure(:not_found, path: [ :item_id ])
+    private_class_method :labeled?, :invalid_input, :not_found
   end
 end

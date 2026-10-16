@@ -10,7 +10,7 @@ RSpec.describe Sales::OrderCancellation do
   around { |example| TenantExample.run(example, supplier.id) }
 
   let(:actor) { Partnerships::Actor.new(user_id: nil, tenant_id: supplier.id, name: "", email: "", role: "member", partner_code: "") }
-  let(:item) { FactoryBot.create(:item) }
+  let(:item) { FactoryBot.create(:item, :labeled) }
   let!(:order) do
     FactoryBot.create(:sales_order, customer_tenant_id: buyer.id).tap do |order|
       [ 3, 2 ].each { FactoryBot.create(:sales_order_line, :matched, sales_order: order, item_id: item.id, quantity: _1) }

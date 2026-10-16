@@ -52,6 +52,20 @@ RSpec.describe Inventory::ItemLabels do
     end
   end
 
+  describe ".find" do
+    it "自社の写しを値で返し、他社の写しの品目 ID と写しの無い品目 ID は nil を返す" do
+      own = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item_label, code: "B-1", name: "ボルト") }
+      theirs = Tenancy.with_tenant(other.id) { FactoryBot.create(:item_label) }
+
+      Tenancy.with_tenant(supplier.id) do
+        expect(described_class.find(actor, own.item_id))
+          .to eq(Inventory::ItemLabelValue.new(owner_tenant_id: supplier.id, item_id: own.item_id, code: "B-1", name: "ボルト"))
+        expect(described_class.find(actor, theirs.item_id)).to be_nil
+        expect(described_class.find(actor, SecureRandom.uuid)).to be_nil
+      end
+    end
+  end
+
   # RLS が他社の写しを隠すので、所有の条件を外しても上の example は落ちない。RLS の SELECT と UPDATE を開き、
   # 他社の写しが見え、更新の対象に入る状態で確かめる（docs/guides/testing.md「行列テストとの分担」）
   describe "RLS の SELECT と UPDATE を開いたとき" do
@@ -72,6 +86,19 @@ RSpec.describe Inventory::ItemLabels do
         expect(Inventory::ItemLabel.where(item_id:).pluck(:owner_tenant_id, :name))
           .to contain_exactly([ supplier.id, "六角ボルト" ], [ other.id, "他社の品目" ])
         expect(reread(theirs)).to eq(before)
+      end
+    end
+
+    it "find は、見えるようになった他社の写しの品目 ID にも nil を返す" do
+      own = Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item_label) }
+
+      Tenancy.with_tenant(supplier.id) do
+        cross_read!
+        # 対照：開いた後は他社の写しが見え、自社の写しは返る
+        expect(Inventory::ItemLabel.where(item_id:).pluck(:owner_tenant_id)).to eq([ other.id ])
+        expect(described_class.find(actor, own.item_id)&.item_id).to eq(own.item_id)
+
+        expect(described_class.find(actor, item_id)).to be_nil
       end
     end
 

@@ -103,6 +103,10 @@ class MatrixWorld
     @rows = self.class.tenant_tables.index_with do |table|
       PERSONAS.index_with { |persona| as(persona) { FactoryBot.create(self.class.factory_name(table)) } }
     end
+    # 在庫の調整は、自社の品目の写しのある品目にだけ在庫を作る（Inventory::Adjustment）。品目の表ごとの行に写しを書く
+    PERSONAS.each do |persona|
+      as(persona) { row("items", persona).then { FactoryBot.create(:item_label, item_id: _1.id, code: _1.code, name: _1.name) } }
+    end
     @partnerships = PARTNERSHIPS.to_h do |buyer, spec|
       partnership = as(:supplier) do
         FactoryBot.create(:partnership, *spec.fetch(:traits, []), buyer_tenant_id: tenants[buyer], permissions: spec[:permissions])

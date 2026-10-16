@@ -7,7 +7,7 @@ RSpec.describe "出荷指示と出荷実績の計上", type: :request do
   let!(:supplier) { FactoryBot.create(:tenant) }
   let!(:buyer) { FactoryBot.create(:tenant, name: "組立メーカー") }
   let(:member) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:user) } }
-  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, code: "BOLT-8") } }
+  let!(:item) { Tenancy.with_tenant(supplier.id) { FactoryBot.create(:item, :labeled, code: "BOLT-8") } }
   let!(:order) do
     Tenancy.with_tenant(supplier.id) do
       FactoryBot.create(:sales_order, customer_tenant_id: buyer.id, due_date: Date.new(2026, 10, 31)).tap do
