@@ -2727,27 +2727,29 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 
 作者は 2026-10-20 に、サイクル 09 の逸脱検査で積んだ改善の候補 IB-151・IB-152 も、マイルストーンの数を増やさずに M54 の残りに足すと決めた（`plans/improvement-backlog.md`）。どちらも振る舞いを変えない。
 
-**列を消した後の `ignored_columns`（IB-151）**：列を消すときに `ignored_columns` をどう置き、いつ外すかを、`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」に 1 段落で書く。`remove_column` を止める gem の説明の節で、列を消すマイグレーションを書く人が読むからである。書く規則は次の 3 つである。
+**列を消した後の `ignored_columns`（IB-151）**：列を消すときに `ignored_columns` をどう置き、いつ外すかを、`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」に 1 段落で書く。`remove_column` を止める gem の説明の節で、列を消すマイグレーションを書く人が読むからである。書く規則は次の 3 つである。規則の前提は、Active Record がモデルの列を初めてそのモデルを使ったときに読んで持ち続けることと、`config.load_defaults 8.1` では `partial_inserts` が偽で INSERT がモデルの全列を書くことである（`railties-8.1.4/lib/rails/application/configuration.rb` の `load_defaults "7.0"` の段。gem の既定は真で、`activerecord-8.1.4/lib/active_record/attribute_methods/dirty.rb`）。列を読んだ後に列が消えると、そのプロセスの INSERT は消えた列を書いて失敗する。
 
-1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で消す（前例：`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）
-2. `ignored_columns` から外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、配置の適用で `migrate` の Job が列を消す前に起きた Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する。`config.load_defaults 8.1` では `partial_inserts` が偽で、INSERT はモデルの全列を書くからである。公開の配置が間の版を飛ばして 2 つの PR を一度に適用しても、毎日の作り直し（`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3）が Web とワーカーを 0 にしてから起こし直すので、壊れは次の作り直しで消える
-3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列をモデルが読み込み、spec が列を消した後の INSERT がその列を書いて落ちる（OI-106）
+1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で消す（前例：`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）。strong_migrations 2.8.0 の `remove_column` の案内（`lib/strong_migrations/error_messages.rb`）は、無視を配ってから消す 2 段の手順だが、本デモは 1 つの変更にまとめる。`web` と `jobs` の Deployment は `Recreate` なので、適用で古い版の Pod が止まり、古い版が列を消した後まで動き続ける時間は短い。その間に起きた壊れも、毎日の作り直し（`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3）が Web とワーカーを 0 にしてから起こし直すので消える
+2. `ignored_columns` から外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、適用で `migrate` の Job が列を消す前にそのモデルを初めて使った新しい版の Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する。PR を分けることが守る形である。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときは、同じ壊れが起きうるが、次の作り直しで消えるので許す。これは守りではなく運用の割り切りとして、守りの文と分けて書く
+3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、spec が列を消した後の品目の INSERT がその列を書いて落ちる。落ちるのは、列を読んだ example より後に同じプロセスで INSERT する spec で、`config.order = :random` の順で変わる（OI-106）
 
 規則に照らして、残る 2 つを次のとおりにする。置き場と規則と 2 つの扱いは OI-232（`judgment`）に積んだ。
 
 - `packs/fulfillment/app/models/fulfillment/shipment_request.rb` の `cancelled_at`：外す。消すマイグレーション `20261016100000` は M54 で main に入り（`a7cb044`）、列を足し直す spec は無い（`git grep -n -i -e 'ADD COLUMN' -e 'add_column' -- spec 'packs/*/spec/**'` は移行の spec の `items.unit_price` の 1 行だけを返す）。`ignored_columns` の行とコメントを消す。コメントの経緯の文（サイクル 09 の逸脱検査の D7）も一緒に消える
 - `packs/sales/app/models/sales/item.rb` の `unit_price`：残す。移行の spec（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）が列を足し直すので、規則 3 に当たる。コメントを、規則 3 の理由と `guides/config.md` の節を指す短い文にする
 
-`cancelled_at` は、外した後も列がテストの DB に無いので、落ちるテストは無い。代わりに、外す前に `db/structure.sql` の `shipment_requests` の表に `cancelled_at` が無いことと、手元の DB で `bin/rails db:migrate:status` が `20261016100000` を `up` と出すことを、マイグレーションの状態として証跡に書く。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと `item_prices_backfill_spec.rb` が落ちること（落ちた example と、INSERT が `unit_price` を書いた失敗の文）を書き、行を戻す。規則 3 を守るのはこの spec だけだからである。
+規則 3 の壊れは、いまは spec の順でしか表に出ないので、移行の spec に順によらず落ちる example を 1 つ足す。example は、`before` が列を足し直した後に `Sales::Item.reset_column_information` を呼んで列を読ませ、所有ロールで列を消し（同じファイルの `reshape`）、`FactoryBot.create(:item)` が成功することを確かめ、`ensure` で `Sales::Item.reset_column_information` を呼んで列の読み込みを戻す。`ignored_columns` があれば INSERT は `unit_price` を書かないので通る。いまのコードで通る守りの example なので RED は無く、壊して落ちる記録で効き目を示す。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと、この example が `PG::UndefinedColumn`（`unit_price`）で落ちること（失敗の文）を書き、行を戻す。
 
-**出荷指示の取消のロックの順（IB-152）**：文書だけを直し、コードと spec は変えない。`Fulfillment::Instructions.cancel`（`packs/fulfillment/app/public/fulfillment/instructions.rb`）は、`Scope` の出荷依頼を `lock` で取って出荷済なら止め、有効な出荷指示を `lock` で取って取り消す。受注は読まず、ロックもしない。次の 2 か所に、順の文と理由の文を 1 文ずつ足す。
+`cancelled_at` は、外した後も列がテストの DB に無いので、落ちるテストは無い。代わりに、外す前に `db/structure.sql` の `shipment_requests` の表に `cancelled_at` が無いことと、手元の DB で `bin/rails db:migrate:status` が `20261016100000` を `up` と出すことを、マイグレーションの状態として証跡に書く。
 
-- `adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` 決定 4 の「受注の取消は受注 → 受注明細 → 在庫 → 引当のまま変わらない。」の後
+**出荷指示の取消のロックの順（IB-152）**：文書だけを直し、コードと spec は変えない。`Fulfillment::Instructions.cancel`（`packs/fulfillment/app/public/fulfillment/instructions.rb`）は、`Scope` の出荷依頼を `lock` で取って出荷済なら止め、有効な出荷指示を `lock` で取って取り消す。受注で判断せず、受注をロックしない（成功の戻り値を作る `ShipmentRequests.find` の状況の式は、受注をロックせずに読む）。次の 2 か所に、順の文と理由の文を 1 文ずつ足す。
+
+- `adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` 決定 4 の「…取消・審査の作成と決着・出荷指示の作成・計上が受注の行ロックで直列になる。」の後。「受注の取消は…のまま変わらない。」の直後に置くと、続く「どちらも受注を最初に取るので」が受注を取らない取消まで受けて誤りになるからである
 - `architecture/data-model.md`「取消と出荷の競合を止める場所」のロックの順の段落の「どちらも受注を最初に取り、在庫から先の順も揃うので、デッドロックは起きない。」の後
 
-順の文は `Fulfillment::Instructions.cancel` を名指しし、「出荷指示の取消は受注をロックせず、出荷依頼 → 出荷指示の順に取る」の趣旨で、受注をロックしない理由に、取消済と審査中の受注でも残った指示を取り消してよいこと（M54 の作るもの 3）を添える。理由の文は「この順は出荷指示の作成と計上の順（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）の部分列で、ロックを取る操作がどれも 1 本の順に沿うので、取消が加わってもデッドロックは起きない」の趣旨にする。同じ文書の「出荷（`fulfillment`）」の「出荷指示の取消は、受注を読まずに出荷依頼の行だけをロックする。」は、出荷指示もロックするいまのコードと食い違うので、「受注を読まずに、出荷依頼 → 出荷指示の順にロックする」の趣旨に直す。`spec/db/lock_sites_spec.rb` の `Fulfillment::Instructions.cancel` の行は、理由を持たずに `shipping_lock_spec.rb` を指し、その 2 つの example（計上と取消のどちらが先でも、後の操作が出荷依頼の行ロックで待つ）は足す文と食い違わないので、変えない。3 か所目の直しと spec を変えないことは OI-233（`judgment`）に積んだ。
+順の文は `Fulfillment::Instructions.cancel` を名指しし、「出荷指示の取消は受注をロックせず、出荷依頼 → 出荷指示の順に取る」の趣旨で、受注をロックしない理由に、受注の取消済と審査中によらず残った指示を取り消してよいこと（`instructions.rb` の `cancel` は受注を見ない。M54 の作るもの 3）を添える。理由の文は「この順は出荷指示の作成と計上の順（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）の部分列で、受注の取消（受注 → 受注明細 → 在庫 → 引当）とは同じ行を取らないので、取消が加わってもデッドロックは起きない」の趣旨にする。同じ文書の「出荷（`fulfillment`）」の「出荷指示の取消は、受注を読まずに出荷依頼の行だけをロックする。」は、出荷指示もロックするいまのコードと食い違うので、「受注で判断せずに、出荷依頼 → 出荷指示の順にロックする」の趣旨に直す。この文ではメソッドを名指ししない（下の `git grep` の件数を 2 件に保つ）。`spec/db/lock_sites_spec.rb` の `Fulfillment::Instructions.cancel` の行は、理由を持たずに `shipping_lock_spec.rb` を指し、その 2 つの example（計上と取消のどちらが先でも、後の操作が出荷依頼の行ロックで待つ）は足す文と食い違わないので、変えない。3 か所目の直しと spec を変えないことは OI-233（`judgment`）に積んだ。
 
-完了条件は、共通の完了条件と次のコマンドである。振る舞いを変えないので、最初に落とすテストは無い。直す前に、OI-226 の `git grep` が 5 行（コメントの 3 か所と文書の 2 か所）を、`ignored_columns` の `git grep` が 2 行を、`Instructions.cancel` の `git grep` が 0 行を返すことを、RED に代わる記録として証跡に書く。実装者は、終えるときに OI-226 を `closed` にして commit の SHA を書く。
+完了条件は、共通の完了条件と次のコマンドである。足す example は守りなので、最初に落とすテストは無い。直す前に、OI-226 の `git grep` が 5 行（コメントの 3 か所と文書の 2 か所）を、`ignored_columns` の `git grep` が 2 行を、`Instructions.cancel` の `git grep` が 0 行を返すことを、RED に代わる記録として証跡に書く。実装者は、終えるときに OI-226 を `closed` にして commit の SHA を書く。
 
 ```sh
 git grep -n -e '写しを作った時点' -e '依存しなかった' -e '依存の向きを変えずに' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!docs/adr'   # 0 件
