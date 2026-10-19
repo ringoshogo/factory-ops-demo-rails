@@ -2723,14 +2723,41 @@ cd frontend && npm run test:e2e   # 0 failures
 
 E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベントのために `drain` を残し、期待は変えない。`frontend` の E2E を全体で流し、取消・審査中・出荷の画面の状況の表示が変わらないことを確かめる。
 
-**残り（サイクル 10）**：実装レビューまで終えた。出荷依頼の受注番号の写しを残す理由と、経緯で書いたコメント（OI-226。サイクル 09 の逸脱検査の D6・D7）は、作者の答えで作るものが変わるので、OI-226 だけを「M54 の残り」としてサイクル 10 へ移した。作者は 2026-10-19 に (a) 写しを残すと決めた（OI-226 の内容の欄の末尾。作業が残るので行は `open` のまま）。M54 の残りで作るのは、ADR 011 の写しの理由とコメント 3 か所の直しである。ADR 011 は 3 か所を直す。決定 2 の出荷依頼の受注番号の文に、いま写しを持つ理由を書く。理由は、作り直しのタスクと一致の spec がすでに写しを守り、一覧の並べ替えが出荷の表だけで済み、受注から引く形に替えても画面の振る舞いは変わらないままマイルストーン 1 つ分の費用がかかることである（OI-226 の作者の判断）。代替案 D の不採用の理由を、このいまの理由に替え、依存の向きの経緯は段落の後ろに残す。「見直す条件」に、受注番号を後から変える入口のほかに、写しを守る作り直しのタスクか一致の spec を外すとき、を足す。`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`・`lib/tasks/read_models.rake`・`frontend/e2e/list-pagination.spec.ts` のコメントを、経緯ではなくいまの契約の短い文にする（`guides/comments.md`）。`read_models.rake` は、受注番号の組をタスクが受け渡すいまの理由（作り直しはテナントごとにタスクが回し、出荷の公開 API は受け取った組を書くだけの、操作者のいない入口である。`spec/packwerk/entry_callers_spec.rb` の表）を書く。同じ理由を経緯で書いた文書の 2 か所（`architecture/graphql-schema.md`「ページングと N+1」の出荷依頼の `ORDER_NO` の文と、`showcase.md` のテーマ 3 の出荷依頼の受注番号の写しの箇条）も、ADR 011 を指すいまの理由の短い文にする。経緯は ADR 011 の代替案 D の段落にだけ残す。spec と振る舞いは変えない。
+**残り（サイクル 10）**：実装レビューまで終えた。出荷依頼の受注番号の写しを残す理由と、経緯で書いたコメント（OI-226。サイクル 09 の逸脱検査の D6・D7）は、作者の答えで作るものが変わるので、OI-226 だけを「M54 の残り」としてサイクル 10 へ移した。作者は 2026-10-19 に (a) 写しを残すと決めた（OI-226 の内容の欄の末尾。作業が残るので行は `open` のまま）。OI-226 の分で作るのは、ADR 011 の写しの理由とコメント 3 か所の直しである。ADR 011 は 3 か所を直す。決定 2 の出荷依頼の受注番号の文に、いま写しを持つ理由を書く。理由は、作り直しのタスクと一致の spec がすでに写しを守り、一覧の並べ替えが出荷の表だけで済み、受注から引く形に替えても画面の振る舞いは変わらないままマイルストーン 1 つ分の費用がかかることである（OI-226 の作者の判断）。代替案 D の不採用の理由を、このいまの理由に替え、依存の向きの経緯は段落の後ろに残す。「見直す条件」に、受注番号を後から変える入口のほかに、写しを守る作り直しのタスクか一致の spec を外すとき、を足す。`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`・`lib/tasks/read_models.rake`・`frontend/e2e/list-pagination.spec.ts` のコメントを、経緯ではなくいまの契約の短い文にする（`guides/comments.md`）。`read_models.rake` は、受注番号の組をタスクが受け渡すいまの理由（作り直しはテナントごとにタスクが回し、出荷の公開 API は受け取った組を書くだけの、操作者のいない入口である。`spec/packwerk/entry_callers_spec.rb` の表）を書く。同じ理由を経緯で書いた文書の 2 か所（`architecture/graphql-schema.md`「ページングと N+1」の出荷依頼の `ORDER_NO` の文と、`showcase.md` のテーマ 3 の出荷依頼の受注番号の写しの箇条）も、ADR 011 を指すいまの理由の短い文にする。経緯は ADR 011 の代替案 D の段落にだけ残す。spec と振る舞いは変えない。
 
-完了条件は、共通の完了条件と次のコマンドである。振る舞いを変えないので、最初に落とすテストは無く、下の `git grep` が直す前に 5 行（コメントの 3 か所と文書の 2 か所）を返すことを、RED に代わる記録として証跡に書く。実装者は、終えるときに OI-226 を `closed` にして commit の SHA を書く。
+作者は 2026-10-20 に、サイクル 09 の逸脱検査で積んだ改善の候補 IB-151・IB-152 も、マイルストーンの数を増やさずに M54 の残りに足すと決めた（`plans/improvement-backlog.md`）。どちらも振る舞いを変えない。
+
+**列を消した後の `ignored_columns`（IB-151）**：列を消すときに `ignored_columns` をどう置き、いつ外すかを、`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」に 1 段落で書く。`remove_column` を止める gem の説明の節で、列を消すマイグレーションを書く人が読むからである。書く規則は次の 3 つである。
+
+1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で消す（前例：`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）
+2. `ignored_columns` から外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、配置の適用で `migrate` の Job が列を消す前に起きた Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する。`config.load_defaults 8.1` では `partial_inserts` が偽で、INSERT はモデルの全列を書くからである。公開の配置が間の版を飛ばして 2 つの PR を一度に適用しても、毎日の作り直し（`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3）が Web とワーカーを 0 にしてから起こし直すので、壊れは次の作り直しで消える
+3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列をモデルが読み込み、spec が列を消した後の INSERT がその列を書いて落ちる（OI-106）
+
+規則に照らして、残る 2 つを次のとおりにする。置き場と規則と 2 つの扱いは OI-232（`judgment`）に積んだ。
+
+- `packs/fulfillment/app/models/fulfillment/shipment_request.rb` の `cancelled_at`：外す。消すマイグレーション `20261016100000` は M54 で main に入り（`a7cb044`）、列を足し直す spec は無い（`git grep -n -i -e 'ADD COLUMN' -e 'add_column' -- spec 'packs/*/spec/**'` は移行の spec の `items.unit_price` の 1 行だけを返す）。`ignored_columns` の行とコメントを消す。コメントの経緯の文（サイクル 09 の逸脱検査の D7）も一緒に消える
+- `packs/sales/app/models/sales/item.rb` の `unit_price`：残す。移行の spec（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）が列を足し直すので、規則 3 に当たる。コメントを、規則 3 の理由と `guides/config.md` の節を指す短い文にする
+
+`cancelled_at` は、外した後も列がテストの DB に無いので、落ちるテストは無い。代わりに、外す前に `db/structure.sql` の `shipment_requests` の表に `cancelled_at` が無いことと、手元の DB で `bin/rails db:migrate:status` が `20261016100000` を `up` と出すことを、マイグレーションの状態として証跡に書く。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと `item_prices_backfill_spec.rb` が落ちること（落ちた example と、INSERT が `unit_price` を書いた失敗の文）を書き、行を戻す。規則 3 を守るのはこの spec だけだからである。
+
+**出荷指示の取消のロックの順（IB-152）**：文書だけを直し、コードと spec は変えない。`Fulfillment::Instructions.cancel`（`packs/fulfillment/app/public/fulfillment/instructions.rb`）は、`Scope` の出荷依頼を `lock` で取って出荷済なら止め、有効な出荷指示を `lock` で取って取り消す。受注は読まず、ロックもしない。次の 2 か所に、順の文と理由の文を 1 文ずつ足す。
+
+- `adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` 決定 4 の「受注の取消は受注 → 受注明細 → 在庫 → 引当のまま変わらない。」の後
+- `architecture/data-model.md`「取消と出荷の競合を止める場所」のロックの順の段落の「どちらも受注を最初に取り、在庫から先の順も揃うので、デッドロックは起きない。」の後
+
+順の文は `Fulfillment::Instructions.cancel` を名指しし、「出荷指示の取消は受注をロックせず、出荷依頼 → 出荷指示の順に取る」の趣旨で、受注をロックしない理由に、取消済と審査中の受注でも残った指示を取り消してよいこと（M54 の作るもの 3）を添える。理由の文は「この順は出荷指示の作成と計上の順（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）の部分列で、ロックを取る操作がどれも 1 本の順に沿うので、取消が加わってもデッドロックは起きない」の趣旨にする。同じ文書の「出荷（`fulfillment`）」の「出荷指示の取消は、受注を読まずに出荷依頼の行だけをロックする。」は、出荷指示もロックするいまのコードと食い違うので、「受注を読まずに、出荷依頼 → 出荷指示の順にロックする」の趣旨に直す。`spec/db/lock_sites_spec.rb` の `Fulfillment::Instructions.cancel` の行は、理由を持たずに `shipping_lock_spec.rb` を指し、その 2 つの example（計上と取消のどちらが先でも、後の操作が出荷依頼の行ロックで待つ）は足す文と食い違わないので、変えない。3 か所目の直しと spec を変えないことは OI-233（`judgment`）に積んだ。
+
+完了条件は、共通の完了条件と次のコマンドである。振る舞いを変えないので、最初に落とすテストは無い。直す前に、OI-226 の `git grep` が 5 行（コメントの 3 か所と文書の 2 か所）を、`ignored_columns` の `git grep` が 2 行を、`Instructions.cancel` の `git grep` が 0 行を返すことを、RED に代わる記録として証跡に書く。実装者は、終えるときに OI-226 を `closed` にして commit の SHA を書く。
 
 ```sh
 git grep -n -e '写しを作った時点' -e '依存しなかった' -e '依存の向きを変えずに' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!docs/adr'   # 0 件
+git grep -n 'ignored_columns' -- packs   # 1 件（Sales::Item の unit_price）
+git grep -n 'Instructions.cancel' -- 'docs/adr/012-*.md' docs/architecture/data-model.md   # 2 件（ADR 012 決定 4 と「取消と出荷の競合を止める場所」に 1 件ずつ）
+bundle exec rspec packs/fulfillment/spec packs/sales/spec/public/sales/item_prices_backfill_spec.rb   # 0 failures
 bin/check-open-items --due M54
 ```
+
+実装する文書の節は、OI-226 の分の文書（上）に加えて、`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」、`adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` 決定 4、`architecture/data-model.md`「出荷（`fulfillment`）」「取消と出荷の競合を止める場所」である。
 
 終えたマイルストーンの節に残る、M54 で消した仕組みを前提にした文（OI-223）には、作者の判断（2026-10-19）で、本書の冒頭（最初の段落の後、「1 つのマイルストーンの進め方」の前）に注記を 1 段落置く。終えた節は当時の記録で、いまの形は設計文書と ADR が正本であり、M54 で置き換えた仕組みは ADR 012 を読む、という趣旨である。節ごとの注記と書き換えはしない。注記は M54 の残りの作るものに入れず、サイクル 10 の最初に、M57 の計画レビューの前に取りまとめ役の指示で書いた（`85ef2da`）。
 
