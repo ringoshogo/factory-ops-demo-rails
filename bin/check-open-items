@@ -5,16 +5,23 @@
 #   bin/check-open-items --due M<番号>   加えて、引当先がそのマイルストーンの open と blocked-user が残っていれば失敗する
 #   bin/check-open-items --text FILE     加えて、FILE（PR の本文など）の参照も確かめる。FILE が - なら標準入力を読む
 #   bin/check-open-items --root DIR      DIR をリポジトリの根として扱う
+#
+# サイクル 10 からの証跡（docs/plans/cycle-NN/）の形も確かめる。実装レビューの「計画との違い」の項目が judgment か
+# decided の行の ID か「判断なし」を持つことと、計画レビューが dev-cycle.md「1. 計画レビュー」の観点の名前を持つこと
 require "optparse"
 require "open3"
 
 OPEN_ITEMS = "docs/plans/open-items.md"
 BACKLOG = "docs/plans/improvement-backlog.md"
 PLAN = "docs/implementation-plan.md"
+DEV_CYCLE = "docs/guides/dev-cycle.md"
+EVIDENCE = %r{\Adocs/plans/cycle-(\d+)/(implementation-reviews|plan-review)\.md\z}
+EVIDENCE_FROM = 10
 
 OI_STATES = %w[open judgment blocked-user decided closed].freeze
 OI_UNRESOLVED = %w[open judgment blocked-user].freeze
 OI_BLOCKING = %w[open blocked-user].freeze
+OI_JUDGED = %w[judgment decided].freeze
 IB_STATES = %w[未着手 調査中 試行中 反映済み 起票済み 監視 見送り].freeze
 IB_NEEDS_RECORD = %w[試行中 反映済み 起票済み 監視 見送り].freeze
 
@@ -107,6 +114,60 @@ check_text = lambda do |label, text|
   end
 end
 
+# 実装の途中で計画と違う形にした項目は、作者に確かめる judgment の行（作者が確かめた後は decided）を持つか、
+# 決めたことが無いと書く（docs/guides/dev-cycle.md「作者が不在の間に決めたこと」）。作るものの ID のように、
+# 決めたことを登録した行でない ID は数えない
+judged_ids = oi_rows.filter_map { |_lineno, cells| cells[0] if OI_JUDGED.include?(cells[1]) }
+check_differences = lambda do |label, text|
+  depth = nil # 「計画との違い」の見出しの # の数。節の外なら nil
+  fenced = false
+  items = []
+  text.each_line.with_index(1) do |line, lineno|
+    if line.start_with?("```")
+      fenced = !fenced
+      items << nil
+      next
+    end
+    next if fenced
+
+    if (heading = line.match(/\A(#+)\s+(.*)/))
+      # 節の中の深い見出しは節を続け、同じか浅い見出しで節を閉じる
+      if heading[2].strip == "計画との違い"
+        depth = heading[1].size
+      elsif depth && heading[1].size <= depth
+        depth = nil
+      end
+      items << nil
+    elsif depth && line.start_with?("- ")
+      items << [ lineno, line ]
+    elsif depth && items.last && line.match?(/\A\s+\S/)
+      items.last[1] += line # 字下げした行は、前の項目の続き
+    else
+      items << nil
+    end
+  end
+  items.compact.each do |lineno, item|
+    next if item.include?("判断なし") || item.scan(/\bOI-\d+\b/).any? { |id| judged_ids.include?(id) }
+
+    errors << "#{label}:#{lineno}: 計画との違いの項目に、judgment か decided の行の ID（OI-NN）も「判断なし」も無い"
+  end
+end
+
+# 計画レビューの観点は、規則の正本の dev-cycle.md「1. 計画レビュー」の番号付きの太字から集める。
+# 確かめるのは証跡の全体に観点の名前があることで、マイルストーンごと・系統ごとに書いたかは取りまとめ役が読む
+plan_review_aspects = nil
+check_plan_review = lambda do |label, text|
+  if plan_review_aspects.nil?
+    rule = File.join(root, DEV_CYCLE)
+    plan_review_aspects = (File.file?(rule) ? File.read(rule) : "")[/^## 1\. 計画レビュー\n(.*?)(?=^## )/m, 1].to_s
+                          .scan(/^\d+\. \*\*(.+?)\*\*/).flatten
+    errors << "#{DEV_CYCLE}: 「1. 計画レビュー」から観点の名前を読めない" if plan_review_aspects.empty?
+  end
+  plan_review_aspects.each do |aspect|
+    errors << "#{label}: 計画レビューの観点「#{aspect}」の結果が無い" unless text.include?(aspect)
+  end
+end
+
 files, status = Open3.capture2("git", "-C", root, "ls-files", "-z")
 abort "git ls-files が失敗した" unless status.success?
 files.split("\0").each do |file|
@@ -119,6 +180,12 @@ files.split("\0").each do |file|
   next unless text.valid_encoding? && !text.include?("\0")
 
   check_text.call(file, text)
+
+  # 証跡はその時点の記録で後から書き換えないので、形を決めたサイクルより前の証跡は確かめない
+  cycle, kind = file.match(EVIDENCE)&.captures
+  next unless cycle && cycle.to_i >= EVIDENCE_FROM
+
+  kind == "plan-review" ? check_plan_review.call(file, text) : check_differences.call(file, text)
 end
 
 options[:texts].each do |file|

@@ -147,4 +147,110 @@ RSpec.describe "bin/check-open-items" do
     expect(status).not_to be_success
     expect(err).to include("(標準入力):1: OI-07 が台帳に無い")
   end
+
+
+  it "サイクル 10 からの実装レビューの証跡で、計画との違いの項目が judgment か decided の行の ID も「判断なし」も持たなければ落とす" do
+    ledgers(open_items: "| OI-01 | judgment | 内容 | 出どころ | M16 | |\n| OI-02 | open | 内容 | 出どころ | M16 | |\n")
+    evidence = <<~MD
+      ## M16 テストの層
+
+      #### 計画との違い
+
+      - 作るもの 1 の引数を、計画の 2 つから 3 つにした
+      - 作るもの 2 の置き場を決めた（OI-01）
+      - 作るもの 3 は OI-02 の作業で、引数の形を決めた
+      - 作るもの 4 の型を決めた。理由は長いので
+        次の行に続ける（OI-01）
+      - 作るもの 5 は計画の文のとおりに直した（判断なし）
+
+      ##### 作るもの 6
+
+      - 作るもの 6 の名前を決めた
+
+      ```sh
+      # 囲みの中の行は見出しでも項目でもない
+      - 囲みの中の行
+      ```
+
+      - 囲みの後の項目も確かめる
+
+      #### RED
+
+      - 計画との違いの節の外の項目は確かめない
+    MD
+    write("docs/plans/cycle-11/implementation-reviews.md", evidence)
+    write("docs/plans/cycle-09/implementation-reviews.md", evidence)
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    message = "計画との違いの項目に、judgment か decided の行の ID（OI-NN）も「判断なし」も無い\n"
+    expect(err.lines).to eq([ 5, 7, 14, 21 ].map { |lineno| "docs/plans/cycle-11/implementation-reviews.md:#{lineno}: #{message}" })
+
+    judged = evidence.gsub(/(3 つにした|引数の形を決めた|名前を決めた|項目も確かめる)$/, '\1（判断なし）')
+    write("docs/plans/cycle-11/implementation-reviews.md", judged)
+    _out, err, status = run_check
+    expect(err).to eq("")
+    expect(status).to be_success
+  end
+
+  it "サイクル 10 からの計画レビューの証跡が、dev-cycle.md「1. 計画レビュー」の観点の名前を欠けば落とす" do
+    ledgers(open_items: "")
+    write("docs/guides/dev-cycle.md", <<~MD)
+      ## 1. 計画レビュー
+
+      1. **設計文書との整合**：説明
+      2. **順序と依存**：説明
+
+      ## 2. マイルストーンの実装
+
+      1. **計画への準拠と範囲**：説明
+    MD
+    write("docs/plans/cycle-10/plan-review.md", "| 観点 | 判定 |\n|---|---|\n| 設計文書との整合 | 指摘なし |\n")
+    write("docs/plans/cycle-09/plan-review.md", "観点の名前を書かない\n")
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    expect(err.lines).to eq([ "docs/plans/cycle-10/plan-review.md: 計画レビューの観点「順序と依存」の結果が無い\n" ])
+
+    write("docs/plans/cycle-10/plan-review.md", "| 設計文書との整合 | 指摘なし |\n| 順序と依存 | 指摘あり |\n")
+    _out, err, status = run_check
+    expect(err).to eq("")
+    expect(status).to be_success
+  end
+
+  it "本物の dev-cycle.md の計画レビューの観点を、規則の文が言う数だけ集め、1 つずつ欠いた証跡を落とす" do
+    rule = File.read(File.expand_path("../../docs/guides/dev-cycle.md", __dir__))
+    count = rule[/^## 1\. 計画レビュー\n.*?観点は次の (\d+) つである/m, 1].to_i
+    expect(count).to be_positive
+    ledgers(open_items: "")
+    write("docs/guides/dev-cycle.md", rule)
+    write("docs/plans/cycle-10/plan-review.md", "観点の名前を書かない\n")
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    # 本物の規則の文書は、この台帳に無い ID も引くので、計画レビューの証跡の行だけを読む
+    aspects = err.lines.filter_map { |line| line[/plan-review\.md: 計画レビューの観点「(.+)」の結果が無い/, 1] }
+    expect(aspects.size).to eq(count)
+
+    aspects.each do |missing|
+      write("docs/plans/cycle-10/plan-review.md", (aspects - [ missing ]).join("\n"))
+      _out, err, status = run_check
+      expect(status).not_to be_success
+      expect(err.lines.grep(/plan-review\.md/)).to eq([ "docs/plans/cycle-10/plan-review.md: 計画レビューの観点「#{missing}」の結果が無い\n" ])
+    end
+  end
+
+  it "計画レビューの証跡があるのに、dev-cycle.md から観点の名前を読めなければ落とす" do
+    ledgers(open_items: "")
+    write("docs/plans/cycle-10/plan-review.md", "観点の名前を書かない\n")
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    expect(err.lines).to eq([ "docs/guides/dev-cycle.md: 「1. 計画レビュー」から観点の名前を読めない\n" ])
+
+    write("docs/guides/dev-cycle.md", "## 1. 計画レビュー\n\n観点を太字で並べない\n\n## 2. マイルストーンの実装\n")
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    expect(err.lines).to eq([ "docs/guides/dev-cycle.md: 「1. 計画レビュー」から観点の名前を読めない\n" ])
+  end
 end
