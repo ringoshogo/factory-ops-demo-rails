@@ -8,7 +8,39 @@
 
 `m57-ci-guards`（base は `main`）。サイクル 10 の計画の `cycle-10-plan` の先端 `391a017` から切った。計画の PR（#104）が未マージの間は、その commit も PR の差分に見える。M57 の差分は `391a017..` である。
 
-（実装レビューの判定は、レビューを受けた後にここへ書く）
+PR #105 の実装レビューは、実装者が 2 系統に同じ依頼で出した。Codex は Conditional Go、Claude は Go だった。どちらの系統も、`391a017..32743b0` の diff を `git show 32743b0:<パス>` で読んだ。
+
+- Claude：手元で完了条件の rspec を流し（266 examples, 0 failures）、`FULL_SUITE=1` で全件を流した（3193 examples, 0 failures、終了コード 0）。ワークフローに印の無い rspec のステップを足す壊し方と、`publish_condition?` の最初の `strip` を外す壊し方を流した。rspec-core 3.13.6 の `after(:suite)` の積み方と例外の扱いを原文で確かめた
+- Codex：読み取り専用で流した。Rails と DB を使う spec は流さず、`ci_checks_spec.rb` を commit の中身に差し替えたメモリの上で流し（35 examples, 0 failures）、最初の `strip` を外しても通ることを確かめた。rspec-core 3.13.6 と graphql-ruby 2.6.11 の縮小の実験で、`after(:suite)` の `Exception` の子の例外で終了コードが 1 になり残りのフックも流れることと、`extra_types` だけの enum が `Schema.types` に載らないことを確かめた
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。High は Codex R1 の 1 件で、直し方が PR の CI の実行と結果を証跡に足すと名指しされた Conditional Go なので、直したことをここに書き、読み直しには出していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Conditional Go（High 1・Medium 1・Low 1） |
+| Claude | Go（Low 2） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘なし |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘なし |
+| テストの検出力 | 指摘（R2・R3） | 指摘（R1） |
+| 参照の維持 | 指摘なし | 指摘（R2） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| High | Codex R1 | 手元で E2E を流していないのに、PR の CI の実行と結果（`e2e` の全体の通過）が証跡に無い（`implementation-plan.md`「1 つのマイルストーンの進め方」の 4） | 下の「手元で流したもの」に、`32743b0` と直した版の PR の CI の実行とジョブごとの結果を書いた。`32743b0` の実行で `e2e` を含むすべてのジョブが通った | この節を載せた commit |
+| Medium | Codex R2 | enum の組ごとの 11 の example のうち、壊して落ちる記録があるのは 2 組だけで、残る 9 組は RED にも壊して落ちる記録にも代わるものが無い | 残る 9 組の enum の型から値を 1 つずつ消し、どれもその組の example だけが落ちることを確かめた（下の壊して落ちる記録の表） | 同上 |
+| Low・Low | Codex R3・Claude R1 | `publish_condition?` の最初の `strip` を外しても、式の表のどの行も落ちない。通す行に、`${{ }}` の外側に空白を持つ式が無い | 通す行に `"  ${{ success() && github.event_name == 'push' }}  "` を足した。最初の `strip` を外すとこの行だけが、2 つ目の `strip` を外すと `${{ }}` で囲んだ 2 行が落ちる（下の表） | 同上 |
+| Low | Claude R2 | `config.md` の「`success()` をほかの状態の関数か演算子と組み合わせた式は、… 流れて push しうる」が、許す式（`success()` を `&&` と組み合わせる）も危ない側に入れて読める | 「守りは、明示した `success()` が偽のときに式全体が偽になる形でだけ効き、そうでない形は流れて push する」と、危ない形の条件で書き直した | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：台帳の OI-230 が比べる 10 個・比べない 9 個のままで、OI-230 だけを読むと古い分け方を正と取りうる → OI-230 の内容の末尾に、M57 で 11 個と 8 個に変えたこと（OI-235）を足した
+- Claude 2：`guides/testing.md` と `showcase.md` の層の件数を数える例が、全件を流すのに印を渡さない → 両方の例に `FULL_SUITE=1` を足した
+- Claude 3：`extra_types` で足した enum の型は一致の spec の外になることが、コメントにも spec にも無い → `enum_values_spec.rb` の型を集める `let` のコメントに、`extra_types` の型は載らず、スキーマは `extra_types` を使わないので漏れないことを書いた
+- Codex：なし
 
 ### 実装の記録
 
@@ -44,7 +76,7 @@
 
 - `spec/platform/public_api_returns_spec.rb:149`（判定のメソッドが印の有無で落とすか一覧を出すだけか）と `:161`（子のプロセスで流す、ガードの example）
 - `spec/platform/ci_checks_spec.rb:185`（全件を流す rspec を拾う補助の example）
-- `spec/graphql/enum_values_spec.rb` の組ごとの 11 の example
+- `spec/graphql/enum_values_spec.rb` の組ごとの 11 の example（11 組すべてを壊して落とした）
 
 #### 壊して落ちる記録
 
@@ -54,6 +86,8 @@
 |---|---|---|
 | 1 | `publish_condition?` が続く空白を 1 つにしない | 式の表の通す行の空白の数だけが違う式（`[1:32]`）だけ（33 examples, 1 failure） |
 | 1 | `publish_condition?` が全体を囲む `${{ }}` を外さない | 式の表の通す行の `${{ }}` で囲んだ式（`[1:31]`）だけ（33 examples, 1 failure） |
+| 1 | `publish_condition?` の最初の `strip` を外す（実装レビューの直しの後） | 式の表の通す行の `${{ }}` の外側に空白を持つ式（`[1:33]`）だけ（36 examples, 1 failure） |
+| 1 | `publish_condition?` の 2 つ目の `strip` を外す（同上） | 式の表の通す行の `${{ }}` で囲んだ 2 つ（`[1:31]`・`[1:33]`）（36 examples, 2 failures） |
 | 1 | 一致ではなく、そろえた値が `success()` を含めば通す | 式の表の落とす行の 22 のうち、`Success() && …` のほかの 21（33 examples, 21 failures） |
 | 1 | `ci.yml` の `test` のジョブに `if: github.event_name == 'pull_request'` を足す | `publish` の example だけ（33 examples, 1 failure） |
 | 1 | `ci.yml` の `publish` の `if:` を `success() && github.event_name == 'push' \|\| always()` にする | `publish` の example だけ（33 examples, 1 failure） |
@@ -63,6 +97,7 @@
 | 2 | `config/ci.rb`・ワークフロー・共通の完了条件から `FULL_SUITE` を外す（1 つずつ） | どれも `ci_checks_spec.rb:167` だけ（35 examples, 1 failure） |
 | 3 | `Inventory::Adjustment::TYPES` に `transfer` を足す | `enum_values_spec.rb` の `StockAdjustmentType` の組（`[1:6]`）だけ（12 examples, 1 failure） |
 | 3 | `OrderDirectionType` から `DESC` を消す | `enum_values_spec.rb` の `OrderDirectionType` の組（`[1:12]`）だけ（12 examples, 1 failure） |
+| 3 | 残る 9 組の enum の型から、最後の値を 1 つずつ消す（`PurchaseOrderStatusType` の `SENT`・`SalesOrderStatusType` の `RECEIVED`・`ShipmentRequestStatusType` の `READY`・`PurchaseOrderTimelineKindType` の `INVOICE_RECEIVED`・`StockMovementKindType` の `SHIP`・`StockOrderFieldType` の `ITEM_NAME`・`ImportKindType` の `STOCKS`・`PartnershipPermissionType` の `VIEW_SHIPMENTS`・`UserErrorCodeType` の `CONFLICT`。実装レビューの直しの後） | どれもその組の example（`[1:2]`〜`[1:5]`・`[1:7]`〜`[1:11]`）だけ（12 examples, 1 failure） |
 | 3 | enum の型 `Types::ProbeKindType` を足し、`Viewer` のフィールドの型にしてスキーマに載せ、組にも表にも書かない | `enum_values_spec.rb:40` だけ（12 examples, 1 failure。`got: ["Types::ProbeKindType"]`） |
 
 落ちなかったもの：enum の型を `extra_types` でスキーマに足したときは、何も落ちなかった（上の「計画との違い」）。

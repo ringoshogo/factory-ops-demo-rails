@@ -34,7 +34,8 @@ RSpec.describe "GraphQL の enum と公開 API の一覧" do
     "Types::InvoiceStateType" => "値は導出の分岐（Billing::Invoices の state）にだけある"
   }
 
-  # スキーマに登録された enum の型。読み込みの順に依らない
+  # スキーマに登録された enum の型。読み込みの順に依らない。フィールドと引数から届く型だけが載り、extra_types で足した型は載らない。
+  # スキーマは extra_types を使わない（app/graphql/factory_ops_schema.rb）ので、型は漏れない
   let(:enum_types) { FactoryOpsSchema.types.values.select { _1.kind.enum? && !_1.introspection? } }
 
   it "スキーマの enum の型は、どれも Types::BaseEnum の子で、比べる組か比べない表のどちらかにある" do

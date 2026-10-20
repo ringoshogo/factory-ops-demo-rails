@@ -304,7 +304,7 @@ bin/check-structure
 bundle exec rspec packs --tag ~concurrency   # 単体
 bundle exec rspec spec/requests spec/contracts   # 結合
 bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちらかのタグが付いたもの）
-bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
+FULL_SUITE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
 **状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、手元の E2E の起動の時の読み込みは M51。テナントで包む around の補助とガードと、E2E の読み込みの変数のガードは M52（M51 の全 spec に効く補助を置き換えた）。

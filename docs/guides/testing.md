@@ -20,7 +20,7 @@
 CI は、rspec の JSON の出力を `bin/test-layers` に渡し、層ごとの件数・割合・時間を表にしてジョブの要約に書く。
 
 ```sh
-bundle exec rspec --format progress --format json --out tmp/rspec.json
+FULL_SUITE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json
 bin/test-layers tmp/rspec.json
 ```
 

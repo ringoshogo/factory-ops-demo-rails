@@ -146,7 +146,8 @@ RSpec.describe "CI と手元で流す検査" do
   accepted = [
     "success() && github.event_name == 'push'",
     "${{ success() && github.event_name == 'push' }}",
-    "  success()  &&  github.event_name == 'push'  "
+    "  success()  &&  github.event_name == 'push'  ",
+    "  ${{ success() && github.event_name == 'push' }}  "
   ]
 
   rejected.each do |condition|
