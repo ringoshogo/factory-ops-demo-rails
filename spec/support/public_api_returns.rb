@@ -5,8 +5,9 @@
 # relation を受け取った側は unscope・rewhere・update_all で scope と書き込みの入口を越えられ、モデルは書き換えられるからである。
 # SqlSubquery と Arel のノードは relation でもモデルでもないので通す。
 #
-# 確かめるのは spec が呼んだメソッドだけで、どの spec も呼ばない公開 API は確かめの外になる。呼ばれなかったものは、
-# 全件の終わりに一覧を出すだけで落とさない。spec を流した範囲によって一覧が変わるからである。
+# 確かめるのは spec が呼んだメソッドだけで、どの spec も呼ばない公開 API は確かめの外になる。全件の流れ（CI と bin/ci が
+# 全件の印 FULL_SUITE=1 を渡す）では、呼ばれなかったものがあれば終わりに落とす。一部の spec だけを流すと必ず残るので、
+# 印の無い流れでは一覧を出すだけにする。
 #
 # 確かめない種類の定数：
 # - Data の値のクラスとイベントの型（Contracts::Event.define）：値そのもので、特異メソッドは作り方（from_payload など）だけである
@@ -93,4 +94,15 @@ module PublicApiReturns
 
   # 全件の流れで一度も呼ばれなかった「定数.メソッド」
   def self.uncalled = @traces.keys.reject { @called.include?(_1) }.sort
+
+  # names が空でなければ、全件の流れでは例外にし、それ以外では一覧を出す。after(:suite) の例外は、rspec-core が記録して
+  # 残りの after(:suite) も流し（rspec-core 3.13.6 の Configuration#run_suite_hooks）、終了コードを 0 でなくする
+  def self.verify_called!(names = uncalled, full_suite: ENV["FULL_SUITE"] == "1")
+    return if names.empty?
+
+    message = "公開 API の戻り値のガード：どの spec も呼ばなかった #{names.size} 個は確かめの外: #{names.join(", ")}"
+    raise Violation, message if full_suite
+
+    warn message
+  end
 end

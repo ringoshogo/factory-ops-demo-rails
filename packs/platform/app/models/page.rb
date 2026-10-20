@@ -34,7 +34,7 @@ class Page
         field = each.fetch(:field)
         direction = each.fetch(:direction)
         raise ArgumentError, "unknown order field: #{field}" unless columns.key?(field)
-        raise ArgumentError, "unknown order direction: #{direction}" unless %i[asc desc].include?(direction)
+        raise ArgumentError, "unknown order direction: #{direction}" unless Sort::DIRECTIONS.include?(direction)
 
         expression, type = columns.fetch(field)
         new(name: field.to_s, expression:, type:, direction:)
@@ -47,6 +47,9 @@ class Page
       Arel::Nodes::NamedFunction.new("array_position", [ Arel.sql("ARRAY[#{values.join(", ")}]::text[]"), expression ])
     end
   end
+  # Sort.of が受け付ける向き。GraphQL の enum が写すので、of が読む一覧を定数に出す。Data.define のブロックの中の定数は
+  # Sort ではなく Page に付くので、ブロックの外で Sort に置く
+  Sort::DIRECTIONS = %i[asc desc].freeze
 
   # relation を並べ、after より後の first 件を引いて、ブロックで値に写すページを返す。
   # sort を省くと、一意な列 key の順に並べ、key の値をカーソルにする。:id（UUIDv7）なら作成順の新しいものから並べる。

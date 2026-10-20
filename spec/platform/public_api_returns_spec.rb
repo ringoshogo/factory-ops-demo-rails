@@ -146,6 +146,29 @@ RSpec.describe PublicApiReturns do
     end
   end
 
+  it "呼ばれなかった公開 API を、全件の流れでは例外にし、それ以外では一覧を出すだけにする" do
+    uncalled = [ "PublicApiProbe.returning" ]
+
+    expect { PublicApiReturns.verify_called!(uncalled, full_suite: true) }
+      .to raise_error(PublicApiReturns::Violation, /どの spec も呼ばなかった 1 個.*PublicApiProbe\.returning/)
+    expect { PublicApiReturns.verify_called!(uncalled, full_suite: false) }
+      .to output(/どの spec も呼ばなかった 1 個.*PublicApiProbe\.returning/).to_stderr
+    expect { PublicApiReturns.verify_called!([], full_suite: true) }.not_to output.to_stderr
+  end
+
+  # 1 つのファイルだけを流すと、呼ばれない公開 API が必ず残る。after(:suite) が判定を呼ばなければ、印があっても 0 で終わる。
+  # 子のプロセスは親と同じ DB を使い、分岐の計測（COVERAGE）は親の tmp/coverage.json を書き換えないよう渡さない
+  it "全件の印を付けて 1 つのファイルだけを流すと、呼ばれない公開 API で 0 でない終了コードになり、印が無ければ 0 で終わる" do
+    run = lambda do |full_suite|
+      env = { "COVERAGE" => nil, "FULL_SUITE" => full_suite, "TEST_DATABASE" => ENV.fetch("TEST_DATABASE", nil) }
+      output, status = Open3.capture2e(env, "bundle", "exec", "rspec", "spec/fixtures/public_api_returns/one_example.rb", chdir: Rails.root.to_s)
+      [ status.exitstatus, output.include?("どの spec も呼ばなかった") ]
+    end
+
+    expect(run.call(nil)).to eq([ 0, true ])
+    expect(run.call("1")).to eq([ 1, true ])
+  end
+
   it "Page#values のブロックが relation の行をそのまま返すと例外にし、値に写せば通す" do
     FactoryBot.create(:audit_log)
 

@@ -72,7 +72,7 @@ GitHub Actions（`.github/workflows/ci.yml`）は `bin/ci` を呼ばず、次の
 |---|---|
 | `scan_ruby` | `bin/brakeman --no-pager`、`bin/bundler-audit` |
 | `lint` | `bin/rubocop -f github`、`bin/packwerk validate && bin/packwerk check`、`bin/check-open-items`（PR では本文を `--text -` で渡す）、`bin/check-commit-refs`、`bin/check-schema-compat`（PR では `BASE_REF` を `origin/<base_ref>`、main への push では push の前の先端にする）、`bin/check-alerts`。SHA の祖先とスキーマの互換の基準を確かめるので、履歴をすべて取る（`fetch-depth: 0`） |
-| `test` | psql で `docker/initdb/01_roles.sql`、`bin/rails db:test:prepare`、`COVERAGE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json`、`bin/check-branch-coverage`（`BASE_REF` は `lint` のジョブの `bin/check-schema-compat` と同じ）、`bin/test-layers tmp/rspec.json`、`bin/check-structure`。分岐の網羅率の基準を取るので、履歴をすべて取る（`fetch-depth: 0`） |
+| `test` | psql で `docker/initdb/01_roles.sql`、`bin/rails db:test:prepare`、`COVERAGE=1 FULL_SUITE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json`（`FULL_SUITE=1` は全件の印で、どの spec も呼ばない公開 API で落とす）、`bin/check-branch-coverage`（`BASE_REF` は `lint` のジョブの `bin/check-schema-compat` と同じ）、`bin/test-layers tmp/rspec.json`、`bin/check-structure`。分岐の網羅率の基準を取るので、履歴をすべて取る（`fetch-depth: 0`） |
 | `frontend` | `npm ci`、`npm ls --all`（入れ子の依存の peer の範囲の外れを落とす）、`npm run codegen:check`・`lint`・`typecheck`・`test:unit`（README「画面」） |
 | `e2e` | `test` と同じ PostgreSQL 18 とロールの準備、`npx playwright install --with-deps chromium`、`npm run test:e2e`。落ちたら `frontend/test-results/` を残す |
 | `manifests` | `kubectl kustomize deploy` を kubeconform で照らす。PR と main への push の両方で流れる |

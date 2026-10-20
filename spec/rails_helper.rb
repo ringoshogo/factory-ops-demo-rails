@@ -88,10 +88,8 @@ RSpec.configure do |config|
   config.before { Notifications::FakeProvider.clear }
   # 公開 API の戻り値のガードを、全 example の前に 1 回だけ付ける（spec/support/public_api_returns.rb）
   config.before(:suite) { PublicApiReturns.install! }
-  config.after(:suite) do
-    uncalled = PublicApiReturns.uncalled
-    warn "公開 API の戻り値のガード：どの spec も呼ばなかった #{uncalled.size} 個は確かめの外: #{uncalled.join(", ")}" if uncalled.any?
-  end
+  # 全件の印（FULL_SUITE=1）がある流れでは、どの spec も呼ばなかった公開 API があれば落とす
+  config.after(:suite) { PublicApiReturns.verify_called! }
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
 end

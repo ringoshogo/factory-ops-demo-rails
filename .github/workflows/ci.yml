@@ -137,10 +137,12 @@ jobs:
       - name: Prepare database
         run: bin/rails db:test:prepare
 
-      # 分岐の通過を測りながら流す（docs/guides/testing.md「分岐の網羅率の警告」）。計測のために全件をもう 1 回流さない
+      # 分岐の通過を測りながら流す（docs/guides/testing.md「分岐の網羅率の警告」）。計測のために全件をもう 1 回流さない。
+      # FULL_SUITE は全件の印で、どの spec も呼ばない公開 API があれば落とす（docs/guides/testing.md「層への配分」）
       - name: Run tests
         env:
           COVERAGE: "1"
+          FULL_SUITE: "1"
         run: bundle exec rspec --format progress --format json --out tmp/rspec.json
 
       # PR が足した行のうち、どの example も通らない分岐を警告の注釈とジョブの要約に出す。失敗にはしない。
@@ -331,9 +333,8 @@ jobs:
   # latest のタグは付けない。images と同じキャッシュの scope から組み立て直すので、組み立ては数十秒で終わる。
   # ジョブの if: に success() を明示する。success() は needs のどれかが落ちた・取り消された・skip されたときに偽になるので、
   # ジョブの名前を並べずに、確かめていない commit のイメージを置かない。GitHub は状態の関数を含まない if: にだけ success() を
-  # 足すので、書かなくても同じ守りになるが、守りが YAML の行に見えない。failure()・cancelled()・always() を足すと、
-  # 落ちたか取り消された needs でも流れる。success() を否定するか、|| でつなぐか、比べるか、関数の引数に入れても、状態の関数を含むので
-  # GitHub は success() を足さず、落ちた needs でも流れる。どのジョブも契機を絞らないので、push で skip されるジョブは無く、
+  # 足すので、書かなくても同じ守りになるが、守りが YAML の行に見えない。この if: に書いてよい式は 1 つで、spec がちょうど一致することを
+  # 照らす（docs/guides/config.md「CI の工程」）。どのジョブも契機を絞らないので、push で skip されるジョブは無く、
   # success() が publish を誤って止めることは無い。
   # ログインと push のステップの if: は、main 以外のブランチへの push で publish が走っても GHCR に何も置かないためで、
   # ワークフローの契機を一時に広げて publish の条件を確かめるときにも、この if: でステップが skip される
