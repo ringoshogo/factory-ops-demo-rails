@@ -53,6 +53,7 @@
 ```sh
 TEST_DATABASE=factory_ops_m58_test BASE_REF=origin/cycle-11-plan bin/ci   # 5bb8dc7 で、rspec を含むほかの工程は通り、check-schema-compat と check-branch-coverage は基準の ref が無いので落ちた（下の文）
 BASE_REF=origin/main bin/check-schema-compat && BASE_REF=origin/main bin/check-branch-coverage   # 5bb8dc7 で通った。スキーマの変更は無く、分岐の網羅率の警告は 0 件
+TEST_DATABASE=factory_ops_m58_test BASE_REF=origin/main bin/ci   # 2ce4ed6（証跡を足した版）で、すべての工程が通った。rspec は 3200 examples, 0 failures（Randomized with seed 29891）、分岐の網羅率の警告は 0 件
 (for seed in 1 2 3; do TEST_DATABASE=factory_ops_m58_test bundle exec rspec --seed "$seed" || exit 1; done)   # 5bb8dc7 で、3 つとも 3200 examples, 0 failures
 TEST_DATABASE=factory_ops_m58_test bundle exec rspec spec/platform/spec_order_spec.rb packs/sales/spec/public/sales/item_prices_backfill_spec.rb   # 順も seed も渡さずに 8 examples, 0 failures（Randomized with seed 5161）
 git grep -n 'ignored_columns' -- packs   # 0 件
@@ -61,7 +62,7 @@ git grep -n -e 'Import::KINDS' -e 'KINDS = %w\[items stocks\]' -- packs spec app
 bin/check-open-items --due M58 && bin/check-commit-refs   # 通った
 ```
 
-`bin/ci` を流している間に、計画の PR（#108）が main に入って `cycle-11-plan` のブランチが消え、`origin/cycle-11-plan` が無くなった。基準の ref を読む 2 つの工程だけを、`BASE_REF=origin/main`（分岐点は同じ `7e7b88a`）で流し直した。`bin/ci` の rspec は全件の印を渡して `--seed` を渡さずに流れ（Randomized with seed 59808）、3200 examples, 0 failures で、呼ばれない公開 API の一覧は出なかった。全件を `--seed` 1・2・3 で流した 3 回は、それぞれ 3 分 48 秒・3 分 28.7 秒・3 分 31.6 秒かかった。rspec の件数は、計画の `7e7b88a` の 3198 から、乱順の 2 つの example で 3200 になった（移行の spec の example は書き直しで、数は変わらない）。手元では E2E を流していない。変えたファイルが画面にも GraphQL のスキーマにも届かないからで、全体の通過は PR の CI の `e2e` で確かめる。
+`bin/ci` を流している間に、計画の PR（#108）が main に入って `cycle-11-plan` のブランチが消え、`origin/cycle-11-plan` が無くなった。基準の ref を読む 2 つの工程だけを、`BASE_REF=origin/main`（分岐点は同じ `7e7b88a`）で流し直し、証跡を足した版で `bin/ci` の全体を流し直した。`bin/ci` の rspec は全件の印を渡して `--seed` を渡さずに流れ（Randomized with seed 59808）、3200 examples, 0 failures で、呼ばれない公開 API の一覧は出なかった。全件を `--seed` 1・2・3 で流した 3 回は、それぞれ 3 分 48 秒・3 分 28.7 秒・3 分 31.6 秒かかった。rspec の件数は、計画の `7e7b88a` の 3198 から、乱順の 2 つの example で 3200 になった（移行の spec の example は書き直しで、数は変わらない）。手元では E2E を流していない。変えたファイルが画面にも GraphQL のスキーマにも届かないからで、全体の通過は PR の CI の `e2e` で確かめる。
 
 ### 残件の処理
 
