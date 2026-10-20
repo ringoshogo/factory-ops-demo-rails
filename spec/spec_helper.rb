@@ -60,6 +60,13 @@ RSpec.configure do |config|
   # triggering implicit auto-inclusion in groups with matching metadata.
   config.shared_context_metadata_behavior = :apply_to_host_groups
 
+  # 順への依存を隠さないよう、乱順で流す。落ちたら出力の seed を --seed に渡すと同じ順で流れ直す。
+  # コマンドラインの --seed と --order は、この設定より優先する（docs/guides/testing.md「層への配分」）
+  config.order = :random
+
+  # 同じ seed で、Kernel.rand に頼る spec も同じ値で流れ直す。rspec の乱順は Kernel.rand を使わない
+  Kernel.srand config.seed
+
 # The settings below are suggested to provide a good initial experience
 # with RSpec, but feel free to customize to your heart's content.
 =begin
@@ -95,16 +102,5 @@ RSpec.configure do |config|
   # particularly slow.
   config.profile_examples = 10
 
-  # Run specs in random order to surface order dependencies. If you find an
-  # order dependency and want to debug it, you can fix the order by providing
-  # the seed, which is printed after each run.
-  #     --seed 1234
-  config.order = :random
-
-  # Seed global randomization in this process using the `--seed` CLI option.
-  # Setting this allows you to use `--seed` to deterministically reproduce
-  # test failures related to randomization by passing the same `--seed` value
-  # as the one that triggered the failure.
-  Kernel.srand config.seed
 =end
 end
