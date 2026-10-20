@@ -221,6 +221,16 @@ TEST_DATABASE=factory_ops_m54r_test bundle exec rspec packs/fulfillment/spec pac
 bin/check-open-items --due M54 && bin/check-commit-refs   # 通った
 ```
 
+実装レビューの直しの後も、`TEST_DATABASE=factory_ops_m54r_test BASE_REF=origin/m57-ci-guards bin/ci` が通った（`7af34f9` で 3195 examples, 0 failures、分岐の網羅率の警告 0 件）。
+
+PR #106 の CI は、push のたびに `pull_request` で流れた（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `7af34f9` | [39357699594](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/39357699594) | success（`scan_ruby`・`lint`・`test`・`frontend`・`e2e`・`manifests`・`images` が通り、`publish` は skip） |
+
+この表を載せた commit は証跡だけを変える。その CI の結果は PR の checks で見る。
+
 ### 残件の処理
 
-引当先が M54 の行は、OI-226（`open`）と OI-231〜OI-233（`judgment`）である。OI-226 は `closed` にした。OI-231 は、ステータスの裏返る条件にも足したことを内容に書き足した。OI-232 は、作者の確認（2026-10-20、規則 2 は (a) 許す）を受け口の `decisions.md` から結果の欄に写し、`decided` にした。OI-233 は計画のとおりに作り、`judgment` のまま残る。受け口の `decisions.md` は、着手の時と各 commit の前に読み、OI-232 の 1 件だけがあった。
+引当先が M54 の行は、OI-226（`open`）と OI-231〜OI-233（`judgment`）である。OI-226 は `closed` にした。OI-231 は、ステータスの裏返る条件にも足したことを内容に書き足した。OI-232 は、作者の確認（2026-10-20、規則 2 は (a) 許す）を受け口の `decisions.md` から結果の欄に写し、`decided` にした。OI-233 は計画のとおりに作り、`judgment` のまま残る。受け口の `decisions.md` は、着手の時と各 commit の前と報告の前に読み、OI-232 の 1 件だけがあった。
