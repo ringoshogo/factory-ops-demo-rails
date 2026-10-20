@@ -152,7 +152,7 @@ bundle exec rspec spec/requests/purchase_orders_spec.rb spec/requests/part_mappi
 - 状況の式と同じ行を読んで組み立てる進み：発注の詳細の進み（`PurchaseOrder.timeline`）は、履歴の表を持たず、状況の式（`Purchasing::PurchaseOrderStatus`）が読む発注の時刻列・入荷・検収に、取消依頼と受領請求書を足した自社の行から `Purchasing::PurchaseOrderTimeline`（`packs/purchasing/app/models/purchasing/purchase_order_timeline.rb`）が 1 回の問い合わせで組み立てるので、状況と進みが食い違わない。受注側から届く出来事の時刻は、受け取った時刻ではなく、イベントが運ぶ受注側の発生の時刻（`occurred_at`）で、配送が遅れても発注側の取消依頼と前後が入れ替わらない（`packs/purchasing/app/public/purchasing/supplier_event_receiver.rb`）
 - 在庫の同期：`Inventory::Allocation`（`packs/inventory/app/public/inventory/allocation.rb`）を受注と出荷が同じトランザクションで呼び、有効在庫が負にならないことを行ロックと CHECK 制約で守る
 - 受注と出荷・請求の同期：出荷は受注の公開 API（`packs/sales/app/public/sales/order_shipping.rb`）で受注の取消と審査を読み、計上で受注を出荷済みにする。受注は検収で請求の公開 API（`Billing::BillableItems.confirm`）を呼ぶ。届く順の入れ替わりが起きないので、停止の表・先回りの行・勧告ロックが要らない
-- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も受注を最初にロックし（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）、取消・審査と受注の行ロックで直列になり、デッドロックを起こさない。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
+- ロックの順：受注 → 受注明細 → 在庫（`item_id` 昇順、`Inventory::Stock.lock_for`）→ 引当。出荷も受注を最初にロックし（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）、取消・審査と受注の行ロックで直列になり、デッドロックを起こさない。出荷指示の取消は受注をロックせずに出荷依頼 → 出荷指示の順に取る。この順は計上の順の部分列で、受注の取消とは同じ行を取らないので、加わってもデッドロックを起こさない（[`architecture/data-model.md`](architecture/data-model.md)「取消と出荷の競合を止める場所」）。品目の写しの作り直しは、品目を取り込みと同じバイトの順（品目コードの列の照合順序 `pg_c_utf8`）で `FOR SHARE` で読み、保存と取り込みと直列になる（`packs/sales/spec/concurrency/sales/item_labels_rebuild_lock_spec.rb`）
 - 受注の行を直列化の点にする：出荷の計上と出荷指示の作成は取消済か審査中の受注で中止し、受注の取消は出荷済みの受注で中止する。同時に進んでもどちらか一方だけが成立する。引当の行（計上は `active` の引当だけを消費し、取消は消費済みの引当を解除しない）は、その後ろの二重の守りである
 - 組の勧告ロック：`Partnerships::Access.lock_pair!` が、受注側と発注側の組ごとに PostgreSQL の勧告ロック（`pg_advisory_xact_lock`）を取り、発注の登録と、取引関係の失効・権限の撤回を直列にする。照合と対応表の登録は `Sales::PartMatching.lock`（`packs/sales/app/models/sales/part_matching.rb`）で直列にする
 
@@ -171,7 +171,7 @@ bundle exec rspec packs/purchasing/spec/public/purchasing/purchase_orders_spec.r
 - `order_allocation_spec.rb`・`shipping_spec.rb`：発行された `FOR UPDATE` を記録し、ロックの順を確かめる
 - `purchase_orders_spec.rb`（`.timeline_for`）・`supplier_event_receiver_spec.rb`（発生の時刻）：進みが日付・時刻・業務の順に並び、他社の行が混ざらず、受け手が運んだ発生の時刻を書く
 
-**状態**：実装済み（M7・M10〜M14、取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22、発注の進みと発生の時刻は M53、受注と出荷・請求の同期と受注の行での直列化は M54）。
+**状態**：実装済み（M7・M10〜M14、取消と出荷の同時実行を止めることのテスト `spec/concurrency/cancel_vs_ship_spec.rb` は M22、発注の進みと発生の時刻は M53、受注と出荷・請求の同期と受注の行での直列化は M54、出荷指示の取消のロックの順を文書に書いたのは M54 の残り）。
 
 ### 5. 非同期処理の型の使い分け
 
@@ -323,10 +323,11 @@ FULL_SUITE=1 bundle exec rspec --format progress --format json --out tmp/rspec.j
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
 - 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは PR と main への push のたびに arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）。`publish` の `if:` は `success()` を明示し、`needs` の失敗・取消・skip で止める守りを YAML の行で読めるようにした。`if:` は 1 つの式にちょうど一致することを spec が照らす（[guides/config.md「CI の工程」](guides/config.md#ci-の工程)）。画面の依存の木は `frontend` のジョブが `npm ci` の後に `npm ls --all` で確かめ、入れ子の依存の peer の範囲から外れた更新の PR を落とす
+- 列を消す変更：モデルの `ignored_columns` に列を入れて同じ変更で列を消し、`ignored_columns` から外すのは消すマイグレーションが main に入った後の別の PR にする。列を読み込んだ Web とワーカーが、列が消えた後の INSERT で消えた列を書いて落ちないためである。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときの壊れは、毎日の作り直しで消えるので許す（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。spec が消した列を足し直すあいだは外さず、移行の spec が列を読ませてから消しても品目を作れることを確かめる（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）
 
 **どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）、`spec/platform/deploy_manifests_spec.rb`（マニフェストの規則）・`spec/platform/demo_reset_spec.rb`（作り直しの順と、失敗しても Web とワーカーを戻すこと）と CI の `manifests`・`images`・`publish` のジョブ、`publish` の条件と権限と、`npm ls --all` の置き場を確かめる `spec/platform/ci_checks_spec.rb`（M41・M42・M48・M51）。
 
-**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43、`npm ls --all` と PR ごとの組み立ては M48、`publish` の `success()` の明示は M51、`success()` の迂回を止める期待は M52、それを 1 つの式との一致にしたのは M57）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
+**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43、`npm ls --all` と PR ごとの組み立ては M48、`publish` の `success()` の明示は M51、`success()` の迂回を止める期待は M52、それを 1 つの式との一致にしたのは M57、列を消した後の `ignored_columns` の規則は M54 の残り）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
 
 ### 11. チーム開発
 

@@ -25,9 +25,10 @@ RSpec.describe "監査の行を比べる example" do
   end
 
   it "action の文字列があっても、対象と相手の列を見ないファイルは数えない" do
-    sources = { "count_spec.rb" => %(AuditLog.where(action: "x.do").count), "compare_spec.rb" => %("x.do" target_id counterparty_tenant_id) }
+    # 外側の sources に代入すると、後に流れる example が見本の 2 ファイルだけを読むので、別の名前にする
+    samples = { "count_spec.rb" => %(AuditLog.where(action: "x.do").count), "compare_spec.rb" => %("x.do" target_id counterparty_tenant_id) }
 
-    expect(self.class.comparing_files("x.do", sources)).to eq([ "compare_spec.rb" ])
+    expect(self.class.comparing_files("x.do", samples)).to eq([ "compare_spec.rb" ])
   end
 
   it "audit を宣言した mutation をスキーマから拾い、audit_exempt の mutation は拾わない" do

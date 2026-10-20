@@ -2182,6 +2182,8 @@ bin/check-open-items --due M33
 
 **残り（サイクル 10）**：作者の画面の指摘（OI-177）は、サイクル 09 の間にも来なかったので、同じ形のままサイクル 10 へ移した。作るものは変わらない。サイクル 09 で画面に足した発注の詳細の進み（M53）も、指摘の対象に入る。
 
+**残り（サイクル 11）**：作者の画面の指摘（OI-177）は、サイクル 10 の間にも来なかったので、同じ形のままサイクル 11 へ移した。作るものは変わらない。サイクル 10 で画面に足したものは無い。
+
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、作者の判断（OI-144）の値に入っていない列での並べ替え（OI-186。M50 で足す）、一覧の見出しで複数の列を指定する操作（OI-187。M47 で足す）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
 **実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
@@ -2313,6 +2315,8 @@ bin/check-open-items --due M41
 **残り（サイクル 09）**：作者の実機の手順の結果（OI-196）は、サイクル 08 の間にも書かれなかったので、同じ形のままサイクル 09 へ移した。移すのは 4 回目で、移し続けるか、サイクルの表から外して結果が書かれたときに入れ直すかを、作者に問うた（`plans/cycle-08/author-decisions.md` の 2）。作者は 2026-10-16 に、結果が来るまで毎サイクル移し続けると答えた（IB-133 の結果の欄）。作るものは変わらない。
 
 **残り（サイクル 10）**：作者の実機の手順の結果（OI-196）は、サイクル 09 の間にも書かれなかったので、作者の答え（IB-133）のとおりサイクル 10 へ移した。移すのは 5 回目である。M54 で消したイベントのジョブがキューに残ったときの互換は持たず、M55 の品目の写しを埋めるまでの間は写しの無い品目の在庫の調整と CSV の行が拒まれるが、公開の配置は毎日 DB ごと作り直すので、どちらも作り直しの後は起きない（`deploy/README.md`「作者の手順」）。作るものは変わらない。
+
+**残り（サイクル 11）**：作者の実機の手順の結果（OI-196）は、サイクル 10 の間にも書かれなかったので、作者の答え（IB-133）のとおりサイクル 11 へ移した。移すのは 6 回目である。サイクル 10 は配置のマニフェストと `deploy/README.md` を変えていない。列を消す PR と `ignored_columns` を外す PR を間の版を飛ばして一度に適用したときの壊れは、毎日の作り直しで消えるので許す（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。作るものは変わらない。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
@@ -2723,7 +2727,7 @@ cd frontend && npm run test:e2e   # 0 failures
 
 E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベントのために `drain` を残し、期待は変えない。`frontend` の E2E を全体で流し、取消・審査中・出荷の画面の状況の表示が変わらないことを確かめる。
 
-**残り（サイクル 10）**：実装レビューまで終えた。出荷依頼の受注番号の写しを残す理由と、経緯で書いたコメント（OI-226。サイクル 09 の逸脱検査の D6・D7）は、作者の答えで作るものが変わるので、OI-226 だけを「M54 の残り」としてサイクル 10 へ移した。作者は 2026-10-19 に (a) 写しを残すと決めた（OI-226 の内容の欄の末尾。作業が残るので行は `open` のまま）。OI-226 の分で作るのは、ADR 011 の写しの理由とコメント 3 か所の直しである。ADR 011 は 3 か所を直す。決定 2 の出荷依頼の受注番号の文に、いま写しを持つ理由を書く。理由は、作り直しのタスクと一致の spec がすでに写しを守り、一覧の並べ替えが出荷の表だけで済み、受注から引く形に替えても画面の振る舞いは変わらないままマイルストーン 1 つ分の費用がかかることである（OI-226 の作者の判断）。代替案 D の不採用の理由を、このいまの理由に替え、依存の向きの経緯は段落の後ろに残す。「見直す条件」に、受注番号を後から変える入口のほかに、写しを守る作り直しのタスクか一致の spec を外すとき、を足す。`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`・`lib/tasks/read_models.rake`・`frontend/e2e/list-pagination.spec.ts` のコメントを、経緯ではなくいまの契約の短い文にする（`guides/comments.md`）。`read_models.rake` は、受注番号の組をタスクが受け渡すいまの理由（作り直しはテナントごとにタスクが回し、出荷の公開 API は受け取った組を書くだけの、操作者のいない入口である。`spec/packwerk/entry_callers_spec.rb` の表）を書く。同じ理由を経緯で書いた文書の 2 か所（`architecture/graphql-schema.md`「ページングと N+1」の出荷依頼の `ORDER_NO` の文と、`showcase.md` のテーマ 3 の出荷依頼の受注番号の写しの箇条）も、ADR 011 を指すいまの理由の短い文にする。経緯は ADR 011 の代替案 D の段落にだけ残す。spec と振る舞いは変えない。
+**残り（サイクル 10）**：実装レビューまで終えた。出荷依頼の受注番号の写しを残す理由と、経緯で書いたコメント（OI-226。サイクル 09 の逸脱検査の D6・D7）は、作者の答えで作るものが変わるので、OI-226 だけを「M54 の残り」としてサイクル 10 へ移した。作者は 2026-10-19 に (a) 写しを残すと決めた（OI-226 の内容の欄の末尾。作業が残るので行は `open` のまま）。OI-226 の分で作るのは、ADR 011 の写しの理由とコメント 3 か所の直しである。ADR 011 は 3 か所を直す（実装では、見直す条件を要約して指す「ステータス」の裏返る条件の文にも、見直す条件に足す条件を足した。OI-231）。決定 2 の出荷依頼の受注番号の文に、いま写しを持つ理由を書く。理由は、作り直しのタスクと一致の spec がすでに写しを守り、一覧の並べ替えが出荷の表だけで済み、受注から引く形に替えても画面の振る舞いは変わらないままマイルストーン 1 つ分の費用がかかることである（OI-226 の作者の判断）。代替案 D の不採用の理由を、このいまの理由に替え、依存の向きの経緯は段落の後ろに残す。「見直す条件」に、受注番号を後から変える入口のほかに、写しを守る作り直しのタスクか一致の spec を外すとき、を足す。`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`・`lib/tasks/read_models.rake`・`frontend/e2e/list-pagination.spec.ts` のコメントを、経緯ではなくいまの契約の短い文にする（`guides/comments.md`）。`read_models.rake` は、受注番号の組をタスクが受け渡すいまの理由（作り直しはテナントごとにタスクが回し、出荷の公開 API は受け取った組を書くだけの、操作者のいない入口である）を書き、根拠は `spec/packwerk/entry_callers_spec.rb` が読む `architecture/graphql-schema.md`「認可：宣言の無い型・リゾルバ・mutation は拒否する」の表の節で指す（OI-238）。同じ理由を経緯で書いた文書の 2 か所（`architecture/graphql-schema.md`「ページングと N+1」の出荷依頼の `ORDER_NO` の文と、`showcase.md` のテーマ 3 の出荷依頼の受注番号の写しの箇条）も、ADR 011 を指すいまの理由の短い文にする。経緯は ADR 011 の代替案 D の段落にだけ残す。spec と振る舞いは変えない。
 
 作者は 2026-10-20 に、サイクル 09 の逸脱検査で積んだ改善の候補 IB-151・IB-152 も、マイルストーンの数を増やさずに M54 の残りに足すと決めた（`plans/improvement-backlog.md`）。どちらも振る舞いを変えない。
 
@@ -2731,7 +2735,7 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 
 1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で消す（前例：`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）。strong_migrations 2.8.0 の `remove_column` の案内（`lib/strong_migrations/error_messages.rb`）は、無視を配ってから消す 2 段の手順だが、本デモは 1 つの変更にまとめる。`web` と `jobs` の Deployment は `Recreate` なので、適用で古い版の Pod が止まり、古い版が列を消した後まで動き続ける時間は短い。その間に起きた壊れも、毎日の作り直し（`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3）が Web とワーカーを 0 にしてから起こし直すので消える
 2. `ignored_columns` から外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、適用で `migrate` の Job が列を消す前にそのモデルを初めて使った新しい版の Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する。PR を分けることが守る形である。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときは、同じ壊れが起きうるが、次の作り直しで消えるので許す。これは守りではなく運用の割り切りとして、守りの文と分けて書く
-3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、spec が列を消した後の品目の INSERT がその列を書いて落ちる。落ちるのは、列を読んだ example より後に同じプロセスで INSERT する spec で、`config.order = :random` の順で変わる（OI-106）
+3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、spec が列を消した後の品目の INSERT がその列を書いて落ちる。落ちるのは、列を読んだ example より後に同じプロセスで INSERT する spec で、流すファイルと example の順で変わる（OI-106。この段落は初め `config.order = :random` の順で変わると書いたが、`spec/spec_helper.rb` の `config.order = :random` は生成器の注釈の中で効いておらず、サイクル 10 の改善の探索で直した）
 
 規則に照らして、残る 2 つを次のとおりにする。置き場と規則と 2 つの扱いは OI-232（`judgment`）に積んだ。
 
@@ -2922,3 +2926,39 @@ git grep -n -F -e "format('{0}', success())" -- docs/guides docs/showcase.md .gi
 **実装する文書の節**：`guides/config.md`「CI の工程」、`guides/packs-and-packwerk.md`「公開 API を出す」、`guides/testing.md`「層への配分」、`showcase.md`「8. 機械で守る規約」「10. 運用性」
 
 **文書に残すこと**：`guides/config.md`「CI の工程」の `publish` の `if:` の段落を、一致の形の 1 文（照らす値と、式を変える人がすること）にし、迂回の形を並べた文を消す。同じ節の、spec が式を照らさない理由の段落の例外の文（「含む・含まないの条件で照らす」）も、一致の形に合わせる。ワークフローの `publish` の前のコメント、`ci_checks_spec.rb` の example の前のコメント、`showcase.md` のテーマ 8 の表の行とテーマ 10 の公開の配置の箇条は、`config.md` を指すか同じ形の短い文にする（改善の探索の正本の棚卸しの 5 か所）。`guides/testing.md`「層への配分」の戻り値のガードの文に、全件では呼ばれない公開 API で落ちること。`guides/config.md`「CI の工程」の工程の表の RSpec の行と、`guides/bin.md`「CI が使うもの」の `test` の行に、全件の変数。`guides/packs-and-packwerk.md`「公開 API を出す」に、GraphQL の enum に写す一覧は、作る側が読む一覧を公開 API の定数（同じオブジェクトの別名でよい）として出すこと
+
+## M58 spec を乱順で流し、移行の spec の後始末で消した列の読み込みを戻す
+
+**目的**：サイクル 10 の改善の探索で採用した 3 つ（IB-157・IB-154・IB-156）を、サイクル 11 の最初に入れる（`plans/cycle-10/improvement.md`「裁定」）。1 つ目は、`spec/spec_helper.rb` の `config.order = :random` が生成器の注釈の中にあって効いておらず、spec が定義の順で流れ、順への依存が隠れる形を直す（サイクル 10 の改善の探索で、乱順にすると `spec/graphql/audit_examples_spec.rb` が落ちることを見つけて直した）。2 つ目は、`Sales::Item` の `unit_price` の `ignored_columns` を、移行の spec の後始末で列の読み込みを戻す形に替えて外し、列を消した後の規則 3 から唯一の例外を消す。3 つ目は、使い手の無い `Imports::Import::KINDS` を消す。
+
+**作るもの**
+
+1. spec を乱順で流す（IB-157）：`spec/spec_helper.rb` の `config.order = :random` と `Kernel.srand config.seed` を、生成器の注釈（`=begin`〜`=end`）の外に出す。乱順が既定であることを確かめる example を足す（`RSpec.configuration` の順の既定が乱順であること。名前と置き場は実装で決める）。着手の時点で全件を 3 つ以上の seed で流し、落ちた spec があれば同じ PR で直して、seed と直したことを証跡に書く
+2. 移行の spec の後始末で列の読み込みを戻す（IB-154）：`packs/sales/spec/public/sales/item_prices_backfill_spec.rb` の、列を足し直して戻す `after` の最後で `Sales::Item.reset_column_information` を呼ぶ。`packs/sales/app/models/sales/item.rb` から `ignored_columns` の行とコメントを消す。M54 の残りで足した「足し直した列をモデルが読んだ後に列を消しても、品目を作れる」の example は、無視ではなく後始末を確かめる形に替える。`after` は example の後に流れるので、同じ example の中では後始末の後を見られない。内側のグループを流す補助（`run_inner_group`。前例：`spec/platform/tenant_example_spec.rb`）で、列を読ませる内側の example を流し、外側で `Sales::Item` の列に `unit_price` が無いことを確かめる形にするかを、計画レビューで決める
+3. 使い手の無い一覧を消す（IB-156）：`packs/imports/app/models/imports/import.rb` の `KINDS` を消す。取り込みの種類は `Imports::CsvFormat::COLUMNS` のキーが持ち、値は DB の CHECK 制約が限る
+
+**判断**
+
+- 作るもの 1 は、CI だけに `--order random` を渡す形ではなく、`spec_helper.rb` で乱順を既定にする。手元の `bin/ci` と CI で順の扱いが分かれると、手元で通って CI で落ちる形が増える。落ちたときは rspec が出す seed を `--seed` に渡して再現する（`guides/dev-cycle.md`「テストから書く」の、1 回だけ落ちたテストを再実行で緑にしない規則のとおり）。裏返る条件：乱順で落ちる spec が、直す費用の大きい形（共有の世界の作り方など）で繰り返し出て、CI が止まり続けるようになったら、その spec のグループだけ定義の順に固定する
+- 作るもの 2 で規則 3（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）は、「spec が消した列をテストの DB に足し直すときは、後始末でそのモデルの列の読み込みを戻す」に変わる。外す時機の規則 2 には当たらない（`unit_price` を消すマイグレーションは M27 で main に入っている）
+
+**完了条件**
+
+```sh
+git grep -n 'ignored_columns' -- packs   # 0 件
+git grep -n -e 'Import::KINDS' -e 'KINDS = %w\[items stocks\]' -- packs   # 0 件
+bundle exec rspec packs/sales/spec spec/graphql --seed 1 && bundle exec rspec packs/sales/spec spec/graphql --seed 2   # 0 failures
+```
+
+次の壊し方で落ちることを、壊して落ちる記録にする。
+
+| 作るもの | 壊し方 | 落ちる example |
+|---|---|---|
+| 1 | `config.order = :random` を注釈に戻す | 乱順が既定であることを確かめる example |
+| 2 | 後始末の `reset_column_information` を外す | 後始末を確かめる example |
+
+**範囲外**：公開 API の定数の深い凍結（IB-155。サイクル 10 の改善の探索で見送った）。並行で流す形（`parallel_tests` など）。
+
+**実装する文書の節**：`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」、`guides/testing.md`
+
+**文書に残すこと**：`guides/config.md` の規則 3 の文を、後始末で列の読み込みを戻す形と、spec が乱順で流れることに合わせる。`guides/testing.md` に、spec は乱順で流れ、順への依存で落ちたら出力の seed で再現して直すことを 1 文書く。`showcase.md` のテーマ 10 の列を消す変更の箇条を、規則 3 の新しい形に合わせる。
