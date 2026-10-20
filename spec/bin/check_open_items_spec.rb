@@ -335,4 +335,44 @@ RSpec.describe "bin/check-open-items" do
       "docs/plans/cycle-11/implementation-reviews.md:138: M54 の残り（サイクル 10）の節に、完了条件の「git grep -n 'ignored_columns' -- packs」を流した件数が無い\n"
     ])
   end
+
+  it "件数を数字で書かない注釈を数えず、囲みの中の見出しで節を区切らず、~~~ の囲みも読み、番号の無い「残り」の見出しを落とす" do
+    ledgers(open_items: "")
+    write("docs/implementation-plan.md", <<~MD)
+      # 実装計画
+
+      ## M16 テストの層と重要シナリオ
+
+      ```sh
+      git grep -n -e before -- docs   # 0 件
+      ```
+    MD
+    evidence = <<~MD
+      ## M16 テストの層と重要シナリオ
+
+      ```markdown
+      ## M17 見出しの見本は節を区切らない
+      ```
+
+      ~~~sh
+      git grep -n -e before -- docs   # 件数は最後の版で書く
+      ~~~
+
+      ## M16 の残り：番号の無い見出し
+    MD
+    write("docs/plans/cycle-11/implementation-reviews.md", evidence)
+
+    _out, err, status = run_check
+    expect(status).not_to be_success
+    expect(err.lines).to eq([
+      "docs/plans/cycle-11/implementation-reviews.md:1: M16 の節に、完了条件の「git grep -n -e before -- docs」を流した件数が無い\n",
+      "docs/plans/cycle-11/implementation-reviews.md:11: 「残り」の節の見出しが「M16 の残り（サイクル NN）」の形でない\n"
+    ])
+
+    fixed = evidence.sub("# 件数は最後の版で書く", "# 0 件").sub("M16 の残り：", "M16 の残り（サイクル 11）：")
+    write("docs/plans/cycle-11/implementation-reviews.md", fixed)
+    _out, err, status = run_check
+    expect(err).to eq("")
+    expect(status).to be_success
+  end
 end

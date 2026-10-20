@@ -2731,7 +2731,7 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 
 1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で消す（前例：`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）。strong_migrations 2.8.0 の `remove_column` の案内（`lib/strong_migrations/error_messages.rb`）は、無視を配ってから消す 2 段の手順だが、本デモは 1 つの変更にまとめる。`web` と `jobs` の Deployment は `Recreate` なので、適用で古い版の Pod が止まり、古い版が列を消した後まで動き続ける時間は短い。その間に起きた壊れも、毎日の作り直し（`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3）が Web とワーカーを 0 にしてから起こし直すので消える
 2. `ignored_columns` から外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、適用で `migrate` の Job が列を消す前にそのモデルを初めて使った新しい版の Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する。PR を分けることが守る形である。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときは、同じ壊れが起きうるが、次の作り直しで消えるので許す。これは守りではなく運用の割り切りとして、守りの文と分けて書く
-3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、spec が列を消した後の品目の INSERT がその列を書いて落ちる。落ちるのは、列を読んだ example より後に同じプロセスで INSERT する spec で、`config.order = :random` の順で変わる（OI-106）
+3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、spec が列を消した後の品目の INSERT がその列を書いて落ちる。落ちるのは、列を読んだ example より後に同じプロセスで INSERT する spec で、流すファイルと example の順で変わる（OI-106。この段落は初め `config.order = :random` の順で変わると書いたが、`spec/spec_helper.rb` の `config.order = :random` は生成器の注釈の中で効いておらず、サイクル 10 の改善の探索で直した）
 
 規則に照らして、残る 2 つを次のとおりにする。置き場と規則と 2 つの扱いは OI-232（`judgment`）に積んだ。
 
@@ -2922,3 +2922,39 @@ git grep -n -F -e "format('{0}', success())" -- docs/guides docs/showcase.md .gi
 **実装する文書の節**：`guides/config.md`「CI の工程」、`guides/packs-and-packwerk.md`「公開 API を出す」、`guides/testing.md`「層への配分」、`showcase.md`「8. 機械で守る規約」「10. 運用性」
 
 **文書に残すこと**：`guides/config.md`「CI の工程」の `publish` の `if:` の段落を、一致の形の 1 文（照らす値と、式を変える人がすること）にし、迂回の形を並べた文を消す。同じ節の、spec が式を照らさない理由の段落の例外の文（「含む・含まないの条件で照らす」）も、一致の形に合わせる。ワークフローの `publish` の前のコメント、`ci_checks_spec.rb` の example の前のコメント、`showcase.md` のテーマ 8 の表の行とテーマ 10 の公開の配置の箇条は、`config.md` を指すか同じ形の短い文にする（改善の探索の正本の棚卸しの 5 か所）。`guides/testing.md`「層への配分」の戻り値のガードの文に、全件では呼ばれない公開 API で落ちること。`guides/config.md`「CI の工程」の工程の表の RSpec の行と、`guides/bin.md`「CI が使うもの」の `test` の行に、全件の変数。`guides/packs-and-packwerk.md`「公開 API を出す」に、GraphQL の enum に写す一覧は、作る側が読む一覧を公開 API の定数（同じオブジェクトの別名でよい）として出すこと
+
+## M58 spec を乱順で流し、移行の spec の後始末で消した列の読み込みを戻す
+
+**目的**：サイクル 10 の改善の探索で採用した 3 つ（IB-157・IB-154・IB-156）を、サイクル 11 の最初に入れる（`plans/cycle-10/improvement.md`「裁定」）。1 つ目は、`spec/spec_helper.rb` の `config.order = :random` が生成器の注釈の中にあって効いておらず、spec が定義の順で流れ、順への依存が隠れる形を直す（サイクル 10 の改善の探索で、乱順にすると `spec/graphql/audit_examples_spec.rb` が落ちることを見つけて直した）。2 つ目は、`Sales::Item` の `unit_price` の `ignored_columns` を、移行の spec の後始末で列の読み込みを戻す形に替えて外し、列を消した後の規則 3 から唯一の例外を消す。3 つ目は、使い手の無い `Imports::Import::KINDS` を消す。
+
+**作るもの**
+
+1. spec を乱順で流す（IB-157）：`spec/spec_helper.rb` の `config.order = :random` と `Kernel.srand config.seed` を、生成器の注釈（`=begin`〜`=end`）の外に出す。乱順が既定であることを確かめる example を足す（`RSpec.configuration` の順の既定が乱順であること。名前と置き場は実装で決める）。着手の時点で全件を 3 つ以上の seed で流し、落ちた spec があれば同じ PR で直して、seed と直したことを証跡に書く
+2. 移行の spec の後始末で列の読み込みを戻す（IB-154）：`packs/sales/spec/public/sales/item_prices_backfill_spec.rb` の、列を足し直して戻す `after` の最後で `Sales::Item.reset_column_information` を呼ぶ。`packs/sales/app/models/sales/item.rb` から `ignored_columns` の行とコメントを消す。M54 の残りで足した「足し直した列をモデルが読んだ後に列を消しても、品目を作れる」の example は、無視ではなく後始末を確かめる形に替える。`after` は example の後に流れるので、同じ example の中では後始末の後を見られない。内側のグループを流す補助（`run_inner_group`。前例：`spec/platform/tenant_example_spec.rb`）で、列を読ませる内側の example を流し、外側で `Sales::Item` の列に `unit_price` が無いことを確かめる形にするかを、計画レビューで決める
+3. 使い手の無い一覧を消す（IB-156）：`packs/imports/app/models/imports/import.rb` の `KINDS` を消す。取り込みの種類は `Imports::CsvFormat::COLUMNS` のキーが持ち、値は DB の CHECK 制約が限る
+
+**判断**
+
+- 作るもの 1 は、CI だけに `--order random` を渡す形ではなく、`spec_helper.rb` で乱順を既定にする。手元の `bin/ci` と CI で順の扱いが分かれると、手元で通って CI で落ちる形が増える。落ちたときは rspec が出す seed を `--seed` に渡して再現する（`guides/dev-cycle.md`「テストから書く」の、1 回だけ落ちたテストを再実行で緑にしない規則のとおり）。裏返る条件：乱順で落ちる spec が、直す費用の大きい形（共有の世界の作り方など）で繰り返し出て、CI が止まり続けるようになったら、その spec のグループだけ定義の順に固定する
+- 作るもの 2 で規則 3（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）は、「spec が消した列をテストの DB に足し直すときは、後始末でそのモデルの列の読み込みを戻す」に変わる。外す時機の規則 2 には当たらない（`unit_price` を消すマイグレーションは M27 で main に入っている）
+
+**完了条件**
+
+```sh
+git grep -n 'ignored_columns' -- packs   # 0 件
+git grep -n -e 'Import::KINDS' -e 'KINDS = %w\[items stocks\]' -- packs   # 0 件
+bundle exec rspec packs/sales/spec spec/graphql --seed 1 && bundle exec rspec packs/sales/spec spec/graphql --seed 2   # 0 failures
+```
+
+次の壊し方で落ちることを、壊して落ちる記録にする。
+
+| 作るもの | 壊し方 | 落ちる example |
+|---|---|---|
+| 1 | `config.order = :random` を注釈に戻す | 乱順が既定であることを確かめる example |
+| 2 | 後始末の `reset_column_information` を外す | 後始末を確かめる example |
+
+**範囲外**：公開 API の定数の深い凍結（IB-155。サイクル 10 の改善の探索で見送った）。並行で流す形（`parallel_tests` など）。
+
+**実装する文書の節**：`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」、`guides/testing.md`
+
+**文書に残すこと**：`guides/config.md` の規則 3 の文を、後始末で列の読み込みを戻す形と、spec が乱順で流れることに合わせる。`guides/testing.md` に、spec は乱順で流れ、順への依存で落ちたら出力の seed で再現して直すことを 1 文書く。`showcase.md` のテーマ 10 の列を消す変更の箇条を、規則 3 の新しい形に合わせる。
