@@ -3,7 +3,8 @@ require "json"
 require "open3"
 
 # spec は乱順で流れ、落ちたときは出力の seed を --seed に渡すと同じ順で流れ直す（docs/guides/testing.md「層への配分」）。
-# 親のプロセスの設定は読まない。rspec-core 3.13.6 はコマンドラインの --seed と --order を設定ファイルより優先するので、
+# 親のプロセスの設定は読まない。rspec-core 3.13.6 はコマンドラインの --seed と --order を設定ファイルより優先する
+# （lib/rspec/core/configuration_options.rb の force? と、lib/rspec/core/ordering.rb の ConfigurationManager#force）ので、
 # --seed を渡して流す親では、spec/spec_helper.rb の設定を注釈に戻しても乱順のまま通るからである。
 # 子は --options .rspec で流し、~/.rspec と .rspec-local を読ませない。親の SPEC_OPTS・COVERAGE・FULL_SUITE も渡さない
 RSpec.describe "spec を流す順" do

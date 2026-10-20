@@ -8,9 +8,46 @@
 
 `m58-random-order`（base は `main`）。サイクル 11 の計画のブランチ `cycle-11-plan` の先端 `7e7b88a` から切った。計画の PR（#108）は着手の後に main に入ったので、M58 の差分は `7e7b88a..` で、PR の差分もそれだけである。
 
+PR #109 の実装レビューは、実装者が 2 系統に同じ依頼で出した。どちらの系統も、`7e7b88a..98a94b0` の diff を `git show 98a94b0:<パス>` か同じ木の作業ツリーで読んだ。2 系統とも Go で、High 以上は無く、読み直しには出していない。
+
+- Claude：手元で完了条件の `git grep` 3 本（0・0・0 件）と、全件を `--seed` 1・2・3 で流した（3 つとも 3200 examples, 0 failures）。壊して落ちる記録の 1〜3 を複製から追試して同じ落ち方を確かめ、後始末の `DROP COLUMN IF EXISTS` を `DROP COLUMN` にする壊し方を足した（後始末を確かめる example が 2 回目の後始末の `PG::UndefinedColumn` で落ちた）。`.rspec-local` に `--order defined` を一時に置き、親を `SPEC_OPTS="--order defined"` で流しても子に漏れないことを確かめた。`items` を表に持つモデルが `Sales::Item` だけであることを、読み込んだ 55 のモデルから数えた
+- Codex：読み取り専用で流した。DB を使う spec は流さず、完了条件の `git grep` 3 本（0・0・0 件）と、commit の流す対象をメモリの上に読んだ seed 1 の dry-run（並びは `8,3,6,4,10,9,2,7,1,5`）を流し、rspec-core 3.13.6 と activerecord 8.1.4 の原文を読んだ
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go（Medium 1・Low 1） |
+| Claude | Go（Low 3） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘なし | 指摘（R1・R2） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘（R3） |
+| テストの検出力 | 指摘（R2） | 指摘なし |
+| 参照の維持 | 指摘（R1） | 指摘（R3） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium | Codex R1 | `implementation-plan.md` の M54 の残りの節（IB-151 の段落）に、前の規則 3 の「足し直すあいだは外さず」、`unit_price` を「残す」、列を読ませてから消す example の作り方が残り、M58 で替えたことが書かれていない | 3 か所に、M58 で替えたことを括弧で書き足した（規則 3 は後始末の形に替えた、`unit_price` は外した、example は後始末を確かめる形に替えた）。M54 の残りの節は当時の計画なので、文は書き換えていない。前の形を `git grep -n -e '外さず' -e '残す。移行の spec' -- docs/implementation-plan.md` で数え、M54 の残りの節の 2 行（どちらも書き足した行）と M58 の節のほかは、行列テストのポリシーを外す別の文の 1 行（`:1366`）だけであることを確かめた | この節を載せた commit |
+| Low | Codex R2 | 定義の順と違う並びを確かめる example に、RED も壊して落ちる記録も無い | 流す対象のグループに `order: :defined` を付けて seed が並びを変えなくなる壊し方を足し、この example だけが落ちることを確かめた（下の壊して落ちる記録の表） | 同上 |
+| Low | Claude R1 | 完了条件の `git grep` 3 本に、流した commit が書いていない | 3 本を最後の commit と同じ木で流し直し、行の注釈に書いた | 同上 |
+| Low | Claude R2 | `bin/ci` の rspec の seed 59808 が、どの版のものか読み取れない | 段落に `5bb8dc7` の `bin/ci` だと書いた | 同上 |
+| Low | Claude R3 | `spec/spec_helper.rb` のコメントが、コマンドラインの `--seed`・`--order` が優先する根拠として `guides/testing.md`「層への配分」を指すが、その節に優先のことは無い。`spec_order_spec.rb` の冒頭も原文のファイルを指さない | どちらも、rspec-core 3.13.6 の `configuration_options.rb` の `force?` と `ordering.rb` の `ConfigurationManager#force` を指す形にした | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：子は `.rspec` の `--require packs/rails/rspec` も読むので、計画と流す対象の「`--require spec_helper` だけで足り」は前提を書き落としている → 改善の候補 IB-160 に移した
+- Claude 2：書き直した example は後始末を example の中で呼び、`after` がもう一度呼ぶので、2 回呼んでも同じ形に戻ることの守りを兼ねるが、それがどこにも書いていない → example のコメントに書いた
+- Claude 3：規則 3 を守るのが移行の spec の 1 つの example だけである → 既にある IB-158 で扱う。移していない
+- Codex：なし
+
+分岐の網羅率の警告は、基準 `7e7b88a` で 0 件で、example を足したものは無い。
+
 ### 実装の記録
 
-下の spec の行の番号は、実装レビューに出す版のものである。
+下の spec の行の番号は、実装レビューの直しの後の版のものである（直しで `spec_order_spec.rb` の冒頭のコメントが 1 行増え、レビューに出した版の `:30`・`:43` が `:31`・`:44` になった）。
 
 #### 計画との違い
 
@@ -28,10 +65,10 @@
 
 | spec | 流した版 | 落ちた example | 落ち方 |
 |---|---|---|---|
-| `spec/platform/spec_order_spec.rb:30` | spec と流す対象を足し、`spec/spec_helper.rb` の設定を注釈から出す前（`7e7b88a` の作業ツリー） | (a)〜(c) の example（2 examples, 1 failure） | `expected nil to be a kind of Integer`（(a) の `seed`） |
+| `spec/platform/spec_order_spec.rb:31` | spec と流す対象を足し、`spec/spec_helper.rb` の設定を注釈から出す前（`7e7b88a` の作業ツリー） | (a)〜(c) の example（2 examples, 1 failure） | `expected nil to be a kind of Integer`（(a) の `seed`） |
 | `packs/sales/spec/public/sales/item_prices_backfill_spec.rb:172` | 後始末をメソッドに出して example を書き直し、`Sales::Item` の `ignored_columns` を外す前（同上、`--seed 1`） | 後始末を確かめる example（6 examples, 1 failure） | 対照の `expected ["id", "owner_tenant_id", "code", "name", "unit", "tax_rate_percent", "published", "created_at", "updated_at"] to include "unit_price"` |
 
-`spec/platform/spec_order_spec.rb` の定義の順と違う並びを確かめる example（`:43`）は、`--seed` を渡すので、設定によらず書いた時点で通った。(a)〜(c) の検出力を支える前提（seed が実際に並びを変える）を確かめる example で、壊して落ちる記録は持たない。
+`spec/platform/spec_order_spec.rb` の定義の順と違う並びを確かめる example（`:44`）は、`--seed` を渡すので、設定によらず書いた時点で通った。(a)〜(c) の検出力を支える前提（seed が実際に並びを変える）を確かめる example で、RED に代えて下の壊して落ちる記録を持つ。
 
 #### 壊して落ちる記録
 
@@ -39,8 +76,9 @@
 
 | 作るもの | 壊し方 | 落ちた example |
 |---|---|---|
-| 1 | `config.order = :random` を注釈に戻す | `spec_order_spec.rb:30` の (a)（2 examples, 1 failure。`expected nil to be a kind of Integer`） |
+| 1 | `config.order = :random` を注釈に戻す | `spec_order_spec.rb:31` の (a)（2 examples, 1 failure。`expected nil to be a kind of Integer`） |
 | 1 | `Kernel.srand config.seed` を注釈に戻す | 同じ example の (c)（2 examples, 1 failure。`expected: "0.6807487535072207" got: "0.997406095073844"`） |
+| 1 | 流す対象のグループに `order: :defined` を付け、seed が並びを変えないようにする（実装レビューの直しの後） | `spec_order_spec.rb:44` だけ（2 examples, 1 failure。`expected: value != ["1", "2", …, "10"]`） |
 | 2 | `restore_current_schema` の `Sales::Item.reset_column_information` を外す | 後始末を確かめる example だけ（`--seed 1` で 6 examples, 1 failure。後始末の後の `column_names` に `unit_price` が残る） |
 | 2 | `after` から `restore_current_schema` を呼ばない | seed ごとの並び（`--dry-run`）は、seed 1 が `104,127,113,159,172,91`、seed 2 が `91,104,172,159,127,113`、seed 3 が `172,127,159,104,113,91` である。seed 1：最初に流れた `:104` のほかの 5 つ（`:91`・`:113`・`:127`・`:159`・`:172`）とファイルの終わりの `after(:context)`（6 examples, 5 failures, 1 error occurred outside of examples）。seed 2：`:104`・`:113`・`:127`・`:159`・`:172` と `after(:context)`（同じ数）。seed 3：`:91`・`:104`・`:113`・`:159` と `after(:context)`（6 examples, 4 failures, 1 error occurred outside of examples。書き直した example が最初に流れ、example の中で後始末を呼ぶので、次に流れた `:127` も通った）。落ちた example はどれも `before` の `DROP CONSTRAINT` が `constraint "sales_order_lines_matched_together" ... does not exist` で落ち、`after(:context)` は「移行の spec が、items.unit_price を消すか受注明細の CHECK 制約を戻すのを終えていない」で止まった |
 
@@ -62,7 +100,7 @@ git grep -n -e 'Import::KINDS' -e 'KINDS = %w\[items stocks\]' -- packs spec app
 bin/check-open-items --due M58 && bin/check-commit-refs   # 通った
 ```
 
-`bin/ci` を流している間に、計画の PR（#108）が main に入って `cycle-11-plan` のブランチが消え、`origin/cycle-11-plan` が無くなった。基準の ref を読む 2 つの工程だけを、`BASE_REF=origin/main`（分岐点は同じ `7e7b88a`）で流し直し、証跡を足した版で `bin/ci` の全体を流し直した。`bin/ci` の rspec は全件の印を渡して `--seed` を渡さずに流れ（Randomized with seed 59808）、3200 examples, 0 failures で、呼ばれない公開 API の一覧は出なかった。全件を `--seed` 1・2・3 で流した 3 回は、それぞれ 3 分 48 秒・3 分 28.7 秒・3 分 31.6 秒かかった。rspec の件数は、計画の `7e7b88a` の 3198 から、乱順の 2 つの example で 3200 になった（移行の spec の example は書き直しで、数は変わらない）。手元では E2E を流していない。変えたファイルが画面にも GraphQL のスキーマにも届かないからで、全体の通過は PR の CI の `e2e` で確かめる。
+`bin/ci` を流している間に、計画の PR（#108）が main に入って `cycle-11-plan` のブランチが消え、`origin/cycle-11-plan` が無くなった。基準の ref を読む 2 つの工程だけを、`BASE_REF=origin/main`（分岐点は同じ `7e7b88a`）で流し直し、証跡を足した版で `bin/ci` の全体を流し直した。`5bb8dc7` の `bin/ci` の rspec は全件の印を渡して `--seed` を渡さずに流れ（Randomized with seed 59808）、3200 examples, 0 failures で、呼ばれない公開 API の一覧は出なかった。全件を `--seed` 1・2・3 で流した 3 回は、それぞれ 3 分 48 秒・3 分 28.7 秒・3 分 31.6 秒かかった。rspec の件数は、計画の `7e7b88a` の 3198 から、乱順の 2 つの example で 3200 になった（移行の spec の example は書き直しで、数は変わらない）。手元では E2E を流していない。変えたファイルが画面にも GraphQL のスキーマにも届かないからで、全体の通過は PR の CI の `e2e` で確かめる。
 
 ### 残件の処理
 

@@ -61,7 +61,8 @@ RSpec.configure do |config|
   config.shared_context_metadata_behavior = :apply_to_host_groups
 
   # 順への依存を隠さないよう、乱順で流す。落ちたら出力の seed を --seed に渡すと同じ順で流れ直す。
-  # コマンドラインの --seed と --order は、この設定より優先する（docs/guides/testing.md「層への配分」）
+  # コマンドラインの --seed と --order は、この設定より優先する（rspec-core 3.13.6 の lib/rspec/core/configuration_options.rb の
+  # force? と、lib/rspec/core/ordering.rb の ConfigurationManager#force）
   config.order = :random
 
   # 同じ seed で、Kernel.rand に頼る spec も同じ値で流れ直す。rspec の乱順は Kernel.rand を使わない

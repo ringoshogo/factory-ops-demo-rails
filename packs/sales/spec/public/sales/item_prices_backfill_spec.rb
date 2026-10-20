@@ -174,6 +174,7 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     # 対照：後始末の前は、モデルが足し直した列を読んでいる
     expect(Sales::Item.column_names).to include("unit_price")
 
+    # after がもう一度呼ぶので、2 回呼んでも同じ形に戻ることも、この example が確かめる
     restore_current_schema
 
     expect(Sales::Item.column_names).not_to include("unit_price")
