@@ -136,6 +136,14 @@ PostgreSQL のイメージを上げた人は、クラスタ（手元の `compose
 
 strong_migrations は、本番で表をロックしかねない変更（列の型の変更、`CONCURRENTLY` の無い索引の追加など）を、マイグレーションの実行時に例外で止める gem である（[ADR 001](../adr/001-スキーマ管理にridgepoleを採用しない.md) 決定 3）。このファイルは生成器が作ったもので、ロックの待ち時間・文の実行時間の上限と、本番の PostgreSQL の版 `target_version = 18` を設定している。
 
+列を消すマイグレーションを書く人は、モデルの `ignored_columns` を次の 3 つの規則で置き、外す。前提は、Active Record がモデルの列をそのモデルを初めて使ったときに読んで持ち続けることと、`config.load_defaults 8.1` では `partial_inserts` が偽で、INSERT がモデルの全列を書くことである（railties 8.1.4 の `lib/rails/application/configuration.rb` の `load_defaults` の `"7.0"` の段。activerecord 8.1.4 の既定は真で、`lib/active_record/attribute_methods/dirty.rb`）。列を読んだプロセスは、列が消えた後の INSERT で消えた列を書いて失敗する。
+
+1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で列を消す（`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）。strong_migrations 2.8.0 の `remove_column` の案内（`lib/strong_migrations/error_messages.rb`）は、無視を配ってから消す 2 段の手順だが、本デモは 1 つの変更にまとめる。公開の配置の `web` と `jobs` は `Recreate`（`deploy/README.md`）で、適用で古い版の Pod が止まるので、`migrate` の Job が古い版の止まる前に列を消しても（Job と Pod の起動の順は決まっていない）、古い版が列を消した後まで動く時間は短い。その間に起きた壊れも、毎日の作り直しが Web とワーカーを 0 にしてから起こし直すので消える（[ADR 009](../adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md) 決定 3）
+2. `ignored_columns` から列を外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、適用で `migrate` の Job が列を消す前にそのモデルを初めて使った新しい版の Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する
+3. spec が消した列をテストの DB に足し直すあいだは、`ignored_columns` から外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、列を消した後に同じプロセスで INSERT する spec が、その列を書いて落ちる。どの spec が落ちるかは `config.order = :random` の順で変わる（`../plans/open-items.md` の OI-106）
+
+規則 2 の守りは PR を分けることで、公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときは守られない。そのときは同じ壊れが起きうるが、次の毎日の作り直しで消えるので、運用の割り切りとして許す。
+
 ### initializers/tenancy.rb：接続を貸し出すたびにテナントを空にする
 
 アプリは、テナントを `Tenancy.with_tenant` の中で `SET LOCAL app.tenant_id` で DB に渡す。接続はプールで使い回すので、前の利用者が残したテナントを、テナントを設定しない次の利用者が引き継ぐことがある。このファイルは、接続プールの貸し出し（checkout）のコールバックで `Tenancy.reset!` を呼び、セッションの `app.tenant_id` を空にする（[data-model.md「RLS」](../architecture/data-model.md#rls)）。

@@ -161,6 +161,20 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     end
   end
 
+  # Sales::Item が unit_price を無視し続ける理由を、spec の順によらず確かめる。足し直した列をモデルに読ませてから列を消し、
+  # 同じプロセスで品目を作る。無視が無ければ INSERT が消えた列を書いて落ちる（docs/guides/config.md「initializers/strong_migrations.rb：危険なマイグレーションを止める」）
+  it "足し直した列をモデルが読んだ後に列を消しても、品目を作れる" do
+    Sales::Item.reset_column_information
+    Sales::Item.columns
+    reshape("ALTER TABLE items DROP COLUMN unit_price")
+
+    item = Tenancy.with_tenant(tenant.id) { FactoryBot.create(:item) }
+
+    expect(owner.select_value("SELECT count(*) FROM items WHERE id = #{owner.quote(item.id)}")).to eq(1)
+  ensure
+    Sales::Item.reset_column_information
+  end
+
   def actor_of(tenant)
     Partnerships::Actor.new(user_id: nil, tenant_id: tenant.id, name: "", email: "", role: "member", partner_code: "")
   end
