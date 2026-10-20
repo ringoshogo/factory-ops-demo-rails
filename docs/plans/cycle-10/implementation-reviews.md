@@ -120,7 +120,16 @@ git grep -n -e success_inside_call -e without_strings -- . ':!docs/plans' ':!doc
 git grep -n -F -e "format('{0}', success())" -- docs/guides docs/showcase.md .github   # 0 件
 ```
 
-`bin/ci` の rspec は全件の印を渡して流れ、呼ばれない公開 API の一覧は出なかった（0 個）。分岐の網羅率の警告は、基準 `391a017` で 0 件だった。`bin/packwerk validate && bin/packwerk check` は、公開 API の別名を spec から読むので違反が増えず、通った。rspec の件数は、計画の `391a017` の 3152（`bundle exec rspec --dry-run`）から 3193 になった（作るもの 1 の式の表の 25、全件の印の期待と補助の 2、判定と子のプロセスの 2、enum の 12）。画面と E2E は、変えたファイルが画面にも GraphQL のスキーマにも届かないので流していない。
+`bin/ci` の rspec は全件の印を渡して流れ、呼ばれない公開 API の一覧は出なかった（0 個）。分岐の網羅率の警告は、基準 `391a017` で 0 件だった。`bin/packwerk validate && bin/packwerk check` は、公開 API の別名を spec から読むので違反が増えず、通った。rspec の件数は、計画の `391a017` の 3152（`bundle exec rspec --dry-run`）から 3193 になり（作るもの 1 の式の表の 25、全件の印の期待と補助の 2、判定と子のプロセスの 2、enum の 12）、実装レビューの直しで式の表の通す行を 1 つ足して 3194 になった。実装レビューの直しの後も `TEST_DATABASE=factory_ops_m57_test BASE_REF=origin/cycle-10-plan bin/ci` が通った（`77b2d72` で 3194 examples, 0 failures、分岐の網羅率の警告 0 件）。手元では E2E を流していない。変えたファイルが画面にも GraphQL のスキーマにも届かないからで、全体の通過は PR の CI の `e2e` で確かめた（下の表）。
+
+PR #105 の CI は、push のたびに `pull_request` で流れた（`publish` は `pull_request` なので skip）。流し直しはしていない。
+
+| 先端 | 実行 | 結果 |
+|---|---|---|
+| `32743b0` | [39352610298](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/39352610298) | success（`scan_ruby`・`lint`・`test`・`frontend`・`e2e`・`manifests`・`images` が通り、`publish` は skip） |
+| `77b2d72` | [39354144138](https://github.com/ringoshogo/factory-ops-demo-rails/actions/runs/39354144138) | success（同上） |
+
+この表を載せた commit は証跡だけを変える。その CI の結果は PR の checks で見る。
 
 ### 残件の処理
 
