@@ -1,6 +1,7 @@
 class RemoveUnitPriceFromItems < ActiveRecord::Migration[8.1]
   # 単価の正本を item_prices に移し終えた後に、items.unit_price を消し、受注明細の priced_on を照合後に埋まる列に加える
-  # （docs/adr/006 決定 1、strong_migrations の列を消す手順）。sales:backfill_item_prices を流す前に流すと、値を失うので止まる
+  # （docs/adr/006 決定 1）。sales:backfill_item_prices を流す前に流すと、値を失うので止まる。列の消し方は
+  # docs/guides/config.md「initializers/strong_migrations.rb：危険なマイグレーションを止める」の規則による
   def up
     remaining = select_value(<<~SQL)
       SELECT (SELECT count(*) FROM items i

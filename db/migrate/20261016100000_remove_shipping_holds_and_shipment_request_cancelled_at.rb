@@ -6,7 +6,7 @@ class RemoveShippingHoldsAndShipmentRequestCancelledAt < ActiveRecord::Migration
   BILLABLE_ITEMS_COMMENT = "[請求] 請求対象明細。受注が検収で確定した明細で、請求書が空なら未請求".freeze
 
   # 出荷依頼の取消済と出荷停止中を、受注の公開 API の副問い合わせから導出するので、出荷停止の表と出荷依頼の取消の時刻を消す
-  # （docs/adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md、strong_migrations の列を消す手順）
+  # （docs/adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md）
   def up
     # 列を消すマイグレーションは、モデルの ignored_columns に列を入れた版と一緒に置く
     # （docs/guides/config.md「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。表のモデルは消してある

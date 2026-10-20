@@ -227,7 +227,7 @@ packs/sales cannot have privacy violations on packs/inventory because strict mod
 - **置き場**：`packs/<パッケージ>/app/public/<パッケージ>/` に置く。
 - **名前**：`app/models/<パッケージ>/` と `app/public/<パッケージ>/` は同じ名前空間に入るので、公開 API のモジュールをモデルと同じ名前にできない。モデルの名前の複数形にする（`Sales::SalesOrders`・`Purchasing::ReceiptInspections`）。
 - **返す値**：AR モデルも relation も返さず、`Data.define` の読み取り用の値（`Inventory::StockValue` など）に詰めて返す。AR モデルを返すと、受け取った側がそのモデルを書き換えられる。relation を返すと、受け取った側が `unscope`・`rewhere`・`update_all` で scope と書き込みの入口を越えられる。別のコンテキストの SQL に値を渡すときは `SqlSubquery` で返す（[graphql-schema.md「1 回のリクエストがたどる道」](../architecture/graphql-schema.md#1-回のリクエストがたどる道) 3）。全 spec の流れで戻り値を確かめるガード（`spec/support/public_api_returns.rb`）が、`app/public/` の公開の特異メソッドの戻り値を配列・Hash・`Set`・`Data` の項目・`OperationResult` の値までたどり、relation かモデルがあれば落とす。ほかの層との分担は「層ごとの責務」にある。
-- **GraphQL の enum に写す一覧**：公開 API の値を GraphQL の enum に写すときは、その値を作るか受け付けるコードが読む一覧を、公開 API の定数として出す。`app/models/` の一覧は、同じオブジェクトを指す定数の別名でよい（`Purchasing::PurchaseOrders::STATUSES = PurchaseOrderStatus::ALL`）。別の配列に写した定数は、作る側に値を足しても変わらないので比べる相手にしない。`spec/graphql/enum_values_spec.rb` が、スキーマのすべての enum の型を、その定数と値の集合が等しいか、理由付きの比べない表に載るかのどちらかであることを確かめる。
+- **GraphQL の enum に写す一覧**：公開 API の値を GraphQL の enum に写すときは、その値を作るか受け付けるコードが読む一覧か、値を作る式との一致をそのパッケージの spec が確かめる一覧（状況の式と `ALL`）を、公開 API の定数として出す。`app/models/` の一覧は、同じオブジェクトを指す定数の別名でよい（`Purchasing::PurchaseOrders::STATUSES = PurchaseOrderStatus::ALL`）。別の配列に写した定数は、作る側に値を足しても変わらないので比べる相手にしない。`spec/graphql/enum_values_spec.rb` が、スキーマのすべての enum の型を、その定数と値の集合が等しいか、理由付きの比べない表に載るかのどちらかであることを確かめる。
 - **引数**：操作者（`Partnerships::Actor`）を必須の引数にし、自パッケージの policy の scope（`Inventory::Scope` など）を掛けてから読む。
 
 非公開のクラスを `app/public/` へ移すだけで違反を消すことは避ける。公開 API が抜け道として増えていくことは、プライバシーの検査を見直す条件である（ADR 002「見直す条件」）。
