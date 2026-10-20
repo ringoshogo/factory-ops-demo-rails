@@ -175,8 +175,8 @@ end
 # 完了条件の git grep は、文書と証跡を書き終えた最後の版で流し直し、コマンドと件数を証跡に書く
 # （docs/guides/dev-cycle.md「完了の判定」）。照らす相手は計画の節の囲みの中の git grep で、「残り（サイクル NN）」の
 # 節は、計画のその段落から次の「残り」の段落までの分だけを求める。件数は「# 0 件」のように数字で書いたものだけを数える。
-# サイクル 12 からは、件数の後ろに流した版の commit（7〜40 桁の 16 進）も求める。最後の commit は自分の SHA を書けないので、
-# 流した commit と、その後の commit が証跡だけを変えることを書く
+# サイクル 12 からは、件数の後ろに、流した版の commit を `` ` `` で囲んだ 7〜40 桁の 16 進で求める。囲むのは、SHA が HEAD の祖先の
+# commit であることを bin/check-commit-refs に確かめさせるためである。書いた SHA が最後の版かは見ない
 # 見出しと「残り」の段落は囲みの外でだけ区切る。囲みの中には、見出しの見本が書かれうるからである
 
 # 行ごとに、行番号・行・囲みの中かを返す。囲みは ``` か ~~~ で始まり、同じ文字の行で閉じる
@@ -229,7 +229,7 @@ check_grep_counts = lambda do |label, text, with_commit|
     end
     name = rest_cycle ? "M#{heading[1]} の残り（サイクル #{rest_cycle}）" : "M#{heading[1]} "
     counted = section.filter_map { grep_command.call(_2) if _3 == :inside && _2.match?(/#\s*\d+\s*件/) }
-    versioned = section.filter_map { grep_command.call(_2) if _3 == :inside && _2.match?(/#\s*\d+\s*件.*(?<![0-9A-Za-z])\h{7,40}(?![0-9A-Za-z])/) }
+    versioned = section.filter_map { grep_command.call(_2) if _3 == :inside && _2.match?(/#\s*\d+\s*件.*`\h{7,40}`/) }
     plan_greps.call(heading[1], rest_cycle).each do |command|
       if !counted.include?(command)
         errors << "#{label}:#{lineno}: #{name}の節に、完了条件の「#{command}」を流した件数が無い"

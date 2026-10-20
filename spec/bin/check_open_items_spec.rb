@@ -364,20 +364,23 @@ RSpec.describe "bin/check-open-items" do
       "docs/plans/cycle-12/implementation-reviews.md:1: M16 の節に、完了条件の「git grep -n -e before -- docs」を流した版の commit が無い\n"
     ])
 
-    # 7 桁に満たない 16 進の語は、版として数えない
-    write("docs/plans/cycle-12/implementation-reviews.md", evidence.sub("# 0 件", "# 0 件（abc12）"))
-    _out, err, = run_check
-    expect(err.lines.grep(/版の commit が無い/).size).to eq(1)
+    # ` で囲まない SHA は bin/check-commit-refs が確かめないので、版として数えない。7 桁に満たない語も数えない
+    [ "# 0 件（abc1234。この後の commit は証跡だけを変える）", "# 0 件（`abc12`）" ].each do |note|
+      write("docs/plans/cycle-12/implementation-reviews.md", evidence.sub("# 0 件", note))
+      _out, err, = run_check
+      expect(err.lines.grep(/版の commit が無い/).size).to eq(1)
+    end
 
-    write("docs/plans/cycle-12/implementation-reviews.md", evidence.sub("# 0 件", "# 0 件（abc1234。この後の commit は証跡だけを変える）"))
+    write("docs/plans/cycle-12/implementation-reviews.md", evidence.sub("# 0 件", "# 0 件（`abc1234`。この後の commit は証跡だけを変える）"))
     _out, err, status = run_check
     expect(err).to eq("")
     expect(status).to be_success
   end
 
-  it "本物の計画とサイクル 11 の実装レビューの証跡は、完了条件の git grep の件数に版を持ち、1 行の版を消すと落ちる" do
+  it "本物の計画とサイクル 11 の実装レビューの証跡は、版を ` で囲めば通り、1 行の版を消すと落ちる" do
     plan_text = File.read(File.expand_path("../../docs/implementation-plan.md", __dir__))
-    evidence = File.read(File.expand_path("../../docs/plans/cycle-11/implementation-reviews.md", __dir__))
+    # サイクル 11 の証跡は版を ` で囲まずに書いたので、囲んだ形に写して照らす
+    evidence = File.read(File.expand_path("../../docs/plans/cycle-11/implementation-reviews.md", __dir__)).gsub("（934267a。", "（`934267a`。")
     ledgers(open_items: "")
     write("docs/implementation-plan.md", plan_text)
     write("docs/plans/cycle-12/implementation-reviews.md", evidence)
