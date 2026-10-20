@@ -10,35 +10,38 @@ RSpec.describe "CI と手元で流す検査" do
 
   def self.workflow = YAML.load_file(Rails.root.join(".github/workflows/ci.yml"))
 
-  # GitHub の式の文字列は単一引用符で囲み、中の単一引用符は 2 つ重ねる。文字列の中の記号を式の記号と取り違えないよう、空の文字列にする
-  def self.without_strings(condition) = condition.gsub(/'(?:[^']|'')*'/, "''")
+  # publish の if: に許す式は 1 つで、書き方の違いは前後の空白・全体を囲む ${{ }}・続く空白だけをそろえる
+  # （docs/guides/config.md「CI の工程」）。大文字と小文字・括弧・引用符はそろえない。GitHub は関数の名前の大小を区別しないと
+  # みられ（actions/runner のソースからの推定）、括弧と引用符は式の意味を変えるので、そろえると迂回を通す
+  def self.publish_condition = "success() && github.event_name == 'push'"
 
-  # success() を囲む括弧のどれかが関数の呼び出しの括弧か添字なら、その関数か添字で success() の値を真に変えられる
-  # （format('{0}', success()) は needs が落ちても 'false' を返す）。括弧の深さを数えるのは、前の引数の閉じ括弧で
-  # 照らす範囲が切れないためである
-  def self.success_inside_call?(condition)
-    source = without_strings(condition)
-    enclosing = []
-    source.each_char.with_index do |char, index|
-      return true if enclosing.any? && source[index..].match?(/\Asuccess\s*\(/)
-
-      case char
-      when "(" then enclosing << source[0...index].match?(/\w\s*\z/)
-      when "[" then enclosing << true
-      when ")", "]" then enclosing.pop
-      end
-    end
-    false
+  def self.publish_condition?(condition)
+    stripped = condition.strip
+    stripped = stripped[/\A\$\{\{(.*)\}\}\z/m, 1] || stripped
+    stripped.strip.gsub(/\s+/, " ") == publish_condition
   end
 
   def self.workflow_commands
     bin_commands(workflow.fetch("jobs").values.flat_map { _1.fetch("steps") }.filter_map { _1["run"] }.join("\n"))
   end
 
-  def self.completion_commands
+  def self.completion_block
     plan = Rails.root.join("docs/implementation-plan.md").read
     section = plan[/^### 共通の完了条件\n(.*?)^#/m, 1] or raise "implementation-plan.md に「共通の完了条件」の節が無い"
-    bin_commands(section[/^```sh\n(.*?)^```/m, 1].to_s)
+    section[/^```sh\n(.*?)^```/m, 1].to_s
+  end
+
+  def self.completion_commands = bin_commands(completion_block)
+
+  # パスを付けない（全件を流す）bundle exec rspec ごとの、前置きの環境変数。spec のパスは spec/ か packs/ で始まる
+  def self.full_rspec_envs(text)
+    text.split(/&&|\n/).filter_map do |command|
+      words = command.split
+      index = words.each_cons(3).find_index { _1 == %w[bundle exec rspec] }
+      next unless index && words.drop(index + 3).none? { _1.match?(%r{\A(\./)?(spec|packs)/}) }
+
+      words.take(index).to_h { _1.split("=", 2) }
+    end
   end
 
   it "ワークフローが流す bin/ の検査は、すべて共通の完了条件にある" do
@@ -104,26 +107,86 @@ RSpec.describe "CI と手元で流す検査" do
 
   # どのジョブも PR と main への push のたびに流れ、publish だけが main への push で、ほかのすべてのジョブの成功を待って流れる
   # （docs/guides/config.md「CI の工程」）。ほかのジョブに契機を絞る if: を足すと、push でそのジョブが skip され、
-  # publish も skip されてイメージが置かれなくなる。publish の if: は success() を明示し、needs のどれかが落ちた・取り消された・
-  # skip されたときに止まることを YAML の行で読めるようにする。failure・cancelled・always を足すと、落ちたか取り消された
-  # needs でも流れて push する。success() を否定するか（!success()・!(success() && …)）、論理和でつなぐか（success() || …）、
-  # 比べるか（success() == false・false == success()・success() < 1）、関数の引数に入れて文字列にすると（format('{0}', success())）、
-  # 状態の関数を含むので GitHub は success() を足さず、needs が落ちても流れる。否定は success() の直前に限らず書け、
-  # 比べは success() のどちらの側にも書けるので、! そのものを含まないことと、契機の比べ（github.event_name == ...）を除いた残りが
-  # 比べの演算子の文字（= < >）を含まないことと、success() を囲む括弧に関数の呼び出しの括弧も添字も無いことで照らす。
-  # どちらも文字列の中の記号は数えない。
-  # 式の形は照らさず、含む・含まないの条件で照らす
-  it "ジョブの段の if: を持つのは publish だけで、publish の if: は success() を比べず関数の引数にも入れずに含み、! と || と failure・cancelled・always を含まない" do
+  # publish も skip されてイメージが置かれなくなる。publish の if: は、needs のどれかが落ちた・取り消された・skip されたときに
+  # 偽になる 1 つの式にちょうど一致させて照らし、落とす迂回の形は並べない。式を変える人は publish_condition も直す
+  it "ジョブの段の if: を持つのは publish だけで、publish の if: は success() && github.event_name == 'push' に一致する" do
     jobs = self.class.workflow.fetch("jobs")
-    condition = jobs.dig("publish", "if").to_s
 
     expect(jobs.select { |_, job| job.key?("if") }.keys).to eq(%w[publish])
-    expect(condition).to match(/\bsuccess\s*\(\s*\)/)
-    expect(condition).not_to match(/\b(failure|cancelled|always)\s*\(/)
-    expect(condition).not_to include("!")
-    expect(condition).not_to include("||")
-    expect(self.class.without_strings(condition).gsub(/\bgithub\.event_name\s*==\s*''/, "")).not_to match(/[=<>]/)
-    expect(self.class.success_inside_call?(condition)).to be(false)
+    expect(self.class.publish_condition?(jobs.dig("publish", "if").to_s)).to be(true)
+  end
+
+  # 照らし方の表。落とす行は、needs が落ちても流れる迂回（否定・論理和・比べ・関数の引数と添字・大文字の状態の関数と
+  # 文字列の中の success()）と、needs が落ちれば偽になるが一致しない式（項の順か大小が違う）である
+  rejected = [
+    "${{ !success() && github.event_name == 'push' }}",
+    "${{ !(success() && github.event_name == 'push') }}",
+    "success() || github.event_name == 'push'",
+    "success() == false && github.event_name == 'push'",
+    "false == success() && github.event_name == 'push'",
+    "success() >= false && github.event_name == 'push'",
+    "success() < 1 && github.event_name == 'push'",
+    "1 > success() && github.event_name == 'push'",
+    "format('{0}', success()) && github.event_name == 'push'",
+    "toJSON(success()) && github.event_name == 'push'",
+    "contains('truefalse', success()) && github.event_name == 'push'",
+    "format('){0}', success()) && github.event_name == 'push'",
+    "format('{0}{1}', toJSON(github.event_name), success()) && github.event_name == 'push'",
+    "join(fromJSON('[1]'), success()) && github.event_name == 'push'",
+    "fromJSON('[1,1]')[success()] && github.event_name == 'push'",
+    "${{ 'success()' && Always() }}",
+    "${{ Always() && github.event_name == 'push' && 'success()' }}",
+    "${{ Failure() && 'success()' }}",
+    "success() && github.event_name == 'push' || always()",
+    "always() || github.event_name == 'push' && success()",
+    "${{ github.event_name == 'push' && success() }}",
+    "Success() && github.event_name == 'push'"
+  ]
+
+  accepted = [
+    "success() && github.event_name == 'push'",
+    "${{ success() && github.event_name == 'push' }}",
+    "  success()  &&  github.event_name == 'push'  "
+  ]
+
+  rejected.each do |condition|
+    it "publish の if: の照らし方は #{condition} を落とす" do
+      expect(self.class.publish_condition?(condition)).to be(false)
+    end
+  end
+
+  accepted.each do |condition|
+    it "publish の if: の照らし方は #{condition.inspect} を通す" do
+      expect(self.class.publish_condition?(condition)).to be(true)
+    end
+  end
+
+  # 全件の流れでだけ、どの spec も呼ばなかった公開 API で落とす（spec/support/public_api_returns.rb）。全件を流す場所のどれかが
+  # 印を渡さないと、そこでは呼ばれない公開 API が黙って残る。名指しした場所だけを照らすと、ほかの場所を書き換えても落ちないので、
+  # 3 つの置き場からパスを付けない rspec をすべて集める。ワークフローの印は、ワークフロー・ジョブ・ステップの env のどれでもよい
+  it "全件を流す rspec は、ワークフロー・bin/ci の工程・共通の完了条件のどれでも、全件の印 FULL_SUITE=1 を渡す" do
+    workflow = self.class.workflow
+    workflow_envs = workflow.fetch("jobs").values.flat_map do |job|
+      job.fetch("steps").flat_map do |step|
+        self.class.full_rspec_envs(step["run"].to_s).map do |prefix|
+          [ workflow["env"], job["env"], step["env"] ].compact.reduce({}, :merge).transform_values(&:to_s).merge(prefix)
+        end
+      end
+    end
+    marks = {
+      "workflow" => workflow_envs,
+      "config/ci.rb" => self.class.full_rspec_envs(Rails.root.join("config/ci.rb").read),
+      "共通の完了条件" => self.class.full_rspec_envs(self.class.completion_block)
+    }.transform_values { |envs| envs.map { _1["FULL_SUITE"] }.uniq }
+
+    expect(marks).to eq("workflow" => [ "1" ], "config/ci.rb" => [ "1" ], "共通の完了条件" => [ "1" ])
+  end
+
+  it "全件を流す rspec を、spec のパスを付けたものと分け、前置きの環境変数を拾う" do
+    text = "bin/rails db:test:prepare && COVERAGE=1 FULL_SUITE=1 bundle exec rspec --format json --out tmp/rspec.json\n" \
+      "bundle exec rspec spec/platform\nbundle exec rspec ./packs/sales/spec\nbundle exec rspec\n"
+
+    expect(self.class.full_rspec_envs(text)).to eq([ { "COVERAGE" => "1", "FULL_SUITE" => "1" }, {} ])
   end
 
   it "コマンドの名前を、引数と前置きの環境変数を除いて拾う" do

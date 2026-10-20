@@ -8,6 +8,9 @@ module Inventory
 
     LABELS = ItemLabel.arel_table
 
+    # 移動の種類ごとの増減の向き。GraphQL の enum が種類を写すので、在庫を動かす Stock#move! が読む表と同じオブジェクトを出す
+    MOVEMENT_EFFECTS = Stock::EFFECTS
+
     # 並べてよい列（docs/architecture/graphql-schema.md「ページングと N+1」）。有効在庫は現在庫 - 引当の式で、
     # 品目のコードと名前は品目の写しの列で並べる
     ORDER_COLUMNS = {

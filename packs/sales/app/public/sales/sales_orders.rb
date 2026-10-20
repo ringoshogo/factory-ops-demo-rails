@@ -2,6 +2,9 @@ module Sales
   # 受注側が自社の受注を読む（docs/architecture/graphql-schema.md「読み取りの一覧」）。
   # 状況と合計金額は、行と一緒に SalesOrderStatus と SalesOrderAmount の SQL の式で読む。明細の引当数量は、在庫の Inventory::Allocation から受注明細 ID ごとにまとめて得る
   module SalesOrders
+    # 状況の一覧。GraphQL の enum が写すので、値を作る式との一致を確かめた一覧と同じオブジェクトを出す
+    STATUSES = SalesOrderStatus::ALL
+
     # order_by は { field:, direction: } の配列で、1 つ目の列から順に並べる。空なら作った順の新しいものから並べる。
     # filter は得意先と、両端を含む受注日の範囲と、状況で絞る。状況の空の配列は 0 件で、nil なら絞らない
     def self.list(actor, first:, after:, order_by: [], filter: {})
