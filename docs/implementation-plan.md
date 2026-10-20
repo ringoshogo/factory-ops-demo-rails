@@ -2,6 +2,8 @@
 
 設計文書（`architecture/`・`adr/`）を、動くアプリに落とす順番を定める。実装を担当するエージェントは、マイルストーンを M1 から番号の順に 1 つずつ実装する。1 つのマイルストーンは 1 回の作業で終わる大きさ（数百行）にしてある。
 
+終えたマイルストーンの節を読む人は、それをそのマイルストーンを作った時点の記録として読む。いまの形の正本は設計文書と ADR で、終えた節の文がそれらと食い違えば、設計文書と ADR に従う。終えた節は、後のマイルストーンが仕組みを置き換えても書き換えない。作者を待って次のサイクルへ移した「残り」の段落だけは、残りを片付けるまで、計画レビューで作者の答えに合わせて直す（`guides/dev-cycle.md`「全体の流れ」）。書き換えると、その節と実装レビューの証跡が食い違うからである。M54 で置き換えた仕組み（出荷停止の表と、同じテナントの中のイベントと受け手）を前提にした文は、`adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` を読む。
+
 ## 1 つのマイルストーンの進め方
 
 担当者は、マイルストーンに着手するたびに次の順で進める。計画レビュー・実装レビュー・残件の台帳を含む回し方の全体は、`guides/dev-cycle.md` にある。
@@ -2721,9 +2723,45 @@ cd frontend && npm run test:e2e   # 0 failures
 
 E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベントのために `drain` を残し、期待は変えない。`frontend` の E2E を全体で流し、取消・審査中・出荷の画面の状況の表示が変わらないことを確かめる。
 
-**残り（サイクル 10）**：実装レビューまで終えた。出荷依頼の受注番号の写しを残す理由と、経緯で書いたコメント（OI-226。サイクル 09 の逸脱検査の D6・D7）は、作者の答えで作るものが変わるので、OI-226 だけを「M54 の残り」としてサイクル 10 へ移した。作者は 2026-10-19 に (a) 写しを残すと決めた（OI-226 の結果の欄）。M54 の残りで作るのは、ADR 011 の写しの理由とコメント 3 か所の直しである。ADR 011 に、いま写しを持つ理由（作り直しのタスクと一致の spec がすでにあり、一覧の並べ替えが出荷の表だけで済む）を書く。`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`・`lib/tasks/read_models.rake`・`frontend/e2e/list-pagination.spec.ts` のコメントを、経緯ではなくいまの契約の短い文にする（`guides/comments.md`）。spec と振る舞いは変えない。
+**残り（サイクル 10）**：実装レビューまで終えた。出荷依頼の受注番号の写しを残す理由と、経緯で書いたコメント（OI-226。サイクル 09 の逸脱検査の D6・D7）は、作者の答えで作るものが変わるので、OI-226 だけを「M54 の残り」としてサイクル 10 へ移した。作者は 2026-10-19 に (a) 写しを残すと決めた（OI-226 の内容の欄の末尾。作業が残るので行は `open` のまま）。OI-226 の分で作るのは、ADR 011 の写しの理由とコメント 3 か所の直しである。ADR 011 は 3 か所を直す。決定 2 の出荷依頼の受注番号の文に、いま写しを持つ理由を書く。理由は、作り直しのタスクと一致の spec がすでに写しを守り、一覧の並べ替えが出荷の表だけで済み、受注から引く形に替えても画面の振る舞いは変わらないままマイルストーン 1 つ分の費用がかかることである（OI-226 の作者の判断）。代替案 D の不採用の理由を、このいまの理由に替え、依存の向きの経緯は段落の後ろに残す。「見直す条件」に、受注番号を後から変える入口のほかに、写しを守る作り直しのタスクか一致の spec を外すとき、を足す。`packs/fulfillment/app/public/fulfillment/shipment_requests.rb`・`lib/tasks/read_models.rake`・`frontend/e2e/list-pagination.spec.ts` のコメントを、経緯ではなくいまの契約の短い文にする（`guides/comments.md`）。`read_models.rake` は、受注番号の組をタスクが受け渡すいまの理由（作り直しはテナントごとにタスクが回し、出荷の公開 API は受け取った組を書くだけの、操作者のいない入口である。`spec/packwerk/entry_callers_spec.rb` の表）を書く。同じ理由を経緯で書いた文書の 2 か所（`architecture/graphql-schema.md`「ページングと N+1」の出荷依頼の `ORDER_NO` の文と、`showcase.md` のテーマ 3 の出荷依頼の受注番号の写しの箇条）も、ADR 011 を指すいまの理由の短い文にする。経緯は ADR 011 の代替案 D の段落にだけ残す。spec と振る舞いは変えない。
 
-終えたマイルストーンの節に残る、M54 で消した仕組みを前提にした文（OI-223）には、作者の判断（2026-10-19）で、本書の冒頭（最初の段落の後、「1 つのマイルストーンの進め方」の前）に注記を 1 段落置く。終えた節は当時の記録で、いまの形は設計文書と ADR が正本であり、M54 で置き換えた仕組みは ADR 012 を読む、という趣旨である。節ごとの注記と書き換えはしない。注記は M54 の残りの作るものに入れず、サイクル 10 の最初に、M57 の計画レビューの前に取りまとめ役が書く。
+作者は 2026-10-20 に、サイクル 09 の逸脱検査で積んだ改善の候補 IB-151・IB-152 も、マイルストーンの数を増やさずに M54 の残りに足すと決めた（`plans/improvement-backlog.md`）。どちらも振る舞いを変えない。
+
+**列を消した後の `ignored_columns`（IB-151）**：列を消すときに `ignored_columns` をどう置き、いつ外すかを、`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」に 1 段落で書く。`remove_column` を止める gem の説明の節で、列を消すマイグレーションを書く人が読むからである。書く規則は次の 3 つである。規則の前提は、Active Record がモデルの列を初めてそのモデルを使ったときに読んで持ち続けることと、`config.load_defaults 8.1` では `partial_inserts` が偽で INSERT がモデルの全列を書くことである（`railties-8.1.4/lib/rails/application/configuration.rb` の `load_defaults "7.0"` の段。gem の既定は真で、`activerecord-8.1.4/lib/active_record/attribute_methods/dirty.rb`）。列を読んだ後に列が消えると、そのプロセスの INSERT は消えた列を書いて失敗する。
+
+1. 列を消す変更は、モデルの `ignored_columns` に列を入れ、同じ変更のマイグレーションで `safety_assured` の中で消す（前例：`db/migrate/20261012200100_remove_unit_price_from_items.rb`・`db/migrate/20261016100000_remove_shipping_holds_and_shipment_request_cancelled_at.rb`）。strong_migrations 2.8.0 の `remove_column` の案内（`lib/strong_migrations/error_messages.rb`）は、無視を配ってから消す 2 段の手順だが、本デモは 1 つの変更にまとめる。`web` と `jobs` の Deployment は `Recreate` なので、適用で古い版の Pod が止まり、古い版が列を消した後まで動き続ける時間は短い。その間に起きた壊れも、毎日の作り直し（`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md` 決定 3）が Web とワーカーを 0 にしてから起こし直すので消える
+2. `ignored_columns` から外すのは、消すマイグレーションが main に入った後の、別の PR にする。同じ PR で外すと、適用で `migrate` の Job が列を消す前にそのモデルを初めて使った新しい版の Web とワーカーが列を読み込み、消した後の INSERT がその列を書いて失敗する。PR を分けることが守る形である。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときは、同じ壊れが起きうるが、次の作り直しで消えるので許す。これは守りではなく運用の割り切りとして、守りの文と分けて書く
+3. spec が消した列をテストの DB に足し直すあいだは外さず、理由をモデルのコメントに書く。外すと、足し直した列があるうちにモデルが列を読み込み、spec が列を消した後の品目の INSERT がその列を書いて落ちる。落ちるのは、列を読んだ example より後に同じプロセスで INSERT する spec で、`config.order = :random` の順で変わる（OI-106）
+
+規則に照らして、残る 2 つを次のとおりにする。置き場と規則と 2 つの扱いは OI-232（`judgment`）に積んだ。
+
+- `packs/fulfillment/app/models/fulfillment/shipment_request.rb` の `cancelled_at`：外す。消すマイグレーション `20261016100000` は M54 で main に入り（`a7cb044`）、列を足し直す spec は無い（`git grep -n -i -e 'ADD COLUMN' -e 'add_column' -- spec 'packs/*/spec/**'` は移行の spec の `items.unit_price` の 1 行だけを返す）。`ignored_columns` の行とコメントを消す。コメントの経緯の文（サイクル 09 の逸脱検査の D7）も一緒に消える
+- `packs/sales/app/models/sales/item.rb` の `unit_price`：残す。移行の spec（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）が列を足し直すので、規則 3 に当たる。コメントを、規則 3 の理由と `guides/config.md` の節を指す短い文にする
+
+規則 3 の壊れは、いまは spec の順でしか表に出ないので、移行の spec に順によらず落ちる example を 1 つ足す。example は、`before` が列を足し直した後に `Sales::Item.reset_column_information` を呼んで列を読ませ、所有ロールで列を消し（同じファイルの `reshape`）、`FactoryBot.create(:item)` が成功することを確かめ、`ensure` で `Sales::Item.reset_column_information` を呼んで列の読み込みを戻す。`ignored_columns` があれば INSERT は `unit_price` を書かないので通る。いまのコードで通る守りの example なので RED は無く、壊して落ちる記録で効き目を示す。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと、この example が `PG::UndefinedColumn`（`unit_price`）で落ちること（失敗の文）を書き、行を戻す。
+
+`cancelled_at` は、外した後も列がテストの DB に無いので、落ちるテストは無い。代わりに、外す前に `db/structure.sql` の `shipment_requests` の表に `cancelled_at` が無いことと、手元の DB で `bin/rails db:migrate:status` が `20261016100000` を `up` と出すことを、マイグレーションの状態として証跡に書く。
+
+**出荷指示の取消のロックの順（IB-152）**：文書だけを直し、コードと spec は変えない。`Fulfillment::Instructions.cancel`（`packs/fulfillment/app/public/fulfillment/instructions.rb`）は、`Scope` の出荷依頼を `lock` で取って出荷済なら止め、有効な出荷指示を `lock` で取って取り消す。受注で判断せず、受注をロックしない（成功の戻り値を作る `ShipmentRequests.find` の状況の式は、受注をロックせずに読む）。次の 2 か所に、順の文と理由の文を 1 文ずつ足す。
+
+- `adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` 決定 4 の「…取消・審査の作成と決着・出荷指示の作成・計上が受注の行ロックで直列になる。」の後。「受注の取消は…のまま変わらない。」の直後に置くと、続く「どちらも受注を最初に取るので」が受注を取らない取消まで受けて誤りになるからである
+- `architecture/data-model.md`「取消と出荷の競合を止める場所」のロックの順の段落の「どちらも受注を最初に取り、在庫から先の順も揃うので、デッドロックは起きない。」の後
+
+順の文は `Fulfillment::Instructions.cancel` を名指しし、「出荷指示の取消は受注をロックせず、出荷依頼 → 出荷指示の順に取る」の趣旨で、受注をロックしない理由に、受注の取消済と審査中によらず残った指示を取り消してよいこと（`instructions.rb` の `cancel` は受注を見ない。M54 の作るもの 3）を添える。理由の文は「この順は出荷指示の作成と計上の順（受注 → 出荷依頼 → 出荷指示 → 在庫 → 引当）の部分列で、受注の取消（受注 → 受注明細 → 在庫 → 引当）とは同じ行を取らないので、取消が加わってもデッドロックは起きない」の趣旨にする。同じ文書の「出荷（`fulfillment`）」の「出荷指示の取消は、受注を読まずに出荷依頼の行だけをロックする。」は、出荷指示もロックするいまのコードと食い違うので、「受注で判断せずに、出荷依頼 → 出荷指示の順にロックする」の趣旨に直す。この文ではメソッドを名指ししない（下の `git grep` の件数を 2 件に保つ）。`spec/db/lock_sites_spec.rb` の `Fulfillment::Instructions.cancel` の行は、理由を持たずに `shipping_lock_spec.rb` を指し、その 2 つの example（計上と取消のどちらが先でも、後の操作が出荷依頼の行ロックで待つ）は足す文と食い違わないので、変えない。3 か所目の直しと spec を変えないことは OI-233（`judgment`）に積んだ。
+
+完了条件は、共通の完了条件と次のコマンドである。足す example は守りなので、最初に落とすテストは無い。直す前に、OI-226 の `git grep` が 5 行（コメントの 3 か所と文書の 2 か所）を、`ignored_columns` の `git grep` が 2 行を、`Instructions.cancel` の `git grep` が 0 行を返すことを、RED に代わる記録として証跡に書く。実装者は、終えるときに OI-226 を `closed` にして commit の SHA を書く。
+
+```sh
+git grep -n -e '写しを作った時点' -e '依存しなかった' -e '依存の向きを変えずに' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!docs/adr'   # 0 件
+git grep -n 'ignored_columns' -- packs   # 1 件（Sales::Item の unit_price）
+git grep -n 'Instructions.cancel' -- 'docs/adr/012-*.md' docs/architecture/data-model.md   # 2 件（ADR 012 決定 4 と「取消と出荷の競合を止める場所」に 1 件ずつ）
+bundle exec rspec packs/fulfillment/spec packs/sales/spec/public/sales/item_prices_backfill_spec.rb   # 0 failures
+bin/check-open-items --due M54
+```
+
+実装する文書の節は、OI-226 の分の文書（上）に加えて、`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」、`adr/012-同じテナントの中の連結を同期にし出荷可能だけをイベントで残す.md` 決定 4、`architecture/data-model.md`「出荷（`fulfillment`）」「取消と出荷の競合を止める場所」である。
+
+終えたマイルストーンの節に残る、M54 で消した仕組みを前提にした文（OI-223）には、作者の判断（2026-10-19）で、本書の冒頭（最初の段落の後、「1 つのマイルストーンの進め方」の前）に注記を 1 段落置く。終えた節は当時の記録で、いまの形は設計文書と ADR が正本であり、M54 で置き換えた仕組みは ADR 012 を読む、という趣旨である。節ごとの注記と書き換えはしない。注記は M54 の残りの作るものに入れず、サイクル 10 の最初に、M57 の計画レビューの前に取りまとめ役の指示で書いた（`85ef2da`）。
 
 **範囲外**：「出荷可能」の同期化と出荷依頼の写しを無くすこと（案 3）、「出荷計上」が運ぶ受注 ID と受注明細 ID（受注の受け手を消すと読む受け手がいなくなるが、消すと足す前に登録したジョブのペイロードを `from_payload` が読めなくなるので残す）、出荷依頼の受注番号の写し（M50）を受注の副問い合わせに替えること、テナントをまたぐイベントの経路。消すイベントのジョブが配置の時点でキューに残ったときの互換は持たない。配送表から消した型のジョブは失敗し続けるが、公開の配置は毎日 DB ごと作り直し（ADR 009）、手元は `db:reset` で消える
 
@@ -2833,43 +2871,54 @@ cd frontend && npm run test:e2e   # 0 failures
 
 **実装する文書の節**：`guides/dev-cycle.md`「着手の前に」と #85 の担当を止める段落（寄せた先は「担当を止めるとき」）、`guides/bin.md`「bin/rails で流す運用のタスク」、`handoff.md`「次にやること」
 
-## M57 CI とテストの守りの照らし方を直す：`publish` の `if:` を許す形で照らす、呼ばれない公開 API を全件で落とす、内部の一覧と GraphQL の enum の一致
+## M57 CI とテストの守りの照らし方を直す：`publish` の `if:` を 1 つの式に一致させて照らす、呼ばれない公開 API を全件で落とす、内部の一覧と GraphQL の enum の一致
 
-**目的**：サイクル 09 の改善の探索で採用した 3 つ（IB-144・IB-150・IB-145）を、サイクル 10 の最初に入れる（`plans/cycle-09/improvement.md`「裁定」）。1 つ目は、M52 の実装レビューで 3 回続けて High が出た `publish` の `if:` の期待を、落とす迂回の形を並べる照らし方から、許す形を 1 つ決めて照らす形に替える。改善の探索の調べで、いまの期待を通る迂回（大文字の状態の関数と、文字列の中の `success()` の組み合わせ。GitHub が関数の名前の大小を区別しないのは `actions/runner` のソースに基づく推定）が見つかった。2 つ目は、公開 API の戻り値のガードが確かめない「どの spec も呼ばない公開 API」を、全件の流れでだけ失敗にする。3 つ目は、公開 API の内部の一覧と GraphQL の enum の足し忘れが、その値を持つ問い合わせの実行の時にしか落ちない形を、検査で止める。
+**目的**：サイクル 09 の改善の探索で採用した 3 つ（IB-144・IB-150・IB-145）を、サイクル 10 の最初に入れる（`plans/cycle-09/improvement.md`「裁定」）。1 つ目は、M52 の実装レビューで 3 回続けて High が出た `publish` の `if:` の期待を、落とす迂回の形を並べる照らし方から、許す式を 1 つに決めて照らす形に替える。改善の探索の調べで、いまの期待を通る迂回（大文字の状態の関数と、文字列の中の `success()` の組み合わせ。GitHub が関数の名前の大小を区別しないのは `actions/runner` のソースに基づく推定）が見つかった。2 つ目は、公開 API の戻り値のガードが確かめない「どの spec も呼ばない公開 API」を、全件の流れでだけ失敗にする。3 つ目は、公開 API の内部の一覧と GraphQL の enum の足し忘れが、その値を持つ問い合わせの実行の時にしか落ちない形を、検査で止める。
 
 **作るもの**
 
-1. `publish` の `if:` を許す形で照らす（IB-144。IB-141 を含む）：`spec/platform/ci_checks_spec.rb` の `publish` の `if:` の example の期待を、次の 2 つの形のどちらか 1 つに替える。計画レビューで、どちらにするかを決める
-   - (a) 許す形：`${{ }}` を外し、一部だけの `${{ }}` を拒み、単一引用符の文字列を空にし、外側の余分な括弧を外したうえで、**括弧の深さ 0 に `||` が無く**、深さ 0 の `&&` でつないだ項の 1 つが、大文字と小文字を区別せずにちょうど `success()` であること。GitHub の式は `&&` を `||` より強く結ぶので、深さ 0 の `||` を許すと `success() && … || always()` が `needs` が落ちても真になる（改善の探索の裁定の 2 系統の High）
-   - (b) 一致の形：`if:` の文字列（前後の空白と `${{ }}` をそろえたもの）を、`success() && github.event_name == 'push'` にちょうど一致させる。式を変える人は、spec の期待も直し、迂回にならないことを確かめて証跡に書く
-   - どちらの形でも、いまの期待（`!`・`||`・比べ・関数の引数と添字・状態の関数を落とす 6 つ）と補助の `success_inside_call?` を消す。式の表の example を足し、M52 の壊し方の表の 15 の式、改善の探索の表の 3 つの迂回（`${{ 'success()' && Always() }}` など）、深さ 0 の `||` の 2 つ（`success() && github.event_name == 'push' || always()`・`always() || github.event_name == 'push' && success()`）を落とし、いまの式と対照の式を通すことを確かめる
-2. 呼ばれない公開 API を全件で落とす（IB-150）：全件を流す 2 か所（`config/ci.rb` の「Tests: RSpec」と、`.github/workflows/ci.yml` の `test` のジョブの「Run tests」）に、専用の環境変数（名前は実装で決める）を渡す。`spec/rails_helper.rb` の `after(:suite)` は、その変数があるときだけ、`PublicApiReturns.uncalled` が空でなければ失敗にする。判定は `PublicApiReturns` の 1 つのメソッドに寄せ、`spec/platform/public_api_returns_spec.rb` に、変数があるときは落とし、無いときは一覧を出すだけの example を足す。`spec/platform/ci_checks_spec.rb` に、2 か所の RSpec の工程が変数を渡すことの期待を足す。`COVERAGE` は分岐の計測の意味なので兼ねない
-3. 内部の一覧と GraphQL の enum の一致（IB-145）：`spec/graphql/` に、スキーマの enum の型（`Types::BaseEnum` の子。2026-10-16 の時点で 19 個）をすべて集め、型ごとに、対応する公開 API の定数（値の一覧）と値の集合が等しいことを確かめる spec を足す。内部の一覧を持たない enum の型（並べ替えの列・並べる向きなど、型そのものが一覧の正本のもの）は、spec の中の表に理由付きで挙げ、表にも定数にも無い enum の型があれば落とす。比べる組は手で選ばない。選ばなかった組が検査の外に残るからである。内部の一覧を公開 API の定数として出す（`Inventory::Adjustment::TYPES` の前例）。進みの種類と状況の順まで比べるかは、計画レビューで決める
+1. `publish` の `if:` を 1 つの式にちょうど一致させて照らす（IB-144。IB-141 を含む）：`spec/platform/ci_checks_spec.rb` の `publish` の `if:` の example の期待を、`if:` の文字列をそろえた値が `success() && github.event_name == 'push'` にちょうど一致すること、の 1 つにする。そろえ方は、前後の空白を除き、全体を囲む `${{ }}` を外して、もう一度前後の空白を除き、続く空白を 1 つの空白にする、の 3 つだけで、大文字と小文字・括弧・引用符はそろえない。そろえる処理と一致の判定は、spec の 1 つの補助（名前は実装で決める）に置き、`publish` の example と式の表の example の両方がそれを呼ぶ。式を変える人は、spec の期待の文字列も直し、新しい式が `needs` が落ちたときに偽になることを `guides/config.md`「CI の工程」の規則に照らして確かめ、証跡に書く（計画レビューで、許す形を補助で照らす形と比べて決めた。下の「判断」）
+   - いまの期待（`!`・`||`・比べ・関数の引数と添字・状態の関数を落とす 6 つ）と補助の `success_inside_call?` と `without_strings` を消す。同じ example の、ジョブの段の `if:` を持つのが `publish` だけであることの期待は残す。ほかのジョブに契機を絞る `if:` を足すと、push でそのジョブが skip され、`publish` も skip されるからである
+   - 式の表の example を足す。落とす行は、M52 の壊し方の表の 15 の式、改善の探索の表の 3 つの迂回（`${{ 'success()' && Always() }}`・`${{ Always() && github.event_name == 'push' && 'success()' }}`・`${{ Failure() && 'success()' }}`）、深さ 0 の `||` の 2 つ（`success() && github.event_name == 'push' || always()`・`always() || github.event_name == 'push' && success()`）、`needs` が落ちれば偽になるが一致しない式（`${{ github.event_name == 'push' && success() }}`・`Success() && github.event_name == 'push'`）である。通す行は、いまの式、`${{ success() && github.event_name == 'push' }}`、空白の数だけが違う式（`  success()  &&  github.event_name == 'push'  `）である
+   - RED の手順：先に、いまの 6 つの期待を補助の本体に写して式の表の example を書き、落とすはずの 4 つの行（改善の探索の表の 3 つの迂回と、`${{ github.event_name == 'push' && success() }}`）が通ってしまって落ちることを見る。その後に、補助の本体を一致の判定に替える
+2. 呼ばれない公開 API を全件で落とす（IB-150）：全件を流す 3 か所（`config/ci.rb` の「Tests: RSpec」、`.github/workflows/ci.yml` の `test` のジョブの「Run tests」、本書「共通の完了条件」の `COVERAGE=1 bundle exec rspec …` の行）に、専用の環境変数（名前は実装で決める）を渡す。`COVERAGE` は分岐の計測の意味なので兼ねない。着手の時点で全件を流し、呼ばれない公開 API の数を証跡に書く。0 でなければ、それを呼ぶ spec を同じ PR で足す
+   - `spec/rails_helper.rb` の `after(:suite)` は、その変数があるときだけ、`PublicApiReturns.uncalled` が空でなければ例外を投げる。判定は `PublicApiReturns` の 1 つのメソッドに寄せる。rspec-core 3.13.6 の `RSpec::Core::Configuration#run_suite_hooks` は、`after(:suite)` の hook の例外を記録して残りの hook も流す（後始末を飛ばさないため、とコメントにある）ので、`spec/spec_helper.rb` の `COVERAGE` の `after(:suite)` も流れ、終了コードは 0 でなくなる
+   - `spec/platform/public_api_returns_spec.rb` に、判定のメソッドが変数の有無で落とすか一覧を出すだけかの example と、子のプロセスで 1 つの小さい spec のファイルを変数あり・なしで流し、終了コードが 0 でないことと 0 であることを確かめる example を足す。一部のファイルだけを流すと呼ばれない公開 API が必ず残るので、合成の公開 API は要らない。後者が、`after(:suite)` から判定の呼び出しを外したときに落ちるガードの example である（`guides/dev-cycle.md`「テストから書く」）。子のプロセスには、親の `TEST_DATABASE` をそのまま渡す
+   - `spec/platform/ci_checks_spec.rb` に、ワークフロー・`config/ci.rb`・「共通の完了条件」の 3 つから、パスを付けない `bundle exec rspec` の実行をすべて集め、どれも変数を渡すことの期待を足す（名指しした 2 か所だけを照らすと、ほかの場所を書き換えても落ちない）
+3. 内部の一覧と GraphQL の enum の一致（IB-145）：`spec/graphql/` に、スキーマに登録された enum の型を `FactoryOpsSchema.types.values.select { _1.kind.enum? && !_1.introspection? }` で集め（読み込みの順に依らない。前例：`spec/graphql/authorization_declarations_spec.rb`）、集めた型がどれも `Types::BaseEnum` の子であることと、型ごとに、対応する公開 API の定数（値の一覧）と、enum の `value:` を `to_s` した集合が等しいことを確かめる spec を足す。順は比べない（下の「判断」）。比べない enum の型は、spec の中の表に理由付きで挙げ、比べる組にも表にも無い enum の型があれば落とす。比べる組は手で選ばない。選ばなかった組が検査の外に残るからである。比べる相手は、値を作るか受け付けるコードが読む一覧か、値を作る式との一致を各パッケージの spec が確かめている一覧に限る。どちらでもない写しの定数と比べると、作る側に値を足しても写しが変わらず、spec が落ちないからである。計画レビューの時点（`aba5836`）の 19 個は、次のとおりに分ける
+   - 比べる 10 個：`PurchaseOrderStatusType`・`SalesOrderStatusType`・`ShipmentRequestStatusType`（各状況の `ALL`。値を作るのは状況の式の CASE で、`ALL` と式の一致は各パッケージのモデルの spec が確かめる。状況の式は書き換えない。この spec が捕まえるのは `ALL` と enum の食い違いで、式に枝を足して `ALL` に足し忘れるのはモデルの spec が捕まえる）、`PurchaseOrderTimelineKindType`（`Purchasing::PurchaseOrderTimeline::KINDS`。並べるときに `RANKS.fetch` が読む）、`StockAdjustmentType`（`Inventory::Adjustment::TYPES`）、`StockMovementKindType`（`Inventory::Stock::EFFECTS` のキー。`move!` が読む）、`ImportKindType`（`Imports::CsvFormat::COLUMNS` のキー。取り込みが種類ごとの見出しを引く。使い手の無い `Imports::Import::KINDS` とは比べない）、`PartnershipPermissionType`（`Partnerships::Access::PERMISSIONS`）、`UserErrorCodeType`（`OperationResult::CODES`。`OperationResult` が読む）、`OrderDirectionType`（`Page::Sort.of` が受け付ける向きの一覧。いまはメソッドの中の配列なので、`Page::Sort` の定数に出して `of` がそれを読む形にする）
+   - 比べる相手が `app/models/` にあるもの（各状況の `ALL`・`KINDS`・`Stock::EFFECTS`）は、そのパッケージの公開 API（`app/public/`）に同じオブジェクトを指す定数の別名を置いて出す（`Partnerships::Access::PERMISSIONS` の前例）。別名は同じオブジェクトなので写しではない。置く公開 API と別名の名前は実装で決める。`OperationResult` と `Page` は公開 API を限定しない `packs/platform` にあるので、そのまま読む
+   - 比べない 9 個（spec の表に理由を書く）：並べ替えの列の 5 個（`ItemOrderFieldType`・`PurchaseOrderOrderFieldType`・`SalesOrderOrderFieldType`・`ShipmentRequestOrderFieldType`・`StockOrderFieldType`）は、公開 API の列の式の表（`order_columns`）が操作者から作る private のメソッドで、定数の一覧が無い。enum にだけある列は、その列で並べたときに `Page::Sort.of` が実行の時に拒む。`CancellationOutcomeType`・`PartnershipStatusType` は、値の一覧が DB の CHECK 制約にだけある。`ImportStatusType`・`InvoiceStateType` は、値が導出の分岐（`Imports::Import#status`・`Billing::Invoices` の `state`）にだけある。どれも、一覧を定数に出しても作る側が読まないので、足し忘れを捕まえない
 
 **判断**
 
-- 作るもの 1 の (a) と (b) は、費用と、式を変える人の手間が違う。(a) は約 25 行の補助を持ち、`success()` と論理積でつながる式なら書き方を変えても通す。(b) は補助を持たず、式を変えるたびに spec も直す。迂回を構造で閉じるのは (b) で、(a) は深さ 0 の `||` の条件を落とすと穴が戻る
+- 作るもの 1 は、許す形を補助で照らす形（`${{ }}` と文字列と外側の括弧をそろえ、括弧の深さ 0 に `||` が無く、深さ 0 の `&&` でつないだ項の 1 つが大文字と小文字を区別せずにちょうど `success()` であること）ではなく、1 つの式にちょうど一致させる形にする。許す形は約 25 行の構文の補助を持ち、補助の条件を 1 つ落とすと穴が戻る（改善の探索の調べは深さ 0 の `||` を落とし、裁定の 2 系統が High で挙げた）。一致の形は構文を解かないので、迂回の種類を数えずに構造で閉じる。費用は、式を変えるたびに spec の文字列も直すことで、`if:` を変える人に「`needs` が落ちたときに偽になるか」を確かめさせる。`publish` の `if:` は範囲外で、変える予定が無いので、この費用は小さい。裏返る条件：`publish` の `if:` を、契機を足すなどで繰り返し変えるようになり、変えるたびの spec の直しが重くなったら、許す形に移る。撤退コストは、約 25 行の構文の補助を書き、補助の処理を 1 つずつ外して式の表の行が落ちることを確かめ直すことである（改善の探索の壊し方の表の 5 行）
+- 作るもの 3 は、値の集合だけを比べ、順は比べない。GraphQL の enum の値の順は、どの読み手も並べ方に使わない。進みの出来事の並べ方は `PurchaseOrderTimeline::RANKS`（`KINDS` の順）が、状況で並べる順は各状況の `SORT_ORDER` が持ち、それぞれの spec が確かめる。順まで比べると、enum の宣言の順を内部の一覧の順に縛るだけになる。裏返る条件：画面か GraphQL の読み手が enum の宣言の順で並べるようになったら、その型だけ順も比べる
 - 作るもの 2 は、ワークフローの `env` を変えるので、`guides/config.md`「CI の工程」の配線を変えた人の手の確かめ（落ちるべき変更を作業ツリーに入れて、CI と同じコマンドで落ちることを確かめる）を証跡に書く。作るもの 1 は `if:` そのものを変えないので、この確かめは要らない
 
 **完了条件**
 
 ```sh
 bundle exec rspec spec/platform/ci_checks_spec.rb spec/platform/public_api_returns_spec.rb spec/graphql   # 0 failures
-git grep -n -e success_inside_call -- . ':!docs/plans' ':!docs/implementation-plan.md'   # 0 件
+git grep -n -e success_inside_call -e without_strings -- . ':!docs/plans' ':!docs/implementation-plan.md'   # 0 件
+git grep -n -F -e "format('{0}', success())" -- docs/guides docs/showcase.md .github   # 0 件
 ```
 
-期待の不一致で最初に落とすのは、作るもの 1 の式の表の example（いまの期待のまま、改善の探索の表の 3 つの迂回と深さ 0 の `||` の 2 つを通してしまう行）と、作るもの 3 の spec（定数を出す前は、比べる相手が無い enum の型を並べて落ちる）である。次の壊し方で落ちることを、壊して落ちる記録にする。
+期待の不一致で最初に落とすのは、作るもの 1 の式の表の example（補助の本体がいまの 6 つの期待のままだと、改善の探索の表の 3 つの迂回の行を通してしまう）と、作るもの 3 の spec（別名と `Page::Sort` の定数を出す前は、比べる組の定数が無いので、比べる組にも表にも無い enum の型として並べて落ちる）である。次の壊し方で落ちることを、壊して落ちる記録にする。
 
 | 作るもの | 壊し方 | 落ちる example |
 |---|---|---|
-| 1（(a) のとき） | 項がちょうど `success()` でなく、`success(` を含めば許す・深さ 0 の論理和を拒まない・括弧の深さを数えずに `&&` で分ける・文字列を空にしない・大文字と小文字を区別する・一部だけの `${{ }}` を拒まない（1 つずつ） | 式の表の該当する行 |
-| 1（(b) のとき） | 一致させる文字列の空白のそろえ方を外す | 式の表の対照の行 |
+| 1 | 続く空白を 1 つにしない・全体を囲む `${{ }}` を外さない（1 つずつ） | 式の表の通す行（空白の数だけが違う式・`${{ }}` で囲んだ式） |
+| 1 | 一致ではなく、そろえた値が `success()` を含めば通す | 式の表の落とす行（改善の探索の表の 3 つの迂回など） |
+| 1 | spec ではなく照らす相手を壊す：ほかのジョブに契機を絞る `if:` を足す | `publish` の example |
+| 1 | spec ではなく照らす相手を壊す：`ci.yml` の `publish` の `if:` を、複製から `success() && github.event_name == 'push' \|\| always()` に替える | `publish` の example |
 | 2 | 全件の印を見ずにいつも失敗にする・印があっても失敗にしない | 変数の有無の 2 つの example |
-| 2 | 2 か所のどちらかから変数を外す | `ci_checks_spec.rb` の変数の期待 |
-| 3 | 内部の一覧に値を 1 つ足す・enum から値を 1 つ消す・enum の型を 1 つ足して定数も表の行も書かない（1 つずつ） | 一致の spec |
+| 2 | 3 か所のどれかから変数を外す（1 つずつ） | `ci_checks_spec.rb` の変数の期待 |
+| 2 | `after(:suite)` から判定の呼び出しを外す | 子のプロセスで流す example（変数ありで終了コードが 0 になる） |
+| 3 | 内部の一覧に値を 1 つ足す・enum から値を 1 つ消す・enum の型を 1 つ足してスキーマに載せ、比べる組にも表の行にも書かない（1 つずつ） | 一致の spec |
 
 **範囲外**：`publish` の `if:` の式そのものの変更、`npm ls --all` の置き場の期待、状況の導出の式。進みの「請求書の受領」の日付と名前（OI-228。作者がいまのままと決めた）と、出荷依頼の受注番号の写しの理由とコメント（OI-226。M54 の残りで直す）。
 
 **実装する文書の節**：`guides/config.md`「CI の工程」、`guides/packs-and-packwerk.md`「公開 API を出す」、`guides/testing.md`「層への配分」、`showcase.md`「8. 機械で守る規約」「10. 運用性」
 
-**文書に残すこと**：`guides/config.md`「CI の工程」の `publish` の `if:` の段落を、選んだ形の 1 文にし、迂回の形を並べた文を消す。ワークフローの `publish` の前のコメント、`ci_checks_spec.rb` の example の前のコメント、`showcase.md` のテーマ 8 の表の行とテーマ 10 の公開の配置の箇条は、`config.md` を指すか同じ形の短い文にする（改善の探索の正本の棚卸しの 5 か所）。`guides/testing.md`「層への配分」の戻り値のガードの文に、全件では呼ばれない公開 API で落ちること。`guides/packs-and-packwerk.md`「公開 API を出す」に、GraphQL の enum に写す一覧は定数として出すこと
+**文書に残すこと**：`guides/config.md`「CI の工程」の `publish` の `if:` の段落を、一致の形の 1 文（照らす値と、式を変える人がすること）にし、迂回の形を並べた文を消す。同じ節の、spec が式を照らさない理由の段落の例外の文（「含む・含まないの条件で照らす」）も、一致の形に合わせる。ワークフローの `publish` の前のコメント、`ci_checks_spec.rb` の example の前のコメント、`showcase.md` のテーマ 8 の表の行とテーマ 10 の公開の配置の箇条は、`config.md` を指すか同じ形の短い文にする（改善の探索の正本の棚卸しの 5 か所）。`guides/testing.md`「層への配分」の戻り値のガードの文に、全件では呼ばれない公開 API で落ちること。`guides/config.md`「CI の工程」の工程の表の RSpec の行と、`guides/bin.md`「CI が使うもの」の `test` の行に、全件の変数。`guides/packs-and-packwerk.md`「公開 API を出す」に、GraphQL の enum に写す一覧は、作る側が読む一覧を公開 API の定数（同じオブジェクトの別名でよい）として出すこと
