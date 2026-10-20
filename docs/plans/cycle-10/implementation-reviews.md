@@ -139,7 +139,41 @@ PR #105 の CI は、push のたびに `pull_request` で流れた（`publish` �
 
 `m54-rest-10`（base は `main`）。M57 のブランチ `m57-ci-guards` の先端 `9115ea0` から切った。計画の PR（#104）と M57 の PR（#105）が未マージの間は、その commit も PR の差分に見える。M54 の残りの差分は `9115ea0..` である。
 
-（実装レビューの判定と指摘ごとの対応は、レビューを受けた後にここへ書く。）
+実装レビューは、実装者が 2 系統に同じ依頼で出した。どちらの系統も、`9115ea0..492d49a` の diff を `git show 492d49a:<パス>` で読んだ。Codex は Go、Claude は Conditional Go だった。High 以上は無く、読み直しには出していない。
+
+- Claude：手元で完了条件の `git grep` 3 本と rspec（`packs/fulfillment/spec` と移行の spec で 76 examples, 0 failures）を流し、`packs/sales/spec` を `--seed 1`・`2`・`3` で流した（どれも 187 examples, 0 failures）。`Sales::Item` の `ignored_columns` を外す壊し方を複製から追試し、証跡と同じ 1 failure を確かめた。railties・activerecord・strong_migrations の原文と、`instructions.rb` のロックの順を読んだ
+- Codex：読み取り専用で流した。DB を使う rspec は流さず、gem の原文とコードを読み、完了条件の `git grep` 3 本を流した（0 件・1 件・2 件）
+
+Claude のサブエージェントは最終報告を返さずに終わり、依頼に書かせた結果のファイルから読んだ。Codex は一時の失敗を起こさず、出し直していない。
+
+| 系統 | 判定 |
+|---|---|
+| Codex | Go（Low 2） |
+| Claude | Conditional Go（Medium 1・Low 3） |
+
+| 観点 | Codex | Claude |
+|---|---|---|
+| 計画への準拠と範囲 | 指摘（R1） | 指摘（R1） |
+| 正しさ | 指摘なし | 指摘なし |
+| 境界と規約 | 指摘なし | 指摘（R3・R4） |
+| テストの検出力 | 指摘なし | 指摘なし |
+| 参照の維持 | 指摘（R2） | 指摘（R2・R3） |
+
+| 重さ | 系統 | 指摘 | 対応 | commit |
+|---|---|---|---|---|
+| Medium・Low | Claude R1・Codex R1 | 完了条件の `git grep` を最後の commit で流し直した件数が証跡に無く、書くと予告する文だけがある（`guides/dev-cycle.md`「完了の判定」） | 下の「手元で流したもの」に、3 本のコマンドと件数を書き、予告の文を消した。計画の rspec の行も単独で書いた | この節を載せた commit |
+| Low | Claude R2 | マイグレーションのコメント 2 か所が、消した前提を書く。出荷停止の表と取消の時刻を消すマイグレーションの「`Fulfillment::ShipmentRequest` は `ignored_columns` でこの列を読み書きしない」は外した後のコードと食い違い、出荷依頼の受注番号の列を足すマイグレーションの「出荷は受注に依存しないので」は OI-226 で直した理由の前の形である | 前者を、列を消すマイグレーションは無視を入れた版と一緒に置くという規則の文にして `guides/config.md` の節を指し、後者を ADR 011 決定 2 を指す文にした。同じ種類を `git grep -e '受注に依存しない' -e '相手に依存しない' -e 'ignored_columns でこの列'` で数え、残る 3 件（請求と在庫が受注に依存しないこと、`Sales::Item` がいまも無視すること）はいまのコードと合う | 同上 |
+| Low・Low | Claude R3・Codex R2 | `handoff.md` が、実装レビューの前の版で、M54 の残りの実装レビューを終えたと書く | 判定と対応をこの節に書く commit で、`handoff.md` の文が事実になる。文は変えていない | 同上 |
+| Low | Claude R4 | `shipment_requests.rb` のコメントの「写しは作り直しのタスクと一致の spec が受注と合わせる」は、合わせるのがタスクで、spec は抜けを確かめるだけである | 「写しは作り直しのタスクが受注と合わせ、一致の spec が写しを書く経路の抜けを確かめる」に直した | 同上 |
+
+違和感は次のように扱った。
+
+- Claude 1：ADR 011 代替案 D の最後の文が、M54 で範囲外にしたことと、後の作者の判断で写しを残したことを 1 つにしている → 2 文に分け、写しを残すと決めたのは作者の判断（OI-226）だと書いた
+- Claude 2：見直す条件の「写しを守る作り直しのタスクか一致の spec を外す」は、写しを残したまま守りだけを外す場面が想像しにくい → 計画と OI-231（`judgment`）のとおりで、作者の確認を待つので変えていない。改善の候補には移さない（OI-231 の確認で扱う）
+- Claude 3：`read_models.rake` の「タスクが回すので、組を受け渡す」の因果が弱い → 因果の「ので」を外して 2 文にし、出荷の公開 API が「このタスクにだけ呼ばれる」入口であることを書いた。根拠の表の節は前から指している
+- Claude 4：`config.md` の規則 3 が計画にあった OI-106 を落とした → 規則 3 の末尾に OI-106 を足した
+- Claude 5：規則 1 の「古い版が列を消した後まで動く時間は短い」は、`migrate` の Job と Pod の起動の順が決まっていない前提を書いていない → 規則 1 にその前提を括弧で足した
+- Codex：なし
 
 ### 実装の記録
 
@@ -177,7 +211,15 @@ bin/check-open-items --due M54 && bin/check-commit-refs   # 通った
 
 `bin/ci` の rspec は全件の印を渡して流れ、呼ばれない公開 API の一覧は出なかった。分岐の網羅率の警告は、基準 `9115ea0` で 0 件だった。rspec の件数は、M57 の `77b2d72` の 3194 から、足した example の 1 つで 3195 になった。手元では E2E を流していない。変えたのは `list-pagination.spec.ts` のコメントだけで、画面にも GraphQL のスキーマにも届かないからで、全体の通過は PR の CI の `e2e` で確かめる。
 
-完了条件の `git grep` は、文書と証跡を書き終えた最後の commit で流し直し、件数をここに書く。
+完了条件の `git grep` と rspec は、実装レビューの直しの後の作業ツリー（この節を載せた commit と同じ木）で流し直した。
+
+```sh
+git grep -n -e '写しを作った時点' -e '依存しなかった' -e '依存の向きを変えずに' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!docs/adr'   # 0 件
+git grep -n 'ignored_columns' -- packs   # 1 件（packs/sales/app/models/sales/item.rb:9）
+git grep -n 'Instructions.cancel' -- 'docs/adr/012-*.md' docs/architecture/data-model.md   # 2 件（ADR 012 決定 4 と data-model.md:304）
+TEST_DATABASE=factory_ops_m54r_test bundle exec rspec packs/fulfillment/spec packs/sales/spec/public/sales/item_prices_backfill_spec.rb   # 76 examples, 0 failures
+bin/check-open-items --due M54 && bin/check-commit-refs   # 通った
+```
 
 ### 残件の処理
 
