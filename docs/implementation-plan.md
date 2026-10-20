@@ -2742,7 +2742,7 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 - `packs/fulfillment/app/models/fulfillment/shipment_request.rb` の `cancelled_at`：外す。消すマイグレーション `20261016100000` は M54 で main に入り（`a7cb044`）、列を足し直す spec は無い（`git grep -n -i -e 'ADD COLUMN' -e 'add_column' -- spec 'packs/*/spec/**'` は移行の spec の `items.unit_price` の 1 行だけを返す）。`ignored_columns` の行とコメントを消す。コメントの経緯の文（サイクル 09 の逸脱検査の D7）も一緒に消える
 - `packs/sales/app/models/sales/item.rb` の `unit_price`：残す。移行の spec（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）が列を足し直すので、規則 3 に当たる。コメントを、規則 3 の理由と `guides/config.md` の節を指す短い文にする（M58 で、規則 3 を後始末の形に替えて外した）
 
-規則 3 の壊れは、いまは spec の順でしか表に出ないので、移行の spec に順によらず落ちる example を 1 つ足す。example は、`before` が列を足し直した後に `Sales::Item.reset_column_information` を呼んで列を読ませ、所有ロールで列を消し（同じファイルの `reshape`）、`FactoryBot.create(:item)` が成功することを確かめ、`ensure` で `Sales::Item.reset_column_information` を呼んで列の読み込みを戻す。`ignored_columns` があれば INSERT は `unit_price` を書かないので通る（M58 で、この example を、後始末が列の読み込みを戻すことを確かめる形に替えた）。いまのコードで通る守りの example なので RED は無く、壊して落ちる記録で効き目を示す。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと、この example が `PG::UndefinedColumn`（`unit_price`）で落ちること（失敗の文）を書き、行を戻す。
+規則 3 の壊れは、いまは spec の順でしか表に出ないので（M58 で spec を乱順にした）、移行の spec に順によらず落ちる example を 1 つ足す。example は、`before` が列を足し直した後に `Sales::Item.reset_column_information` を呼んで列を読ませ、所有ロールで列を消し（同じファイルの `reshape`）、`FactoryBot.create(:item)` が成功することを確かめ、`ensure` で `Sales::Item.reset_column_information` を呼んで列の読み込みを戻す。`ignored_columns` があれば INSERT は `unit_price` を書かないので通る（M58 で、この example を、後始末が列の読み込みを戻すことを確かめる形に替えた）。いまのコードで通る守りの example なので RED は無く、壊して落ちる記録で効き目を示す。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと、この example が `PG::UndefinedColumn`（`unit_price`）で落ちること（失敗の文）を書き、行を戻す（M58 で行を外し、壊し方は後始末の `reset_column_information` を外す形に替えた）。
 
 `cancelled_at` は、外した後も列がテストの DB に無いので、落ちるテストは無い。代わりに、外す前に `db/structure.sql` の `shipment_requests` の表に `cancelled_at` が無いことと、手元の DB で `bin/rails db:migrate:status` が `20261016100000` を `up` と出すことを、マイグレーションの状態として証跡に書く。
 
@@ -2757,7 +2757,7 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 
 ```sh
 git grep -n -e '写しを作った時点' -e '依存しなかった' -e '依存の向きを変えずに' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!docs/adr'   # 0 件
-git grep -n 'ignored_columns' -- packs   # 1 件（Sales::Item の unit_price）
+git grep -n 'ignored_columns' -- packs   # 1 件（Sales::Item の unit_price。M58 で外したので、いまは 0 件）
 git grep -n 'Instructions.cancel' -- 'docs/adr/012-*.md' docs/architecture/data-model.md   # 2 件（ADR 012 決定 4 と「取消と出荷の競合を止める場所」に 1 件ずつ）
 bundle exec rspec packs/fulfillment/spec packs/sales/spec/public/sales/item_prices_backfill_spec.rb   # 0 failures
 bin/check-open-items --due M54

@@ -40,7 +40,7 @@ RSpec.describe "spec を流す順" do
     expect(rand_with_seed(chosen["seed"])).to eq(rand_with_seed(chosen["seed"]))
   end
 
-  # seed 1 は、10 個の example を定義の順と違う並びにすることを確かめてある
+  # seed 1 は、10 個の example を定義の順と違う並びにする
   it "seed で並べた順は、定義の順と違う" do
     defined = order(run_examples("--order", "defined", "--dry-run"))
 
