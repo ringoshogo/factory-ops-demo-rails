@@ -4,8 +4,8 @@ module Sales
   class Item < TenantRecord
     TAX_RATES = [ 8, 10 ].freeze
 
-    # 単価の正本を item_prices に移した後に消した列。消すマイグレーションの前に動いているプロセスが列を読み書きしないよう、
-    # 列を消す前から無視する（strong_migrations の列を消す手順）。移行の spec が列を一時的に足し直すので、消した後も残す
+    # 消した列。移行の spec がテストの DB に列を足し直すので、無視を外すと、足し直した列を読み込んだプロセスの
+    # 後の INSERT が消えた列を書いて落ちる（docs/guides/config.md「initializers/strong_migrations.rb：危険なマイグレーションを止める」）
     self.ignored_columns += [ "unit_price" ]
 
     validates :code, :name, :unit, presence: true
