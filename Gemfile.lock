@@ -168,7 +168,7 @@ GEM
       raabro (~> 1.4)
     globalid (1.4.0)
       activesupport (>= 6.1)
-    graphql (2.6.11)
+    graphql (2.6.12)
       base64
       fiber-storage
       logger
@@ -426,7 +426,7 @@ GEM
     uniform_notifier (1.18.0)
     uri (1.1.2)
     useragent (0.16.11)
-    webmock (3.29.0)
+    webmock (3.34.0)
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
       hashdiff (>= 0.4.0, < 2.0.0)
@@ -482,7 +482,7 @@ DEPENDENCIES
   strong_migrations
   thruster
   tzinfo-data
-  webmock (~> 3.25)
+  webmock (~> 3.34)
   webrick (~> 1.9)
   yabeda (~> 0.16)
   yabeda-prometheus (~> 0.9.1)
