@@ -3,8 +3,6 @@ module Imports
   class Import < TenantRecord
     self.table_name = "imports"
 
-    KINDS = %w[items stocks].freeze
-
     belongs_to :import_file
 
     def status

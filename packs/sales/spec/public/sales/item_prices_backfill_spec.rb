@@ -40,14 +40,22 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     SQL
   end
 
-  after do
+  # 行を消し、表をいまの形に戻し、モデルの列の読み込みを戻す。2 回流しても同じ形に戻る。
+  # 列の情報を戻さないと、足し直した列を読んだモデルが、同じプロセスの後の spec の INSERT で消えた列を書いて落ちる。
+  # reshape の clear_cache! は準備した文を捨てるだけで、モデルの列の情報は戻さない
+  # （docs/guides/config.md「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。
+  # 上の matched_together を読むので、def ではなくブロックで定義する
+  define_method(:restore_current_schema) do
     delete_owned_rows([ tenant.id, other.id ], %w[item_prices sales_order_lines sales_orders items])
     reshape(<<~SQL)
       ALTER TABLE items DROP COLUMN IF EXISTS unit_price;
       ALTER TABLE sales_order_lines DROP CONSTRAINT IF EXISTS sales_order_lines_matched_together;
       ALTER TABLE sales_order_lines ADD CONSTRAINT sales_order_lines_matched_together CHECK (#{matched_together});
     SQL
+    Sales::Item.reset_column_information
   end
+
+  after { restore_current_schema }
 
   # 後始末が表の形を戻したことを、ファイルの終わりに確かめる。戻し忘れると、後の spec が移行の前の形の DB で流れる
   after(:context) do
@@ -161,18 +169,17 @@ RSpec.describe "Sales::ItemPrices.backfill" do
     end
   end
 
-  # Sales::Item が unit_price を無視し続ける理由を、spec の順によらず確かめる。足し直した列をモデルに読ませてから列を消し、
-  # 同じプロセスで品目を作る。無視が無ければ INSERT が消えた列を書いて落ちる（docs/guides/config.md「initializers/strong_migrations.rb：危険なマイグレーションを止める」）
-  it "足し直した列をモデルが読んだ後に列を消しても、品目を作れる" do
+  it "後始末は、足し直した列を消し、モデルの列の読み込みを戻す" do
     Sales::Item.reset_column_information
-    Sales::Item.columns
-    reshape("ALTER TABLE items DROP COLUMN unit_price")
+    # 対照：後始末の前は、モデルが足し直した列を読んでいる
+    expect(Sales::Item.column_names).to include("unit_price")
 
+    # after がもう一度呼ぶので、2 回呼んでも同じ形に戻ることも、この example が確かめる
+    restore_current_schema
+
+    expect(Sales::Item.column_names).not_to include("unit_price")
     item = Tenancy.with_tenant(tenant.id) { FactoryBot.create(:item) }
-
     expect(owner.select_value("SELECT count(*) FROM items WHERE id = #{owner.quote(item.id)}")).to eq(1)
-  ensure
-    Sales::Item.reset_column_information
   end
 
   def actor_of(tenant)

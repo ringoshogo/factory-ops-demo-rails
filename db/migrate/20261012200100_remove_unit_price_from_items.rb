@@ -19,7 +19,6 @@ class RemoveUnitPriceFromItems < ActiveRecord::Migration[8.1]
         "(item_id IS NULL AND item_name IS NULL AND unit_price IS NULL AND priced_on IS NULL AND tax_rate_percent IS NULL) OR " \
         "(item_id IS NOT NULL AND item_name IS NOT NULL AND unit_price IS NOT NULL AND priced_on IS NOT NULL AND tax_rate_percent IS NOT NULL)",
         name: "sales_order_lines_matched_together"
-      # Sales::Item は ignored_columns でこの列を読み書きしない
       remove_column :items, :unit_price, :bigint
     end
   end
