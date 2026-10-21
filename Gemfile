@@ -80,5 +80,5 @@ end
 group :test do
   # 外部への HTTP をテストで遮断し、SendGrid の応答をスタブで返す。本物の SendGrid を呼ばないことを、提供元の切り替えの設定だけに
   # 頼らず通信の層で止める（docs/adr/007 決定 5）[https://github.com/bblimke/webmock]
-  gem "webmock", "~> 3.25"
+  gem "webmock", "~> 3.34"
 end
