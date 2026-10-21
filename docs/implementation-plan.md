@@ -2184,6 +2184,8 @@ bin/check-open-items --due M33
 
 **残り（サイクル 11）**：作者の画面の指摘（OI-177）は、サイクル 10 の間にも来なかったので、同じ形のままサイクル 11 へ移した。作るものは変わらない。サイクル 10 で画面に足したものは無い。
 
+**残り（サイクル 12）**：作者の画面の指摘（OI-177）は、サイクル 11 の間にも来なかったので、同じ形のままサイクル 12 へ移した。作るものは変わらない。サイクル 11 で画面に足したものは無い。
+
 **範囲外**：公開の配置（M41）、訪問者ごとのデータの分離（著者判断 8）、流用元のデモの開始・サンプル表示・混雑の通知、API に無い操作（「作るもの 2」の末尾）、作者の判断（OI-144）の値に入っていない列での並べ替え（OI-186。M50 で足す）、一覧の見出しで複数の列を指定する操作（OI-187。M47 で足す）、通知メールの設定画面、流用元のこれからの変更の取り込み（置き場所の判断の裏返る条件に当たるまで）。
 
 **実装する文書の節**：`graphql-schema.md`「1 回のリクエストがたどる道」1・「視点ごとに型を分ける」・「状況の enum」・「エラー」・「ページングと N+1」、`guides/config.md`「CSRF を防ぐ前提：CORS を開けない」、`handoff.md`「目的」、流用元の `docs/specs/cycle-03-visual-refresh-spec.md` §2（トークン）・§3（外枠と共通部品）・§9（ダッシュボード）・§11（検収表）と `handbook/README.md`
@@ -2317,6 +2319,8 @@ bin/check-open-items --due M41
 **残り（サイクル 10）**：作者の実機の手順の結果（OI-196）は、サイクル 09 の間にも書かれなかったので、作者の答え（IB-133）のとおりサイクル 10 へ移した。移すのは 5 回目である。M54 で消したイベントのジョブがキューに残ったときの互換は持たず、M55 の品目の写しを埋めるまでの間は写しの無い品目の在庫の調整と CSV の行が拒まれるが、公開の配置は毎日 DB ごと作り直すので、どちらも作り直しの後は起きない（`deploy/README.md`「作者の手順」）。作るものは変わらない。
 
 **残り（サイクル 11）**：作者の実機の手順の結果（OI-196）は、サイクル 10 の間にも書かれなかったので、作者の答え（IB-133）のとおりサイクル 11 へ移した。移すのは 6 回目である。サイクル 10 は配置のマニフェストと `deploy/README.md` を変えていない。列を消す PR と `ignored_columns` を外す PR を間の版を飛ばして一度に適用したときの壊れは、毎日の作り直しで消えるので許す（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。作るものは変わらない。
+
+**残り（サイクル 12）**：作者の実機の手順の結果（OI-196）は、サイクル 11 の間にも書かれなかったので、作者の答え（IB-133）のとおりサイクル 12 へ移した。移すのは 7 回目である。サイクル 11 は配置のマニフェストと `deploy/README.md` を変えていない。M58 で `Sales::Item` の `unit_price` の `ignored_columns` を外したが、公開の配置は一度も適用していないので、列を消す変更と無視を外す変更の間の版を飛ばしたときの壊れ（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」の規則 2）には当たらない。作るものは変わらない。
 
 **範囲外**：訪問者ごとのデータの分離（著者判断 8）、GitHub のリポジトリを public にすること（OI-06。作者が 2026-10-13 に public にした）、メトリクスの収集（Prometheus を置かない。`METRICS_PROCESS` を設定しないので exporter は立たない）、バックアップ（毎日シードから作り直すので要らない）、GitOps による適用、流用元の配置の変更。
 
@@ -2742,7 +2746,7 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 - `packs/fulfillment/app/models/fulfillment/shipment_request.rb` の `cancelled_at`：外す。消すマイグレーション `20261016100000` は M54 で main に入り（`a7cb044`）、列を足し直す spec は無い（`git grep -n -i -e 'ADD COLUMN' -e 'add_column' -- spec 'packs/*/spec/**'` は移行の spec の `items.unit_price` の 1 行だけを返す）。`ignored_columns` の行とコメントを消す。コメントの経緯の文（サイクル 09 の逸脱検査の D7）も一緒に消える
 - `packs/sales/app/models/sales/item.rb` の `unit_price`：残す。移行の spec（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）が列を足し直すので、規則 3 に当たる。コメントを、規則 3 の理由と `guides/config.md` の節を指す短い文にする（M58 で、規則 3 を後始末の形に替えて外した）
 
-規則 3 の壊れは、いまは spec の順でしか表に出ないので、移行の spec に順によらず落ちる example を 1 つ足す。example は、`before` が列を足し直した後に `Sales::Item.reset_column_information` を呼んで列を読ませ、所有ロールで列を消し（同じファイルの `reshape`）、`FactoryBot.create(:item)` が成功することを確かめ、`ensure` で `Sales::Item.reset_column_information` を呼んで列の読み込みを戻す。`ignored_columns` があれば INSERT は `unit_price` を書かないので通る（M58 で、この example を、後始末が列の読み込みを戻すことを確かめる形に替えた）。いまのコードで通る守りの example なので RED は無く、壊して落ちる記録で効き目を示す。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと、この example が `PG::UndefinedColumn`（`unit_price`）で落ちること（失敗の文）を書き、行を戻す。
+規則 3 の壊れは、いまは spec の順でしか表に出ないので（M58 で spec を乱順にした）、移行の spec に順によらず落ちる example を 1 つ足す。example は、`before` が列を足し直した後に `Sales::Item.reset_column_information` を呼んで列を読ませ、所有ロールで列を消し（同じファイルの `reshape`）、`FactoryBot.create(:item)` が成功することを確かめ、`ensure` で `Sales::Item.reset_column_information` を呼んで列の読み込みを戻す。`ignored_columns` があれば INSERT は `unit_price` を書かないので通る（M58 で、この example を、後始末が列の読み込みを戻すことを確かめる形に替えた）。いまのコードで通る守りの example なので RED は無く、壊して落ちる記録で効き目を示す。壊して落ちる記録には、`Sales::Item` から `ignored_columns` の行を外すと、この example が `PG::UndefinedColumn`（`unit_price`）で落ちること（失敗の文）を書き、行を戻す（M58 で行を外し、壊し方は後始末の `reset_column_information` を外す形に替えた）。
 
 `cancelled_at` は、外した後も列がテストの DB に無いので、落ちるテストは無い。代わりに、外す前に `db/structure.sql` の `shipment_requests` の表に `cancelled_at` が無いことと、手元の DB で `bin/rails db:migrate:status` が `20261016100000` を `up` と出すことを、マイグレーションの状態として証跡に書く。
 
@@ -2757,7 +2761,7 @@ E2E の世界（`DemoWorld`）と E2E は、テナントをまたぐイベント
 
 ```sh
 git grep -n -e '写しを作った時点' -e '依存しなかった' -e '依存の向きを変えずに' -- . ':!docs/plans' ':!docs/implementation-plan.md' ':!docs/adr'   # 0 件
-git grep -n 'ignored_columns' -- packs   # 1 件（Sales::Item の unit_price）
+git grep -n 'ignored_columns' -- packs   # 1 件（Sales::Item の unit_price。M58 で外したので、いまは 0 件）
 git grep -n 'Instructions.cancel' -- 'docs/adr/012-*.md' docs/architecture/data-model.md   # 2 件（ADR 012 決定 4 と「取消と出荷の競合を止める場所」に 1 件ずつ）
 bundle exec rspec packs/fulfillment/spec packs/sales/spec/public/sales/item_prices_backfill_spec.rb   # 0 failures
 bin/check-open-items --due M54

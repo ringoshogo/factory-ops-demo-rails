@@ -8,7 +8,8 @@
 #
 # サイクル 10 からの証跡（docs/plans/cycle-NN/）の形も確かめる。実装レビューの「計画との違い」の項目が judgment か
 # decided の行の ID か「判断なし」を持つことと、計画レビューが dev-cycle.md「1. 計画レビュー」の観点の名前を持つこと。
-# サイクル 11 からは、実装レビューのマイルストーンの節が、計画の完了条件の git grep を件数とともに持つことも確かめる
+# サイクル 11 からは、実装レビューのマイルストーンの節が、計画の完了条件の git grep を件数とともに持つことも確かめる。
+# サイクル 12 からは、件数の注釈が流した版の commit も持つことを確かめる
 require "optparse"
 require "open3"
 
@@ -19,6 +20,7 @@ DEV_CYCLE = "docs/guides/dev-cycle.md"
 EVIDENCE = %r{\Adocs/plans/cycle-(\d+)/(implementation-reviews|plan-review)\.md\z}
 EVIDENCE_FROM = 10
 GREP_COUNTS_FROM = 11
+GREP_COMMITS_FROM = 12
 
 OI_STATES = %w[open judgment blocked-user decided closed].freeze
 OI_UNRESOLVED = %w[open judgment blocked-user].freeze
@@ -173,6 +175,8 @@ end
 # 完了条件の git grep は、文書と証跡を書き終えた最後の版で流し直し、コマンドと件数を証跡に書く
 # （docs/guides/dev-cycle.md「完了の判定」）。照らす相手は計画の節の囲みの中の git grep で、「残り（サイクル NN）」の
 # 節は、計画のその段落から次の「残り」の段落までの分だけを求める。件数は「# 0 件」のように数字で書いたものだけを数える。
+# サイクル 12 からは、件数の後ろに、流した版の commit を `` ` `` で囲んだ 7〜40 桁の 16 進で求める。囲むのは、SHA が HEAD の祖先の
+# commit であることを bin/check-commit-refs に確かめさせるためである。書いた SHA が最後の版かは見ない
 # 見出しと「残り」の段落は囲みの外でだけ区切る。囲みの中には、見出しの見本が書かれうるからである
 
 # 行ごとに、行番号・行・囲みの中かを返す。囲みは ``` か ~~~ で始まり、同じ文字の行で閉じる
@@ -209,7 +213,7 @@ plan_greps = lambda do |number, rest_cycle|
   part = parts.find { _1.first[1].start_with?(rest_cycle ? "**残り（サイクル #{rest_cycle}）**" : "**本体**") } || []
   part.filter_map { grep_command.call(_2) if _3 == :inside }.select { _1.start_with?("git grep ") }.uniq
 end
-check_grep_counts = lambda do |label, text|
+check_grep_counts = lambda do |label, text, with_commit|
   split_outside.call(scan_lines.call(text), /\A## /).each do |section|
     lineno, title = section.first
     heading = title.match(/\A## M(\d+)(?![0-9A-Za-z])(.*)/)
@@ -225,10 +229,13 @@ check_grep_counts = lambda do |label, text|
     end
     name = rest_cycle ? "M#{heading[1]} の残り（サイクル #{rest_cycle}）" : "M#{heading[1]} "
     counted = section.filter_map { grep_command.call(_2) if _3 == :inside && _2.match?(/#\s*\d+\s*件/) }
+    versioned = section.filter_map { grep_command.call(_2) if _3 == :inside && _2.match?(/#\s*\d+\s*件.*`\h{7,40}`/) }
     plan_greps.call(heading[1], rest_cycle).each do |command|
-      next if counted.include?(command)
-
-      errors << "#{label}:#{lineno}: #{name}の節に、完了条件の「#{command}」を流した件数が無い"
+      if !counted.include?(command)
+        errors << "#{label}:#{lineno}: #{name}の節に、完了条件の「#{command}」を流した件数が無い"
+      elsif with_commit && !versioned.include?(command)
+        errors << "#{label}:#{lineno}: #{name}の節に、完了条件の「#{command}」を流した版の commit が無い"
+      end
     end
   end
 end
@@ -254,7 +261,7 @@ files.split("\0").each do |file|
     check_plan_review.call(file, text)
   else
     check_differences.call(file, text)
-    check_grep_counts.call(file, text) if cycle.to_i >= GREP_COUNTS_FROM
+    check_grep_counts.call(file, text, cycle.to_i >= GREP_COMMITS_FROM) if cycle.to_i >= GREP_COUNTS_FROM
   end
 end
 

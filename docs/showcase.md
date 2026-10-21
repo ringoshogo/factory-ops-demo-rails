@@ -296,6 +296,7 @@ bin/check-structure
 - 同時実行は、2 つの接続を別のスレッドで動かし、後の接続が先の接続のロックを待つことを pid で確かめる（`spec/support/concurrency.rb`）
 - 一覧のために別のコンテキストへ写した値は、`spec/scenarios/read_model_copies_spec.rb` が、シードと E2E の世界を作った後と品目を変えた後に、元から作り直しても何も書かないことを確かめる。品目の写しと、出荷依頼に写した受注番号の両方を読み、受注番号の写しを空にするか書き換えた対照で、作り直しが書き直すことも確かめる
 - 画面は、Playwright の E2E が Rails・`bin/jobs`・Next を起こして通す。S1・S2 を画面でも確かめ、全画面の寸法とコントラストを測り、集計の数と飛び先の一覧の件数が一致することを確かめる（`frontend/e2e/`）。手元の E2E の Rails も、CI と同じく起動の時にアプリを読み込んでから答えるので、最初の要求の遅さと読み込みの誤りの出方が手元と CI で変わらない（`frontend/e2e/start-rails.sh`、[`guides/config.md`](guides/config.md)「環境ごとの設定」）。読み込みの変数を外しても E2E は通るので、変数が読み込みを効かせることと、起動のスクリプトが Rails より前に変数を渡すことは、別のガード（`spec/platform/e2e_eager_load_spec.rb`）が確かめる
+- spec は乱順で流れ、順への依存を定義の順に隠さない。落ちたら出力の seed を `--seed` に渡すと、同じ並びと同じ `Kernel.rand` で流れ直す。乱順が既定であることは、親のプロセスの設定ではなく、順も seed も渡さずに流す子のプロセスで確かめる。コマンドラインの `--seed` は設定より優先するので、`--seed` を渡して流す親では、設定を外しても乱順のまま通るからである（`spec/spec_helper.rb`、`spec/platform/spec_order_spec.rb`、[`guides/testing.md`](guides/testing.md)「層への配分」）
 - 1 つの example の失敗が後ろのテストを止めない：テストの DB に RLS を開くポリシーを足し外しする補助は、表のロックを待つ時間に上限を置き、打ち切ったらロックを持つ接続を出す。example をテナントで包む around は、example が SQL のエラーで落ちたときだけテナントのセーブポイントを巻き戻して抜ける補助を通すので、送出せず、example のトランザクションが残って後ろのグループを止めない。補助を通さずにテナントかトランザクションで直に包む around は、spec のファイルを構文木で読むガードが落とす（`spec/support/matrix_cross_read.rb`・`spec/support/tenant_example.rb`、`spec/matrix/cross_read_spec.rb`・`spec/platform/tenant_example_spec.rb`、[`guides/testing.md`](guides/testing.md)「層への配分」「行列テストとの分担」）
 
 **どう確かめられるか**
@@ -307,7 +308,7 @@ bundle exec rspec --tag scenario --tag concurrency   # シナリオ（どちら�
 FULL_SUITE=1 bundle exec rspec --format progress --format json --out tmp/rspec.json && bin/test-layers tmp/rspec.json
 ```
 
-**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、手元の E2E の起動の時の読み込みは M51。テナントで包む around の補助とガードと、E2E の読み込みの変数のガードは M52（M51 の全 spec に効く補助を置き換えた）。
+**状態**：層の報告と、重要シナリオの S1〜S5 は実装済み（S2 は M26、S4 の受注の取消は M22、S5 は M25）。画面の E2E は実装済み（M33）。写しの一致の spec は M46、受注番号の写しを足したのは M50。ポリシーの足し外しの待ちの上限と、手元の E2E の起動の時の読み込みは M51。テナントで包む around の補助とガードと、E2E の読み込みの変数のガードは M52（M51 の全 spec に効く補助を置き換えた）。spec を乱順で流すのは M58。
 
 ### 10. 運用性
 
@@ -323,11 +324,11 @@ FULL_SUITE=1 bundle exec rspec --format progress --format json --out tmp/rspec.j
 - メトリクス：Yabeda と Prometheus。ラベルにテナントとユーザーを入れない（M30）
 - SLO と手順書：`docs/slo.md`・`docs/runbooks/`・`config/prometheus/alerts.yml`（M31）
 - 公開の配置：Raspberry Pi の k3s に置き、毎日 Web とワーカーを止めてから DB ごと作り直す。マニフェストは Secret を持たず、所有ロールの資格情報とデモの世界の許可を、作り直しとマイグレーションの工程にだけ渡す（`deploy/`、[`adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md`](adr/009-デモを流用元と同じRaspberryPiのk3sに置き共有のデータを毎日作り直す.md)、M41）。作り直しは本番の環境でだけ動く。イメージは PR と main への push のたびに arm64 のランナーで組み立て、main への push でほかのすべてのジョブが成功したときだけ `publish` のジョブが GHCR に置く（`.github/workflows/ci.yml`）。`publish` の `if:` は `success()` を明示し、`needs` の失敗・取消・skip で止める守りを YAML の行で読めるようにした。`if:` は 1 つの式にちょうど一致することを spec が照らす（[guides/config.md「CI の工程」](guides/config.md#ci-の工程)）。画面の依存の木は `frontend` のジョブが `npm ci` の後に `npm ls --all` で確かめ、入れ子の依存の peer の範囲から外れた更新の PR を落とす
-- 列を消す変更：モデルの `ignored_columns` に列を入れて同じ変更で列を消し、`ignored_columns` から外すのは消すマイグレーションが main に入った後の別の PR にする。列を読み込んだ Web とワーカーが、列が消えた後の INSERT で消えた列を書いて落ちないためである。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときの壊れは、毎日の作り直しで消えるので許す（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。spec が消した列を足し直すときは、後始末でモデルの列の読み込みを戻し、後始末の後にモデルが列を読まず品目を作れることを移行の spec が確かめる（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）
+- 列を消す変更：モデルの `ignored_columns` に列を入れて同じ変更で列を消し、`ignored_columns` から外すのは消すマイグレーションが main に入った後の別の PR にする。列を読み込んだ Web とワーカーが、列が消えた後の INSERT で消えた列を書いて落ちないためである。公開の配置が間の版を飛ばして 2 つの PR を一度に適用したときの壊れは、毎日の作り直しで消えるので許す（`guides/config.md`「initializers/strong_migrations.rb：危険なマイグレーションを止める」）。spec が消した列を足し直すときは、後始末でモデルの列の読み込みを戻し、後始末の後にモデルの列に消した列が無く、品目を作れることを移行の spec が確かめる（`packs/sales/spec/public/sales/item_prices_backfill_spec.rb`）
 
 **どう確かめられるか**：`spec/contracts/correlation_spec.rb`・`spec/requests/log_hygiene_spec.rb`（M18）、`spec/db/audit_logs_spec.rb`・`spec/requests/audit_spec.rb`（M19）、`spec/platform/metrics_subscriber_spec.rb`・`spec/platform/metrics_spec.rb`（M30）、`spec/platform/alerts_runbook_spec.rb`・`spec/requests/maintenance_mode_spec.rb` と警報の規則のテスト `bin/check-alerts`（M31）、`spec/platform/deploy_manifests_spec.rb`（マニフェストの規則）・`spec/platform/demo_reset_spec.rb`（作り直しの順と、失敗しても Web とワーカーを戻すこと）と CI の `manifests`・`images`・`publish` のジョブ、`publish` の条件と権限と、`npm ls --all` の置き場を確かめる `spec/platform/ci_checks_spec.rb`（M41・M42・M48・M51）。
 
-**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43、`npm ls --all` と PR ごとの組み立ては M48、`publish` の `success()` の明示は M51、`success()` の迂回を止める期待は M52、それを 1 つの式との一致にしたのは M57、列を消した後の `ignored_columns` の規則は M54 の残り、spec が足し直した列を後始末で戻す形にしたのは M58）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
+**状態**：実装済み（構造化ログは M18、監査ログは M19、メトリクスは M30、SLO と手順書は M31、公開の配置のマニフェストと作り直しは M41、arm64 の組み立てと `publish` は M42、作り直しを本番の環境に限るのは M43、`npm ls --all` と PR ごとの組み立ては M48、`publish` の `success()` の明示は M51、`success()` の迂回を止める期待は M52、それを 1 つの式との一致にしたのは M57、列を消した後の `ignored_columns` の規則は M54 の残り、spec が足し直した列の後始末でモデルの列の読み込みを戻し、`unit_price` の無視を外したのは M58）。公開の配置は、作者が実機の手順（`deploy/README.md`「作者の手順」）の結果を書くまで公開しない。
 
 ### 11. チーム開発
 
