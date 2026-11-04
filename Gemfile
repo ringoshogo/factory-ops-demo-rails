@@ -7,7 +7,7 @@ gem "pg", "~> 1.1"
 # Flag unsafe schema changes before they run [https://github.com/ankane/strong_migrations]
 gem "strong_migrations"
 # Autoload packs/*/app/* [https://github.com/rubyatscale/packs-rails]
-gem "packs-rails", "~> 0.1.0"
+gem "packs-rails", "~> 0.1.1"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
@@ -70,7 +70,7 @@ group :development, :test do
   gem "packwerk-extensions", "~> 0.4.0", require: false
 
   # 関連を 1 件ずつ読む N+1 を検出する。テストでは例外に、開発ではログにする [https://github.com/flyerhzm/bullet]
-  gem "bullet", "~> 8.2"
+  gem "bullet", "~> 8.3"
 
   # 基準と作業中の GraphQL のスキーマを比べ、変更を破壊・危険・非破壊に分ける。判定は lib/schema_compat.rb が行う
   # [https://github.com/xuorig/graphql-schema_comparator]
@@ -80,5 +80,5 @@ end
 group :test do
   # 外部への HTTP をテストで遮断し、SendGrid の応答をスタブで返す。本物の SendGrid を呼ばないことを、提供元の切り替えの設定だけに
   # 頼らず通信の層で止める（docs/adr/007 決定 5）[https://github.com/bblimke/webmock]
-  gem "webmock", "~> 3.25"
+  gem "webmock", "~> 3.34"
 end
